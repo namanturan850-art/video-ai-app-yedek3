@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="tr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Video Studio</title><link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script></head>
+<body>
+<header><a class="brand" href="/">AI Video Studio</a><span>Yerel çalışma alanınız</span></header>
+<main>
+<section id="dashboard">
+<p class="eyebrow">BAŞLANGIÇ • AŞAMA 1</p><h1>Hikâyeniz burada başlasın.</h1>
+<p class="intro">Video üretim yolculuğunuz için sade bir çalışma alanı. Şimdilik uygulamanın temel yapısı ve tanılama ekranı hazır.</p>
+<div class="cards">
+<a class="card" href="/new-project"><span class="icon">＋</span><h2>Yeni Proje</h2><p>Yeni bir video fikriyle başlayın.</p><span class="badge">Yakında</span></a>
+<a class="card" href="/projects"><span class="icon">▤</span><h2>Projeler</h2><p>Çalışmalarınızı bir arada görün.</p><span class="badge">Yakında</span></a>
+<a class="card" href="/settings"><span class="icon">⚙</span><h2>Ayarlar</h2><p>Çalışma tercihlerinizi yönetin.</p><span class="badge">Yakında</span></a>
+<a class="card" href="/diagnostics"><span class="icon">✓</span><h2>Tanılama</h2><p>Uygulamanın durumunu kontrol edin.</p><span class="badge ready">Kullanıma hazır</span></a>
+</div><p class="note">Dosyalarınız bilgisayarınızda kalır. Bu sürüm video üretmez ve dış hizmetlere bağlanmaz.</p>
+</section>
+<section id="detail" hidden><a class="back" href="/">← Ana sayfaya dön</a><h1 id="page-title"></h1><p id="page-description"></p>
+<div id="diagnostic-content" hidden><p id="diagnostic-status" role="status" aria-live="polite">Kontroller yapılıyor…</p><dl id="results"></dl><button id="refresh" type="button">Tekrar kontrol et</button></div>
+</section>
+</main><footer>AI Video Studio · İlk adım: sağlam bir başlangıç.</footer>
+</body></html>

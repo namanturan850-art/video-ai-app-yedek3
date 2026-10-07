@@ -27,3 +27,16 @@ downloads/
 Thumbs.db
 .vscode/
 .idea/
+
+# SQLite sidecars and local configuration
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.log
+secrets/
+local_settings.json
+.coverage
+htmlcov/

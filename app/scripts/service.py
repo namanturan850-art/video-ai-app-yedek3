@@ -238,7 +238,7 @@ class ScriptService:
         if correction.get('attempted'):
             return correction.get('final_text', text) if correction.get('applied') else text
         metrics = duration_metrics(text, project['target_duration_minutes'], options)
-        if metrics['word_count'] >= metrics['target_word_min'] * .85: return text
+        if metrics['word_count'] >= metrics['target_word_min']: return text
         correction = {'attempted': True, 'applied': False, 'status': 'started', 'before_word_count': metrics['word_count']}
         progress['duration_correction'] = correction
         save('checking', 'duration_correction', 83)  # Persist BEFORE the sole API attempt.

@@ -196,6 +196,43 @@ def test_385_words_in_375_435_range_has_no_duration_warning_or_extra_call(studio
     assert not any(task=='expand_duration' for task,_,_ in fake.calls)
 
 
+@pytest.mark.parametrize('expanded,estimated_minutes',[(400,2.96),(360,2.67)])
+def test_340_words_always_expand_once_toward_midpoint_and_measure_final(studio,expanded,estimated_minutes):
+    client,project,_,data=studio
+    fake=short_ollama(studio,initial=340,expanded=expanded)
+    view=run(studio,{'provider':'ollama'});current=view['current']
+    expansions=[(inputs,prompt) for task,inputs,prompt in fake.calls if task=='expand_duration']
+    assert len(expansions)==1
+    inputs,prompt=expansions[0]
+    assert inputs['target_words']==405 and inputs['target_word_min']==375 and inputs['target_word_max']==435
+    assert inputs['topic']=='Technikvergleich' and inputs['blueprint']['content_type']==current['content_type']
+    assert inputs['source_text']==words(340) and inputs['language']=='de'
+    for instruction in ('facts','section structure','tone','target language','useful content','content type','filler','repeat paragraphs'):
+        assert instruction in prompt
+    assert current['text']==words(expanded)
+    assert current['word_count']==current['report']['word_count']==word_count(current['text'])==expanded
+    assert current['estimated_minutes']==current['report']['estimated_minutes']==estimated_minutes
+    for messages in (current['report']['issues'],current['report']['review_messages']):
+        assert (SHORT_WARNING in messages)==(expanded<375)
+    assert current['report']['target_word_min']==375 and current['report']['target_word_max']==435
+    assert view['job']['progress']['duration_correction']['attempted'] is True
+    assert view['job']['progress']['duration_correction']['applied'] is True
+    with closing(sqlite3.connect(data/'app.db')) as db:
+        row=db.execute('SELECT text,word_count,estimated_minutes,report_json FROM script_versions WHERE id=?',(current['id'],)).fetchone()
+    assert row[0]==current['text'] and row[1]==expanded and row[2]==estimated_minutes
+    assert json.loads(row[3])==current['report']
+    assert (data/'projects'/project['id']/'script'/'script_v1.txt').read_text()==current['text']
+
+
+@pytest.mark.parametrize('initial,expected_calls',[(374,1),(375,0),(435,0),(436,0)])
+def test_duration_expansion_uses_exact_minimum_boundary(studio,initial,expected_calls):
+    fake=short_ollama(studio,initial=initial,expanded=405)
+    current=run(studio,{'provider':'ollama'})['current']
+    assert sum(task=='expand_duration' for task,_,_ in fake.calls)==expected_calls
+    assert current['word_count']==(405 if expected_calls else initial)
+    assert SHORT_WARNING not in current['report']['issues']
+
+
 @pytest.mark.parametrize('result',[184,ScriptProviderError(KEY+' private error',category='generation_timeout'),RuntimeError(KEY+PRIVATE),words(150)+'\n\n'+words(150)])
 def test_correction_failure_or_repetition_keeps_script_and_warns_once(studio,result,caplog):
     fake=short_ollama(studio,expanded=result);caplog.set_level('INFO')
@@ -206,14 +243,16 @@ def test_correction_failure_or_repetition_keeps_script_and_warns_once(studio,res
     assert KEY not in caplog.text and PRIVATE not in caplog.text
 
 
-def test_resume_after_corrected_script_does_not_expand_again(studio):
-    client,project,_,_=studio;fake=short_ollama(studio,fail_review=True)
+@pytest.mark.parametrize('initial,expanded',[(184,385),(340,360)])
+def test_resume_after_corrected_script_does_not_expand_again(studio,initial,expanded):
+    client,project,_,_=studio;fake=short_ollama(studio,initial=initial,expanded=expanded,fail_review=True)
     view=run(studio,{'provider':'ollama'})
-    assert view['job']['status']=='error' and word_count(view['job']['partial_text'])==385
+    assert view['job']['status']=='error' and word_count(view['job']['partial_text'])==expanded
     response=client.post(f'/api/projects/{project["id"]}/script/jobs/{view["job"]["id"]}/resume',json={'confirm_replace_approved':False})
     assert response.status_code==202;client.app.state.scripts.futures[view['job']['id']].result(timeout=5)
     current=client.get(f'/api/projects/{project["id"]}/script').json()['current']
-    assert current['word_count']==385 and sum(task=='expand_duration' for task,_,_ in fake.calls)==1
+    assert current['word_count']==expanded and sum(task=='expand_duration' for task,_,_ in fake.calls)==1
+    assert (SHORT_WARNING in current['report']['issues'])==(expanded<375)
 
 
 def test_real_ollama_adapter_keeps_reasoning_and_raw_review_out_of_all_storage(studio,caplog):

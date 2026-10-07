@@ -1,5 +1,15 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — Minimum kelime hedefinin altındaki Ollama metinlerini düzeltme
+
+- Sahibin gerçek Windows testi: Gemini/Ollama'nın beş tanılama testi, normal Ollama üretimi ve kısa Türkçe review sonuçları başarılı. Bu geçiş yalnızca kalan hedef süre davranışını düzeltir; sağlayıcı entegrasyonları değişmedi.
+- Neden: süre düzeltmesi yalnız minimum kelime hedefinin %85'inden kısa metinde çalışıyordu. 340 kelime, 375 hedefinin altında olmasına rağmen bu koşulu geçiyordu. Artık minimum hedefin altında kalan her Ollama özgün senaryosunda bir deneme çalışır; 375 ve üzerindeyse çalışmaz.
+- Uzatma isteğinde aralığın ortası açık sayısal hedeftir: 375–435 için **405 kelime**. Konu/bilgiler/yapı/ton/dil/içerik türü ve yararlı mevcut içeriği koruma, dolgu/tekrar/yeni bilgi uydurmama talimatları korunur/güçlendirilir. Mevcut tek deneme checkpoint'i devam/yeniden açılışta ikinci uzatmayı engeller.
+- Son metin üzerinden aynı kayıt/rapor/süre/uyarı hesabı kullanılır: **340 → 400 / 2,96 dakika: kısa uyarısı yok; 340 → 360 / 2,67 dakika: kısa uyarısı var; 385: uzatma/uyarı yok.** Bu regresyonlar taklit üretimle doğrulandı. Minimuma bir kelime eksik (374), tam minimum (375), maksimum (435) ve maksimum üstü (436) sınırları da test edildi. 360 kelimelik sonuçtan devam ikinci deneme yapmaz.
+- **Tam paket: 494 test; 492 geçti, 0 başarısız, 2 gerçek Windows/DPAPI testi Linux nedeniyle atlandı.** Yedi ek regresyon; önceki tüm testler ve pytest içindeki 34 JavaScript kontrolü geçti.
+- Değişen uygulama kodu yalnız `app/scripts/service.py` ve `app/scripts/engine.py`; regresyonlar `tests/test_windows_live_fixes.py`, rehber `docs/SCRIPT_ENGINE.md`. Yeni özellik/aşama yok. Proje, senaryo, şifreli ayar, veritabanı ve Windows başlatıcısı korunur.
+- Windows yeniden denemesi: güncel uygulamada **START_AI_VIDEO_STUDIO.bat → 3 dakikalık Ollama projesi → Senaryoyu Aç → Yeniden Oluştur**. Hedef 375–435; minimum altındaki metinde tek süre düzeltmesi, final sonuç aralıktaysa kısa uyarısı olmamalı.
+
 ## 2026-10-07 — Windows Gemini/Ollama üretim ve süre regresyonlarının düzeltmesi
 
 - Aynı **provider-live-diagnostics** dalında devam edildi; yeni yol haritası aşaması/üretim özelliği yok. Mevcut projeler, senaryo sürümleri, SQLite şeması, şifreli kasa, Gemini/Ollama yapılandırmaları ve Windows başlatıcıları değiştirilmedi/sıfırlanmadı.

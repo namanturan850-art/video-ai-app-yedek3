@@ -219,7 +219,7 @@ class SettingsService:
                         status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result["youtube"] = {"status": "Daha sonra", "message": "YouTube bağlantısı bu aşamada kullanılamaz."}
@@ -304,6 +304,22 @@ class SettingsService:
     def secret_values(self) -> tuple[str, ...]:
         with self.store.lock:
             return stored_secrets(self._values())
+
+    def stock_config(self, provider):
+        if provider not in ('pexels','pixabay'):
+            raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
+        with self.store.lock:
+            return dict(self._values()[provider])
+
+    def record_stock_test(self, provider, tested, outcome):
+        with self.store.lock:
+            values = self._values()
+            if values[provider].get('api_key','') != tested.get('api_key',''):
+                raise SettingsInputError('Anahtar test sırasında değişti. Yeniden test edin.')
+            from app.scripts.engine import SecretGuard
+            values[provider]['last_test'] = SecretGuard(stored_secrets(values)).clean(outcome)
+            self.store.write(values)
+        return self.safe_view()
 
     def record_gemini_models(self, tested: dict, models: list[str]) -> dict:
         with self.store.lock:

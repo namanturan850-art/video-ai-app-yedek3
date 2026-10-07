@@ -8,3 +8,15 @@
 .ai-test-row{border-top:1px solid #d5e2dc;margin-top:24px;padding-top:16px}.ai-test-row p{overflow-wrap:anywhere;line-height:1.7}.ai-test-row .provider-status{font-weight:600}.ai-test-row button{margin:8px 0}
 
 #production-provider,#production-versions,.scene-editor input,.scene-editor textarea,.scene-editor select,#production-music input:not([type=checkbox]){display:block;width:100%;min-width:0;max-width:100%;font:inherit;padding:12px;border:1px solid #9cb2a8;border-radius:8px;background:white;color:#192c38}.scene-editor label,#production-music label{display:block;font-weight:600;margin:20px 0 8px}.scene-editor textarea{min-height:100px}.scene-editor button{margin:18px 12px 0 0}.scene-card{max-width:100%}.scene-card p,#production-summary,#production-warnings{overflow-wrap:anywhere;line-height:1.7}.scene-narration{white-space:pre-wrap;background:#f4f7f6;padding:18px;border-radius:10px}.scene-editor{border-top:1px solid #d5e2dc;margin-top:24px}.scene-editor input:focus-visible,.scene-editor select:focus-visible,#production-versions:focus-visible{outline:3px solid #22765d;outline-offset:2px}
+
+/* Project-local stock media review. */
+.stock-controls {margin-block:1.5rem}
+.stock-scene {border-top:2px solid var(--border,#354054);margin-top:1.25rem;padding-top:.8rem}
+.stock-slot {border:1px solid var(--border,#354054);border-radius:.65rem;padding:1rem;margin-block:1rem;overflow-wrap:anywhere}
+.stock-thumbnail {width:min(100%,280px);height:158px;object-fit:contain;background:#17202c;border-radius:.4rem}
+.stock-preview {display:block;max-width:100%;width:640px;max-height:420px;margin-top:1rem}
+.stock-candidates {display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:1rem;margin-top:1rem}
+.stock-candidates h5 {grid-column:1/-1}
+.stock-candidate {border:1px solid var(--border,#354054);border-radius:.4rem;padding:.75rem;min-width:0}
+.stock-candidate img {width:100%}
+.stock-slot .settings-actions {flex-wrap:wrap}

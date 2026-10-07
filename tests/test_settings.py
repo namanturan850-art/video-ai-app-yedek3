@@ -172,7 +172,7 @@ def test_ffmpeg_test_success_and_failure(settings_client, monkeypatch):
     assert settings_client.post('/api/settings/ffmpeg/test').json()['result']['status'] == 'Hata'
 
 
-@pytest.mark.parametrize('section', ['pexels', 'pixabay', 'ai33'])
+@pytest.mark.parametrize('section', ['ai33'])
 def test_undocumented_providers_never_make_network_calls(settings_client, monkeypatch, section):
     def forbidden(*args, **kwargs):
         raise AssertionError('No provider network calls allowed')

@@ -31,6 +31,9 @@ from app.languages import LANGUAGES
 from app.production import ProductionService
 from app.providers.images import LocalGPUImageProvider, GeminiImageProvider, OpenAIImageProvider
 from app.provider_diagnostics import ProviderDiagnostics, DiagnosticInputError
+from app.stock.service import StockService
+from app.stock.routes import stock_router
+from app.stock.models import StockError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -66,11 +69,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         try:
             application.state.database = initialize_database(storage)
             scripts.recover()
+            stock.recover()
         except (OSError, sqlite3.Error) as error:
             raise RuntimeError("Veri klasörü açılamadı. Uygulamayı yazma izniniz olan bir klasöre taşıyıp yeniden açın.") from error
         try:
             yield
         finally:
+            stock.close()
             ai_diagnostics.close()
             scripts.close()
 
@@ -88,6 +93,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     production = ProductionService(scripts)
     quality.production = production
     application.state.production = production
+    stock = StockService(production,settings)
+    application.state.stock = stock
+    application.include_router(stock_router(stock))
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -103,6 +111,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
             script_route = any(part in request.url.path for part in ('/script', '/production')) and request.url.path.startswith('/api/projects/')
+            stock_route = '/production/stock' in request.url.path
             settings_route = request.url.path.startswith('/api/settings')
             started = time.monotonic()
             try:
@@ -111,6 +120,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 if not settings_route and not script_route:
                     raise
                 if script_route:
+                    if stock_route:
+                        return JSONResponse(status_code=500, content={'message':'Medya işlemi tamamlanamadı. Tamamlanan dosyalar korundu; yenileyip tekrar deneyin.',
+                                                                     'category':'unexpected_backend'}, headers={'Cache-Control':'no-store'})
                     return JSONResponse(status_code=500, content={'message': 'Senaryo işlemi tamamlanamadı. Sayfayı yeniden açıp tekrar deneyin.'}, headers={'Cache-Control': 'no-store'})
                 if not gemini:
                     return JSONResponse(status_code=500, content={'message': 'Ayarlar işlenirken beklenmeyen hata oluştu. Tekrar deneyin; mevcut dosyaları silmeyin.', 'category': 'unexpected_backend'}, headers={'Cache-Control': 'no-store'})
@@ -170,6 +182,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.exception_handler(ScriptError)
     async def script_error(request: Request, error: ScriptError):
         return JSONResponse(status_code=error.status_code, content={'message': str(error)})
+
+    @application.exception_handler(StockError)
+    async def stock_error(request: Request, error: StockError):
+        return JSONResponse(status_code=error.status_code, content={'message': str(error),'category':error.category})
 
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):
@@ -356,7 +372,24 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             except (OSError, subprocess.SubprocessError):
                 outcome = {"status": "Hata", "message": "FFmpeg çalıştırılamadı veya bulunamadı. Ayarlar ekranını yine kullanabilirsiniz."}
             return {"result": outcome, "settings": settings.safe_view()}
-        if section in ("pexels", "pixabay", "ai33"):
+        if section in ('pexels','pixabay'):
+            from app.stock.providers import make_stock_provider
+            from datetime import datetime, timedelta, timezone
+            config = settings.stock_config(section)
+            cached = config.get('last_test',{})
+            if section=='pixabay' and cached.get('status')=='Hazır' and cached.get('checked_at'):
+                try:
+                    if datetime.fromisoformat(cached['checked_at']) > datetime.now(timezone.utc)-timedelta(hours=24):
+                        return {'result':{'status':'Hazır','category':'none','message':'Pixabay: son 24 saat içindeki başarılı test kullanıldı (API önbellek kuralı).'},'settings':settings.safe_view()}
+                except (ValueError,TypeError): pass
+            try:
+                make_stock_provider(section,settings).search_images('nature landscape')
+                outcome = {'status':'Hazır','message':section.title()+' API bağlantısı başarılı. Medya araması kullanılabilir.','category':'none',
+                           'checked_at':datetime.now(timezone.utc).isoformat()}
+            except StockError as error:
+                outcome = {'status':'Hata','message':str(error),'category':error.category}
+            return {'result':outcome,'settings':settings.record_stock_test(section,config,outcome)}
+        if section == "ai33":
             prefix = "AI33 " if section == "ai33" else ""
             return {"result": {"status": "API belgeleri gerekli", "message": prefix + "API belgeleri gerekli. Bu aşamada gerçek bağlantı testi kapalıdır."}, "settings": settings.safe_view()}
         raise SettingsInputError("Bu bağlantı testi kullanılamıyor.")

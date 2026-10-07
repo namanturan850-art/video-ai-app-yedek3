@@ -269,6 +269,8 @@ class ProjectService:
                 self._row(connection, project_id)
                 if connection.execute("SELECT 1 FROM script_jobs WHERE project_id=? AND status IN ('queued','analyzing','planning','generating','checking')", (project_id,)).fetchone():
                     raise ProjectError('Senaryo üretimi sürerken proje silinemez. İşlemin bitmesini bekleyin.', 409)
+                if connection.execute("SELECT 1 FROM stock_jobs WHERE project_id=? AND status IN ('queued','running')",(project_id,)).fetchone():
+                    raise ProjectError('Medya indirme sürerken proje silinemez. İşlemin bitmesini bekleyin.',409)
                 path = self._path(project_id)
                 if path.exists():
                     self._check_tree(path)

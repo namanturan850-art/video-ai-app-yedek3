@@ -40,3 +40,7 @@ secrets/
 local_settings.json
 .coverage
 htmlcov/
+
+# Encrypted settings vault, local encryption keys and temporary writes
+data/secrets/
+*.enc

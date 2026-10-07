@@ -1,7 +1,7 @@
 const pages = {
   '/new-project': ['Yeni Proje', 'Proje oluşturma sonraki aşamada eklenecek. Şimdilik ana sayfaya dönebilir veya Tanılama ekranını kullanabilirsiniz.'],
   '/projects': ['Projeler', 'Proje listesi sonraki aşamada eklenecek. Henüz proje oluşturulmadı.'],
-  '/settings': ['Ayarlar', 'Ayarlar sonraki aşamada eklenecek. Bu sürüm için API anahtarı girmeniz gerekmez.'],
+  '/settings': ['Ayarlar', 'Kullanmak istediğiniz hizmetlerin bilgilerini buradan kaydedin. İstemediğiniz bölümleri boş bırakabilirsiniz.'],
   '/diagnostics': ['Tanılama', 'Bilgisayarınızın ve uygulamanın durumunu buradan kontrol edebilirsiniz.']
 };
 const path = window.location.pathname;

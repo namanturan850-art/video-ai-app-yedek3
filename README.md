@@ -2,7 +2,7 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
-**Şu anda yalnızca Aşama 1 hazır:** ana sayfa, otomatik veritabanı ve Tanılama ekranı. Henüz proje veya video oluşturmaz. Yeni Proje, Projeler ve Ayarlar ekranları gelecek özellikleri açıklayan yer tutuculardır. API anahtarı gerekmez.
+**Aşama 1 ve Aşama 2 hazır:** ana sayfa, otomatik veritabanı, Tanılama ve güvenli yerel Ayarlar. Yeni Proje ve Projeler henüz yer tutucudur; video oluşturulmaz. Hiçbir API anahtarı zorunlu değildir.
 
 ## Windows'ta nasıl açılır?
 
@@ -25,9 +25,18 @@ Uygulamayı kapatmak için siyah pencereyi kapatın veya pencerenin içinde **Ct
 
 Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri klasörü ve FFmpeg durumunu gösterir. Gizli anahtarları göstermez.
 
+## Ayarları Windows'ta deneme
+
+1. Uygulamayı açıp **Ayarlar** kartına tıklayın.
+2. **Genel** bölümünde bir dil seçip **Kaydet** deyin. Sayfayı yeniden açıp seçimin korunduğunu görün.
+3. Pexels bölümünde yalnızca deneme için `deneme-anahtari-1234` yazıp **Kaydet** deyin. Alan boşalır, maskede yalnızca `1234` görünür. Uygulamayı kapatıp yeniden açın; maskeli kayıt korunmalıdır. Bu deneme anahtarı gerçek bir hizmet anahtarı değildir.
+4. İsterseniz **Temizle** ile o bölümdeki bilgileri silin. Diğer bölümler değişmez.
+
+Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. FFmpeg otomatik algılanır. **AI33 API belgeleri gerekli** mesajı beklenen durumdur; AI33 testi kapalıdır. Pexels, Pixabay ve OpenAI testleri de bu aşamada açıklamalı yer tutucudur. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
+
 ## Yerel dosyalar
 
-Veritabanı otomatik olarak `data/app.db` dosyasında oluşur. Python bileşenleri `.venv` klasöründe, başlatma kayıtları `logs` klasöründe tutulur. Bu dosyalar ve gizli ayarlar Git'e dahil edilmez. `.env.example` gelecekteki isteğe bağlı bağlantılar içindir; bu sürümde doldurmayın.
+Veritabanı otomatik olarak `data/app.db` dosyasında oluşur. Python bileşenleri `.venv` klasöründe, başlatma kayıtları `logs` klasöründe tutulur. Bu dosyalar ve gizli ayarlar Git'e dahil edilmez. Anahtarlar **Ayarlar** ekranından girilir; `.env` veya kod düzenlemeyin. Şifreli yerel ayarlar `data/secrets` klasöründedir. Bu klasör Git’e dahil edilmez; paylaşmayın. Windows’ta şifreleme anahtarı kullanıcı hesabıyla korunur.
 
 ## Geliştiriciler için
 

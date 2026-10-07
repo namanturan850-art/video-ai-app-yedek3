@@ -366,7 +366,7 @@ def test_legacy_upgrade_preserves_data_and_encrypted_settings(tmp_path):
     initialize_database(storage)
     initialize_database(storage)
     with closing(sqlite3.connect(database)) as connection:
-        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone() == ('4',)
+        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone() == ('5',)
         assert connection.execute("SELECT value FROM app_metadata WHERE key='keep'").fetchone() == ('existing',)
         assert connection.execute('SELECT value FROM legacy_user_data').fetchone() == ('do not lose',)
     assert before_key == store.key_path.read_bytes()

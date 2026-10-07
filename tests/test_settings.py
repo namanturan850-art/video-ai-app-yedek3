@@ -61,7 +61,7 @@ def test_general_and_optional_provider_fields(settings_client):
     data = settings_client.put('/api/settings/openai', json={'enabled': True, 'model': 'user-model', 'api_key': SECRET}).json()
     assert data['openai']['enabled'] is True
     assert data['openai']['status'] == 'Hazır'
-    assert data['openai']['connection_test_available'] is False
+    assert data['openai']['connection_test_available'] is True
     data = settings_client.put('/api/settings/ai33', json={'base_url': 'https://example.com', 'voice_id': 'supplied-voice', 'model': 'supplied-model', 'api_key': SECRET}).json()
     assert data['ai33']['voice_id'] == 'supplied-voice'
     assert data['ai33']['status'] == 'API belgeleri gerekli'
@@ -172,7 +172,7 @@ def test_ffmpeg_test_success_and_failure(settings_client, monkeypatch):
     assert settings_client.post('/api/settings/ffmpeg/test').json()['result']['status'] == 'Hata'
 
 
-@pytest.mark.parametrize('section', ['openai', 'pexels', 'pixabay', 'ai33'])
+@pytest.mark.parametrize('section', ['pexels', 'pixabay', 'ai33'])
 def test_undocumented_providers_never_make_network_calls(settings_client, monkeypatch, section):
     def forbidden(*args, **kwargs):
         raise AssertionError('No provider network calls allowed')

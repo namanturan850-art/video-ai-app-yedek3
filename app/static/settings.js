@@ -8,7 +8,7 @@ if (window.location.pathname === '/settings') {
   const definitions = [
     {id: 'general', title: 'Genel', description: 'Varsayılan içerik dilini seçin. İçerik üretimi sonraki aşamalarda eklenecek.', fields: [{name: 'content_language', label: 'Varsayılan içerik dili', type: 'select'}]},
     {id: 'ollama', title: 'Ollama', description: 'İsteğe bağlı yerel senaryo hizmeti. Ollama kullanmayacaksanız model adını boş bırakın. Testten önce ayarları kaydedin.', fields: [{name: 'base_url', label: 'Yerel adres (Base URL)', type: 'url'}, {name: 'model', label: 'Bilgisayarınızda kurulu modelin adı', type: 'text'}], test: true},
-    {id: 'openai', title: 'OpenAI (isteğe bağlı)', description: 'İsteğe bağlı senaryo motoru. Anahtarınızı ve Chat Completions destekleyen modelin adını kaydedin. Senaryo ekranından kullanabilirsiniz.', fields: [{name: 'enabled', label: 'OpenAI kullanmak istiyorum', type: 'checkbox'}, {name: 'model', label: 'Model adı (isteğe bağlı)', type: 'text'}], secret: true, test: false},
+    {id: 'openai', title: 'OpenAI (isteğe bağlı)', description: 'Etkinleştir seçimini açın, anahtarınızı ve Chat Completions modelini Kaydet deyin. Bağlantı testi resmi API’den model erişimini kontrol eder; metin üretmez. Üretim kota/bakiye kontrolü ayrıca yapılır.', fields: [{name: 'enabled', label: 'Etkinleştir', type: 'checkbox'}, {name: 'model', label: 'Model adı', type: 'text'}], secret: true, test: true},
     {id: 'gemini', title: 'Gemini (isteğe bağlı)', description: 'Google Gemini Developer API anahtarınızı kaydedin. Gemini Plus / Google AI Pro web aboneliği API erişimi yerine geçmez. Kullanmak zorunda değilsiniz.', fields: [{name: 'model', label: 'Model (API listesinden seçin)', type: 'select'}], secret: true, test: true},
     {id: 'pexels', title: 'Pexels', description: 'Stok medya bağlantısı için API anahtarınızı kaydedebilirsiniz. Medya araması henüz eklenmedi.', fields: [], secret: true, test: false},
     {id: 'pixabay', title: 'Pixabay', description: 'Alternatif stok medya bağlantısı için API anahtarınızı kaydedebilirsiniz. Medya araması henüz eklenmedi.', fields: [], secret: true, test: false},
@@ -33,7 +33,7 @@ if (window.location.pathname === '/settings') {
     input.name = field.name;
     if (field.type !== 'select') input.type = field.type;
     if (field.type === 'select') {
-      for (const [value, title] of (provider === 'gemini' ? [['', 'Önce Modelleri Getir düğmesine basın']] : [['de', 'Almanca'], ['tr', 'Türkçe'], ['en', 'İngilizce']])) {
+      for (const [value, title] of (provider === 'gemini' ? [['', 'Önce Modelleri Getir düğmesine basın']] : [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']])) {
         const option = element('option', title);
         option.value = value;
         input.append(option);

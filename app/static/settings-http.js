@@ -1,6 +1,7 @@
 /* Request timing and failure classification shared by the Settings screen. */
 async function settingsRequest(url, method = 'GET', body) {
-  const gemini = /^\/api\/settings\/gemini\/(models|test)$/.test(url);
+  const gemini = /^\/api\/settings\/(gemini|images\/gemini)\/(models|test)$/.test(url);
+  const openai = ['/api/settings/openai/test', '/api/settings/images/openai/test'].includes(url);
   const timeoutMessage = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';
   const unexpectedMessage = 'Gemini ayarları işlenirken beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin.';
   function failure(message, category) {
@@ -16,11 +17,13 @@ async function settingsRequest(url, method = 'GET', body) {
       return failure('Uygulamaya ulaşılamadı. Uygulama penceresini kontrol edip yeniden açın.', 'local_unreachable');
     }
     if (gemini && timedOut(error)) return failure(timeoutMessage, 'gemini_timeout');
+    if (openai && timedOut(error)) return failure('OpenAI API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.', 'generation_timeout');
     if (gemini && globalThis.navigator?.onLine === false) return failure('Gemini API için internet bağlantısı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.', 'no_internet');
+    if (openai && globalThis.navigator?.onLine === false) return failure('OpenAI API için internet bağlantısı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.', 'no_internet');
     if (gemini) return failure(unexpectedMessage, 'unexpected_backend');
     return failure('Yerel uygulama çalışıyor ancak işlem tamamlanamadı. Bir süre bekleyip tekrar deneyin.', 'local_request_failed');
   }
-  const options = {method, cache: 'no-store', signal: AbortSignal.timeout(gemini ? 60000 : 20000), headers: {'X-AI-Video-Studio': 'settings'}};
+  const options = {method, cache: 'no-store', signal: AbortSignal.timeout(gemini || openai ? 60000 : 20000), headers: {'X-AI-Video-Studio': 'settings'}};
   if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
   let response;
   try { response = await fetch(url, options); }
@@ -33,6 +36,24 @@ async function settingsRequest(url, method = 'GET', body) {
   }
   if (!result || typeof result !== 'object') throw failure(unexpectedMessage, 'unexpected_backend');
   if (!response.ok) {
+    if (openai) {
+      const messages = {
+        provider_disabled:'OpenAI kapalı. Ayarlar → OpenAI bölümünde Etkinleştir seçimini açıp Kaydet deyin.',
+        missing_key:'OpenAI API anahtarı yapılandırılmamış. Ayarlar bölümünden kaydedin.',
+        missing_model:'OpenAI modelini Ayarlar bölümünde kontrol edin.',
+        key_rejected:'OpenAI API anahtarı veya erişim izni kabul edilmedi.',
+        invalid_model:'OpenAI modeli veya desteklediği API isteği geçersiz.',
+        model_unavailable:'Seçilen OpenAI modeli kullanılamıyor.',
+        billing_quota:'OpenAI faturalandırma veya kota sınırına ulaşıldı. API hesabınızın bakiye ve limitlerini kontrol edin.',
+        rate_limit:'OpenAI istek hız sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+        quota_limit:'OpenAI kullanım sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+        generation_timeout:'OpenAI API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.',
+        no_internet:'OpenAI API için internet bağlantısı kurulamadı.',
+        upstream_error:'OpenAI API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.',
+        invalid_response:'OpenAI API yanıtı okunamadı. Tekrar deneyin.'};
+      const known=Object.hasOwn(messages,result.category);
+      throw failure(known?messages[result.category]:'OpenAI bağlantısı işlenirken beklenmeyen hata oluştu. Tekrar deneyin; mevcut dosyaları silmeyin.',known?result.category:'unexpected_backend');
+    }
     if (gemini) {
       // Do not display arbitrary proxy/server error bodies, even if valid JSON.
       const messages = {

@@ -14,11 +14,12 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from app.providers.factory import SCRIPT_ENGINE_LABELS
+from app.languages import LANGUAGES, validate_language
 
 FOLDERS = ('script', 'scenes', 'stock', 'voice', 'subtitles', 'music', 'render', 'logs')
 STAGES = ('Konsept', 'Senaryo', 'Sahne Planı', 'Stok Medya', 'Seslendirme', 'Altyazı', 'Render', 'Metadata', 'Export')
 STATUS_LABELS = {'draft': 'Taslak', 'ready': 'Hazır', 'processing': 'İşleniyor', 'completed': 'Tamamlandı', 'error': 'Hata'}
-LANGUAGE_LABELS = {'de': 'Almanca', 'tr': 'Türkçe', 'en': 'İngilizce'}
+LANGUAGE_LABELS = LANGUAGES
 
 
 class ProjectError(Exception):
@@ -33,7 +34,8 @@ class NewProject(BaseModel):
     name: str = Field(max_length=120)
     topic: str = Field(max_length=5000)
     reference_url: str = Field(default='', max_length=2000)
-    language: Literal['de', 'tr', 'en'] = 'de'
+    language: str = 'de'
+    _language = field_validator('language')(validate_language)
     script_engine: Literal['ollama', 'openai', 'gemini'] = 'ollama'
     target_duration_minutes: float = Field(default=5, ge=1, le=180)
     content_style: str = Field(default='Otomatik', max_length=120)

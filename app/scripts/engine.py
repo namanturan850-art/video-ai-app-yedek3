@@ -173,9 +173,9 @@ class YouTubeScriptEngine:
             raise ScriptError('Son kontrol sonucu okunamadı. Devam Et ile kontrolü yeniden deneyin.')
         return {'consistent': result['consistent'], 'issues': result['issues'][:30]}
 
-    def translate(self, text, previous, last):
+    def translate(self, text, previous, last, language='de'):
         return self.ask('translate_owned', {'explicit_user_ownership_confirmed': True, 'source_segment': text,
-                                          'previous_translation_context': previous, 'last_segment': last},
-            'Translate this confirmed USER-OWNED segment directly into natural TTS-friendly German. '
+                                          'previous_translation_context': previous, 'last_segment': last, 'language': language},
+            'Translate this confirmed USER-OWNED segment directly into the requested target language, naturally and TTS-friendly. '
             'Preserve meaning, important details and approximate length; do not create a new story or '
             'add/remove claims. Maintain terminology across segments. Return translated narration only.')

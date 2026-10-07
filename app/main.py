@@ -26,6 +26,10 @@ from app.providers.base import ScriptProviderError
 from app.providers.factory import make_script_provider
 from app.scripts.service import ScriptService
 from app.scripts.models import ScriptError
+from app.scripts.quality import QualityService
+from app.languages import LANGUAGES
+from app.production import ProductionService
+from app.providers.images import LocalGPUImageProvider, GeminiImageProvider, OpenAIImageProvider
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -71,6 +75,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application.state.projects = projects
     scripts = ScriptService(projects, settings)
     application.state.scripts = scripts
+    quality = QualityService(scripts)
+    application.state.quality = quality
+    production = ProductionService(scripts)
+    quality.production = production
+    application.state.production = production
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -85,15 +94,18 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
-            script_route = '/script' in request.url.path and request.url.path.startswith('/api/projects/')
+            script_route = any(part in request.url.path for part in ('/script', '/production')) and request.url.path.startswith('/api/projects/')
+            settings_route = request.url.path.startswith('/api/settings')
             started = time.monotonic()
             try:
                 response = await call_next(request)
             except Exception:
-                if not gemini and not script_route:
+                if not settings_route and not script_route:
                     raise
                 if script_route:
                     return JSONResponse(status_code=500, content={'message': 'Senaryo işlemi tamamlanamadı. Sayfayı yeniden açıp tekrar deneyin.'}, headers={'Cache-Control': 'no-store'})
+                if not gemini:
+                    return JSONResponse(status_code=500, content={'message': 'Ayarlar işlenirken beklenmeyen hata oluştu. Tekrar deneyin; mevcut dosyaları silmeyin.', 'category': 'unexpected_backend'}, headers={'Cache-Control': 'no-store'})
                 # Catch inside the middleware, before Starlette's outer server-error
                 # handler can re-raise and reset the connection. Never log the exception.
                 request.state.gemini_category = 'unexpected_backend'
@@ -129,6 +141,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     async def settings_storage_error(request: Request, error: SettingsStorageError):
         request.state.gemini_category = 'local_storage'
         content = {'message': str(error)}
+        content['storage_category'] = error.category
         if request.url.path.startswith('/api/settings/gemini'):
             content['category'] = 'local_storage'
         return JSONResponse(status_code=503, content=content)
@@ -148,7 +161,38 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):
-        return scripts.repository.view(project_id)
+        return {**scripts.repository.view(project_id), 'artifacts': quality.results(project_id)}
+
+    @application.get('/api/languages')
+    def languages():
+        return LANGUAGES
+
+    @application.post('/api/projects/{project_id}/script/tools/{kind}', status_code=202)
+    def script_tool(project_id: str, kind: str, payload: dict):
+        return quality.start(project_id, kind, payload)
+
+    @application.post('/api/projects/{project_id}/script/tools/{artifact_id}/apply', status_code=202)
+    def apply_script_tool(project_id: str, artifact_id: str, payload: dict):
+        return quality.apply(project_id, artifact_id, payload)
+
+    @application.post('/api/projects/{project_id}/script/tools/{artifact_id}/select')
+    def choose_script_tool(project_id: str, artifact_id: str, payload: dict):
+        return quality.choose(project_id, artifact_id, payload)
+
+    @application.get('/api/projects/{project_id}/production')
+    def get_production(project_id: str): return production.view(project_id)
+
+    @application.post('/api/projects/{project_id}/production/plan', status_code=202)
+    def plan_production(project_id: str, payload: dict): return quality.start(project_id, 'visual', payload)
+
+    @application.put('/api/projects/{project_id}/production')
+    def production_preferences(project_id: str, payload: dict): return production.update(project_id, payload)
+
+    @application.put('/api/projects/{project_id}/production/blocks/{block_id}/media')
+    def production_media(project_id: str, block_id: str, payload: dict): return production.attach_media(project_id, block_id, payload)
+
+    @application.put('/api/projects/{project_id}/production/timing')
+    def production_timing(project_id: str, payload: dict): return production.attach_timing(project_id, payload)
 
     @application.post('/api/projects/{project_id}/script/analyze', status_code=202)
     def analyze_script(project_id: str, payload: dict):
@@ -162,6 +206,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def resume_script(project_id: str, job_id: str, payload: dict):
         if set(payload) != {'confirm_replace_approved'} or type(payload.get('confirm_replace_approved')) is not bool:
             raise ScriptError('Devam Et için açık onay tercihi gerekli.')
+        if scripts.repository.job(job_id)['action'] not in ('generate', 'analyze'):
+            return quality.resume(project_id, job_id, payload['confirm_replace_approved'])
         return scripts.resume(project_id, job_id, payload['confirm_replace_approved'])
 
     @application.post('/api/projects/{project_id}/script/versions', status_code=201)
@@ -202,6 +248,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             project['pipeline'][0].update(status='Hazır', message='Konsept analizi Senaryo ekranında görüntülenebilir.')
         if view['current'] or view['job']:
             project['pipeline'][1].update(status=view['status'], message='Senaryoyu açıp inceleyebilir, düzenleyebilir ve onaylayabilirsiniz.')
+        if production.view(project_id)['plan']:
+            project['pipeline'][2].update(status='Çalıştırma daha sonra', message='Görsel/kurgu önerileri ayrı plan ekranında hazır. Gerçek medya ve sahne çalıştırması henüz yok.')
         return project
 
     @application.patch("/api/projects/{project_id}")
@@ -227,6 +275,17 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.post("/api/settings/{section}/test")
     def test_connection(section: str, request: Request):
+        if section == 'images':
+            raise SettingsInputError('Görsel sağlayıcısını kendi bağlantı düğmesinden test edin.')
+        if section == 'openai':
+            config = settings.script_config('openai')
+            started = time.monotonic()
+            try:
+                outcome = make_script_provider('openai', settings).test_connection()
+            except ScriptProviderError as error:
+                outcome = {'status': 'Hata', 'message': str(error), 'category': error.category}
+            logging.getLogger('uvicorn.error.providers').info('provider=openai operation=test category=%s elapsed_ms=%.0f', outcome.get('category', 'success'), (time.monotonic() - started) * 1000)
+            return {'result': outcome, 'settings': settings.record_openai_test(config, outcome)}
         if section == "gemini":
             config = settings.gemini_config()
             try:
@@ -238,7 +297,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 outcome = {"status": "Hata", "message": str(error), 'category': error.category}
             request.state.gemini_category = outcome.get('category', 'none')
             view = settings.record_gemini_test(config, outcome, models)
-            return {"result": outcome, "models": models or [], "settings": view}
+            return {"result": outcome, "models": view['gemini']['models'] if models is not None else [], "settings": view}
         if section == "ollama":
             config = settings.ollama_config()
             outcome = check_ollama(config)
@@ -257,7 +316,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             except (OSError, subprocess.SubprocessError):
                 outcome = {"status": "Hata", "message": "FFmpeg çalıştırılamadı veya bulunamadı. Ayarlar ekranını yine kullanabilirsiniz."}
             return {"result": outcome, "settings": settings.safe_view()}
-        if section in ("openai", "pexels", "pixabay", "ai33"):
+        if section in ("pexels", "pixabay", "ai33"):
             prefix = "AI33 " if section == "ai33" else ""
             return {"result": {"status": "API belgeleri gerekli", "message": prefix + "API belgeleri gerekli. Bu aşamada gerçek bağlantı testi kapalıdır."}, "settings": settings.safe_view()}
         raise SettingsInputError("Bu bağlantı testi kullanılamıyor.")
@@ -268,6 +327,31 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         models = make_script_provider("gemini", settings, discovery=True).list_models()
         view = settings.record_gemini_models(config, models)
         return {"models": view['gemini']['models'], 'settings': view}
+
+    def image_provider(name):
+        config = settings.image_config()
+        if name == 'local': return LocalGPUImageProvider(config)
+        if name == 'gemini': return GeminiImageProvider(settings.gemini_config().get('api_key', ''), config['gemini_model'])
+        if name == 'openai': return OpenAIImageProvider(settings.script_config('openai').get('api_key', ''), config['openai_model'])
+        raise SettingsInputError('Geçerli görsel sağlayıcısını seçin.')
+
+    @application.post('/api/settings/images/{provider}/test')
+    def image_connection(provider: str):
+        started, category = time.monotonic(), 'success'
+        try:
+            return {'result': image_provider(provider).test_connection()}
+        except ScriptProviderError as error:
+            category = error.category
+            raise
+        finally:
+            name = provider if provider in ('local', 'gemini', 'openai') else 'unknown'
+            logging.getLogger('uvicorn.error.providers').info('provider=%s operation=image_test category=%s elapsed_ms=%.0f', name, category, (time.monotonic() - started) * 1000)
+
+    @application.post('/api/settings/images/{provider}/models')
+    def image_models(provider: str):
+        tested = settings.gemini_config() if provider == 'gemini' else settings.image_config()
+        models = image_provider(provider).models() if provider in ('gemini', 'local') else []
+        return {'images': settings.record_image_models(provider, models, tested)}
 
     @application.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException):
@@ -304,6 +388,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get("/projects")
     @application.get("/projects/{project_id}")
     @application.get("/projects/{project_id}/script")
+    @application.get('/projects/{project_id}/production')
     @application.get("/settings")
     @application.get("/diagnostics")
     def page():

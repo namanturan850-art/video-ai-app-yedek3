@@ -104,7 +104,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     field(form, 'topic', 'Konu', 'textarea', '', {maxLength: 5000, required: true});
     field(form, 'reference_url', "Referans YouTube URL’si (isteğe bağlı)", 'url', '', {maxLength: 2000});
     form.append(make('p', 'Referans yalnızca kaydedilir. Video analiz edilmez, indirilmez veya kopyalanmaz.', 'note'));
-    field(form, 'language', 'Dil', 'select', 'de', {choices: [['de', 'Almanca'], ['tr', 'Türkçe'], ['en', 'İngilizce']]});
+    field(form, 'language', 'Hedef Dil', 'select', 'de', {choices: [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']]});
     field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', 'ollama', {choices: [['ollama', 'Ollama'], ['openai', 'OpenAI'], ['gemini', 'Gemini']]});
     field(form, 'target_duration_minutes', 'Hedef video süresi (dakika)', 'number', 5, {min: 1, max: 180});
     field(form, 'content_style', 'İçerik türü / stil', 'text', 'Otomatik', {maxLength: 120, required: true});
@@ -175,6 +175,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         ['Durum', project.status_label], ...timestamps(project)
       ]));
       const edit = make('details', '', 'settings-panel');
+      const planning = make('a', 'Görsel / Kurgu Planı ve Kalite Kontrolü', 'back'); planning.href = `/projects/${project.id}/production`; detail.append(planning);
       edit.append(make('summary', 'Proje bilgilerini düzenle'));
       const form = make('form'); form.id = 'edit-project-form'; form.noValidate = true;
       field(form, 'name', 'Proje adı', 'text', project.name, {maxLength: 120, required: true});

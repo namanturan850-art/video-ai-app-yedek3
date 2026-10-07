@@ -3,7 +3,7 @@ from contextlib import closing
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "4"
+SCHEMA_VERSION = "5"
 PROJECT_SCHEMA = """
 CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -46,6 +46,15 @@ def initialize_database(data_dir: Path) -> Path:
                 from app.scripts.schema import STATEMENTS
                 for statement in STATEMENTS:
                     connection.execute(statement)
+                version = '4'
+            if version == '4':
+                connection.execute('''CREATE TABLE script_artifacts (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    version_id TEXT NOT NULL REFERENCES script_versions(id) ON DELETE CASCADE,
+                    kind TEXT NOT NULL, language TEXT NOT NULL, result_json TEXT NOT NULL, created_at TEXT NOT NULL)''')
+                connection.execute('''CREATE TABLE project_production (
+                    project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+                    version_id TEXT NOT NULL, plan_json TEXT NOT NULL, updated_at TEXT NOT NULL)''')
                 connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))
             elif version != SCHEMA_VERSION:
                 raise sqlite3.DatabaseError("Bu veritabanı sürümü desteklenmiyor; mevcut dosyalar değiştirilmedi.")

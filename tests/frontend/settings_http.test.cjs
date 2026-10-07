@@ -150,3 +150,24 @@ test('normal local operation failure probes health and avoids a false app-down m
   });
   await assert.rejects(run.request('/api/settings/general', 'PUT', {}), error => error.category === 'local_request_failed' && !error.message.includes('Uygulamaya ulaşılamadı'));
 });
+
+for (const url of ['/api/settings/openai/test', '/api/settings/images/openai/test', '/api/settings/images/gemini/models']) {
+  test(`external settings operation ${url} allows 60 seconds`, async () => {
+    const run = harness(async () => response({status: 'ok'}));
+    await run.request(url, 'POST');
+    assert.deepEqual(run.timeouts, [60000]);
+  });
+}
+
+test('OpenAI timeout with healthy local server is not app unreachable', async () => {
+  const run = harness(async url => {
+    if (url === '/api/health') return response({status: 'ok'});
+    throw namedError('TimeoutError');
+  });
+  await assert.rejects(run.request('/api/settings/openai/test','POST'), error => error.category === 'generation_timeout' && !error.message.includes('Uygulamaya ulaşılamadı'));
+});
+
+test('OpenAI billing failure never reflects a raw secret-containing error body', async () => {
+  const run = harness(async () => response({category:'billing_quota',message:KEY},false));
+  await assert.rejects(run.request('/api/settings/openai/test','POST'), error => error.category === 'billing_quota' && !error.message.includes(KEY));
+});

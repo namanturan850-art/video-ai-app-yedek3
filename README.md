@@ -2,7 +2,9 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
-**Aşama 1–4 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler ve genel amaçlı YouTube senaryo motoru. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Video üretimi ve Aşama 5 henüz yoktur.
+**Aşama 1–4 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler ve genel amaçlı YouTube senaryo motoru. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Gerçek video üretimi henüz yoktur.
+
+**Kararlılık ve geliştirme paketi:** gerçek OpenAI erişim testi, güvenli kasa hata ayrımı, kota bekleme/devam, beş hedef dil, retention/hook/A-B/iddia araçları ve onaylı metinden görsel/kurgu planı eklendi. Görsel sağlayıcı ayarları ve kontrolleri çalışır; medya, gerçek görsel/TTS, müzik işleme, render ve yükleme sonraki çalıştırma için hazırlanmıştır. Ücretli görsel fallback varsayılan **KAPALI**. Tek basit [Windows kontrol listesi](docs/STABILITY_AND_ENHANCEMENTS.md) tüm paketi anlatır.
 
 ## Windows'ta nasıl açılır?
 
@@ -41,7 +43,7 @@ Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri k
 3. Pexels bölümünde yalnızca deneme için `deneme-anahtari-1234` yazıp **Kaydet** deyin. Alan boşalır, maskede yalnızca `1234` görünür. Uygulamayı kapatıp yeniden açın; maskeli kayıt korunmalıdır. Bu deneme anahtarı gerçek bir hizmet anahtarı değildir.
 4. İsterseniz **Temizle** ile o bölümdeki bilgileri silin. Diğer bölümler değişmez.
 
-Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. FFmpeg otomatik algılanır. **AI33 API belgeleri gerekli** mesajı beklenen durumdur; AI33 testi kapalıdır. Pexels/Pixabay testleri ve OpenAI'nin ayrı Ayarlar testi açıklamalı yer tutucudur; OpenAI senaryo üretimi kullanılabilir. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
+Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. OpenAI için **Etkinleştir → anahtar/model → Kaydet → Bağlantıyı Test Et** resmi model erişimini kontrol eder. Üretim bakiyesi/kotası ayrıca değerlendirilir. FFmpeg otomatik algılanır. **AI33 API belgeleri gerekli** mesajı beklenen durumdur; AI33 testi kapalıdır. Pexels/Pixabay testleri yer tutucudur. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
 
 ## Gemini'yi Windows'ta deneme
 
@@ -63,7 +65,7 @@ Eski modeliniz listede yoksa listeden yeni bir model seçip **Kaydet** deyin. Ge
 4. **Analiz Et**, ardından **Senaryo Oluştur** deyin. Siyah pencereyi açık bırakıp ilerlemeyi takip edin.
 5. Metni okuyun. Gerekirse **Düzenle → Kaydet**, sonra **Onayla** deyin. Her kayıt yeni sürümdür.
 
-Kesilirse bölümler korunur; sorunu giderip **Devam Et** deyin. Onaylı sürüm açık onayınız olmadan değiştirilmez. Kendi metniniz için ayrıca **Kendi Metnimi Almancaya Çevir** modu ve sahiplik onayı vardır. Referans URL'den video/transcript alınmaz. Ayrıntılı basit kullanım ve sınırlar: [Senaryo rehberi](docs/SCRIPT_ENGINE.md).
+Kesilirse bölümler korunur; kota durumunda bekleyip **Devam Et** deyin. Onaylı sürüm açık onayınız olmadan değiştirilmez. Kendi metniniz için ayrıca **Kendi Metnimi Seçili Dile Çevir** modu ve sahiplik onayı vardır. Almanca varsayılandır; İspanyolca, İngilizce, Fransızca ve Türkçe de seçilebilir. Referans URL'den video/transcript alınmaz. Bulut üretim/kalite/planlama işlemleri API kotası veya ücret kullanabilir; işlem başında onay gösterilir. Ayrıntılı basit kullanım ve sınırlar: [Senaryo rehberi](docs/SCRIPT_ENGINE.md).
 
 ## Yerel dosyalar
 
@@ -87,6 +89,6 @@ python -m venv .venv
 
 Başlatıcı, sunucuyu yalnızca `127.0.0.1` adresinde açar. `/api/health` başarılı olduktan sonra tarayıcı açılır. Tanılama verisi `/api/diagnostics` adresindedir. Testlerde geçici veritabanları kullanılır; gerçek HTTP başlangıç testi yerel, Git tarafından yok sayılan veritabanını da doğrular.
 
-Geliştirme makinesinde Node.js varsa pytest, Settings HTTP yardımcısının 19 zaman aşımı/hata sınıflandırma testini de çalıştırır. Node yoksa yalnızca bu ek kontrol atlanır; Windows başlatıcısı Node gerektirmez.
+Geliştirme makinesinde Node.js varsa pytest, Settings HTTP yardımcısının 24 zaman aşımı/hata sınıflandırma testini de çalıştırır. Node yoksa yalnızca bu ek kontrol atlanır; Windows başlatıcısı Node gerektirmez.
 
 Proje kuralları: [AGENTS.md](AGENTS.md). Kapsam: [ROADMAP.md](ROADMAP.md). Tamamlananlar: [docs/STATUS.md](docs/STATUS.md).

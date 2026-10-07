@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, f
 
 from app.secret_store import SettingsStore
 from app.providers.gemini import normalize_model, MODEL_UNAVAILABLE_MESSAGE
+from app.languages import validate_language
 
 
 class SettingsInputError(Exception):
@@ -18,7 +19,8 @@ class StrictModel(BaseModel):
 
 
 class GeneralSettings(StrictModel):
-    content_language: Literal["de", "tr", "en"] = "de"
+    content_language: str = 'de'
+    _language = field_validator('content_language')(validate_language)
 
 
 def web_url(value: str) -> str:
@@ -78,6 +80,21 @@ class OpenAISettings(KeySettings):
     enabled: bool = False
     model: str = Field(default="", max_length=150)
 
+    @field_validator('model')
+    @classmethod
+    def model_name(cls, value):
+        value = value.strip()
+        if any(char.isspace() or ord(char) < 32 for char in value):
+            raise ValueError('Model adını boşluksuz girin.')
+        return value
+
+    @field_validator('api_key')
+    @classmethod
+    def header_key(cls, value):
+        if value is not None and not value.get_secret_value().isascii():
+            raise ValueError('API anahtarını olduğu gibi girin.')
+        return value
+
 
 class GeminiSettings(KeySettings):
     model: str = Field(default="", max_length=157)
@@ -109,6 +126,11 @@ class AI33Settings(KeySettings):
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
           "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings}
 PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33")
+
+
+def stored_secrets(values):
+    return tuple(value.get('api_key') for value in values.values()
+                 if isinstance(value, dict) and isinstance(value.get('api_key'), str) and value['api_key'])
 
 
 def mask_secret(value: str) -> str:
@@ -162,21 +184,25 @@ class SettingsService:
     def safe_view(self) -> dict:
         with self.store.lock:
             values = self._values()
+            from app.scripts.engine import SecretGuard
+            secrets = stored_secrets(values)
+            guard = SecretGuard(secrets)
             result = {"general": {"content_language": values["general"]["content_language"]}}
             for name in PROVIDERS:
                 config = values[name]
                 public_fields = MODELS[name]().model_dump(exclude={"api_key"})
                 public = {key: config[key] for key in public_fields}
+                public = guard.clean(public)
                 key = config.get("api_key", "")
-                if name == "gemini" and key and key in public["model"]:
+                if name in ('gemini', 'openai') and any(secret in config['model'] for secret in secrets):
                     public["model"] = ""  # Never echo even a damaged vault's key-as-model value.
                 configured = bool(config["model"]) if name == "ollama" else bool(key)
                 if name == "gemini":
-                    public['models'] = self._gemini_models(config)
+                    public['models'] = [model for model in self._gemini_models(config) if not any(secret in model for secret in secrets)]
                     public['model_verified'] = bool(key and public['model'] in public['models'])
                     configured = public['model_verified']
                 if name == "openai":
-                    configured = configured and config["enabled"]
+                    configured = configured and config['enabled'] and bool(public['model'])
                 status = "Hazır" if configured else "Yapılandırılmadı"
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
                 if name == "ai33":
@@ -191,14 +217,19 @@ class SettingsService:
                         status, message = 'Hata', MODEL_UNAVAILABLE_MESSAGE
                     elif not test:
                         status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
+                message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini")))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result["youtube"] = {"status": "Daha sonra", "message": "YouTube bağlantısı bu aşamada kullanılamaz."}
+            result['images'] = self.image_view()
             return result
 
     def save(self, section: str, payload: dict) -> dict:
+        if section == 'images':
+            self.save_images(payload)
+            return self.safe_view()
         if section not in MODELS:
             raise SettingsInputError("Bu ayar bölümü kullanılamıyor.")
         try:
@@ -211,9 +242,16 @@ class SettingsService:
                 labels = {"api_key": "API anahtarı", "base_url": "Adres", "model": "Model",
                           "voice_id": "Ses kimliği", "enabled": "OpenAI seçimi", "content_language": "Dil"}
                 hints.append(labels.get(field, "Ayar alanı"))
-            raise SettingsInputError("Geçersiz bilgi: " + ", ".join(dict.fromkeys(hints)) + ". Adresi http:// veya https:// ile girin; anahtar en az 8 karakter olmalı ve boşluk içermemelidir.") from None
+            detail = 'API anahtarını eksiksiz, boşluksuz ve maskesiz girin (en az 8 karakter).' if 'API anahtarı' in hints else 'Model adını boşluksuz girin.' if 'Model' in hints else 'Adres http:// veya https:// ile başlamalı; anahtar veya parola içermemeli.' if 'Adres' in hints else 'Seçimi ekrandaki seçeneklerle yapın; yalnızca bu bölümün alanlarını kaydedin.'
+            raise SettingsInputError('Geçersiz bilgi: ' + ', '.join(dict.fromkeys(hints)) + '. ' + detail) from None
         with self.store.lock:
             values = self._values()
+            proposed_fields = model.model_dump(exclude={'api_key'})
+            secrets = list(self.secret_values())
+            if isinstance(model, KeySettings) and model.api_key:
+                secrets.append(model.api_key.get_secret_value())
+            if any(secret in str(value) for value in proposed_fields.values() for secret in secrets):
+                raise SettingsInputError('API anahtarını yalnızca anahtar alanına girin; diğer alanları düzeltin.')
             if section == "gemini":
                 secret = model.api_key.get_secret_value() if model.api_key is not None else values[section].get("api_key", "")
                 proposed_model = model.model if "model" in model.model_fields_set else values[section]["model"]
@@ -235,6 +273,10 @@ class SettingsService:
             return self.safe_view()
 
     def clear(self, section: str) -> dict:
+        if section == 'images':
+            with self.store.lock:
+                values = self._values(); values.pop('images', None); self.store.write(values)
+            return self.safe_view()
         if section not in MODELS:
             raise SettingsInputError("Bu ayar bölümü kullanılamıyor.")
         with self.store.lock:
@@ -261,8 +303,7 @@ class SettingsService:
 
     def secret_values(self) -> tuple[str, ...]:
         with self.store.lock:
-            return tuple(value.get('api_key') for value in self._values().values()
-                         if isinstance(value, dict) and isinstance(value.get('api_key'), str) and value['api_key'])
+            return stored_secrets(self._values())
 
     def record_gemini_models(self, tested: dict, models: list[str]) -> dict:
         with self.store.lock:
@@ -298,3 +339,58 @@ class SettingsService:
             values["ollama"]["last_test"] = outcome
             self.store.write(values)
             return self.safe_view()
+
+    def record_openai_test(self, tested: dict, outcome: dict) -> dict:
+        with self.store.lock:
+            values = self._values()
+            if any(values['openai'].get(key) != tested.get(key) for key in ('api_key', 'model', 'enabled')):
+                raise SettingsInputError('OpenAI ayarları test sırasında değişti. Yeniden test edin.')
+            values['openai']['last_test'] = {key: outcome[key] for key in ('status', 'message')}
+            self.store.write(values)
+            return self.safe_view()
+
+    def image_config(self):
+        from app.production_settings import ImageSettings
+        with self.store.lock:
+            config = self._values().get('images', {})
+            return {key: config.get(key, value) for key, value in ImageSettings().model_dump().items()}
+
+    def image_view(self):
+        from app.scripts.engine import SecretGuard
+        with self.store.lock:
+            values = self._values()
+            result = self.image_config()
+            metadata = values.get('images', {})
+            result.update(gemini_models=metadata.get('gemini_models', []), local_models=metadata.get('local_models', []), status='Daha sonraki çalıştırma için hazırlandı', message='Ayarlar ve bağlantı kontrolleri çalışır. Model erişimi görsel çıkışı veya lisans uygunluğunu garanti etmez; otomatik görsel çalıştırma/render henüz bağlı değildir.')
+            return SecretGuard(self.secret_values()).clean(result)
+
+    def save_images(self, payload):
+        from app.production_settings import ImageSettings
+        from app.scripts.engine import SecretGuard
+        with self.store.lock:
+            values = self._values()
+            try:
+                config = ImageSettings.model_validate({**self.image_config(), **payload}).model_dump()
+            except (ValidationError, TypeError):
+                raise SettingsInputError('Görsel ayarlarını kontrol edin. Yerel adres, 16:9 çözünürlük ve geçerli motor/ücret seçimi gerekli.') from None
+            SecretGuard(self.secret_values()).validate(config)
+            try: config['gemini_model'] = normalize_model(config['gemini_model'])
+            except ValueError: raise SettingsInputError('Geçerli bir Gemini görsel modeli seçin.') from None
+            metadata = values.get('images', {})
+            if config['gemini_model'] and config['gemini_model'] not in metadata.get('gemini_models', []):
+                raise SettingsInputError('Görsel ayarlarında Gemini modellerini getirip listeden model seçin. Her model görsel çıkışı desteklemez.')
+            values['images'] = {**metadata, **config}
+            self.store.write(values)
+
+    def record_image_models(self, provider, models, tested):
+        if provider not in ('local', 'gemini'): raise SettingsInputError('Bu model keşfi kullanılamıyor.')
+        from app.scripts.engine import SecretGuard
+        with self.store.lock:
+            if provider == 'gemini' and self.gemini_config().get('api_key') != tested.get('api_key') or provider == 'local' and self.image_config()['local_url'] != tested.get('local_url'):
+                raise SettingsInputError('Ayarlar değişti; modelleri yeniden getirin.')
+            if not isinstance(models, list) or any(not isinstance(x, str) for x in models): raise SettingsInputError('Model listesi okunamadı.')
+            SecretGuard(self.secret_values()).validate(models)
+            values = self._values(); config = values.setdefault('images', {})
+            config[provider + '_models'] = models
+            self.store.write(values)
+            return self.image_view()

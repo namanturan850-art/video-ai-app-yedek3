@@ -10,12 +10,13 @@ Anahtar alanı kayıttan sonra boşalır; altında yalnızca maskeli kayıt gör
 
 - **Genel:** dil tercihi; Yeni Proje ve Senaryo ilk açılış varsayılanı Almanca kalır. Arayüz Türkçedir.
 - **Ollama:** yerel adres ve bilgisayarda kurulu modelin tam adı. Varsayılan adres `http://127.0.0.1:11434`. Kullanmayacaksanız model boş kalabilir. Önce **Kaydet**, ardından **Bağlantıyı Test Et**. Ollama'nın açık olması gerekir. Test yalnızca yerel model listesini kontrol eder; metin üretmez veya model indirmez.
-- **OpenAI:** isteğe bağlı kullanım tercihi, model ve API anahtarı. Senaryo için etkinleştirip hesabınızda erişilebilir Chat Completions model adını kaydedin. Ayrı Ayarlar bağlantı testi kapalıdır; Senaryo ekranında gerçek resmi API üretimi yapılabilir. Kullanmak zorunda değilsiniz.
+- **OpenAI:** Etkinleştir, model ve API anahtarı. Senaryo için etkinleştirip hesabınızda erişilebilir Chat Completions model adını kaydedin. Bağlantı testi resmi model erişimini kontrol eder; içerik üretmez. Bakiye/kota ve üretim uyumluluğu gerçek üretimde ayrıca kontrol edilir. Kullanmak zorunda değilsiniz.
 - **Gemini:** isteğe bağlı Google Gemini Developer API anahtarı ve model. Anahtarı **Kaydet**, **Modelleri Getir**, API listesinden bir model seçip tekrar **Kaydet**, ardından **Bağlantıyı Test Et**. Yalnızca keşfedilen modeller seçilebilir; eski geçersiz değerler Hazır sayılmaz. Sorgular için 60 saniye beklenebilir. Test yalnızca resmi API model listesini okur; senaryo üretmez. Gemini Plus / Google AI Pro web aboneliği API anahtarının yerine geçmez. Ayrıntılar: [Gemini rehberi](GEMINI.md).
 - **Pexels / Pixabay:** API anahtarını kaydetme. Medya araması ve gerçek bağlantı testleri henüz eklenmedi.
 - **AI33:** API anahtarı, belgelenmiş Base URL varsa adresi, isteğe bağlı Voice ID ve Model. **AI33 API belgeleri gerekli**; bağlantı testi kapalı, seslendirme yapılmaz. Belgelenmiş adres/kimlikler yoksa bu alanları boş bırakın.
 - **FFmpeg:** otomatik algılanan durum ve dosya yolu. Test düğmesi yalnızca sürüm komutunun çalışmasını kontrol eder. Bulunmasa da uygulama ve Ayarlar açılır.
 - **YouTube:** Daha sonra.
+- **Görsel Üretimi:** otomatik/yerel GPU/Gemini/OpenAI/kapalı; yerel ComfyUI, model/workflow/lisans ve 16:9 çözünürlük; mevcut şifreli Gemini/OpenAI anahtarlarının kullanımı. Bağlantı/model kontrolleri çalışır, gerçek görsel çalıştırma daha sonra. Ücretli fallback varsayılan KAPALI. Ayrıntılar: [paket rehberi](STABILITY_AND_ENHANCEMENTS.md).
 
 **Hazır**, gerekli bilgilerin kaydedildiği anlamına gelir. Bağlantı doğrulanmadıysa yanında açıkça belirtilir. Ollama ve Gemini'de test sonucuna göre **Hazır** veya **Hata** gösterilir. Gemini'de modelin API listesinden doğrulanmış olması da gerekir; anahtar kayıtlı fakat model seçilmemiş/doğrulanmamışsa **Yapılandırılmadı** gösterilir. Anahtarları başka bir yere yapıştırmanız, `.env` dosyası düzenlemeniz veya kod değiştirmeniz gerekmez.
 
@@ -41,7 +42,7 @@ Ollama kontrolü, resmi dokümandaki **List Local Models** işlemini kullanır:
 
 Yalnızca loopback adresleri (`localhost`, `127.0.0.1`, `::1`) kabul edilir. Proxy ortam değişkenleri kullanılmaz, yönlendirmeler takip edilmez, zaman aşımı 5 saniyedir. Yanıt veya ağ hatasının ham içeriği kullanıcıya verilmez.
 
-Pexels/Pixabay testleri ve OpenAI'nin ayrı salt okunur Settings testi kapalı ve açıklamalıdır. OpenAI/Ollama metin üretim sözleşmeleri Aşama 4 için resmi kaynaklardan doğrulandı; kullanım ve kaynaklar [Senaryo rehberinde](SCRIPT_ENGINE.md). AI33 için [AI33_INTEGRATION_NOTES.md](../AI33_INTEGRATION_NOTES.md) kuralları geçerlidir. Hiçbir belgelenmemiş uç, model, ses kimliği veya kimlik doğrulama biçimi varsayılmadı.
+Pexels/Pixabay testleri kapalı ve açıklamalıdır. OpenAI salt okunur testi resmi `GET /v1/models/{model}` kullanır. Metin/görsel adaptörleri, ComfyUI kontrolleri ve kaynaklar [paket rehberinde](STABILITY_AND_ENHANCEMENTS.md). AI33 için [AI33_INTEGRATION_NOTES.md](../AI33_INTEGRATION_NOTES.md) kuralları geçerlidir. Hiçbir belgelenmemiş uç, model, ses kimliği veya kimlik doğrulama biçimi varsayılmadı.
 
 Gemini kontrolü resmi Google Gemini Developer API `GET /v1beta/models` işlemini kullanır. Anahtar yalnızca HTTP başlığında gönderilir; model listesi API'den alınır. Resmi sözleşme kaynakları ve güvenlik ayrıntıları [Gemini rehberinde](GEMINI.md) bulunur.
 
@@ -50,6 +51,6 @@ Gemini kontrolü resmi Google Gemini Developer API `GET /v1beta/models` işlemin
 - `GET /api/settings`: güvenli tercihler, maskeler, durumlar ve FFmpeg bilgisi.
 - `PUT /api/settings/{section}`: yalnızca gönderilen alanları günceller. `api_key` boş/null veya yoksa eski anahtarı korur.
 - `DELETE /api/settings/{section}`: o bölümü varsayılan değerlere döndürür; diğer bölümlere dokunmaz.
-- `POST /api/settings/{section}/test`: Ollama, Gemini ve FFmpeg kontrolü; diğer sağlayıcılar için açıklamalı yer tutucu.
+- `POST /api/settings/{section}/test`: Ollama, Gemini, OpenAI ve FFmpeg kontrolü; stok/AI33 için açıklamalı yer tutucu.
 - `POST /api/settings/gemini/models`: kayıtlı anahtarla resmi API'nin desteklediği metin üretim modellerini listeler; anahtarı döndürmez.
 - Değiştirme/test istekleri `X-AI-Video-Studio: settings` başlığı gerektirir. API, gizli alanları hiçbir yanıtta geri döndürmez.

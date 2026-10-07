@@ -7,7 +7,7 @@
 3. Diğer seçenekleri kontrol edip **Proje Oluştur** düğmesine basın. Proje sayfası kendiliğinden açılır.
 4. **Projeler** ekranından kayıtlı projeleri açabilirsiniz. Proje sayfasındaki **Proje bilgilerini düzenle** bölümünden metinleri ve senaryo motorunu değiştirebilirsiniz.
 
-Varsayılan dil **Almanca**, hedef süre **5 dakika**, içerik türü **Otomatik**, sahne süresi **4–8 saniye**. Altyazı ve küçük resim planlama açık, müzik kapalıdır. Süre/dil senaryo ekranında kullanılabilir; sahne ve medya tercihleri gelecekteki üretim için saklanır. Genel Ayarlar'daki dil tercihi Yeni Proje'nin Almanca varsayılanını değiştirmez.
+Varsayılan dil **Almanca**, hedef süre **5 dakika**, içerik türü **Otomatik**, sahne süresi **4–8 saniye**. Hedef Dil seçenekleri ayrıca İspanyolca, İngilizce, Fransızca ve Türkçe. Senaryo ilk açılışta projenin dilini kullanır. Altyazı ve küçük resim planlama açık, müzik kapalıdır. Sahne/medya tercihleri gelecekteki çalıştırma için saklanır. Genel Ayarlar'daki dil tercihi Yeni Proje'nin Almanca varsayılanını değiştirmez.
 
 **Senaryo motoru (Script Engine): Ollama, OpenAI veya Gemini.** Varsayılan Ollama'dır; eski projelerde de bu tercih eklenir. Seçim projede kalıcı olarak saklanır, anahtarlar projeye kopyalanmaz. Sağlayıcı henüz yapılandırılmamış olsa bile proje oluşturulabilir. Motor seçmek üretimi başlatmaz. Gemini ayarları ve adaptörü için [Gemini rehberi](GEMINI.md).
 
@@ -55,7 +55,7 @@ data/projects/<project-id>/
   logs/
 ```
 
-Güncel şema sürümü **4**. Eski sürüm 1/2 önce proje tablosu ve `script_engine` sütunuyla sürüm 3'e, ardından senaryo tabloları eklenerek sürüm 4'e yükseltilir. Eski sürüm 3 doğrudan yeni senaryo tablolarını alır. İşlem eklemeli ve işlemseldir; mevcut tablolar, kullanıcı verileri, zamanları, klasörler ve şifreli ayarlar korunur. Yükseltme başarısızsa işlem geri alınır. Bilinmeyen daha yeni şema sürümü otomatik düşürülmez veya silinmez. Uygulamayı güncellerken mevcut `data` klasörünü koruyun.
+Güncel şema sürümü **5**. Eski sürüm 1/2 önce proje tablosu ve `script_engine` sütunuyla sürüm 3'e, ardından senaryo tablolarıyla sürüm 4'e; kalite sonucu/görsel plan tablolarıyla sürüm 5'e yükseltilir. İşlem eklemeli ve işlemseldir; mevcut tablolar, kullanıcı verileri, zamanları, klasörler ve şifreli ayarlar korunur. Yükseltme başarısızsa işlem geri alınır. Bilinmeyen daha yeni şema sürümü otomatik düşürülmez veya silinmez. Uygulamayı güncellerken mevcut `data` klasörünü koruyun.
 
 Yeni proje klasörü oluşturulamazsa kayıt eklenmez. Kayıt eklenemezse yalnızca o oluşturma denemesinin yeni klasörü temizlenir; önceden var olan klasörlere dokunulmaz. Proje adı hiçbir dosya yoluna dönüştürülmez. SQLite bağlantıları işlemler bittikten sonra kapatılır; Windows'ta gereksiz dosya kilitleri tutulmaz.
 
@@ -69,4 +69,4 @@ Yeni proje klasörü oluşturulamazsa kayıt eklenmez. Kayıt eklenemezse yalnı
 
 Değişiklik isteklerinde `X-AI-Video-Studio: projects` başlığı gerekir. Aynı köken ve yerel Host koruması Ayarlar ile birlikte uygulanır. Yanıtlar önbelleğe alınmaz; doğrulama hataları Türkçedir ve gönderilen gizli değerleri geri yansıtmaz.
 
-Uçtan uca senaryo ve Gemini/Ollama/OpenAI üretim adaptörleri Aşama 4'te eklendi. Stok medya, AI33, FFmpeg render, altyazı üretimi ve YouTube yükleme **uygulanmadı**. **Aşama 5 başlatılmadı.**
+Uçtan uca senaryo ve üç sağlayıcı çalışır. Projedeki **Görsel / Kurgu Planı ve Kalite Kontrolü** bağlantısı onaylı senaryodan planlama ve eksik kontrolü açar. Gerçek stok/görsel/TTS/altyazı/render/yükleme çalıştırması bağlı değildir. [Paket rehberi](STABILITY_AND_ENHANCEMENTS.md) çalışan ve hazırlanan özellikleri ayırır.

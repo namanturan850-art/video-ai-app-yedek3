@@ -1,5 +1,31 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — Kararlılık ve Geliştirme Paketi
+
+Sıra ve doğrulama:
+- A aşaması (kasa/Settings/sağlayıcı/üretim) kapısı **327 geçti, 0 başarısız, 2 Windows testi atlandı** ile tamamlandı; B bundan sonra başladı. B kapısı **339 geçti**. Son tam paket **366 test: 364 geçti, 0 başarısız, 2 gerçek Windows/DPAPI testi Linux nedeniyle atlandı**. Pytest içindeki frontend kontrolü **24 JavaScript testi** de çalıştırır; tamamı geçti.
+- Chromium + gerçek yerel FastAPI + taklit resmi dış API: OpenAI erişim testi, yerel GPU/model ve Gemini görsel keşfi, ücretli kullanımın varsayılan kapalı olması, Fransızca proje/senaryo, retention/hooks/A-B/iddialar, onaylı metni koruyarak yeni sürüm, görsel plan/müzik tercihleri, yeniden başlatma ve mobil görünüm geçti; JavaScript hatası yok. Önceki uzun üretim/kota sonrası devam/düzenleme/sürümler/sağlayıcı değiştirme/çeviri tarayıcı regresyonu da geçti. Günlükte anahtar/stack trace yok.
+
+Nedenler ve düzeltmeler:
+- OpenAI Settings testi yer tutucuydu; resmi salt okunur model erişim testi eklendi. Etkinleştir tercihi, eksik/reddedilen anahtar, model, bakiye/kota, hız sınırı, zaman aşımı, internet/proxy ve sunucu/yanıt hatası ayrı güvenli Türkçe mesajlarla ele alınır. Test içerik üretmez; üretim kotası/bakiyesi ayrıca değerlendirilir.
+- Kasa hataları tek genel mesajda birleşiyordu; key_decrypt_failed/folder_permission/temp_file_failed/atomic_replace_failed/encryption_failed/storage_locked ayrımı eklendi. Kapalı dosya tanıtıcısıyla atomik kayıt, Windows paylaşım kilidinde sınırlı bekleme/tekrar, eski key/vault koruması doğrulandı. Mevcut Gemini → OpenAI ekle/aç/model/kaydet → yeniden aç → anahtar güncelle → yalnız OpenAI temizle akışı ve sızıntı test edildi. Gerçek Windows'taki belirli hata burada gözlenemedi; DPAPI koruması kaldırılmadı, kasa sıfırlanmadı.
+- Gemini 429 uygulama hatası değildir: hesap kota/hız sınırı olarak gösterilir. Çalışan keşif/test akışı korunur. Bölümler/parçalar ve eski sürümler saklanır; Retry-After veya sınırlı bekleme, açık Devam Et ve kullanıcı seçimiyle yeni sağlayıcı/üretim vardır. Sessiz ücretli fallback ve sonsuz tekrar yok.
+- Güvenli sağlayıcı tanılaması yalnızca sağlayıcı/işlem/sonuç-kategori/süre; ham yanıt, anahtar veya Authorization yok.
+
+Çalışan geliştirmeler:
+- Ortak genişletilebilir dil kaydı: de/es/en/fr/tr. Almanca varsayılan; proje dili Senaryo'ya gelir. Senaryo, sahiplik onaylı çeviri, hooks/başlık/açıklama/CTA ve görsel vurgu seçilen dili kullanır; stok sorguları İngilizcedir.
+- Genel amaçlı dinamik içerik motoru korunur; sabit küçük tür listesi/hikâye zorunluluğu yok.
+- Sürüm bağlı Retention Analizi, üç hook, 2–3 A/B seçenekleri ve Claim Review. Öneriler ayrı, seçilen uygulama yeni taslak sürüm; onaylı sürümü değiştirmek açık onay ister. Alternatif seçimleri metni değiştirmez. İddialar Doğrulama gerektirebilir, verified=false ve gelecekte kaynak alanlarıyla saklanır; doğrulama iddiası yok.
+- Güncel onaylı metinden görsel/kurgu planı: tam anlatım kapsamı, anlamsal İngilizce B-roll/fallback sorguları, amaç/duygu/görsel niyet/tür/kompozisyon/önem, hedef dilde sınırlı vurgu, geçiş/hareket önerileri. Kimlik tekrarını engelleyen medya kayıt API'si, görsel çeşitlilik/uzunluk uyarıları; tahmini süre veya sonradan sağlanan eşleşen gerçek TTS timing verisi.
+- Görsel sağlayıcı Settings: otomatik/yerel GPU/Gemini/OpenAI/kapalı; ComfyUI adresi, kurulu model listesi, workflow/lisans tercihi, 16:9 çözünürlük; resmi Gemini keşfi ve OpenAI model erişimi. Anahtarlar mevcut şifreli kasadan kullanılır; bilinmeyen model indirilmez. Model erişimi görsel yeteneği/lisans garantisi değildir.
+- Ücretli görsel kullanım varsayılan KAPALI; sor/izinli fallback tercihleri ve stok → yerel → izinli bulut seçimi. Bulut metin/kalite/planlama işlemlerinde işlem başına maliyet uyarısı/onayı; otomatik ücretli sağlayıcı geçişi yok.
+- SQLite şema 5'e eklemeli işlemsel yükseltme, kalite/görsel plan kalıcılığı ve okunabilir JSON yansımaları. Mevcut proje/senaryo/ayar verileri ve Windows başlatıcısı korunur. Tek basit [Windows kontrol listesi ve resmi sözleşmeler](STABILITY_AND_ENHANCEMENTS.md).
+
+Yalnızca hazırlanmış çalıştırma ve sınırlar:
+- StockProvider/ImageProvider/TTSProvider/RenderProvider arayüzleri; yerel ComfyUI ve resmi Gemini/OpenAI görsel adaptörleri hazırlanmıştır. Bulut görsel sözleşmeleri taklit API'lerle test edildi; arayüzden/otomatik gerçek görsel üretimi henüz çalıştırılmaz. Yerel workflow API eşlemesi, stok arama/indirme, gerçek TTS/altyazı, müzik dosyası içe aktarma/işleme, FFmpeg render ve yükleme bağlı değildir.
+- Müzik adı/lisans/duygu/volume/fade/ducking/bölüm değişimi tercihleri ve render öncesi eksik kontrolü çalışır; eksik dosyalar başarılı sayılmaz. Plan geçişleri gerçek video kurgu değildir.
+- Bu Linux ortamında canlı anahtar/ödeme, gerçek Windows DPAPI/dosya kilidi veya RTX 5070/ComfyUI üretimi denenmedi. Gerçek cihaz/API kalite kontrolü için rehber hazır. AI bilgi/dil/özgünlük/retention kalitesi insan kontrolü gerektirir; Claim Review web araştırması yapmaz. Abonelik veya ücretli API zorunlu değildir; yerel Ollama kullanılabilir.
+
 ## 2026-10-07 — Aşama 4: Genel YouTube Senaryo Motoru
 
 Tamamlandı:

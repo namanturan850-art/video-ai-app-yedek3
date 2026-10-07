@@ -2,7 +2,8 @@ import math
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from app.languages import validate_language
 
 
 class ScriptError(Exception):
@@ -15,7 +16,8 @@ class ScriptOptions(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
     provider: Literal['gemini', 'ollama', 'openai'] = 'gemini'
     mode: Literal['original', 'translate_owned'] = 'original'
-    language: Literal['de', 'tr', 'en'] = 'de'
+    language: str = 'de'
+    _language = field_validator('language')(validate_language)
     content_type: str = Field(default='', max_length=150)
     tone: str = Field(default='Otomatik', max_length=150)
     audience: str = Field(default='', max_length=500)
@@ -35,8 +37,6 @@ class ScriptOptions(BaseModel):
         if self.mode == 'translate_owned':
             if not self.owns_text or not self.owned_text.strip():
                 raise ValueError('Çeviri için kendi metninizi girin ve metnin size ait olduğunu onaylayın.')
-            if self.language != 'de':
-                raise ValueError('Kendi metnimi çevir modu için hedef dil Almanca olmalıdır.')
             if self.reference_text or self.reference_notes:
                 raise ValueError('Çeviri modunda üçüncü taraf referansı kullanmayın; yalnızca kendi metninizi girin.')
         elif self.owned_text or self.owns_text:

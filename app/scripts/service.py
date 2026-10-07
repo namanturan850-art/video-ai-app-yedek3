@@ -53,7 +53,8 @@ class ScriptService:
     def start(self, project_id, payload, action='generate'):
         if action not in ('generate', 'analyze'):
             raise ScriptError('Bu senaryo işlemi kullanılamıyor.')
-        options = self.options(payload)
+        project_language = self.projects.get(project_id)['language']
+        options = self.options({'language': project_language, **payload})
         if action == 'analyze' and options.mode == 'translate_owned':
             raise ScriptError('Kendi metninizi çevirmek için Senaryo Oluştur düğmesini kullanın; konsept analizi gerekmez.')
         # Authorization/validation before any provider request; only construction here.
@@ -88,6 +89,9 @@ class ScriptService:
             self.repository._idle(connection, project_id)
             if job['status'] != 'error':
                 raise ScriptError('Yalnızca kesilen veya başarısız işlem sürdürülebilir.', 409)
+            retry_at = json.loads(job['progress_json']).get('retry_not_before', 0)
+            if retry_at > time.time():
+                raise ScriptError(f'Sağlayıcının istek sınırı nedeniyle yaklaşık {int(retry_at - time.time()) + 1} saniye bekleyip Devam Et deyin.', 429)
             if job['action'] == 'generate':
                 self.repository.protect(connection, project_id, confirmed)
             provider, model, guard = self._provider(job['provider'])
@@ -124,6 +128,7 @@ class ScriptService:
                     save('analyzing', 'concept_complete', 15)
                 if job['action'] == 'analyze':
                     save('analyzed', 'done', 100)
+                    LOG.info('script provider=%s operation=analyze result=success category=success elapsed_ms=%.0f', job['provider'], (time.monotonic() - started) * 1000)
                     return
                 if not progress['plan']:
                     save('planning', 'plan', 20)
@@ -132,7 +137,7 @@ class ScriptService:
                     save('planning', 'plan_complete', 25)
             else:
                 chunks = translation_chunks(options['owned_text'])
-                progress['blueprint'] = {'content_type': 'Kullanıcıya ait metin çevirisi', 'core_topic': project['topic']}
+                progress['blueprint'] = {'content_type': 'Kullanıcıya ait metin çevirisi', 'core_topic': project['topic'], 'language': options['language']}
                 progress['plan'] = {'sections': [{'title': f'Çeviri bölümü {i + 1}', 'source': text} for i, text in enumerate(chunks)]}
 
             plan = progress['plan']
@@ -145,7 +150,7 @@ class ScriptService:
                     continue
                 if not completed:
                     save('generating', 'section', 25 + round(index / len(plan['sections']) * 55))
-                    text = engine.translate(section['source'], context, index == len(plan['sections']) - 1) if options['mode'] == 'translate_owned' else engine.section(progress['blueprint'], plan, index, context, options)
+                    text = engine.translate(section['source'], context, index == len(plan['sections']) - 1, options['language']) if options['mode'] == 'translate_owned' else engine.section(progress['blueprint'], plan, index, context, options)
                     assert_original(text, options)
                     completed = {'title': section['title'], 'text': text, 'context': ''}
                     progress['sections'].append(completed)
@@ -175,11 +180,14 @@ class ScriptService:
             self.repository.create_version(job['project_id'], text, job['provider'], job['model'], options,
                 progress['blueprint']['content_type'], report, generated=True, job_id=job_id, progress=progress)
             save('draft', 'done', 100)
-            LOG.info('script operation=generate result=success elapsed_ms=%.0f', (time.monotonic() - started) * 1000)
+            LOG.info('script provider=%s operation=generate result=success category=success elapsed_ms=%.0f', job['provider'], (time.monotonic() - started) * 1000)
         except Exception as error:
-            category = error.category if isinstance(error, ScriptProviderError) and error.category in {'key_rejected', 'quota_limit', 'model_unavailable', 'no_internet', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'upstream_error'} else 'generation_error'
+            category = error.category if isinstance(error, ScriptProviderError) and error.category in {'key_rejected', 'quota_limit', 'rate_limit', 'billing_quota', 'invalid_model', 'model_unavailable', 'no_internet', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'upstream_error'} else 'generation_error'
             messages = {'key_rejected': 'API anahtarı kabul edilmedi. Ayarlar bölümünü kontrol edin.',
                         'quota_limit': 'Kullanım sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.',
+                        'rate_limit': 'İstek hız sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.',
+                        'billing_quota': 'API faturalandırma veya kota sınırına ulaşıldı. API hesabınızın bakiye ve limitlerini kontrol edin.',
+                        'invalid_model': 'Model veya desteklediği istek geçersiz. Ayarlar bölümünü kontrol edin.',
                         'model_unavailable': 'Seçilen model kullanılamıyor. Ayarlar bölümünü kontrol edin.',
                         'no_internet': 'Sağlayıcı bağlantısı kurulamadı. Bağlantınızı kontrol edin.',
                         'gemini_timeout': 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.',
@@ -188,8 +196,12 @@ class ScriptService:
             message = guard.clean(message) + ' Üretim tamamlanamadı. Tamamlanan bölümler korundu.'
             # Preserve the last committed checkpoint even if a file mirror caused the failure.
             with self.projects.lock, closing(self.projects._connection()) as connection, connection:
-                connection.execute("UPDATE script_jobs SET status='error',error_message=?,updated_at=? WHERE id=?", (message, now(), job_id))
-            LOG.info('script operation=generate result=failure category=%s elapsed_ms=%.0f', category, (time.monotonic() - started) * 1000)
+                row = connection.execute('SELECT progress_json FROM script_jobs WHERE id=?', (job_id,)).fetchone()
+                saved_progress = json.loads(row['progress_json'])
+                saved_progress['error_category'] = category
+                saved_progress['retry_not_before'] = time.time() + (error.retry_after if isinstance(error, ScriptProviderError) else 0)
+                connection.execute("UPDATE script_jobs SET status='error',error_message=?,progress_json=?,updated_at=? WHERE id=?", (message, dumps(saved_progress), now(), job_id))
+            LOG.info('script provider=%s operation=%s result=failure category=%s elapsed_ms=%.0f', job['provider'], job['action'], category, (time.monotonic() - started) * 1000)
 
     def edit(self, project_id, payload):
         allowed = {'text', 'base_version_id', 'confirm_replace_approved'}

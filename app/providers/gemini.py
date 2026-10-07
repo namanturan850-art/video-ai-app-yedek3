@@ -75,7 +75,9 @@ class GeminiScriptProvider:
                 if status == 404:
                     raise ScriptProviderError(MODEL_UNAVAILABLE_MESSAGE, 404, category='model_unavailable')
                 if status == 429:
-                    raise ScriptProviderError('Gemini kota veya istek sınırına ulaşıldı. Bir süre bekleyip Google AI Studio kotasını kontrol edin.', 429, category='quota_limit')
+                    retry = response.headers.get('Retry-After', '')
+                    retry = min(120, int(retry)) if retry.isdigit() else 30
+                    raise ScriptProviderError('Gemini kota veya istek sınırına ulaşıldı. Bir süre bekleyip Google AI Studio kotasını kontrol edin.', 429, category='quota_limit', retry_after=retry)
                 raise ScriptProviderError('Google Gemini API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.', 503, category='upstream_error')
             result = response.json()
             if not isinstance(result, dict):

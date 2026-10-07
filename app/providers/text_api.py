@@ -1,5 +1,7 @@
 """Verified Ollama / OpenAI text contracts; official sources: docs/SCRIPT_ENGINE.md."""
 from urllib.parse import quote, urlsplit
+import logging
+import time
 
 import httpx
 from pydantic import SecretStr
@@ -21,28 +23,67 @@ class TextAPIProvider:
         key = self._key.get_secret_value()
         if key and (key in prompt or quote(key, safe='') in prompt):
             raise ScriptProviderError('Senaryo isteğine API anahtarı eklemeyin.', 422)
+        data = self._call('POST', self.url, self._body(prompt), operation='generate')
         try:
-            with httpx.Client(timeout=120, trust_env=self.name != 'Ollama', follow_redirects=False,
-                              transport=self._transport) as client:
-                response = client.post(self.url, headers={'Authorization': 'Bearer ' + key} if key else {},
-                                       json=self._body(prompt))
-            if response.status_code != 200:
-                category = {401: 'key_rejected', 403: 'key_rejected', 404: 'model_unavailable', 429: 'quota_limit'}.get(response.status_code, 'upstream_error')
-                messages = {'key_rejected': 'API anahtarı kabul edilmedi. Ayarlar bölümünü kontrol edin.',
-                            'model_unavailable': 'Seçilen model kullanılamıyor. Ayarlar bölümünde model adını kontrol edin.',
-                            'quota_limit': 'Kullanım sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
-                            'upstream_error': 'Sağlayıcı yanıt veremiyor. Daha sonra tekrar deneyin.'}
-                raise ScriptProviderError(self.name + ': ' + messages[category], 502, category=category)
-            text = self._text(response.json())
+            text = self._text(data)
             if not isinstance(text, str) or not text.strip():
                 raise ValueError()
             return self._redact(text.strip())
+        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+            raise ScriptProviderError(self.name + ' tamamlanmış bir yanıt döndürmedi. Tekrar deneyin.', 502, category='invalid_response') from None
+
+    def _call(self, method, url, body=None, *, operation):
+        started, category = time.monotonic(), 'success'
+        try:
+            key = self._key.get_secret_value()
+            with httpx.Client(timeout=50 if operation == 'test' else 120, trust_env=self.name != 'Ollama', follow_redirects=False,
+                              transport=self._transport) as client:
+                response = client.request(method, url, headers={'Authorization': 'Bearer ' + key} if key else {},
+                                          **({'json': body} if body is not None else {}))
+            if response.status_code != 200:
+                category = {401: 'key_rejected', 403: 'key_rejected', 404: 'model_unavailable', 429: 'quota_limit'}.get(response.status_code, 'upstream_error')
+                # Inspect only known public error codes; never log/return raw bodies.
+                if self.name == 'OpenAI':
+                    try:
+                        code = response.json().get('error', {}).get('code')
+                        if code in ('insufficient_quota', 'billing_hard_limit_reached'):
+                            category = 'billing_quota'
+                        elif code == 'rate_limit_exceeded':
+                            category = 'rate_limit'
+                        elif code == 'model_not_found':
+                            category = 'model_unavailable'
+                        elif response.status_code == 400:
+                            category = 'invalid_model'
+                    except (ValueError, TypeError, AttributeError):
+                        pass
+                messages = {'key_rejected': 'API anahtarı kabul edilmedi. Ayarlar bölümünü kontrol edin.',
+                            'model_unavailable': 'Seçilen model kullanılamıyor. Ayarlar bölümünde model adını kontrol edin.',
+                            'invalid_model': 'Model veya bu modelin desteklediği API isteği geçersiz. Chat Completions destekleyen bir model seçin.',
+                            'billing_quota': 'OpenAI faturalandırma veya kota sınırına ulaşıldı. API hesabınızın bakiye ve kullanım sınırını kontrol edin.',
+                            'rate_limit': 'OpenAI istek hız sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+                            'quota_limit': 'Kullanım sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+                            'upstream_error': 'Sağlayıcı yanıt veremiyor. Daha sonra tekrar deneyin.'}
+                retry = response.headers.get('Retry-After', '')
+                retry = min(120, int(retry)) if retry.isdigit() else 30 if response.status_code == 429 else 0
+                raise ScriptProviderError(self.name + ': ' + messages[category], 502, category=category, retry_after=retry)
+            data = response.json()
+            if not isinstance(data, dict):
+                raise ValueError()
+            return data
         except httpx.TimeoutException:
+            category = 'generation_timeout'
             raise ScriptProviderError(self.name + ' zamanında yanıt vermedi. Tekrar deneyin.', 504, category='generation_timeout') from None
-        except httpx.ConnectError:
+        except (httpx.ConnectError, httpx.ProxyError):
+            category = 'no_internet'
             raise ScriptProviderError(self.name + ' bağlantısı kurulamadı. Bağlantınızı ve Ayarlar bölümünü kontrol edin.', 503, category='no_internet') from None
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError):
+            category = 'invalid_response'
             raise ScriptProviderError(self.name + ' tamamlanmış bir yanıt döndürmedi. Tekrar deneyin.', 502, category='invalid_response') from None
+        except ScriptProviderError as error:
+            category = error.category
+            raise
+        finally:
+            logging.getLogger('uvicorn.error.providers').info('provider=%s operation=%s category=%s elapsed_ms=%.0f', self.name, operation, category, (time.monotonic() - started) * 1000)
 
 
 class OllamaScriptProvider(TextAPIProvider):
@@ -94,5 +135,7 @@ class OpenAIScriptProvider(TextAPIProvider):
         return choice['message']['content']
 
     def test_connection(self):
-        # Settings tests remain unchanged; no paid generation used as a probe.
-        raise ScriptProviderError('OpenAI üretimini Senaryo ekranından deneyebilirsiniz.', 422)
+        data = self._call('GET', 'https://api.openai.com/v1/models/' + quote(self.model, safe=''), operation='test')
+        if data.get('id') != self.model:
+            raise ScriptProviderError('OpenAI model bilgisi doğrulanamadı.', 502, category='invalid_response')
+        return {'status': 'Hazır', 'message': 'OpenAI anahtar ve model erişimi başarılı. Üretim kotası ve faturalandırma üretim sırasında ayrıca kontrol edilir.'}

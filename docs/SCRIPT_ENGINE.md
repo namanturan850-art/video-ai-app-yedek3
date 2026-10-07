@@ -1,5 +1,7 @@
 # Aşama 4 — Genel YouTube Senaryo Motoru
 
+Güncel paket Almanca varsayılanını koruyarak İspanyolca, İngilizce, Fransızca ve Türkçe ekler; çeviri modu **Kendi Metnimi Seçili Dile Çevir** adını taşır. OpenAI Settings erişim testi artık gerçektir. Retention/hook/A-B/iddia araçları, görsel/kurgu hazırlığı, ücret koruması ve güncel tek Windows kontrol listesi: [Kararlılık ve Geliştirme Paketi](STABILITY_AND_ENHANCEMENTS.md). Aşağıdaki Aşama 4 test sayıları önceki doğrulama kaydıdır; güncel sonuç [STATUS](STATUS.md) içindedir.
+
 Bu sistem yalnızca hikâye üretmez. Konuyu ve varsa kullanıcı tarafından verilen referans notlarını analiz eder; uygun içerik türünü, konsepti ve bölüm yapısını AI belirler. Belgesel, teknoloji karşılaştırması, liste, eğitim, haber/yorum, anlatı ve serbest içerik türleri aynı motoru kullanır. İçerik türü alanındaki örnekler sınırlama değildir.
 
 ## Windows'ta ilk gerçek Almanca senaryo — Gemini
@@ -20,7 +22,7 @@ Bu aşama metin üretir. Sahne planı, stok, seslendirme, altyazı, render ve y�
 ## İki ayrı çalışma modu
 
 - **Konseptten Özgün Senaryo:** proje konusu ve isteğe bağlı kaynaklardan yalnızca üst düzey konsept/format/yapı çıkarılır. Kaynak metin yalnızca analiz çağrısına gider; bölüm yazımı özgün konsept ve planla yapılır. Rakip senaryosunun doğrudan çevirisi veya hafif yeniden yazımı hedeflenmez.
-- **Kendi Metnimi Almancaya Çevir:** kendi metninizi ayrı alana girin ve size ait olduğunu açıkça onaylayın. Almanca zorunludur; üçüncü taraf referans alanları kullanılamaz. Parçalı çeviri anlamı, önemli ayrıntıları ve yaklaşık uzunluğu korumayı ister; proje süresini doldurmak için metni uzatmaz.
+- **Kendi Metnimi Seçili Dile Çevir:** kendi metninizi ayrı alana girin ve size ait olduğunu açıkça onaylayın. Beş hedef dil seçilebilir; üçüncü taraf referans alanları kullanılamaz. Parçalı çeviri anlamı, önemli ayrıntıları ve yaklaşık uzunluğu korumayı ister; proje süresini doldurmak için metni uzatmaz.
 
 Projedeki YouTube URL'si indirilmez, transcript kazınmaz, içeriği görülmüş gibi davranılmaz. Kaynak yoksa yalnızca konu ve verdiğiniz notlarla çalışılır. URL'nin mevcut olması doğrulanmış içerik sağlamaz.
 
@@ -44,7 +46,7 @@ Gelecekteki aşamalar için yalnızca güncel **Onaylandı** sürümünü veren 
 
 ## Yerel kayıt ve güvenlik
 
-SQLite şema sürümü **4**. Sürüm 1/2/3'ten yükseltme eklemeli ve işlemseldir; projeler, dosyalar ve mevcut şifreli ayarlar korunur. Üç yeni tablo: `script_versions`, `script_state`, `script_jobs`. Proje silinince yalnızca o projenin senaryo kayıtları silinir. Üretim sürerken proje silme engellenir.
+SQLite şema sürümü **5**. Sürüm 1/2/3/4'ten yükseltme eklemeli ve işlemseldir; projeler, dosyalar ve mevcut şifreli ayarlar korunur. Senaryo tabloları `script_versions`, `script_state`, `script_jobs`; yeni kalite/görsel hazırlık tabloları `script_artifacts`, `project_production`. Proje silinince yalnızca o projenin bağlı kayıtları silinir. Üretim sürerken proje silme engellenir.
 
 Okunabilir dosyalar `data/projects/<project-id>/script/` altında:
 
@@ -74,7 +76,7 @@ Tüm sağlayıcılar aynı `ScriptProvider.generate_script(prompt)` sözleşmesi
 | Ollama | Ayarlar'da yerel base URL ve kurulu model. Resmi `POST /api/generate`: `model`, `prompt`, `system`, `stream:false`; yanıt `response`, `done:true`, varsa tamamlanma nedeni. Yalnızca loopback; yönlendirme ve ortam proxy'si kullanılmaz. Model yükleme/indirme yok. |
 | OpenAI | Ayarlar'da isteğe bağlı kullanımı açın, API anahtarı ve hesabınızda erişilebilir Chat Completions modelini kaydedin. Resmi `https://api.openai.com/v1/chat/completions`; `Authorization: Bearer`; `model`, `messages`, `stream:false`. `choices[].message.content` ve `finish_reason:stop` kontrol edilir; reddedilmiş/eksik sonuç kabul edilmez. Model adı tahmin edilmez. |
 
-Metin üretiminde HTTP zaman aşımı **120 saniye/işlem**; toplam uzun üretim çok daha uzun sürebilir. Tarayıcı uzun dış API isteğini beklemez: arka plan işini başlatıp kısa yerel durum sorguları yapar. Settings'in mevcut Gemini 60 saniyelik arayüz / 50 saniyelik model sorgusu değişmemiştir. OpenAI'de ayrı Settings bağlantı testi hâlâ açıklamalı kapalıdır; Senaryo ekranındaki üretim gerçek API'yi kullanır. API kullanımı hizmet kotası/ücretine tabidir; web aboneliği API anahtarı yerine geçmez.
+Metin üretiminde HTTP zaman aşımı **120 saniye/işlem**; toplam uzun üretim çok daha uzun sürebilir. Tarayıcı uzun dış API isteğini beklemez: arka plan işini başlatıp kısa yerel durum sorguları yapar. Settings'in mevcut Gemini 60 saniyelik arayüz / 50 saniyelik model sorgusu değişmemiştir. OpenAI Settings artık gerçek salt okunur model erişim testi kullanır; üretim kota/bakiyesini garanti etmez. API kullanımı hizmet kotası/ücretine tabidir; web aboneliği API anahtarı yerine geçmez.
 
 2026-10-07 tarihinde doğrulanan kaynaklar:
 

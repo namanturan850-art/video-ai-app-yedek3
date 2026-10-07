@@ -252,6 +252,18 @@ class SettingsService:
         with self.store.lock:
             return self._values()["gemini"].copy()
 
+    def script_config(self, provider: str) -> dict:
+        """Private backend credentials, never returned by a route."""
+        if provider not in ('gemini', 'ollama', 'openai'):
+            raise SettingsInputError('Geçerli bir senaryo motoru seçin.')
+        with self.store.lock:
+            return self._values()[provider].copy()
+
+    def secret_values(self) -> tuple[str, ...]:
+        with self.store.lock:
+            return tuple(value.get('api_key') for value in self._values().values()
+                         if isinstance(value, dict) and isinstance(value.get('api_key'), str) and value['api_key'])
+
     def record_gemini_models(self, tested: dict, models: list[str]) -> dict:
         with self.store.lock:
             values = self._values()

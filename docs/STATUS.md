@@ -1,5 +1,31 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — Aşama 4: Genel YouTube Senaryo Motoru
+
+Tamamlandı:
+- Sağlayıcıdan bağımsız `YouTubeScriptEngine`, `ContentAnalyzer`, dinamik `ConceptBlueprint`, `ScriptPlan` ve `ScriptSection`. Sistem hikâye odaklı değildir; belgesel, bilgi, karşılaştırma, liste ve serbest formatlara göre yapı seçilir. Hikâye alanları zorunlu değildir.
+- Mevcut çalışan Gemini Ayarlar/model keşfi yeniden kullanıldı. Resmi Ollama/OpenAI üretim adaptörleri eklendi; üç sağlayıcı arayüzden değiştirilebilir, hepsi isteğe bağlıdır. API anahtarı olmadan uygulama açılır.
+- Türkçe Proje → Senaryo ekranı: otomatik/serbest içerik türü, Almanca varsayılanı, projeden süre, ton, hedef kitle, talimatlar, not/kaynak alanları, konuşma hızı. Analiz Et, Senaryo Oluştur, Yeniden Oluştur, Devam Et, Düzenle, Kaydet ve Onayla.
+- Soyut konsept analizi → özgün/dinamik plan → sıralı bölüm üretimi → kısa devamlılık özeti → birleştirme → tutarlılık/tekrar kontrolü. Referans kaynak metni yalnızca analizde kullanılır; URL içeriği indirilmez/kazınmaz veya görülmüş sayılmaz.
+- Uzun üretimde bölüm/checkpoint kalıcılığı; kota/ağ/bağlam/son kontrol hatasından devam. Yeniden açılışta kesilen iş korunur; otomatik ücretli yeniden deneme yok. Devam aynı sağlayıcı/modelle yapılır.
+- Kelime sayısı, hedef aralık ve tahmini süre; varsayılan 125–145 kelime/dakika, ayarlanabilir. Büyük editörde canlı ölçümler. Gerçek TTS üretimi yok.
+- Değiştirilmeyen metin sürümleri, manuel kayıtla yeni sürüm, eski sürümü seçme, güncel sürüm onayı ve onaylı çalışmayı değiştirmek için açık onay. Gelecekte yalnızca güncel onaylı senaryoyu kullanacak API kontrolü hazır; sonraki aşama uygulanmadı.
+- Ayrı Kendi Metnimi Almancaya Çevir modu: sahiplik onayı zorunlu, üçüncü taraf referansıyla karıştırılmaz, metin parçalara ayrılarak anlam/ayrıntı/yaklaşık uzunluk korunması istenir.
+- SQLite şema 4'e işlemsel eklemeli yükseltme; üç yeni senaryo tablosu, okunabilir blueprint/plan/ilerleme/sürüm dosyaları. Eski projeler, ayarlar ve Windows başlatıcısı korunur. Üretim sürerken proje silme engellenir; silme yalnızca o projenin senaryo kayıtlarını temizler.
+- Sırlar mevcut şifreli kasada kalır. Anahtar içeren girişler reddedilir, olası sağlayıcı yankıları temizlenir; API/proje dosyası/SQLite/istem/günlük sızıntısı test edildi. Beklenmeyen hatalar güvenli Türkçe JSON; ham API gövdeleri ve stack trace gösterilmez. Güvenli günlük işlem/sonuç/kategori/süre içerir.
+- Başlangıç düzeyinde Windows/Gemini kullanım rehberi ve doğrulanmış resmi API kaynakları: [SCRIPT_ENGINE.md](SCRIPT_ENGINE.md). README ve Ayarlar/Projeler/Gemini rehberleri güncellendi.
+
+Doğrulama:
+- **Tam paket: 309 test; 308 geçti, 0 başarısız, 1 Windows DPAPI testi Linux nedeniyle atlandı.** Aşama 4 için 69 yeni test; önceki işlevler de geçti. Pakette ayrıca 19 JavaScript Settings kontrolünü çalıştıran test vardır; hepsi geçti.
+- Üç sağlayıcının resmi HTTP sözleşmesi taklit API'lerle doğrulandı: otomatik/manuel/özel format, blueprint/plan, Almanca/bölümlü üretim, süre/bağlam, kısmi hata/devam, sürümler/düzenleme/onay, yeniden açılış, çeviri, güvenli yükseltme/silme ve sızıntı testleri.
+- Chromium + gerçek yerel FastAPI + taklit dış API: 20 dakikalık üretim, kota hatasından devam, editör/sürümler/onay koruması, sağlayıcı değiştirme, ayrı çeviri, kalıcılık ve mobil görünüm geçti; JavaScript hatası yok. Sunucu günlüğünde anahtar/ham hata sızıntısı yok.
+- Sahibi Aşama 1–3 ve Gemini Settings'i gerçek Windows'ta doğruladı. Yeni Aşama 4 üretimi bu Linux ortamında canlı anahtarla/Windows'ta denenmedi; [ilk gerçek Gemini Almanca senaryosu](SCRIPT_ENGINE.md) manuel doğrulama için hazır.
+
+Sınırlar:
+- AI çıktı kalitesi/doğruluk/yerel Almanca üslup insan tarafından kontrol edilmelidir. Tutarlılık kontrolü kısa özetler ve bölüm parçaları üzerinden yapılır; bağımsız araştırma değildir. Yerel uzun ifade/tekrar kontrolleri tam intihal veya dil değerlendirmesi sunmaz; hedef uzunluk sapmasında uyarı verilir.
+- OpenAI'nin ayrı Settings bağlantı testi kapalıdır; Senaryo'da resmi API üretimi çalışır. Hiçbir model adı tahmin edilmez veya otomatik indirilmez. Pexels/Pixabay/AI33/FFmpeg üretimi/YouTube yükleme yok.
+- **Aşama 5 başlatılmadı.** Sahne planı, stok, seslendirme, altyazı, render ve diğer sonraki aşamalar yer tutucudur.
+
 ## 2026-10-07 — Gemini Windows bağlantı düzeltmesi
 
 Neden:

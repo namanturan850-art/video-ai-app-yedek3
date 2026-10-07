@@ -8,9 +8,9 @@
 
 Anahtar alanı kayıttan sonra boşalır; altında yalnızca maskeli kayıt görünür. Sayfayı yeniden açtığınızda da tam anahtar görünmez. Anahtar alanını boş bırakarak **Kaydet** demek mevcut anahtarı korur. **Temizle**, onay verdikten sonra yalnızca seçilen bölümün anahtarını ve tercihlerini siler.
 
-- **Genel:** gelecekteki içerik için varsayılan dil. Şu anda içerik oluşturulmaz; arayüz Türkçedir.
+- **Genel:** dil tercihi; Yeni Proje ve Senaryo ilk açılış varsayılanı Almanca kalır. Arayüz Türkçedir.
 - **Ollama:** yerel adres ve bilgisayarda kurulu modelin tam adı. Varsayılan adres `http://127.0.0.1:11434`. Kullanmayacaksanız model boş kalabilir. Önce **Kaydet**, ardından **Bağlantıyı Test Et**. Ollama'nın açık olması gerekir. Test yalnızca yerel model listesini kontrol eder; metin üretmez veya model indirmez.
-- **OpenAI:** isteğe bağlı kullanım tercihi, model ve API anahtarı. Kullanmak zorunda değilsiniz. Bu aşamada gerçek API çağrısı yapılmaz.
+- **OpenAI:** isteğe bağlı kullanım tercihi, model ve API anahtarı. Senaryo için etkinleştirip hesabınızda erişilebilir Chat Completions model adını kaydedin. Ayrı Ayarlar bağlantı testi kapalıdır; Senaryo ekranında gerçek resmi API üretimi yapılabilir. Kullanmak zorunda değilsiniz.
 - **Gemini:** isteğe bağlı Google Gemini Developer API anahtarı ve model. Anahtarı **Kaydet**, **Modelleri Getir**, API listesinden bir model seçip tekrar **Kaydet**, ardından **Bağlantıyı Test Et**. Yalnızca keşfedilen modeller seçilebilir; eski geçersiz değerler Hazır sayılmaz. Sorgular için 60 saniye beklenebilir. Test yalnızca resmi API model listesini okur; senaryo üretmez. Gemini Plus / Google AI Pro web aboneliği API anahtarının yerine geçmez. Ayrıntılar: [Gemini rehberi](GEMINI.md).
 - **Pexels / Pixabay:** API anahtarını kaydetme. Medya araması ve gerçek bağlantı testleri henüz eklenmedi.
 - **AI33:** API anahtarı, belgelenmiş Base URL varsa adresi, isteğe bağlı Voice ID ve Model. **AI33 API belgeleri gerekli**; bağlantı testi kapalı, seslendirme yapılmaz. Belgelenmiş adres/kimlikler yoksa bu alanları boş bırakın.
@@ -41,7 +41,7 @@ Ollama kontrolü, resmi dokümandaki **List Local Models** işlemini kullanır:
 
 Yalnızca loopback adresleri (`localhost`, `127.0.0.1`, `::1`) kabul edilir. Proxy ortam değişkenleri kullanılmaz, yönlendirmeler takip edilmez, zaman aşımı 5 saniyedir. Yanıt veya ağ hatasının ham içeriği kullanıcıya verilmez.
 
-Pexels, Pixabay ve OpenAI için bu depoda doğrulanmış bağlantı sözleşmesi olmadığından test düğmeleri kapalı ve açıklamalıdır. AI33 için [AI33_INTEGRATION_NOTES.md](../AI33_INTEGRATION_NOTES.md) kuralları geçerlidir. Hiçbir belgelenmemiş uç, model, ses kimliği veya kimlik doğrulama biçimi varsayılmadı.
+Pexels/Pixabay testleri ve OpenAI'nin ayrı salt okunur Settings testi kapalı ve açıklamalıdır. OpenAI/Ollama metin üretim sözleşmeleri Aşama 4 için resmi kaynaklardan doğrulandı; kullanım ve kaynaklar [Senaryo rehberinde](SCRIPT_ENGINE.md). AI33 için [AI33_INTEGRATION_NOTES.md](../AI33_INTEGRATION_NOTES.md) kuralları geçerlidir. Hiçbir belgelenmemiş uç, model, ses kimliği veya kimlik doğrulama biçimi varsayılmadı.
 
 Gemini kontrolü resmi Google Gemini Developer API `GET /v1beta/models` işlemini kullanır. Anahtar yalnızca HTTP başlığında gönderilir; model listesi API'den alınır. Resmi sözleşme kaynakları ve güvenlik ayrıntıları [Gemini rehberinde](GEMINI.md) bulunur.
 

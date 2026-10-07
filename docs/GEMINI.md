@@ -4,11 +4,31 @@
 
 1. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
 2. **Ayarlar → Gemini** bölümüne gidin. [Google AI Studio](https://aistudio.google.com/apikey) üzerinden aldığınız **Gemini Developer API anahtarını** buraya girip **Kaydet** deyin.
-3. **Modelleri Getir** düğmesine basın. **Model** alanında listeden bir model seçip **Kaydet** deyin. Belgelenmiş API model adını doğrudan yazmak da mümkündür.
+3. **Modelleri Getir** düğmesine basın. **Model** alanında API'nin döndürdüğü listeden bir model seçip **Kaydet** deyin. Model alanına serbest metin yazılmaz.
 4. **Bağlantıyı Test Et** düğmesine basın. Başarılıysa **Hazır** görünür. Hata mesajı anahtar, model, internet veya kota için neyi kontrol edeceğinizi açıklar.
 5. **Yeni Proje** ekranında **Senaryo motoru (Script Engine)** olarak **Gemini** seçin. Mevcut projelerde **Proje bilgilerini düzenle** bölümünden motoru değiştirebilirsiniz.
 
 Gemini zorunlu değildir; alanları boş bırakırsanız uygulama ve projeler çalışmaya devam eder. **Gemini Plus / Google AI Pro web aboneliği, Developer API anahtarının yerine geçmez.** API erişimi ve kotası ayrı yönetilir. Model listesi ve bağlantı testi yalnızca model bilgilerini okur; senaryo üretmez.
+
+Eski kayıtta `as` gibi bir değer varsa bu, doğrulanmış model olarak kabul edilmez. Model API listesinde yoksa açıklama gösterilir ve seçim boş bırakılır. Listeden geçerli bir model seçip **Kaydet** deyin. Anahtarı değiştirdiğinizde eski model seçimi ve listesi temizlenir; yeni anahtarla **Modelleri Getir** işlemini tekrarlayın. Model listesi ve seçim yeniden açılışta korunur.
+
+## Bağlantı hataları
+
+Gemini **Modelleri Getir / Bağlantıyı Test Et** işlemlerinde tarayıcı 60 saniye bekler. Normal yerel ayar işlemlerinin süresi 20 saniyedir. Sunucu model sorgusunda 50 saniyelik HTTP zaman aşımı/sayfalama bütçesi kullanır; beş sayfadan fazla sorgulamaz. Beklenmeyen sunucu hataları da güvenli JSON olarak döner.
+
+| Durum | Açıklama / yapılacak işlem |
+| --- | --- |
+| Gemini zaman aşımı | **Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.** |
+| İnternet bağlantısı kurulamadı | İnternet, güvenlik duvarı ve varsa proxy ayarlarını kontrol edin. Bu kategori Google'a bağlantı kurulamamasını ifade eder; tüm internetin kapalı olduğunu kesin olarak belirlemez. |
+| Anahtar reddedildi | Google AI Studio API anahtarını ve API kısıtlamalarını kontrol edin. |
+| Kota / istek sınırı | Bir süre bekleyip Google AI Studio kotasını kontrol edin. |
+| Model bulunamadı | Modelleri tekrar getirip API listesinden bir model seçin ve kaydedin. |
+| Beklenmeyen sunucu hatası | Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin. |
+| Yerel uygulamaya ulaşılamadı | İşlem isteği ve kısa yerel sağlık isteği ikisi de başarısızsa gösterilir. Uygulama penceresini kontrol edip yeniden açın. |
+
+Bir `fetch` başarısız olduğunda arayüz yalnızca yerel `/api/health` adresini üç saniyelik süreyle kontrol eder. Yerel sunucu yanıt veriyorsa Gemini hatası **Uygulamaya ulaşılamadı** olarak gösterilmez. Sağlık isteğinin kendisi zaman aşımına uğrarsa ayrı bir **Yerel uygulama sağlık kontrolüne zamanında yanıt vermedi** mesajı gösterilir.
+
+Başlatıcının mevcut `logs/server.log` dosyasında güvenli Gemini tanılama satırları vardır: işlem adı, başarı/başarısızlık, sabit hata kategorisi ve geçen milisaniye. Anahtar, model/istek gövdesi, Google'ın ham yanıtı veya stack trace bu satırlara yazılmaz. Örnek: `gemini_settings operation=list_models result=failure category=gemini_timeout elapsed_ms=50000`.
 
 Bu değişiklik Gemini sağlayıcı adaptörünü ve motor seçimini ekler. Mevcut uygulamada henüz uçtan uca **Senaryo Oluştur** ekranı/iş akışı yoktur. Motor seçmek üretimi başlatmaz. Ollama ve OpenAI için mevcut ayar desteği korunur; onların üretim adaptörleri bu değişikliğe dahil değildir.
 
@@ -50,11 +70,13 @@ Gerçek model kimliği tahmin edilmez veya varsayılan olarak sabitlenmez. Liste
 - `app/providers/base.py`: `ScriptProvider` protokolü ve güvenli Türkçe `ScriptProviderError`.
 - `app/providers/gemini.py`: model listeleme, salt okunur bağlantı testi ve `generate_script(prompt)` adaptörü. Özgün içerik sistem talimatı kullanır.
 - `app/providers/factory.py`: açık sağlayıcı seçimi; hata durumunda başka sağlayıcıya sessiz geçiş yoktur.
-- `GET /api/settings`: yalnızca güvenli Gemini model/maske/durum bilgisi.
+- `GET /api/settings`: güvenli Gemini model/maske/durum bilgisi, keşfedilen `models` ve `model_verified`. Yerel listede bulunmadan model kaydı doğrulanmış sayılmaz.
 - `PUT /api/settings/gemini`, `DELETE /api/settings/gemini`: mevcut şifreli ayar API'si.
-- `POST /api/settings/gemini/models`: güvenli model kimlikleri listesi.
+- `POST /api/settings/gemini/models`: güvenli model kimlikleri listesi ve maskeli ayarlar; mevcut modelden bağımsız olarak yalnızca kayıtlı anahtarı kullanır. Sonucu şifreli yerel ayarlarda saklar.
 - `POST /api/settings/gemini/test`: güvenli sonuç, model listesi ve maskeli ayarlar.
 - Değişiklik/test/listeleme istekleri mevcut aynı köken, yerel Host ve `X-AI-Video-Studio: settings` korumasını kullanır; yanıtlar önbelleğe alınmaz.
 - Projedeki `script_engine`: `ollama`, `openai` veya `gemini`. Şema 2 → 3 yükseltmesi mevcut projelere `ollama` varsayılanını ekler; eski kayıtları, zamanları, klasörleri ve şifreli ayarları korur.
 
 Testlerdeki model kimlikleri ve anahtarlar yalnızca uydurma test verileridir. Gemini HTTP yanıtları taklit edilerek başarı, kota/erişim/ağ hataları, yanıt doğrulaması ve gizli bilgi sızıntısı test edilir. Chromium kontrolünde de Google yanıtları taklit edilmiştir. **Gerçek Google API anahtarıyla canlı bağlantı veya üretim denenmedi.**
+
+`tests/frontend/settings_http.test.cjs`, gerçek arayüz istek yardımcısını sanal saatle çalıştırır; 25/60 saniyelik senaryolar için beklemek gerekmez. Pytest, Node.js varsa bu 19 testi de çalıştırır; Node yoksa bu geliştirici kontrolünü açıkça atlar. Node uygulamayı başlatmak için gerekli değildir. Chromium kontrolünde ayrıca gerçek 23 saniyelik gecikme uygulanıp 20. saniyede yanlış uygulama hatası çıkmadığı doğrulandı.

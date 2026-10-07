@@ -5,6 +5,8 @@ import platform
 import shutil
 import sqlite3
 import tempfile
+import logging
+import time
 
 from fastapi import Body, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
@@ -25,6 +27,16 @@ from app.providers.factory import make_script_provider
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
+GEMINI_LOG = logging.getLogger('uvicorn.error.gemini_settings')
+GEMINI_UNEXPECTED_MESSAGE = 'Gemini ayarları işlenirken beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin.'
+GEMINI_ERROR_CATEGORIES = {'none', 'gemini_timeout', 'no_internet', 'key_rejected', 'quota_limit',
+                          'model_unavailable', 'upstream_error', 'invalid_response', 'missing_key',
+                          'provider_error', 'invalid_settings', 'local_storage', 'unexpected_backend'}
+
+
+def gemini_unexpected_response():
+    return JSONResponse(status_code=500, content={'message': GEMINI_UNEXPECTED_MESSAGE,
+                                                'category': 'unexpected_backend'})
 
 
 def directory_writable(directory: Path) -> bool:
@@ -64,7 +76,27 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             if not same_origin or (mutation and request.headers.get("x-ai-video-studio") != scope):
                 message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
-            response = await call_next(request)
+            gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
+            started = time.monotonic()
+            try:
+                response = await call_next(request)
+            except Exception:
+                if not gemini:
+                    raise
+                # Catch inside the middleware, before Starlette's outer server-error
+                # handler can re-raise and reset the connection. Never log the exception.
+                request.state.gemini_category = 'unexpected_backend'
+                response = gemini_unexpected_response()
+            if gemini:
+                operation = {'/api/settings/gemini/models': 'list_models',
+                             '/api/settings/gemini/test': 'test_connection'}.get(request.url.path, 'settings')
+                category = getattr(request.state, 'gemini_category', 'none' if response.status_code < 400 else 'invalid_settings')
+                if category not in GEMINI_ERROR_CATEGORIES:
+                    category = 'unexpected_backend'
+                success = response.status_code < 400 and category == 'none'
+                GEMINI_LOG.info('gemini_settings operation=%s result=%s category=%s elapsed_ms=%.0f',
+                                operation, 'success' if success else 'failure', category,
+                                (time.monotonic() - started) * 1000)
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
             return response
@@ -76,11 +108,19 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.exception_handler(SettingsInputError)
     async def invalid_settings(request: Request, error: SettingsInputError):
-        return JSONResponse(status_code=422, content={"message": str(error)})
+        request.state.gemini_category = 'invalid_settings'
+        content = {'message': str(error)}
+        if request.url.path.startswith('/api/settings/gemini'):
+            content['category'] = 'invalid_settings'
+        return JSONResponse(status_code=422, content=content)
 
     @application.exception_handler(SettingsStorageError)
     async def settings_storage_error(request: Request, error: SettingsStorageError):
-        return JSONResponse(status_code=503, content={"message": str(error)})
+        request.state.gemini_category = 'local_storage'
+        content = {'message': str(error)}
+        if request.url.path.startswith('/api/settings/gemini'):
+            content['category'] = 'local_storage'
+        return JSONResponse(status_code=503, content=content)
 
     @application.exception_handler(ProjectError)
     async def project_error(request: Request, error: ProjectError):
@@ -88,7 +128,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.exception_handler(ScriptProviderError)
     async def script_provider_error(request: Request, error: ScriptProviderError):
-        return JSONResponse(status_code=error.status_code, content={"message": str(error)})
+        request.state.gemini_category = error.category
+        return JSONResponse(status_code=error.status_code, content={"message": str(error), 'category': error.category})
 
     @application.post("/api/projects", status_code=201)
     def create_project(payload: dict):
@@ -124,18 +165,19 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         return settings.clear(section)
 
     @application.post("/api/settings/{section}/test")
-    def test_connection(section: str):
+    def test_connection(section: str, request: Request):
         if section == "gemini":
             config = settings.gemini_config()
             try:
-                checked = make_script_provider("gemini", settings).test_connection()
+                checked = make_script_provider("gemini", settings, discovery=True).test_connection(selected_model=config['model'])
                 models = checked.pop("models")
                 outcome = checked
             except ScriptProviderError as error:
-                models = []
-                outcome = {"status": "Hata", "message": str(error)}
-            view = settings.record_gemini_test(config, outcome)
-            return {"result": outcome, "models": models, "settings": view}
+                models = None
+                outcome = {"status": "Hata", "message": str(error), 'category': error.category}
+            request.state.gemini_category = outcome.get('category', 'none')
+            view = settings.record_gemini_test(config, outcome, models)
+            return {"result": outcome, "models": models or [], "settings": view}
         if section == "ollama":
             config = settings.ollama_config()
             outcome = check_ollama(config)
@@ -161,7 +203,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.post("/api/settings/gemini/models")
     def gemini_models():
-        return {"models": make_script_provider("gemini", settings).list_models()}
+        config = settings.gemini_config()
+        models = make_script_provider("gemini", settings, discovery=True).list_models()
+        view = settings.record_gemini_models(config, models)
+        return {"models": view['gemini']['models'], 'settings': view}
 
     @application.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException):
@@ -170,6 +215,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.exception_handler(Exception)
     async def unexpected_error(request: Request, error: Exception):
+        if request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/'):
+            return gemini_unexpected_response()
         return JSONResponse(status_code=500, content={"message": "İşlem tamamlanamadı. Uygulamayı kapatıp yeniden açın; sorun sürerse Tanılama sayfasını kontrol edin."})
 
     @application.get("/api/health")

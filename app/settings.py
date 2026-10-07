@@ -6,7 +6,7 @@ import shutil
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 from app.secret_store import SettingsStore
-from app.providers.gemini import normalize_model
+from app.providers.gemini import normalize_model, MODEL_UNAVAILABLE_MESSAGE
 
 
 class SettingsInputError(Exception):
@@ -141,6 +141,24 @@ class SettingsService:
                 saved.setdefault(key, value)
         return values
 
+    @staticmethod
+    def _gemini_models(config: dict) -> list[str]:
+        key = config.get('api_key', '')
+        models = config.get('available_models', [])
+        if not isinstance(models, list):
+            return []
+        safe = []
+        for value in models:
+            if not isinstance(value, str) or (key and key in value):
+                continue
+            try:
+                value = normalize_model(value)
+            except ValueError:
+                continue
+            if value and value not in safe:
+                safe.append(value)
+        return safe
+
     def safe_view(self) -> dict:
         with self.store.lock:
             values = self._values()
@@ -154,7 +172,9 @@ class SettingsService:
                     public["model"] = ""  # Never echo even a damaged vault's key-as-model value.
                 configured = bool(config["model"]) if name == "ollama" else bool(key)
                 if name == "gemini":
-                    configured = configured and bool(public["model"])
+                    public['models'] = self._gemini_models(config)
+                    public['model_verified'] = bool(key and public['model'] in public['models'])
+                    configured = public['model_verified']
                 if name == "openai":
                     configured = configured and config["enabled"]
                 status = "Hazır" if configured else "Yapılandırılmadı"
@@ -166,6 +186,11 @@ class SettingsService:
                 if test:
                     status = test["status"] if configured or test["status"] == "Hata" else status
                     message = test["message"]
+                if name == 'gemini' and key and public['model'] and not public['model_verified']:
+                    if public['models'] and (not test or test['status'] != 'Hata'):
+                        status, message = 'Hata', MODEL_UNAVAILABLE_MESSAGE
+                    elif not test:
+                        status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
                               message=message, connection_test_available=(name in ("ollama", "gemini")))
                 result[name] = public
@@ -194,6 +219,13 @@ class SettingsService:
                 proposed_model = model.model if "model" in model.model_fields_set else values[section]["model"]
                 if secret and secret in proposed_model:
                     raise SettingsInputError("API anahtarını yalnızca anahtar alanına girin; model alanını düzeltin.")
+                key_changed = secret != values[section].get('api_key', '')
+                if 'model' in model.model_fields_set and proposed_model:
+                    if key_changed or proposed_model not in self._gemini_models(values[section]):
+                        raise SettingsInputError('Önce API anahtarını kaydedip Modelleri Getir düğmesine basın; listeden geçerli bir model seçin.')
+                if key_changed:
+                    values[section].pop('available_models', None)
+                    values[section]['model'] = ''
             updated = model.model_dump(exclude_unset=True, exclude={"api_key"})
             values[section].update(updated)
             if isinstance(model, KeySettings) and model.api_key is not None:
@@ -220,12 +252,28 @@ class SettingsService:
         with self.store.lock:
             return self._values()["gemini"].copy()
 
-    def record_gemini_test(self, tested: dict, outcome: dict) -> dict:
+    def record_gemini_models(self, tested: dict, models: list[str]) -> dict:
+        with self.store.lock:
+            values = self._values()
+            config = values['gemini']
+            if config.get('api_key', '') != tested.get('api_key', ''):
+                raise SettingsInputError('Gemini anahtarı sorgu sırasında değişti. Modelleri yeniden getirin.')
+            config['available_models'] = models
+            if config['model'] and config['model'] not in self._gemini_models(config):
+                config['last_test'] = {'status': 'Hata', 'message': MODEL_UNAVAILABLE_MESSAGE}
+            else:
+                config['last_test'] = {'status': 'Hazır', 'message': 'Gemini model listesi alındı. Listeden bir model seçip Kaydet deyin.'}
+            self.store.write(values)
+            return self.safe_view()
+
+    def record_gemini_test(self, tested: dict, outcome: dict, models: list[str] | None = None) -> dict:
         with self.store.lock:
             values = self._values()
             if any(values["gemini"].get(key, "") != tested.get(key, "") for key in ("api_key", "model")):
                 raise SettingsInputError("Gemini ayarları test sırasında değişti. Bağlantıyı yeniden test edin.")
             # Only fixed, safe status messages are stored; no Google response body.
+            if models is not None:
+                values['gemini']['available_models'] = models
             values["gemini"]["last_test"] = {"status": outcome["status"], "message": outcome["message"]}
             self.store.write(values)
             return self.safe_view()

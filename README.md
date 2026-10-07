@@ -48,10 +48,12 @@ Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basa
 1. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
 2. **Ayarlar → Gemini** bölümünde [Google AI Studio](https://aistudio.google.com/apikey) API anahtarınızı girip **Kaydet** deyin. Tam anahtar tekrar gösterilmez.
 3. **Modelleri Getir** deyin. **Model** alanında listeden bir model seçip **Kaydet** deyin.
-4. **Bağlantıyı Test Et** düğmesine basın; **Hazır** mesajını kontrol edin.
+4. **Bağlantıyı Test Et** düğmesine basın; **Hazır** mesajını kontrol edin. Gemini sorguları internet durumuna göre 60 saniyeye kadar sürebilir.
 5. **Yeni Proje → Senaryo motoru (Script Engine)** bölümünde **Gemini** seçip projenizi oluşturun. Seçim proje sayfasında görünür ve yeniden açılışta korunur.
 
 Gemini isteğe bağlıdır. Gemini Plus / Google AI Pro web aboneliği yerine ayrı bir Developer API anahtarı kullanılır. Bağlantı testi senaryo üretmez. Ayrıntılar ve doğrulanmış resmi API kaynakları: [Gemini rehberi](docs/GEMINI.md).
+
+Eski modeliniz listede yoksa listeden yeni bir model seçip **Kaydet** deyin. Gemini zaman aşımı artık uygulamanın kapalı olduğu şeklinde gösterilmez; arayüz gerektiğinde yerel uygulamayı ayrıca kontrol eder.
 
 ## Yerel dosyalar
 
@@ -74,5 +76,7 @@ python -m venv .venv
 ```
 
 Başlatıcı, sunucuyu yalnızca `127.0.0.1` adresinde açar. `/api/health` başarılı olduktan sonra tarayıcı açılır. Tanılama verisi `/api/diagnostics` adresindedir. Testlerde geçici veritabanları kullanılır; gerçek HTTP başlangıç testi yerel, Git tarafından yok sayılan veritabanını da doğrular.
+
+Geliştirme makinesinde Node.js varsa pytest, Settings HTTP yardımcısının 19 zaman aşımı/hata sınıflandırma testini de çalıştırır. Node yoksa yalnızca bu ek kontrol atlanır; Windows başlatıcısı Node gerektirmez.
 
 Proje kuralları: [AGENTS.md](AGENTS.md). Kapsam: [ROADMAP.md](ROADMAP.md). Tamamlananlar: [docs/STATUS.md](docs/STATUS.md).

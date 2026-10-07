@@ -15,6 +15,10 @@ from app.scripts.models import ScriptError, word_count
 from app.scripts.storage import dumps
 
 MEDIA_PRIORITY = ['pexels', 'pixabay', 'local', 'cloud_with_permission']
+MAX_SCENE_SECONDS = 18
+EDIT_OPTIONS = {'transition':{'hard_cut','crossfade','fade','none'},
+                'motion':{'none','slow_zoom','pan','ken_burns','overlay','emphasis_text'},
+                'composition':{'wide','medium','close','detail','person','object','environment','movement','graphic'}}
 SCENE_ERRORS = {
     'narration_units_missing': 'AI bazı senaryo parçalarını sahnelere atamadı.',
     'narration_units_duplicate': 'AI aynı senaryo parçasını birden fazla sahnede kullandı.',
@@ -163,9 +167,9 @@ def scene_metadata(scene, narration):
         valid_entities=[item for item in value if isinstance(item,str) and item.strip() and len(item)<=150][:20] if isinstance(value,list) else []
         block['entities']=valid_entities
         if valid_entities!=value: warnings.append('Özneler alanındaki geçersiz değerler çıkarıldı. Yeni kişi/varlık eklenmedi.')
-    enums={'transition':{'hard_cut','crossfade','fade','none'},'motion':{'none','slow_zoom','pan','ken_burns','overlay','emphasis_text'},
-           'composition':{'wide','medium','close','detail','person','object','environment','movement','graphic'}}
-    for field,choices in enums.items():
+    defaults=[]
+    for field,choices in EDIT_OPTIONS.items():
+        if not isinstance(scene.get(field),str) or scene[field] not in choices: defaults.append(field)
         if field not in scene: continue
         value=scene[field]
         if isinstance(value,str) and value in choices: block[field]=value
@@ -177,6 +181,7 @@ def scene_metadata(scene, narration):
     allowed=set(VisualBlock.model_fields)|{'unit_ids','narration_text'}
     if set(scene)-allowed: warnings.append('Ek sahne alanları kullanılmadı.')
     block['metadata_warnings']=warnings
+    block['_editing_defaults']=defaults  # Consumed locally before blocks are persisted.
     return block
 
 
@@ -195,7 +200,7 @@ def narration_units(text, words_per_minute=135, *, prefix='U'):
         elif pieces: pieces[-1] += text[start:]
     exact = []
     for piece in pieces:
-        if word_count(piece) / words_per_minute * 60 <= 20:
+        if word_count(piece) / words_per_minute * 60 <= MAX_SCENE_SECONDS:
             exact.append(piece); continue
         # No arbitrary word/time cuts, even for a huge sentence without punctuation.
         start = 0
@@ -253,6 +258,100 @@ def scene_references(raw, units):
     return groups
 
 
+def compatible_compositions(block):
+    """Camera suggestions only, using existing intent; never infer people/places."""
+    intent=normalize(block['visual_intent']).casefold()
+    if re.search(r'\b(detail|macro|close.?up|close (?:shot|view|framing)|nahaufnahme|detay|makro)\b|yakın plan',intent):
+        return ['detail','close']
+    if re.search(r'\bwide (?:establishing )?shot\b|geniş plan',intent): return ['wide']
+    if re.search(r'\bmedium shot\b|orta plan',intent): return ['medium']
+    if re.search(r'\b(chart|diagram|infographic|graph|graphic|map|karte|grafik|harita|diagramm)\b',intent):
+        return ['graphic','detail','wide']
+    if re.search(r'\b(landscape|habitat|forest|environment|skyline|wald|orman|manzara)\b',intent):
+        return ['environment','wide','medium','detail']
+    choices=['medium','wide','close']
+    if re.search(r'\b(car|vehicle|charging|product|tool|computer|object|auto|fahrzeug|nesne|ürün)\b',intent):
+        choices+=['detail','object']
+    if block['media_type']=='stock_video' and re.search(r'\b(driving|running|walking|flying|movement|motion|fahren|laufen|hareket)\b',intent):
+        choices.append('movement')
+    return choices
+
+
+def paced_unit_groups(ids, source_by_id, rate, *, opening=False, coarse=False):
+    """Keep AI semantic groups, subdividing only on existing source-unit edges."""
+    sizes=[word_count(source_by_id[uid])/rate*60 for uid in ids]
+    if sum(sizes)<=MAX_SCENE_SECONDS and not coarse: return [ids]
+    groups=[];offset=0
+    while offset<len(ids):
+        remaining=sum(sizes[offset:])
+        target=5 if opening and not groups else 10
+        if remaining<=12 or offset==len(ids)-1:
+            groups.append(ids[offset:]);break
+        duration=0;candidates=[]
+        for end in range(offset,len(ids)-1):
+            duration+=sizes[end]
+            if duration>MAX_SCENE_SECONDS: break
+            tail=remaining-duration
+            # Avoid a tiny tail when the whole remainder already fits safely.
+            if duration>=3 and tail>=3:
+                candidates.append((abs(duration-target),end+1))
+        if candidates:
+            end=min(candidates)[1]
+        elif remaining<=MAX_SCENE_SECONDS:
+            groups.append(ids[offset:]);break
+        else:
+            # An indivisible overlong unit is isolated, never cut through words.
+            end=offset+1
+        groups.append(ids[offset:end]);offset=end
+    return groups
+
+
+def varied_query(block, used):
+    """Reuse supplied alternatives, then add only non-factual camera framing."""
+    original=[block['stock_query'],*block['alternative_stock_queries']]
+    candidates=list(original)
+    frames={'wide':'wide view','medium':'medium shot','close':'close up','detail':'detail view',
+            'environment':'wide view','object':'object detail','movement':'action view','graphic':'detail view'}
+    frame=frames.get(block['composition'],'medium shot')
+    for query in original:
+        variant=normalized_query(query+' '+frame)
+        if variant is not None: candidates.append(variant)
+    selected=next((query for query in candidates if query.casefold() not in used),original[0])
+    block['stock_query']=selected
+    block['alternative_stock_queries']=list(dict.fromkeys(query for query in original if query.casefold()!=selected.casefold()))[:5]
+
+
+def refine_scene_metadata(blocks, groups, source_by_id, rate, start, *, previous=None, single=False):
+    """Cost-free quality gate after critical validation, before timing/save."""
+    previous=previous or []
+    used={normalize(b['stock_query']).casefold() for b in previous}
+    last=previous[-1]['composition'] if previous else None
+    elapsed=start;result=[]
+    total=sum(word_count(b['narration'])/rate*60 for b in blocks)
+    coarse=total>=30 and total/len(blocks)>15
+    for block,ids in zip(blocks,groups):
+        defaults=block.pop('_editing_defaults')
+        parts=[ids] if single else paced_unit_groups(ids,source_by_id,rate,opening=elapsed==0,coarse=coarse)
+        for index,part in enumerate(parts):
+            child=deepcopy(block);child['narration']=''.join(source_by_id[uid] for uid in part)
+            duration=word_count(child['narration'])/rate*60
+            choices=compatible_compositions(child)
+            if 'composition' in defaults or index:
+                order=len(previous)+len(result)
+                choice=choices[order%len(choices)]
+                if choice==last: choice=choices[(order+1)%len(choices)]
+                child['composition']=choice
+            if index: child['overlay_text']=''  # Do not repeat the same caption on every subdivision.
+            if 'motion' in defaults and child['media_type'] in ('stock_image','ai_image'):
+                child['motion']='slow_zoom' if len(result)%2==0 else 'pan'
+            if index or normalize(child['stock_query']).casefold() in used:
+                varied_query(child,used)
+            if duration>MAX_SCENE_SECONDS:
+                child['pacing_reason']='Tek sahne yenilemesi anlatım sınırlarını korur; bölmek için tüm planı yeniden hazırlayın.' if single else 'Bu anlatım biriminde güvenli cümle/ifade sınırı yok; kelimeler bölünmedi.'
+            result.append(child);elapsed+=duration;last=child['composition'];used.add(normalize(child['stock_query']).casefold())
+    return result
+
+
 def enrich_blocks(blocks):
     """Extend the existing block contract; original fields stay authoritative."""
     for index, block in enumerate(blocks):
@@ -275,7 +374,8 @@ def scene_checks(blocks, text):
     warnings = []
     if not coverage(blocks,text): warnings.append('Sahne anlatımı onaylı senaryoyu tam ve aynı sırayla kapsamıyor.')
     if not blocks: return warnings + ['Plan içinde sahne yok.']
-    if word_count(text)>=250 and len(blocks)<max(3,word_count(text)//70):
+    total_duration=sum(b.get('estimated_duration',b['end']-b['start']) for b in blocks)
+    if total_duration>=30 and total_duration/len(blocks)>15:
         warnings.append('Bu uzunluktaki senaryo için çok az sahne var; anlamlı görsel geçişleri inceleyin.')
     queries, concept_run, image_run = set(), 0, 0
     for index, block in enumerate(blocks):
@@ -283,11 +383,13 @@ def scene_checks(blocks, text):
         warnings.extend(label+message for message in block.get('metadata_warnings',[]))
         duration=block.get('estimated_duration',block['end']-block['start'])
         if duration<2: warnings.append(label+'çok kısa; yararlı bir görsel fikir oluşturduğunu kontrol edin.')
-        if duration>20: warnings.append(label+'çok uzun; uygun cümle/anlam sınırlarında bölmeyi değerlendirin.')
+        if duration>MAX_SCENE_SECONDS:
+            reason='Kilitli sahne kullanıcı tercihiyle aynen korundu.' if block.get('locked') else block.get('pacing_reason','Uygun cümle/anlam sınırlarında bölmeyi değerlendirin.')
+            warnings.append(label+'çok uzun; '+reason)
         query=normalize(block['stock_query']).casefold()
         if query in queries: warnings.append(label+'stok sorgusu başka bir sahnede tekrarlanıyor.')
         queries.add(query)
-        image_run=image_run+1 if block['media_type'] in ('stock_image','ai_image') else 0
+        image_run=image_run+1 if block['media_type'] in ('stock_image','ai_image') and block['motion']=='none' else 0
         if image_run==4: warnings.append('Arka arkaya çok fazla sabit görsel var; ilgili video veya hareket önerilerini inceleyin.')
         if index>=2 and len({item['composition'] for item in blocks[index-2:index+1]})==1:
             warnings.append(label+'benzer kompozisyon arka arkaya geliyor.')
@@ -304,13 +406,14 @@ def scene_checks(blocks, text):
     return list(dict.fromkeys(warnings))
 
 
-def visual_blocks(raw, source, language, words_per_minute, start=0, *, units=None, single=False):
+def visual_blocks(raw, source, language, words_per_minute, start=0, *, units=None, single=False, previous=None):
     units = units if units is not None else narration_units(source,words_per_minute)
     if ''.join(unit['text'] for unit in units) != source: raise scene_error('narration_units_missing')
     groups = scene_references(raw,units)
     if set(raw) != {'scenes'} or single and len(groups)!=1: raise scene_error('invalid_scene_schema','scenes')
     source_by_id = {unit['unit_id']:unit['text'] for unit in units}
     blocks=[scene_metadata(scene,''.join(source_by_id[uid] for uid in ids)) for scene,ids in zip(raw['scenes'],groups)]
+    blocks=refine_scene_metadata(blocks,groups,source_by_id,words_per_minute,start,previous=previous,single=single)
     if ''.join(block['narration'] for block in blocks) != source:
         raise scene_error('narration_units_missing')
     for index, block in enumerate(blocks):
@@ -345,10 +448,10 @@ def production_checks(plan, current, project):
             ids.add(identity)
             if (media.get('width'), media.get('height')) != (plan['width'], plan['height']): warnings.append(prefix + 'çözünürlük hedefle eşleşmiyor; uyarlama gerekli.')
             if not media.get('available', False): warnings.append(prefix + 'medya dosyası henüz doğrulanmadı.')
-        if block['end'] - block['start'] > 20: warnings.append(prefix + 'görsel uzun sürüyor; cümle sonlarında çeşitlendirin.')
+        if block['end'] - block['start'] > MAX_SCENE_SECONDS: warnings.append(prefix + 'görsel uzun sürüyor; cümle sonlarında çeşitlendirin.')
         if block['language'] != plan['language'] or block['overlay_language'] != plan['language']: warnings.append(prefix + 'dil eşleşmiyor.')
         if block.get('image_status') == 'error': warnings.append(prefix + 'görsel üretimi başarısız.')
-        image_run = image_run+1 if block['media_type'] in ('stock_image', 'ai_image') else 0
+        image_run = image_run+1 if block['media_type'] in ('stock_image', 'ai_image') and block['motion']=='none' else 0
         if image_run == 4: warnings.append('Arka arkaya çok fazla sabit görsel var; ilgili video veya hareket önerilerini inceleyin.')
         if index >= 2 and len({item['composition'] for item in blocks[index-2:index+1]}) == 1: warnings.append(prefix + 'benzer kompozisyon arka arkaya geliyor.')
     if not plan.get('voice'): warnings.append('Seslendirme dosyası eksik; TTS çalıştırması daha sonra.')

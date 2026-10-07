@@ -11,7 +11,7 @@ from app.scripts.models import ScriptError
 from app.scripts.storage import dumps
 from app.providers.base import ScriptProviderError
 from app.production import (SCENE_ERRORS, SCENE_FIELDS, SCENE_METADATA_ERRORS, scene_error, scene_references,
-                            narration_units, exact_source_slices, visual_blocks)
+                            narration_units, exact_source_slices, visual_blocks, scene_checks)
 
 KINDS = ('retention', 'hooks', 'alternatives', 'claims', 'visual')
 RATINGS = ('Güçlü', 'Orta', 'Geliştirilebilir')
@@ -221,6 +221,7 @@ class QualityService:
                     if kind in ('hooks', 'alternatives'):
                         break  # Opening plus truthful subject; never an enormous prompt.
                 result = {'blocks': [block for part in parts for block in part]} if visual else self._merge(kind, parts)
+                if visual: result['quality_warnings']=scene_checks(result['blocks'],inputs['text'])
                 artifact_id = uuid4().hex
                 with self.projects.lock, closing(self.projects._connection()) as connection, connection:
                     connection.execute('INSERT INTO script_artifacts VALUES (?,?,?,?,?,?,?)', (artifact_id, job['project_id'], inputs['version_id'], kind, options['language'], dumps(guard.clean(result)), now()))
@@ -266,7 +267,7 @@ class QualityService:
                 if error.category in ('invalid_json','schema_invalid'): raise scene_error('invalid_scene_schema','json') from None
                 raise
         def reconstruct(raw):
-            return visual_blocks(raw,source,options['language'],(options['words_per_minute_min']+options['words_per_minute_max'])/2,start,units=units,single=single)
+            return visual_blocks(raw,source,options['language'],(options['words_per_minute_min']+options['words_per_minute_max'])/2,start,units=units,single=single,previous=data.get('previous_visuals'))
         repair=progress.get('visual_repair')
         if not repair or repair['segment_index']!=index:
             raw=ask(data)
@@ -307,7 +308,7 @@ class QualityService:
         if kind=='visual':
             return ('Group narration_units by meaning, topic changes, important facts, examples, comparisons, lists, emotional beats and section transitions. '
                     'Use every unit_id exactly once, in source order and contiguous groups. NEVER narration or narration_text; the application owns exact text. '
-                    'Adapt to content_type; never turn factual topics into stories. Opening 3–7 / main 5–12 second beats are guidance ONLY, not fixed lengths. '
+                    'Adapt to content_type; never turn factual topics into stories. Prefer 3–7 opening / 5–12 main second beats; guidance ONLY. Avoid groups over 18 seconds. '
                     'Use relevant ENGLISH primary stock queries and 1–5 DIFFERENT alternatives, each 2–12 words. Prefer stock_video; other types: stock_image, ai_image, motion_graphic, user_media. '
                     'Use previous_visuals to avoid unrelated repetition. No invented facts or claims of existing media. '
                     'Only the seven example fields are required. Optional: overlay_text (project language, max 12 words), entities, location, action, shot_suggestion. Omit uncertain optional fields. '

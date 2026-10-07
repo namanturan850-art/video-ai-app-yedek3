@@ -88,8 +88,10 @@ def test_project_language_overlay_and_english_semantic_queries(production_studio
     assert plan['language']==language
     for b in plan['blocks']:
         assert b['overlay_text']==overlay and b['overlay_language']==language
-        assert b['stock_query_language']=='en' and b['stock_query']=='electric cars Germany dealership'
+        assert b['stock_query_language']=='en'
+        assert b['stock_query'] in {'electric cars Germany dealership','EV charging station Europe','modern electric vehicle showroom'}
         assert b['stock_query'] not in b['narration']
+    assert len({b['stock_query'] for b in plan['blocks']})==len(plan['blocks'])
 
 
 @pytest.mark.parametrize('change',[{'stock_query':'cars'},{'alternative_stock_queries':[]},{'alternative_stock_queries':['car road','car road']},{'stock_query':'This is a complete long search sentence.'},{'overlay_text':' '.join(['word']*13)},{'importance':101},{'entities':['x'*151]},{'narration':'wrong narration'},{'locked':True},{'notes':KEY},{'purpose':'   '}])

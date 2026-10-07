@@ -1,12 +1,13 @@
 """Google Gemini Developer API only. Official contract: docs/GEMINI.md."""
 import re
 import time
+import logging
 from urllib.parse import quote
 
 import httpx
 from pydantic import SecretStr
 
-from app.providers.base import ScriptProviderError
+from app.providers.base import ScriptProviderError, normalize_text
 
 API_ROOT = 'https://generativelanguage.googleapis.com/v1beta'
 MODEL_LIST_TIMEOUT = 50
@@ -63,32 +64,84 @@ class GeminiScriptProvider:
             return httpx.Client(timeout=timeout, follow_redirects=False, transport=self._transport,
                                 headers={'x-goog-api-key': self._key.get_secret_value()})
         except (httpx.HTTPError, ValueError):
-            raise ScriptProviderError('Gemini bağlantısı hazırlanamadı. İnternet ve API ayarlarını kontrol edin.', 503) from None
+            raise ScriptProviderError('Gemini bağlantısı hazırlanamadı. İnternet ve API ayarlarını kontrol edin.', 503, category='network_error') from None
 
     def _request(self, client, method: str, path: str, **kwargs) -> dict:
+        started, category = time.monotonic(), 'success'
         try:
             response = client.request(method, API_ROOT + path, **kwargs)
             status = response.status_code
             if status != 200:
-                if status in (400, 401, 403):
-                    raise ScriptProviderError('Google Gemini API anahtarı veya erişim izni kabul edilmedi. Google AI Studio anahtarını ve API kısıtlamalarını kontrol edin.', status, category='key_rejected')
+                if status in (401, 403):
+                    raise ScriptProviderError('Google Gemini API anahtarı veya erişim izni kabul edilmedi. Google AI Studio anahtarını ve API kısıtlamalarını kontrol edin.', status, category='key_rejected', upstream_status=status)
+                if status == 400:
+                    rejected = False
+                    try:
+                        details = response.json().get('error', {}).get('details', [])
+                        rejected = isinstance(details, list) and any(isinstance(item, dict) and item.get('@type') == 'type.googleapis.com/google.rpc.ErrorInfo' and item.get('reason') == 'API_KEY_INVALID' for item in details)
+                    except (ValueError, AttributeError, TypeError):
+                        pass
+                    message = 'Google Gemini API anahtarı kabul edilmedi.' if rejected else 'Gemini model veya istek ayarlarını kabul etmedi. Seçilen modelin metin üretimini desteklediğini kontrol edin.'
+                    raise ScriptProviderError(message, status, category='key_rejected' if rejected else 'invalid_request', upstream_status=status)
                 if status == 404:
-                    raise ScriptProviderError(MODEL_UNAVAILABLE_MESSAGE, 404, category='model_unavailable')
+                    raise ScriptProviderError(MODEL_UNAVAILABLE_MESSAGE, 404, category='model_unavailable', upstream_status=status)
                 if status == 429:
                     retry = response.headers.get('Retry-After', '')
                     retry = min(120, int(retry)) if retry.isdigit() else 30
-                    raise ScriptProviderError('Gemini kota veya istek sınırına ulaşıldı. Bir süre bekleyip Google AI Studio kotasını kontrol edin.', 429, category='quota_limit', retry_after=retry)
-                raise ScriptProviderError('Google Gemini API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.', 503, category='upstream_error')
+                    quota = self._quota_category(response)
+                    message = {'free_quota_exhausted': 'Gemini ücretsiz API kotası tükendi veya bu model için ücretsiz kota yok. Google AI Studio kullanım sınırlarını kontrol edin.',
+                               'rate_limit': 'Gemini istek hız sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+                               'quota_limit': 'Gemini kota veya istek sınırına ulaşıldı. Google yanıtı ücretsiz kota ile hız sınırını ayıracak bilgi vermedi; AI Studio kotasını kontrol edin.'}[quota]
+                    raise ScriptProviderError(message, 429, category=quota, retry_after=retry, upstream_status=status)
+                raise ScriptProviderError('Google Gemini API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.', 503, category='upstream_error', upstream_status=status)
             result = response.json()
             if not isinstance(result, dict):
                 raise ValueError()
             return result
         except httpx.TimeoutException:
+            category = 'gemini_timeout'
             raise ScriptProviderError(GEMINI_TIMEOUT_MESSAGE, 504, category='gemini_timeout') from None
         except (httpx.ConnectError, httpx.ProxyError):
+            category = 'no_internet'
             raise ScriptProviderError('Gemini API için internet bağlantısı kurulamadı. İnternet bağlantınızı, güvenlik duvarını ve varsa proxy ayarlarını kontrol edin.', 503, category='no_internet') from None
+        except httpx.TransportError:
+            category = 'network_error'
+            raise ScriptProviderError('Gemini API HTTP bağlantısı tamamlanamadı. Ağ, proxy ve güvenlik duvarını kontrol edin.', 503, category=category) from None
         except (httpx.HTTPError, ValueError, TypeError):
+            category = 'invalid_response'
             raise ScriptProviderError('Gemini API yanıtı okunamadı. Daha sonra tekrar deneyin.', 502, category='invalid_response') from None
+        except ScriptProviderError as error:
+            category = error.category
+            raise
+        finally:
+            operation = 'list_models' if method == 'GET' else 'generate'
+            logging.getLogger('uvicorn.error.providers').info('provider=Gemini operation=%s layer=http category=%s elapsed_ms=%.0f', operation, category, (time.monotonic() - started) * 1000)
+
+    @staticmethod
+    def _quota_category(response):
+        """Google RPC QuotaFailure metadata only. Unknown 429 stays unknown quota.
+
+        Never expose quota IDs, dimensions, descriptions, project IDs or raw bodies.
+        """
+        try:
+            details = response.json().get('error', {}).get('details', [])
+            if not isinstance(details, list):
+                return 'quota_limit'
+            quotas = []
+            for item in details:
+                if isinstance(item, dict) and item.get('@type') == 'type.googleapis.com/google.rpc.QuotaFailure':
+                    violations = item.get('violations', [])
+                    if isinstance(violations, list):
+                        quotas.extend(value for value in violations if isinstance(value, dict))
+            free, rate = False, False
+            for quota in quotas:
+                name = ''.join(str(quota.get(field, '')) for field in ('quotaId', 'quotaMetric')).lower().replace('_', '').replace('-', '')
+                zero = str(quota.get('quotaValue', '')) == '0'
+                free |= 'free' in name and ('perday' in name or 'daily' in name or zero)
+                rate |= 'perminute' in name or 'persecond' in name
+            return 'free_quota_exhausted' if free else 'rate_limit' if rate else 'quota_limit'
+        except (ValueError, AttributeError, TypeError):
+            return 'quota_limit'
 
     def list_models(self) -> list[str]:
         models = set()
@@ -168,8 +221,6 @@ class GeminiScriptProvider:
             if not isinstance(parts, list) or any(not isinstance(part, dict) for part in parts):
                 raise ValueError()
             text = '\n'.join(part['text'] for part in parts if isinstance(part.get('text'), str) and not part.get('thought')).strip()
-            if not text:
-                raise ValueError()
-            return self._redact(text)
+            return normalize_text(self._redact(text))
         except (KeyError, IndexError, TypeError, AttributeError, ValueError):
-            raise ScriptProviderError('Gemini tamamlanmış bir senaryo döndürmedi. İsteği gözden geçirip tekrar deneyin; eksik çıktı kaydedilmedi.') from None
+            raise ScriptProviderError('Gemini tamamlanmış bir senaryo döndürmedi. İsteği gözden geçirip tekrar deneyin; eksik çıktı kaydedilmedi.', category='invalid_response') from None

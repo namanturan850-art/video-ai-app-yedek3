@@ -6,7 +6,7 @@ import time
 import httpx
 from pydantic import SecretStr
 
-from app.providers.base import ScriptProviderError
+from app.providers.base import ScriptProviderError, normalize_text
 from app.providers.gemini import ORIGINALITY_INSTRUCTION
 
 
@@ -26,9 +26,7 @@ class TextAPIProvider:
         data = self._call('POST', self.url, self._body(prompt), operation='generate')
         try:
             text = self._text(data)
-            if not isinstance(text, str) or not text.strip():
-                raise ValueError()
-            return self._redact(text.strip())
+            return normalize_text(self._redact(text) if isinstance(text, str) else text)
         except (ValueError, KeyError, IndexError, TypeError, AttributeError):
             raise ScriptProviderError(self.name + ' tamamlanmış bir yanıt döndürmedi. Tekrar deneyin.', 502, category='invalid_response') from None
 
@@ -56,16 +54,29 @@ class TextAPIProvider:
                             category = 'invalid_model'
                     except (ValueError, TypeError, AttributeError):
                         pass
+                if self.name == 'Ollama' and response.status_code == 400:
+                    # Classify only the known option rejection, never echo its body.
+                    try:
+                        reason = response.json().get('error', '')
+                        if isinstance(reason, str) and ('think' in reason.lower() or 'reasoning' in reason.lower()) and any(term in reason.lower() for term in ('support', 'unknown', 'invalid', 'disable', 'unrecognized')):
+                            category = 'thinking_unsupported'
+                        else:
+                            category = 'invalid_model'
+                    except (ValueError, TypeError, AttributeError):
+                        category = 'invalid_response'
                 messages = {'key_rejected': 'API anahtarı kabul edilmedi. Ayarlar bölümünü kontrol edin.',
                             'model_unavailable': 'Seçilen model kullanılamıyor. Ayarlar bölümünde model adını kontrol edin.',
                             'invalid_model': 'Model veya bu modelin desteklediği API isteği geçersiz. Chat Completions destekleyen bir model seçin.',
                             'billing_quota': 'OpenAI faturalandırma veya kota sınırına ulaşıldı. API hesabınızın bakiye ve kullanım sınırını kontrol edin.',
                             'rate_limit': 'OpenAI istek hız sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
                             'quota_limit': 'Kullanım sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+                            'thinking_unsupported': 'Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.',
+                            'invalid_response': 'API hata yanıtı okunamadı. Ham yanıt gösterilmedi.',
                             'upstream_error': 'Sağlayıcı yanıt veremiyor. Daha sonra tekrar deneyin.'}
                 retry = response.headers.get('Retry-After', '')
                 retry = min(120, int(retry)) if retry.isdigit() else 30 if response.status_code == 429 else 0
-                raise ScriptProviderError(self.name + ': ' + messages[category], 502, category=category, retry_after=retry)
+                message = messages[category] if category == 'thinking_unsupported' else self.name + ': ' + messages[category]
+                raise ScriptProviderError(message, 502, category=category, retry_after=retry, upstream_status=response.status_code)
             data = response.json()
             if not isinstance(data, dict):
                 raise ValueError()
@@ -74,8 +85,11 @@ class TextAPIProvider:
             category = 'generation_timeout'
             raise ScriptProviderError(self.name + ' zamanında yanıt vermedi. Tekrar deneyin.', 504, category='generation_timeout') from None
         except (httpx.ConnectError, httpx.ProxyError):
-            category = 'no_internet'
-            raise ScriptProviderError(self.name + ' bağlantısı kurulamadı. Bağlantınızı ve Ayarlar bölümünü kontrol edin.', 503, category='no_internet') from None
+            category = 'local_connection' if self.name == 'Ollama' else 'no_internet'
+            raise ScriptProviderError(self.name + ' bağlantısı kurulamadı. Bağlantınızı ve Ayarlar bölümünü kontrol edin.', 503, category=category) from None
+        except httpx.TransportError:
+            category = 'network_error'
+            raise ScriptProviderError(self.name + ' HTTP bağlantısı tamamlanamadı. Ağ, proxy ve sağlayıcı durumunu kontrol edin.', 503, category=category) from None
         except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError, AttributeError):
             category = 'invalid_response'
             raise ScriptProviderError(self.name + ' tamamlanmış bir yanıt döndürmedi. Tekrar deneyin.', 502, category='invalid_response') from None
@@ -83,7 +97,7 @@ class TextAPIProvider:
             category = error.category
             raise
         finally:
-            logging.getLogger('uvicorn.error.providers').info('provider=%s operation=%s category=%s elapsed_ms=%.0f', self.name, operation, category, (time.monotonic() - started) * 1000)
+            logging.getLogger('uvicorn.error.providers').info('provider=%s operation=%s layer=http category=%s elapsed_ms=%.0f', self.name, operation, category, (time.monotonic() - started) * 1000)
 
 
 class OllamaScriptProvider(TextAPIProvider):
@@ -97,18 +111,31 @@ class OllamaScriptProvider(TextAPIProvider):
             raise ScriptProviderError('Ollama modeli yapılandırılmamış. Ayarlar bölümünde kurulu modelin adını girin.', 422, category='missing_model')
         self.url, self.model = base_url.rstrip('/') + '/api/generate', model
         self._key, self._transport = SecretStr(''), transport
+        self.thinking_returned = False
 
     def _body(self, prompt):
-        return {'model': self.model, 'prompt': prompt, 'system': ORIGINALITY_INSTRUCTION, 'stream': False}
+        # Official GenerateRequest.Think, NOT options.think and NOT OpenAI compatibility.
+        return {'model': self.model, 'prompt': prompt, 'system': ORIGINALITY_INSTRUCTION, 'stream': False, 'think': False}
 
     def _text(self, data):
+        self.thinking_returned = bool(data.get('thinking'))
         if data.get('done') is not True or data.get('done_reason', 'stop') != 'stop':
-            raise ValueError()
-        return data['response']
+            raise ScriptProviderError('Ollama son yanıtı tamamlamadı; kısmi çıktı kullanılmadı.', category='incomplete_response')
+        # Never concatenate thinking, message.content or other response channels.
+        response = data.get('response')
+        if not response and self.thinking_returned:
+            raise ScriptProviderError('Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.', category='thinking_unsupported')
+        try:
+            return normalize_text(response)
+        except ScriptProviderError as error:
+            if error.category == 'reasoning_in_response':
+                raise ScriptProviderError('Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.', category='thinking_unsupported') from None
+            raise
 
     def test_connection(self):
         from app.provider_checks import check_ollama
-        return check_ollama({'base_url': self.url.removesuffix('/api/generate'), 'model': self.model})
+        config = {'base_url': self.url.removesuffix('/api/generate'), 'model': self.model}
+        return check_ollama(config, transport=self._transport) if self._transport is not None else check_ollama(config)
 
 
 class OpenAIScriptProvider(TextAPIProvider):

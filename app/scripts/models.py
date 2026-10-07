@@ -7,9 +7,10 @@ from app.languages import validate_language
 
 
 class ScriptError(Exception):
-    def __init__(self, message, status_code=422):
+    def __init__(self, message, status_code=422, *, category='script_error'):
         super().__init__(message)
         self.status_code = status_code
+        self.category = category
 
 
 class ScriptOptions(BaseModel):

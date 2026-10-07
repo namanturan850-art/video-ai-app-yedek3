@@ -1,5 +1,14 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — Sağlayıcı canlı tanılama ve entegrasyon düzeltmeleri
+
+- **Ayarlar → AI Tanılama:** Gemini/Ollama/OpenAI için şifreli kayıt-yeni okuyucuyla açılış, bağlantı/model, TEST_OK, katı JSON ve mevcut YouTubeScriptEngine üzerinden tek kısa bölüm ayrı düğme/sonuç/süre/güvenli kategoriyle çalışır. Kasa doğrulanmadan API çağrısı yok; ayar değişince yeniden doğrulama gerekir. Gemini/OpenAI üretim testleri işlem başına maliyet onayı ister. Proje/senaryo verisi yazılmaz; anahtarlar korunur. Arka plan işleri ve kısa yerel polling 20 saniyelik Settings süresinden bağımsızdır.
+- **Kodda bulunan katmanlar:** Ollama native isteğinde eksik üst seviye think:false eklendi; yalnızca response çıkarılır, reasoning son metne alınmaz; desteklenmeyen/yok sayılan seçenek güvenli uyumluluk mesajıyla tanılanır. JSON açıklama/fence ayrıştırması tek tam nesneye genişletildi; bozuk dış nesne, çoğaltılmış alan veya eksik şema onarılmaz. HTTP taşıma ile yanıt biçimi hatası ayrıldı. Gemini 400 anahtar/istek ayrımı ve resmi kota ayrıntısıyla ücretsiz kota/hız sınırı ayrımı; ayrıntısız 429 için kesin tür iddiası yok. OpenAI kasa, etkin durum, erişim ve üretim ayrı sonuçtur. Yeni hata kategorileri mevcut senaryo/devam ve kalite işlerinde korunur.
+- **Tam otomatik paket: 436 test, 434 geçti, 0 başarısız, 2 gerçek Windows/DPAPI testi Linux nedeniyle atlandı.** 70 yeni sağlayıcı/tanılama/JSON regresyonu. Pytest içindeki frontend kontrolü 28 JavaScript HTTP testi çalıştırır; hepsi geçti.
+- **Chromium + gerçek yerel FastAPI:** 15 ayrı tanılama testi, 22 saniyelik taklit Ollama üretimi boyunca sağlıklı yerel uygulama/polling, başarılı Gemini bağlantısından ayrı ücretsiz kota hatası, maskeli kayıt, mobil görünüm ve yeniden açılış geçti; JavaScript hatası yok. Dış API yanıtları taklit edildi; canlı sağlayıcı başarısı iddia edilmez.
+- **Canlı ortam sınırı:** Bu bulut ortamında gerçek anahtarlar/Ollama yok. Gerçek anahtarsız ulaşım denemeleri Gemini/OpenAI için ProxyError, Ollama için bağlantı kurulamadı verdi. Bu sonuç Windows'a genellenmez. Sahibin belirli hatalarının kesin canlı katmanı yeni testlerin Windows sonuçlarıyla belirlenmelidir. **Live provider test must be run by owner on Windows.** [Tek basit rehber, katmanlar ve resmi sözleşmeler](AI_DIAGNOSTICS.md).
+- Yeni roadmap aşaması, model indirme, render veya diğer üretim özelliği eklenmedi. Şema ve Windows başlatıcısı değişmedi; mevcut projeler, sürümler ve şifreli ayarlar korundu. Güvenli günlük/özet API anahtarı, Authorization, raw yanıt, stack trace veya tam üretilen metin içermez.
+
 ## 2026-10-07 — Kararlılık ve Geliştirme Paketi
 
 Sıra ve doğrulama:

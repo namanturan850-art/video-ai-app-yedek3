@@ -182,14 +182,24 @@ class ScriptService:
             save('draft', 'done', 100)
             LOG.info('script provider=%s operation=generate result=success category=success elapsed_ms=%.0f', job['provider'], (time.monotonic() - started) * 1000)
         except Exception as error:
-            category = error.category if isinstance(error, ScriptProviderError) and error.category in {'key_rejected', 'quota_limit', 'rate_limit', 'billing_quota', 'invalid_model', 'model_unavailable', 'no_internet', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'upstream_error'} else 'generation_error'
+            category = error.category if isinstance(error, (ScriptProviderError, ScriptError)) and error.category in {'key_rejected', 'quota_limit', 'free_quota_exhausted', 'rate_limit', 'billing_quota', 'invalid_model', 'invalid_request', 'model_unavailable', 'no_internet', 'local_connection', 'network_error', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'empty_response', 'incomplete_response', 'invalid_json', 'schema_invalid', 'thinking_unsupported', 'reasoning_in_response', 'upstream_error'} else 'generation_error'
             messages = {'key_rejected': 'API anahtarı kabul edilmedi. Ayarlar bölümünü kontrol edin.',
                         'quota_limit': 'Kullanım sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.',
+                        'free_quota_exhausted': 'Gemini ücretsiz API kotası tükendi veya bu model için ücretsiz kota yok. Google AI Studio limitlerini kontrol edin.',
                         'rate_limit': 'İstek hız sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.',
                         'billing_quota': 'API faturalandırma veya kota sınırına ulaşıldı. API hesabınızın bakiye ve limitlerini kontrol edin.',
                         'invalid_model': 'Model veya desteklediği istek geçersiz. Ayarlar bölümünü kontrol edin.',
+                        'invalid_request': 'Sağlayıcı model veya istek ayarlarını kabul etmedi. Ayarlar bölümünü kontrol edin.',
+                        'thinking_unsupported': 'Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.',
+                        'reasoning_in_response': 'Sağlayıcı son yanıta reasoning ekledi. AI Tanılama ekranında test edin.',
+                        'empty_response': 'Sağlayıcı boş son yanıt döndürdü. AI Tanılama ekranında test edin.',
+                        'incomplete_response': 'Sağlayıcı yanıtı tamamlanmadı. AI Tanılama ekranında test edin.',
+                        'invalid_json': 'Sağlayıcı geçerli tek JSON nesnesi döndürmedi. AI Tanılama ekranında JSON testini çalıştırın.',
+                        'invalid_response': 'Sağlayıcı yanıt biçimi okunamadı. AI Tanılama ekranında test edin.',
                         'model_unavailable': 'Seçilen model kullanılamıyor. Ayarlar bölümünü kontrol edin.',
                         'no_internet': 'Sağlayıcı bağlantısı kurulamadı. Bağlantınızı kontrol edin.',
+                        'local_connection': 'Yerel Ollama sunucusuna ulaşılamadı. Ollama uygulamasını açıp yerel adresi kontrol edin.',
+                        'network_error': 'Sağlayıcı HTTP bağlantısı tamamlanamadı. Ağ, proxy ve sağlayıcı durumunu kontrol edin.',
                         'gemini_timeout': 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.',
                         'generation_timeout': 'Sağlayıcı zamanında yanıt vermedi. Tekrar deneyin.'}
             message = str(error) if isinstance(error, ScriptError) else messages.get(category, 'Senaryo oluşturulurken işlem kesildi. Tekrar deneyin.')

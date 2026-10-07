@@ -7,6 +7,7 @@ from urllib.parse import quote
 from pydantic import ValidationError
 
 from app.scripts.models import ConceptBlueprint, ScriptPlan, ScriptError, word_count
+from app.providers.json_output import parse_json_object
 
 
 class SecretGuard:
@@ -111,18 +112,13 @@ class YouTubeScriptEngine:
 
     def structured(self, task, data, instructions, schema=None):
         text = self.ask(task, data, instructions + ' Return JSON only, without Markdown fences.')
-        # Some local models wrap valid JSON; strip only the explicit fence, never guess a schema.
-        if text.startswith('```'):
-            text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text)
         try:
-            result = json.loads(text)
-            if not isinstance(result, dict):
-                raise ValueError()
+            result = parse_json_object(text)
             if schema:
                 result = schema.model_validate(result).model_dump()
             return self.guard.clean(result)
         except (ValueError, TypeError, ValidationError):
-            raise ScriptError('Sağlayıcı analiz veya planı beklenen biçimde döndürmedi. Tekrar deneyin; tamamlanan bölümler korundu.') from None
+            raise ScriptError('Sağlayıcı JSON yanıtında gerekli alanlar veya alan türleri eksik/geçersiz. Eksik alanlar tamamlanmadı; tamamlanan bölümler korundu.', category='schema_invalid') from None
 
     def plan(self, blueprint, project, options):
         target = project['target_duration_minutes'] * (options['words_per_minute_min'] + options['words_per_minute_max']) / 2

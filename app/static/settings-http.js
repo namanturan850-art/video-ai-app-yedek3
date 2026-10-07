@@ -2,6 +2,7 @@
 async function settingsRequest(url, method = 'GET', body) {
   const gemini = /^\/api\/settings\/(gemini|images\/gemini)\/(models|test)$/.test(url);
   const openai = ['/api/settings/openai/test', '/api/settings/images/openai/test'].includes(url);
+  const diagnostics = url.startsWith('/api/settings/ai-diagnostics');
   const timeoutMessage = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';
   const unexpectedMessage = 'Gemini ayarları işlenirken beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin.';
   function failure(message, category) {
@@ -36,6 +37,13 @@ async function settingsRequest(url, method = 'GET', body) {
   }
   if (!result || typeof result !== 'object') throw failure(unexpectedMessage, 'unexpected_backend');
   if (!response.ok) {
+    if (diagnostics) {
+      const messages = {403:'Tanılama yalnızca yerel uygulama ekranından çalıştırılabilir. Sayfayı yeniden açın.',
+        409:'Bu sağlayıcının testi sürüyor. Sonucu bekleyip yenileyin.',
+        422:'Test başlatılamadı. Ekrandaki test düğmesini kullanın ve varsa maliyet onayını verin.',
+        503:'Yerel tanılama şu anda çalıştırılamıyor. Uygulamayı yeniden açıp tekrar deneyin.'};
+      throw failure(messages[response.status] || 'Yerel tanılama işlemi tamamlanamadı. Sonuçları yenileyip tekrar deneyin.', 'local_request_failed');
+    }
     if (openai) {
       const messages = {
         provider_disabled:'OpenAI kapalı. Ayarlar → OpenAI bölümünde Etkinleştir seçimini açıp Kaydet deyin.',
@@ -49,6 +57,7 @@ async function settingsRequest(url, method = 'GET', body) {
         quota_limit:'OpenAI kullanım sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
         generation_timeout:'OpenAI API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.',
         no_internet:'OpenAI API için internet bağlantısı kurulamadı.',
+        network_error:'OpenAI API HTTP bağlantısı tamamlanamadı. Ağ ve proxy ayarlarını kontrol edin.',
         upstream_error:'OpenAI API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.',
         invalid_response:'OpenAI API yanıtı okunamadı. Tekrar deneyin.'};
       const known=Object.hasOwn(messages,result.category);
@@ -60,7 +69,11 @@ async function settingsRequest(url, method = 'GET', body) {
         gemini_timeout: timeoutMessage,
         key_rejected: 'Google Gemini API anahtarı veya erişim izni kabul edilmedi. Google AI Studio anahtarını ve API kısıtlamalarını kontrol edin.',
         quota_limit: 'Gemini kota veya istek sınırına ulaşıldı. Bir süre bekleyip Google AI Studio kotasını kontrol edin.',
+        rate_limit: 'Gemini istek hız sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+        free_quota_exhausted: 'Gemini ücretsiz API kotası tükendi veya bu model için ücretsiz kota yok. Google AI Studio kullanım sınırlarını kontrol edin.',
+        invalid_request: 'Gemini model veya istek ayarlarını kabul etmedi. Seçilen modelin metin üretimini desteklediğini kontrol edin.',
         no_internet: 'Gemini API için internet bağlantısı kurulamadı. İnternet bağlantınızı, güvenlik duvarını ve varsa proxy ayarlarını kontrol edin.',
+        network_error: 'Gemini API HTTP bağlantısı tamamlanamadı. Ağ ve proxy ayarlarını kontrol edin.',
         model_unavailable: 'Kayıtlı model Gemini API listesinde bulunamadı. Modelleri Getir düğmesine basıp listeden geçerli bir model seçin ve Kaydet deyin.',
         missing_key: 'Önce Ayarlar → Gemini bölümünde API anahtarını kaydedin. Gemini kullanmak zorunda değilsiniz.',
         invalid_settings: 'Gemini ayarları sorgu sırasında değişmiş olabilir. Ayarları yeniden açıp tekrar deneyin.',

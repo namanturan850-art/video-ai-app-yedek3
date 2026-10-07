@@ -7,6 +7,34 @@ const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, '../../app/static/settings-http.js'), 'utf8');
 const KEY = 'synthetic-frontend-private-key-1234';
 const TIMEOUT = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';
+
+test('AI diagnostics starts a background test and polls short local requests after 20 seconds', async () => {
+  const calls = [];
+  const run = harness(async (url, options) => {calls.push([url,options.method]); return response({providers:[{simple_generation_status:'Test ediliyor'}]});});
+  await run.request('/api/settings/ai-diagnostics/ollama/simple_generation','POST',{});
+  run.clock.advance(25000);
+  const report = await run.request('/api/settings/ai-diagnostics');
+  assert.equal(report.providers[0].simple_generation_status,'Test ediliyor');
+  assert.deepEqual(run.timeouts,[20000,20000]);
+  assert.deepEqual(calls,[['/api/settings/ai-diagnostics/ollama/simple_generation','POST'],['/api/settings/ai-diagnostics','GET']]);
+});
+
+test('AI diagnostics unexpected HTTP error never displays raw JSON body', async () => {
+  const run = harness(async () => ({...response({message:KEY+' Authorization raw body'},false),status:500}));
+  await assert.rejects(run.request('/api/settings/ai-diagnostics'), error => !error.message.includes(KEY) && !error.message.includes('Authorization') && error.category==='local_request_failed');
+});
+
+test('AI diagnostics failed local fetch uses health to classify genuinely unreachable app', async () => {
+  const calls=[];
+  const run=harness(async url => {calls.push(url);throw namedError('TypeError');});
+  await assert.rejects(run.request('/api/settings/ai-diagnostics'), error=>error.category==='local_unreachable' && !error.message.includes(KEY));
+  assert.deepEqual(calls,['/api/settings/ai-diagnostics','/api/health']);
+});
+
+test('AI diagnostics fetch failure with reachable health is not provider quota or local app down', async () => {
+  const run=harness(async url=>{if(url==='/api/health')return response({status:'ok'});throw namedError('TypeError');});
+  await assert.rejects(run.request('/api/settings/ai-diagnostics'),error=>error.category==='local_request_failed' && !error.message.includes('Uygulamaya ulaşılamadı'));
+});
 function response(body, ok = true) { return {ok, json: async () => body}; }
 function namedError(name) { const error = new Error(KEY); error.name = name; return error; }
 function harness(fetch, online = true) {

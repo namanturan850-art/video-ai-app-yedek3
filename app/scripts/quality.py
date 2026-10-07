@@ -172,8 +172,8 @@ class QualityService:
             progress.update(phase='done', percent=100)
             checkpoint('draft')
         except Exception as error:
-            category = error.category if isinstance(error, ScriptProviderError) and error.category in ('quota_limit','rate_limit','billing_quota','key_rejected','no_internet','generation_timeout','gemini_timeout','model_unavailable','invalid_response','upstream_error') else 'tool_error'
-            allowed = {'quota_limit': 'Kullanım sınırına ulaşıldı.', 'rate_limit': 'İstek hız sınırına ulaşıldı.', 'billing_quota': 'API bakiye/kota sınırını kontrol edin.', 'no_internet': 'Sağlayıcı bağlantısı kurulamadı.'}
+            category = error.category if isinstance(error, ScriptProviderError) and error.category in ('quota_limit','free_quota_exhausted','rate_limit','billing_quota','key_rejected','no_internet','local_connection','network_error','generation_timeout','gemini_timeout','model_unavailable','invalid_response','invalid_json','thinking_unsupported','empty_response','upstream_error') else 'tool_error'
+            allowed = {'quota_limit': 'Kullanım sınırına ulaşıldı.', 'free_quota_exhausted': 'Gemini ücretsiz API kotasını kontrol edin.', 'rate_limit': 'İstek hız sınırına ulaşıldı.', 'billing_quota': 'API bakiye/kota sınırını kontrol edin.', 'no_internet': 'Sağlayıcı bağlantısı kurulamadı.', 'local_connection': 'Yerel Ollama sunucusuna ulaşılamadı.', 'network_error': 'API HTTP bağlantısı tamamlanamadı.', 'thinking_unsupported': 'Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.', 'invalid_json': 'Sağlayıcı tek ve geçerli JSON döndürmedi.', 'empty_response': 'Sağlayıcı boş son yanıt döndürdü.'}
             message = str(error) if isinstance(error, ScriptError) else allowed.get(category, 'AI aracı tamamlanamadı. Tekrar deneyin.')
             with self.projects.lock, closing(self.projects._connection()) as connection, connection:
                 saved = json.loads(connection.execute('SELECT progress_json FROM script_jobs WHERE id=?', (job_id,)).fetchone()['progress_json'])

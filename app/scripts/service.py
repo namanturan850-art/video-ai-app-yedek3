@@ -12,8 +12,9 @@ from app.projects import now
 from app.providers.base import ScriptProviderError
 from app.providers.factory import make_script_provider, SCRIPT_ENGINE_LABELS
 from app.scripts.engine import YouTubeScriptEngine, SecretGuard, assert_original, repetition_warnings, translation_chunks
-from app.scripts.models import ScriptOptions, ScriptError, duration_metrics
+from app.scripts.models import ScriptOptions, ScriptError, duration_metrics, word_count
 from app.scripts.storage import ScriptRepository, dumps, ACTIVE
+from app.scripts.review import final_report, CORRECTION_WARNING
 
 LOG = logging.getLogger('uvicorn.error.scripts')
 
@@ -162,7 +163,12 @@ class ScriptService:
 
             text = '\n\n'.join(section['text'] for section in progress['sections'])
             assert_original(text, options)
-            groups = [progress['sections'][i:i + 8] for i in range(0, len(progress['sections']), 8)]
+            text = self._correct_duration(text, engine, project, options, progress, save, job['provider'])
+            review_sections = progress['sections']
+            if progress.get('duration_correction', {}).get('applied'):
+                review_sections = [{'title': f'Bölüm {index + 1}', 'text': chunk, 'context': ''}
+                                   for index, chunk in enumerate(translation_chunks(text))]
+            groups = [review_sections[i:i + 8] for i in range(0, len(review_sections), 8)]
             for index, group in enumerate(groups):
                 if index < len(progress['reviews']):
                     continue
@@ -170,26 +176,47 @@ class ScriptService:
                 progress['reviews'].append(engine.review(progress['blueprint'], group, options))
                 save('checking', 'review_saved', progress['percent'])
             issues = [issue for review in progress['reviews'] for issue in review['issues']] + repetition_warnings(text)
-            metrics = duration_metrics(text, project['target_duration_minutes'], options)
-            if not metrics['target_word_min'] <= metrics['word_count'] <= metrics['target_word_max']:
-                issues.append('Kelime sayısı hedef süre aralığının dışında. Kaliteyi ve tahmini süreyi inceleyin; gerekirse metni düzenleyin.')
+            correction = progress.get('duration_correction', {})
+            if correction.get('attempted') and not correction.get('applied'):
+                issues.append(CORRECTION_WARNING)
             if options['mode'] == 'translate_owned':
                 issues.append('Çeviri kaynak metnin uzunluğunu korur; proje hedef süresine göre genişletilmez.')
-            report = {'consistent': all(review['consistent'] for review in progress['reviews']), 'issues': issues[:40], **metrics}
+            report = final_report(text, project['target_duration_minutes'], options,
+                                  {'consistent': all(review['consistent'] for review in progress['reviews']), 'issues': issues[:40]})
             save('checking', 'saving', 98)
             self.repository.create_version(job['project_id'], text, job['provider'], job['model'], options,
                 progress['blueprint']['content_type'], report, generated=True, job_id=job_id, progress=progress)
             save('draft', 'done', 100)
             LOG.info('script provider=%s operation=generate result=success category=success elapsed_ms=%.0f', job['provider'], (time.monotonic() - started) * 1000)
         except Exception as error:
-            category = error.category if isinstance(error, ScriptProviderError) and error.category in {'key_rejected', 'quota_limit', 'rate_limit', 'billing_quota', 'invalid_model', 'model_unavailable', 'no_internet', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'upstream_error'} else 'generation_error'
-            messages = {'key_rejected': 'API anahtarı kabul edilmedi. Ayarlar bölümünü kontrol edin.',
+            category = error.category if isinstance(error, (ScriptProviderError, ScriptError)) and error.category in {'key_rejected', 'quota_limit', 'free_quota_exhausted', 'rate_limit', 'billing_quota', 'invalid_model', 'invalid_request', 'model_unavailable', 'no_internet', 'local_connection', 'network_error', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'empty_response', 'incomplete_response', 'invalid_json', 'schema_invalid', 'thinking_unsupported', 'reasoning_in_response', 'upstream_error', 'blocked_response', 'no_candidates', 'malformed_candidate', 'unexpected_finish_reason', 'output_limit', 'malformed_content', 'malformed_parts', 'thought_only_response', 'response_schema_mismatch', 'model_unsupported'} else 'generation_error'
+            messages = {'blocked_response': 'Gemini yanıtı içerik kısıtlaması nedeniyle engelledi.',
+                        'no_candidates': 'Gemini yanıt adayı döndürmedi.',
+                        'malformed_candidate': 'Gemini yanıt adayı okunamadı.',
+                        'unexpected_finish_reason': 'Gemini beklenmeyen tamamlanma durumuyla döndü.',
+                        'output_limit': 'Gemini çıktı uzunluğu sınırına ulaştı.',
+                        'malformed_content': 'Gemini içerik alanı okunamadı.',
+                        'malformed_parts': 'Gemini içerik parçaları okunamadı.',
+                        'thought_only_response': 'Gemini yalnızca özel düşünme içeriği döndürdü; son yanıt yok.',
+                        'response_schema_mismatch': 'Gemini yanıt yapısı beklenen sözleşmeyle uyuşmuyor.',
+                        'model_unsupported': 'Seçilen Gemini modeli bu metin isteğini desteklemiyor.',
+                        'key_rejected': 'API anahtarı kabul edilmedi. Ayarlar bölümünü kontrol edin.',
                         'quota_limit': 'Kullanım sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.',
+                        'free_quota_exhausted': 'Gemini ücretsiz API kotası tükendi veya bu model için ücretsiz kota yok. Google AI Studio limitlerini kontrol edin.',
                         'rate_limit': 'İstek hız sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.',
                         'billing_quota': 'API faturalandırma veya kota sınırına ulaşıldı. API hesabınızın bakiye ve limitlerini kontrol edin.',
                         'invalid_model': 'Model veya desteklediği istek geçersiz. Ayarlar bölümünü kontrol edin.',
+                        'invalid_request': 'Sağlayıcı model veya istek ayarlarını kabul etmedi. Ayarlar bölümünü kontrol edin.',
+                        'thinking_unsupported': 'Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.',
+                        'reasoning_in_response': 'Sağlayıcı son yanıta reasoning ekledi. AI Tanılama ekranında test edin.',
+                        'empty_response': 'Sağlayıcı boş son yanıt döndürdü. AI Tanılama ekranında test edin.',
+                        'incomplete_response': 'Sağlayıcı yanıtı tamamlanmadı. AI Tanılama ekranında test edin.',
+                        'invalid_json': 'Sağlayıcı geçerli tek JSON nesnesi döndürmedi. AI Tanılama ekranında JSON testini çalıştırın.',
+                        'invalid_response': 'Sağlayıcı yanıt biçimi okunamadı. AI Tanılama ekranında test edin.',
                         'model_unavailable': 'Seçilen model kullanılamıyor. Ayarlar bölümünü kontrol edin.',
                         'no_internet': 'Sağlayıcı bağlantısı kurulamadı. Bağlantınızı kontrol edin.',
+                        'local_connection': 'Yerel Ollama sunucusuna ulaşılamadı. Ollama uygulamasını açıp yerel adresi kontrol edin.',
+                        'network_error': 'Sağlayıcı HTTP bağlantısı tamamlanamadı. Ağ, proxy ve sağlayıcı durumunu kontrol edin.',
                         'gemini_timeout': 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.',
                         'generation_timeout': 'Sağlayıcı zamanında yanıt vermedi. Tekrar deneyin.'}
             message = str(error) if isinstance(error, ScriptError) else messages.get(category, 'Senaryo oluşturulurken işlem kesildi. Tekrar deneyin.')
@@ -202,6 +229,41 @@ class ScriptService:
                 saved_progress['retry_not_before'] = time.time() + (error.retry_after if isinstance(error, ScriptProviderError) else 0)
                 connection.execute("UPDATE script_jobs SET status='error',error_message=?,progress_json=?,updated_at=? WHERE id=?", (message, dumps(saved_progress), now(), job_id))
             LOG.info('script provider=%s operation=%s result=failure category=%s elapsed_ms=%.0f', job['provider'], job['action'], category, (time.monotonic() - started) * 1000)
+
+    def _correct_duration(self, text, engine, project, options, progress, save, provider):
+        # Confirmed Ollama original-script issue only: translations preserve length
+        # and cloud providers receive no additional automatic generation request.
+        if provider != 'ollama' or options['mode'] != 'original': return text
+        correction = progress.get('duration_correction', {})
+        if correction.get('attempted'):
+            return correction.get('final_text', text) if correction.get('applied') else text
+        metrics = duration_metrics(text, project['target_duration_minutes'], options)
+        if metrics['word_count'] >= metrics['target_word_min'] * .85: return text
+        correction = {'attempted': True, 'applied': False, 'status': 'started', 'before_word_count': metrics['word_count']}
+        progress['duration_correction'] = correction
+        save('checking', 'duration_correction', 83)  # Persist BEFORE the sole API attempt.
+        started, category = time.monotonic(), 'success'
+        try:
+            candidate = engine.expand_duration(text, progress['blueprint'], project, options, metrics)
+            assert_original(candidate, options)
+            count = word_count(candidate)
+            if count <= metrics['word_count'] or count > metrics['target_word_max'] * 1.2 or repetition_warnings(candidate) or candidate.startswith(('{', '[', '```')):
+                category, correction['status'] = 'correction_rejected', 'rejected'
+            else:
+                correction.update(applied=True, status='completed', final_text=candidate, after_word_count=count)
+                progress['reviews'] = []  # Review final text, never pre-correction excerpts.
+                text = candidate
+        except (ScriptProviderError, ScriptError) as error:
+            allowed = {'empty_response', 'incomplete_response', 'thinking_unsupported', 'invalid_response', 'invalid_model', 'model_unavailable', 'local_connection', 'network_error', 'generation_timeout', 'quota_limit', 'upstream_error'}
+            category = error.category if isinstance(error, ScriptProviderError) and error.category in allowed else 'correction_rejected'
+            correction.update(status='failed', safe_error_category=category)
+        except Exception:
+            category = 'unexpected_backend'
+            correction.update(status='failed', safe_error_category=category)
+        finally:
+            LOG.info('script provider=ollama operation=duration_correction category=%s elapsed_ms=%.0f', category, (time.monotonic() - started) * 1000)
+        save('checking', 'duration_corrected', 84)
+        return text
 
     def edit(self, project_id, payload):
         allowed = {'text', 'base_version_id', 'confirm_replace_approved'}

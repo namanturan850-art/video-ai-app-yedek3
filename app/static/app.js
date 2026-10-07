@@ -2,6 +2,7 @@ const pages = {
   '/new-project': ['Yeni Proje', 'Video fikrinizi ve tercihlerinizi kaydedin. Bu adım video veya senaryo üretmez.'],
   '/projects': ['Projeler', 'Kaydettiğiniz projeleri açın veya istemediklerinizi silin.'],
   '/settings': ['Ayarlar', 'Kullanmak istediğiniz hizmetlerin bilgilerini buradan kaydedin. İstemediğiniz bölümleri boş bırakabilirsiniz.'],
+  '/settings/ai-diagnostics': ['AI Tanılama', 'Ayar kaydını, bağlantıyı, kısa üretimi, JSON biçimini ve tek senaryo bölümünü ayrı ayrı kontrol edin.'],
   '/diagnostics': ['Tanılama', 'Bilgisayarınızın ve uygulamanın durumunu buradan kontrol edebilirsiniz.']
 };
 const path = window.location.pathname;

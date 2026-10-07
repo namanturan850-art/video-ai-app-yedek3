@@ -1,5 +1,7 @@
 # Aşama 2 — Yerel ayarlar ve anahtarlar
 
+Sağlayıcı sorununda **Ayarlar → AI Tanılama** ile kasa kaydı, bağlantı, TEST_OK üretimi, JSON ve tek bölümü ayrı test edin. [Basit Windows rehberi](AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; bağlantı başarısı üretim kotası garantisi değildir.
+
 ## Kullanıcı için
 
 1. `START_AI_VIDEO_STUDIO.bat` dosyasına çift tıklayın.

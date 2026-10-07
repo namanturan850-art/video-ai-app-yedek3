@@ -7,6 +7,8 @@ from urllib.parse import quote
 from pydantic import ValidationError
 
 from app.scripts.models import ConceptBlueprint, ScriptPlan, ScriptError, word_count
+from app.providers.json_output import parse_json_object
+from app.scripts.review import safe_review_issues
 
 
 class SecretGuard:
@@ -111,18 +113,13 @@ class YouTubeScriptEngine:
 
     def structured(self, task, data, instructions, schema=None):
         text = self.ask(task, data, instructions + ' Return JSON only, without Markdown fences.')
-        # Some local models wrap valid JSON; strip only the explicit fence, never guess a schema.
-        if text.startswith('```'):
-            text = re.sub(r'^```(?:json)?\s*|\s*```$', '', text)
         try:
-            result = json.loads(text)
-            if not isinstance(result, dict):
-                raise ValueError()
+            result = parse_json_object(text)
             if schema:
                 result = schema.model_validate(result).model_dump()
             return self.guard.clean(result)
         except (ValueError, TypeError, ValidationError):
-            raise ScriptError('Sağlayıcı analiz veya planı beklenen biçimde döndürmedi. Tekrar deneyin; tamamlanan bölümler korundu.') from None
+            raise ScriptError('Sağlayıcı JSON yanıtında gerekli alanlar veya alan türleri eksik/geçersiz. Eksik alanlar tamamlanmadı; tamamlanan bölümler korundu.', category='schema_invalid') from None
 
     def plan(self, blueprint, project, options):
         target = project['target_duration_minutes'] * (options['words_per_minute_min'] + options['words_per_minute_max']) / 2
@@ -144,7 +141,9 @@ class YouTubeScriptEngine:
                                    'section_count': len(plan['sections']), 'continuity': context,
                                    'language': options['language'], 'instructions': options['instructions']},
             'Write only this section in natural native-sounding target-language narration. Use original '
-            'explanations/examples/phrasing; follow the section purpose and word target without padding. '
+            'explanations/examples/phrasing. The section target_words is a required length target, '
+            'not a summary limit: aim within 5% of that count, never return a half-length summary. '
+            'Develop the existing key points with relevant explanations/examples, not filler or repetition. '
             'Maintain facts, terminology and promises already introduced. Do not repeat earlier events or '
             'paragraphs, or end the video before its final section. Never invent facts/sources for factual '
             'content. Characters/timeline only for appropriate narrative formats. Use natural retention, '
@@ -168,10 +167,22 @@ class YouTubeScriptEngine:
                           'opening': section['text'][:500], 'ending': section['text'][-500:]} for section in sections]},
             'Check consistency, terminology, section order, promises/payoff, repetition and natural '
             'target-language narration using continuity summaries and excerpts. This is not independent '
-            'fact verification. Return JSON {"consistent":true,"issues":[]} with concise Turkish issues.')
+            'fact verification. Do not return reasoning, blueprint commentary or prose analysis. '
+            'Return JSON {"consistent":true,"issues":[]}; issues must be short codes from '
+            'topic, structure, tone, repetition, facts, promises, language only.')
         if type(result.get('consistent')) is not bool or not isinstance(result.get('issues'), list) or any(not isinstance(item, str) for item in result['issues']):
             raise ScriptError('Son kontrol sonucu okunamadı. Devam Et ile kontrolü yeniden deneyin.')
-        return {'consistent': result['consistent'], 'issues': result['issues'][:30]}
+        return {'consistent': result['consistent'], 'issues': safe_review_issues(result['issues'][:30])}
+
+    def expand_duration(self, text, blueprint, project, options, metrics):
+        return self.ask('expand_duration', {'source_text': text, 'blueprint': blueprint,
+            'topic': project['topic'], 'language': options['language'], 'tone': options['tone'],
+            'target_word_min': metrics['target_word_min'], 'target_word_max': metrics['target_word_max']},
+            'Perform ONE controlled length correction of this existing narration. Return the complete '
+            'final narration within the target word range. Preserve its topic, facts, section structure, '
+            'tone and target language. Develop only already established points with useful explanations '
+            'or clearly hypothetical examples. Do not invent facts, pad with filler, repeat paragraphs, '
+            'add reasoning, review commentary, headings or JSON. Return only the final script text.')
 
     def translate(self, text, previous, last, language='de'):
         return self.ask('translate_owned', {'explicit_user_ownership_confirmed': True, 'source_segment': text,

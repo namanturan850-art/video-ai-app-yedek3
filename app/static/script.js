@@ -5,7 +5,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
   const root = document.querySelector('#script-content'); root.hidden = false;
   let view = null, project = null, editing = false, dirty = false, timer = null, inFlight = false;
   const active = ['queued', 'analyzing', 'planning', 'generating', 'checking'];
-  const phases = {queued: 'Sırada', concept: 'Konsept analizi', concept_complete: 'Konsept hazır', plan: 'Bölüm planı', plan_complete: 'Plan hazır', section: 'Bölüm yazımı', section_saved: 'Bölüm kaydedildi', continuity: 'Bağlam özeti', context_saved: 'Bağlam kaydedildi', review: 'Tutarlılık kontrolü', review_saved: 'Kontrol kaydedildi', saving: 'Sürüm kaydı', done: 'Tamamlandı'};
+  const phases = {queued: 'Sırada', concept: 'Konsept analizi', concept_complete: 'Konsept hazır', plan: 'Bölüm planı', plan_complete: 'Plan hazır', section: 'Bölüm yazımı', section_saved: 'Bölüm kaydedildi', continuity: 'Bağlam özeti', context_saved: 'Bağlam kaydedildi', duration_correction: 'Hedef süre düzeltiliyor', duration_corrected: 'Süre kontrol edildi', review: 'Tutarlılık kontrolü', review_saved: 'Kontrol kaydedildi', saving: 'Sürüm kaydı', done: 'Tamamlandı'};
   function node(tag, text, className) { const item = document.createElement(tag); if (text) item.textContent = text; if (className) item.className = className; return item; }
   const back = node('a', '← Projeye dön', 'back'); back.href = `/projects/${id}`; root.append(back);
   const feedback = node('p', 'Senaryo yükleniyor…', 'provider-status'); feedback.id = 'script-feedback'; feedback.setAttribute('role', 'status'); root.append(feedback);
@@ -155,10 +155,16 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
     for (const item of toolResults.querySelectorAll('button,input,select')) item.disabled = Boolean(working);
   }
   function updateMetrics() {
-    // JavaScript's \w is ASCII; use Unicode letters/numbers for German words.
-    const unicodeCount = (editor.value.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu) || []).length;
-    const low = Number(form.elements.words_per_minute_min.value), high = Number(form.elements.words_per_minute_max.value);
-    metrics.textContent = `${unicodeCount} kelime · Tahmini seslendirme: ${(unicodeCount / ((low + high) / 2)).toFixed(1)} dakika · Hedef: ${view?.target_minutes || 0} dakika (${Math.ceil((view?.target_minutes || 0) * low)}–${Math.floor((view?.target_minutes || 0) * high)} kelime)`;
+    const options = view?.current?.options || view?.job?.options || {words_per_minute_min: Number(form.elements.words_per_minute_min.value), words_per_minute_max: Number(form.elements.words_per_minute_max.value)};
+    const minutes = view?.current?.report?.target_minutes ?? view?.target_minutes ?? 0;
+    const measured = scriptDurationMetrics(editor.value, minutes, options);
+    if (!dirty && view?.current?.report?.word_count === measured.word_count) measured.estimated_minutes = view.current.report.estimated_minutes;
+    metrics.textContent = `${measured.word_count} kelime · Tahmini seslendirme: ${measured.estimated_minutes.toFixed(2)} dakika · Hedef: ${minutes} dakika (${measured.target_word_min}–${measured.target_word_max} kelime)`;
+    warnings.replaceChildren();
+    if (view?.current) {
+      const messages = dirty ? ['Elle düzenlenen metni onaylamadan önce tutarlılık ve gerçek bilgiler açısından inceleyin.'] : view.current.report.review_messages;
+      for (const message of scriptReviewMessages(messages, measured)) warnings.append(node('li', message));
+    }
   }
   function render(data, restoreForm = false) {
     const changed = view?.current?.id !== data.current?.id;
@@ -183,7 +189,6 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
       analysisBody.append(node('p', `Algılanan biçim: ${blueprint.content_type}`), node('p', `Konu: ${blueprint.core_topic}`), node('p', `İzleyiciye vaat: ${blueprint.viewer_promise || 'Kaynak anlamı korunur.'}`), node('p', `Açılış: ${blueprint.main_hook || 'Çeviri modu'}`));
       const list = node('ol'); for (const section of job.progress.plan?.sections || []) list.append(node('li', `${section.title}${section.target_words ? ` — yaklaşık ${section.target_words} kelime` : ''}`)); analysisBody.append(list);
     }
-    warnings.replaceChildren(); for (const message of data.current?.report?.issues || []) warnings.append(node('li', message));
     feedback.textContent = job?.status === 'error' ? `${job.error_message}${job.progress.section_index ? ` Kesilen bölüm: ${job.progress.section_index}.` : ''}` : job && active.includes(job.status) ? 'İşlem sürüyor. Mevcut senaryo ve sürümler korunuyor.' : data.current ? 'Senaryo sürümünüz hazır. Metni inceleyip düzenleyebilir ve onaylayabilirsiniz.' : job?.status_label || 'Konuya uygun analiz veya senaryo oluşturma ile başlayın.';
     renderTools(); modeFields(); updateMetrics(); syncButtons();
     clearTimeout(timer);

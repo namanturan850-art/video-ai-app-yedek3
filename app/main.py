@@ -30,12 +30,17 @@ from app.scripts.quality import QualityService
 from app.languages import LANGUAGES
 from app.production import ProductionService
 from app.providers.images import LocalGPUImageProvider, GeminiImageProvider, OpenAIImageProvider
+from app.provider_diagnostics import ProviderDiagnostics, DiagnosticInputError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
 GEMINI_LOG = logging.getLogger('uvicorn.error.gemini_settings')
 GEMINI_UNEXPECTED_MESSAGE = 'Gemini ayarları işlenirken beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin.'
 GEMINI_ERROR_CATEGORIES = {'none', 'gemini_timeout', 'no_internet', 'key_rejected', 'quota_limit',
+                          'rate_limit', 'free_quota_exhausted', 'invalid_request', 'network_error',
+                          'model_unsupported', 'blocked_response', 'no_candidates', 'malformed_candidate',
+                          'unexpected_finish_reason', 'output_limit', 'malformed_content', 'malformed_parts',
+                          'thought_only_response', 'response_schema_mismatch', 'empty_response', 'missing_model',
                           'model_unavailable', 'upstream_error', 'invalid_response', 'missing_key',
                           'provider_error', 'invalid_settings', 'local_storage', 'unexpected_backend'}
 
@@ -66,11 +71,14 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         try:
             yield
         finally:
+            ai_diagnostics.close()
             scripts.close()
 
     application = FastAPI(title="AI Video Studio", version=__version__, lifespan=lifespan)
     settings = SettingsService(SettingsStore(storage / "secrets"))
     application.state.settings = settings
+    ai_diagnostics = ProviderDiagnostics(settings)
+    application.state.ai_diagnostics = ai_diagnostics
     projects = ProjectService(storage)
     application.state.projects = projects
     scripts = ScriptService(projects, settings)
@@ -136,6 +144,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         if request.url.path.startswith('/api/settings/gemini'):
             content['category'] = 'invalid_settings'
         return JSONResponse(status_code=422, content=content)
+
+    @application.exception_handler(DiagnosticInputError)
+    async def invalid_diagnostic(request: Request, error: DiagnosticInputError):
+        return JSONResponse(status_code=error.status_code, content={'message': str(error)})
 
     @application.exception_handler(SettingsStorageError)
     async def settings_storage_error(request: Request, error: SettingsStorageError):
@@ -265,6 +277,14 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def read_settings():
         return settings.safe_view()
 
+    @application.get('/api/settings/ai-diagnostics')
+    def read_ai_diagnostics():
+        return ai_diagnostics.view()
+
+    @application.post('/api/settings/ai-diagnostics/{provider}/{test}', status_code=202)
+    def run_ai_diagnostic(provider: str, test: str, payload: dict):
+        return ai_diagnostics.start(provider, test, payload)
+
     @application.put("/api/settings/{section}")
     def save_settings(section: str, payload: dict):
         return settings.save(section, payload)
@@ -390,6 +410,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get("/projects/{project_id}/script")
     @application.get('/projects/{project_id}/production')
     @application.get("/settings")
+    @application.get('/settings/ai-diagnostics')
     @application.get("/diagnostics")
     def page():
         return FileResponse(STATIC / "index.html")

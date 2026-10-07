@@ -2,6 +2,8 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
+**Sağlayıcı sorunlarını ayırmak için:** Ayarlar → **AI Tanılama**. Şifreli kayıt, bağlantı, kısa üretim, JSON ve tek senaryo bölümü ayrı test edilir. [Çok basit Windows adımları](docs/AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; otomatik test başarısı canlı API başarısı değildir.
+
 **Aşama 1–4 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler ve genel amaçlı YouTube senaryo motoru. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Gerçek video üretimi henüz yoktur.
 
 **Kararlılık ve geliştirme paketi:** gerçek OpenAI erişim testi, güvenli kasa hata ayrımı, kota bekleme/devam, beş hedef dil, retention/hook/A-B/iddia araçları ve onaylı metinden görsel/kurgu planı eklendi. Görsel sağlayıcı ayarları ve kontrolleri çalışır; medya, gerçek görsel/TTS, müzik işleme, render ve yükleme sonraki çalıştırma için hazırlanmıştır. Ücretli görsel fallback varsayılan **KAPALI**. Tek basit [Windows kontrol listesi](docs/STABILITY_AND_ENHANCEMENTS.md) tüm paketi anlatır.

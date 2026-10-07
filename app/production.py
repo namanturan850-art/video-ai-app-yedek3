@@ -27,10 +27,24 @@ SCENE_ERRORS = {
     'invalid_composition': 'AI geçerli bir kompozisyon döndürmedi.',
 }
 SCENE_METADATA_ERRORS = {key for key in SCENE_ERRORS if key.startswith('invalid_')}
+SCENE_FIELDS = {'purpose':'amaç','mood':'duygu','visual_intent':'görsel niyet','stock_query':'birincil stok sorgusu',
+                'alternative_stock_queries':'alternatif stok sorguları','media_type':'medya türü',
+                'unit_ids':'senaryo parçası kimlikleri','scenes':'sahneler','json':'JSON',
+                'narration':'kaynak anlatım'}
+MEDIA_ALIASES = {'video':'stock_video','stock video':'stock_video','image':'stock_image',
+                 'stock image':'stock_image','ai image':'ai_image','motion graphic':'motion_graphic','user media':'user_media'}
 
 
-def scene_error(category):
-    return ScriptError(SCENE_ERRORS[category], category=category)
+def scene_error(category, field=None, *, missing=False):
+    field = field if isinstance(field,str) and field in SCENE_FIELDS else None
+    message=SCENE_ERRORS[category]
+    if field:
+        state='eksik' if missing else 'eksik veya geçersiz'
+        message=f"AI sahne planında '{SCENE_FIELDS[field]}' alanını {state} döndürdü."
+    error=ScriptError(message,category=category)
+    error.field=field
+    error.diagnostic=f'{category}:{field}' if field else category
+    return error
 
 
 def editable(method):
@@ -49,13 +63,13 @@ class VisualBlock(BaseModel):
     mood: str = Field(min_length=1, max_length=100)
     visual_intent: str = Field(min_length=1, max_length=1500)
     stock_query: str = Field(min_length=3, max_length=300)
-    alternative_stock_queries: list[str] = Field(min_length=2, max_length=5)
+    alternative_stock_queries: list[str] = Field(min_length=1, max_length=5)
     media_type: Literal['stock_video', 'stock_image', 'ai_image', 'motion_graphic', 'user_media']
     overlay_text: str = Field(default='', max_length=150)
-    transition: Literal['hard_cut', 'crossfade', 'fade', 'none']
-    motion: Literal['none', 'slow_zoom', 'pan', 'ken_burns', 'overlay', 'emphasis_text']
-    composition: Literal['wide', 'medium', 'close', 'detail', 'person', 'object', 'environment', 'movement', 'graphic']
-    importance: int = Field(ge=0, le=100)
+    transition: Literal['hard_cut', 'crossfade', 'fade', 'none'] = 'none'
+    motion: Literal['none', 'slow_zoom', 'pan', 'ken_burns', 'overlay', 'emphasis_text'] = 'none'
+    composition: Literal['wide', 'medium', 'close', 'detail', 'person', 'object', 'environment', 'movement', 'graphic'] = 'medium'
+    importance: int = Field(default=50, ge=0, le=100)
     entities: list[str] = Field(default_factory=list, max_length=20)
     location: str = Field(default='', max_length=300)
     action: str = Field(default='', max_length=300)
@@ -64,13 +78,17 @@ class VisualBlock(BaseModel):
 
     @model_validator(mode='after')
     def semantic_queries(self):
-        if any(not value.strip() for value in (self.narration,self.purpose,self.mood,self.visual_intent)):
-            raise PydanticCustomError('invalid_scene_schema', 'Anlatım, amaç, duygu ve görsel niyet boş olamaz.')
+        for field in ('narration','purpose','mood','visual_intent'):
+            if not getattr(self,field).strip():
+                raise PydanticCustomError('invalid_scene_schema', 'Anlatım, amaç, duygu ve görsel niyet boş olamaz.', {'field':field})
+        if not any(char.isalpha() for char in self.visual_intent) or self.visual_intent.strip().casefold() in ('none','null','n/a','unknown','tbd','yok','belirtilmedi'):
+            raise PydanticCustomError('invalid_scene_schema', 'Kullanılabilir bir görsel niyet gerekli.', {'field':'visual_intent'})
         queries = [self.stock_query, *self.alternative_stock_queries]
-        if any(not 2 <= len(query.split()) <= 12 or len(query) > 300 or re.search(r'[.!?;\n]',query) for query in queries):
-            raise PydanticCustomError('invalid_stock_queries', 'Anlamsal stok sorgusu birden fazla anlamlı kelime içermeli.')
+        for index,query in enumerate(queries):
+            if not 2 <= len(query.split()) <= 12 or len(query) > 300 or re.search(r'[.!?;\n]',query):
+                raise PydanticCustomError('invalid_stock_queries', 'Anlamsal stok sorgusu birden fazla anlamlı kelime içermeli.', {'field':'stock_query' if index==0 else 'alternative_stock_queries'})
         if len({normalize(query).casefold() for query in queries}) != len(queries):
-            raise PydanticCustomError('invalid_stock_queries', 'Aynı sahnenin stok sorguları farklı olmalı.')
+            raise PydanticCustomError('invalid_stock_queries', 'Aynı sahnenin stok sorguları farklı olmalı.', {'field':'alternative_stock_queries'})
         if any(not entity.strip() or len(entity)>150 for entity in self.entities):
             raise ValueError('Varlık alanlarını kontrol edin.')
         if word_count(self.overlay_text)>12 or self.overlay_text and normalize(self.overlay_text)==normalize(self.narration):
@@ -92,6 +110,74 @@ class NarrationTiming(BaseModel):
 
 def normalize(text):
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def normalized_query(value):
+    if not isinstance(value,str) or re.search(r'\n\s*\n',value): return None
+    query=normalize(value).rstrip('.,!?;:…。！？').rstrip()
+    if not 2<=len(query.split())<=12 or len(query)>300 or re.search(r'[.!?;\n]',query): return None
+    if sum(bool(re.search(r'[^\W\d_]',word)) for word in query.split())<2: return None
+    return query
+
+
+def scene_metadata(scene, narration):
+    """Strict semantic core, followed by non-factual editing defaults/sanitization."""
+    query=normalized_query(scene.get('stock_query'))
+    if query is None: raise scene_error('invalid_stock_queries','stock_query',missing='stock_query' not in scene)
+    alternatives=scene.get('alternative_stock_queries')
+    if not isinstance(alternatives,list):
+        raise scene_error('invalid_stock_queries','alternative_stock_queries',missing='alternative_stock_queries' not in scene)
+    cleaned=[normalized_query(value) for value in alternatives]
+    valid=[value for value in cleaned if value is not None]
+    if not valid: raise scene_error('invalid_stock_queries','alternative_stock_queries')
+    if len({query.casefold(),*(value.casefold() for value in valid)})!=len(valid)+1:
+        raise scene_error('invalid_stock_queries','alternative_stock_queries')
+    media=scene.get('media_type','stock_video')
+    if not isinstance(media,str): raise scene_error('invalid_media_type','media_type')
+    media=media.strip().casefold();media=MEDIA_ALIASES.get(media,media)
+    core={key:scene[key] for key in ('purpose','mood','visual_intent') if key in scene}
+    core.update(narration=narration,stock_query=query,alternative_stock_queries=valid[:5],media_type=media)
+    try: block=VisualBlock.model_validate(core).model_dump()
+    except ValidationError as error:
+        detail=error.errors()[0]
+        field=detail.get('ctx',{}).get('field') or (detail['loc'][0] if detail['loc'] else None)
+        category=detail['type'] if detail['type'] in SCENE_METADATA_ERRORS else {'stock_query':'invalid_stock_queries',
+                 'alternative_stock_queries':'invalid_stock_queries','media_type':'invalid_media_type'}.get(field,'invalid_scene_schema')
+        raise scene_error(category,field,missing=detail['type']=='missing') from None
+    warnings=[]
+    if len(valid)!=len(alternatives) or len(valid)>5:
+        warnings.append('Kullanılamayan veya fazla alternatif sorgular çıkarıldı; geçerli sorgular korundu.')
+    text_limits={'overlay_text':150,'location':300,'action':300,'shot_suggestion':500,'notes':1500}
+    labels={'overlay_text':'Vurgu yazısı','location':'Konum','action':'Eylem','shot_suggestion':'Çekim önerisi',
+            'notes':'Notlar','entities':'Özneler','importance':'Önem','transition':'Geçiş','motion':'Hareket','composition':'Kompozisyon'}
+    for field,limit in text_limits.items():
+        if field not in scene: continue
+        value=scene[field]
+        usable=isinstance(value,str) and len(value)<=limit
+        if field=='overlay_text' and usable:
+            usable=word_count(value)<=12 and (not value.strip() or normalize(value)!=normalize(narration))
+        if usable: block[field]=value
+        else: warnings.append(labels[field]+' alanı kullanılamadı; boş bırakıldı. Plan geçerli.')
+    if 'entities' in scene:
+        value=scene['entities']
+        valid_entities=[item for item in value if isinstance(item,str) and item.strip() and len(item)<=150][:20] if isinstance(value,list) else []
+        block['entities']=valid_entities
+        if valid_entities!=value: warnings.append('Özneler alanındaki geçersiz değerler çıkarıldı. Yeni kişi/varlık eklenmedi.')
+    enums={'transition':{'hard_cut','crossfade','fade','none'},'motion':{'none','slow_zoom','pan','ken_burns','overlay','emphasis_text'},
+           'composition':{'wide','medium','close','detail','person','object','environment','movement','graphic'}}
+    for field,choices in enums.items():
+        if field not in scene: continue
+        value=scene[field]
+        if isinstance(value,str) and value in choices: block[field]=value
+        else: warnings.append(labels[field]+' önerisi kullanılamadı; güvenli varsayılan kullanıldı.')
+    if 'importance' in scene:
+        value=scene['importance']
+        if type(value) is int and 0<=value<=100: block['importance']=value
+        else: warnings.append('Önem puanı kullanılamadı; güvenli varsayılan 50 kullanıldı.')
+    allowed=set(VisualBlock.model_fields)|{'unit_ids','narration_text'}
+    if set(scene)-allowed: warnings.append('Ek sahne alanları kullanılmadı.')
+    block['metadata_warnings']=warnings
+    return block
 
 
 def narration_units(text, words_per_minute=135, *, prefix='U'):
@@ -194,6 +280,7 @@ def scene_checks(blocks, text):
     queries, concept_run, image_run = set(), 0, 0
     for index, block in enumerate(blocks):
         label=f'Sahne {index+1}: '
+        warnings.extend(label+message for message in block.get('metadata_warnings',[]))
         duration=block.get('estimated_duration',block['end']-block['start'])
         if duration<2: warnings.append(label+'çok kısa; yararlı bir görsel fikir oluşturduğunu kontrol edin.')
         if duration>20: warnings.append(label+'çok uzun; uygun cümle/anlam sınırlarında bölmeyi değerlendirin.')
@@ -221,21 +308,9 @@ def visual_blocks(raw, source, language, words_per_minute, start=0, *, units=Non
     units = units if units is not None else narration_units(source,words_per_minute)
     if ''.join(unit['text'] for unit in units) != source: raise scene_error('narration_units_missing')
     groups = scene_references(raw,units)
-    if set(raw) != {'scenes'} or single and len(groups)!=1: raise scene_error('invalid_scene_schema')
+    if set(raw) != {'scenes'} or single and len(groups)!=1: raise scene_error('invalid_scene_schema','scenes')
     source_by_id = {unit['unit_id']:unit['text'] for unit in units}
-    blocks = []
-    try:
-        for scene, ids in zip(raw['scenes'],groups):
-            # Ignore unsolicited copied narration. It never owns source wording.
-            metadata = {key:value for key,value in scene.items() if key not in ('unit_ids','narration','narration_text')}
-            blocks.append(VisualBlock.model_validate({**metadata,'narration':''.join(source_by_id[uid] for uid in ids)}).model_dump())
-    except ValidationError as error:
-        fields = {'stock_query':'invalid_stock_queries','alternative_stock_queries':'invalid_stock_queries',
-                  'overlay_text':'invalid_overlay','media_type':'invalid_media_type','transition':'invalid_transition',
-                  'motion':'invalid_transition','composition':'invalid_composition'}
-        detail = error.errors()[0]
-        category = detail['type'] if detail['type'] in SCENE_METADATA_ERRORS else fields.get(detail['loc'][0] if detail['loc'] else '', 'invalid_scene_schema')
-        raise scene_error(category) from None
+    blocks=[scene_metadata(scene,''.join(source_by_id[uid] for uid in ids)) for scene,ids in zip(raw['scenes'],groups)]
     if ''.join(block['narration'] for block in blocks) != source:
         raise scene_error('narration_units_missing')
     for index, block in enumerate(blocks):
@@ -419,6 +494,7 @@ class ProductionService:
             fields=('visual_intent','stock_query','alternative_stock_queries','media_type','overlay_text',
                     'transition','motion','composition','shot_suggestion','notes')
             target.update({key:block[key] for key in fields})
+            target['metadata_warnings']=block.get('metadata_warnings',[])
             target.update(media=None,image_status='prepared')
             plan.update(provider=provider,model=model)
             self._save(project_id,plan,new_version=True,job_id=job_id)
@@ -468,8 +544,9 @@ class ProductionService:
         if set(payload['changes'])-allowed: raise ScriptError('Anlatım burada değiştirilemez. Metin için Senaryo ekranını kullanın.')
         try:
             visual=VisualBlock.model_validate({**{key:block[key] for key in VisualBlock.model_fields},**payload['changes']}).model_dump()
-        except ValueError: raise ScriptError('Sahne alanlarını kontrol edin. İki–beş farklı kısa stok alternatifi, kısa vurgu yazısı ve 0–100 önem puanı gerekli.') from None
+        except ValueError: raise ScriptError('Sahne alanlarını kontrol edin. Bir–beş farklı kısa stok alternatifi, kısa vurgu yazısı ve 0–100 önem puanı gerekli.') from None
         block.update(visual)
+        block['metadata_warnings']=[]
         self._save(project_id,plan,new_version=True)
         return self.view(project_id)
 

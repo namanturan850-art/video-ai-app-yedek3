@@ -66,7 +66,7 @@ def test_extended_scene_contract_coverage_timing_and_part6(production_studio):
     assert all(b['media'] is None for b in handoff['scenes'])
     assert KEY not in json.dumps(handoff) and OTHER_KEY not in json.dumps(handoff)
     prompt=next(prompt for task,_,prompt in fake.calls if task=='visual')
-    for rule in ('meaning','topic changes','emotional beats','comparisons','lists','3–7','5–12','guidance ONLY','ENGLISH','2–5','content_type','Never turn all topics into stories'):
+    for rule in ('meaning','topic changes','emotional beats','comparisons','lists','3–7','5–12','guidance ONLY','ENGLISH','1–5','content_type','never turn factual topics into stories'):
         assert rule in prompt
 
 
@@ -92,7 +92,7 @@ def test_project_language_overlay_and_english_semantic_queries(production_studio
         assert b['stock_query'] not in b['narration']
 
 
-@pytest.mark.parametrize('change',[{'stock_query':'cars'},{'alternative_stock_queries':['car road']},{'alternative_stock_queries':['car road','car road']},{'stock_query':'This is a complete long search sentence.'},{'overlay_text':' '.join(['word']*13)},{'importance':101},{'entities':['x'*151]},{'narration':'wrong narration'},{'locked':True},{'notes':KEY},{'purpose':'   '}])
+@pytest.mark.parametrize('change',[{'stock_query':'cars'},{'alternative_stock_queries':[]},{'alternative_stock_queries':['car road','car road']},{'stock_query':'This is a complete long search sentence.'},{'overlay_text':' '.join(['word']*13)},{'importance':101},{'entities':['x'*151]},{'narration':'wrong narration'},{'locked':True},{'notes':KEY},{'purpose':'   '}])
 def test_scene_validation_and_secrets_never_overwrite_plan(production_studio,change):
     client,project,_,_=production_studio;before=view(production_studio)
     sid=before['plan']['blocks'][0]['id']

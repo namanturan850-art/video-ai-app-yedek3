@@ -2,7 +2,7 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
-**Aşama 1 ve Aşama 2 hazır:** ana sayfa, otomatik veritabanı, Tanılama ve güvenli yerel Ayarlar. Yeni Proje ve Projeler henüz yer tutucudur; video oluşturulmaz. Hiçbir API anahtarı zorunlu değildir.
+**Aşama 1–3 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar ve proje oluşturma/listeleme/açma/silme. Proje sayfasında üretim aşamaları henüz yer tutucudur; video veya senaryo oluşturulmaz. Hiçbir API anahtarı zorunlu değildir.
 
 ## Windows'ta nasıl açılır?
 
@@ -25,6 +25,15 @@ Uygulamayı kapatmak için siyah pencereyi kapatın veya pencerenin içinde **Ct
 
 Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri klasörü ve FFmpeg durumunu gösterir. Gizli anahtarları göstermez.
 
+## Projeleri Windows'ta deneme
+
+1. Uygulamayı açıp **Yeni Proje** kartına tıklayın.
+2. Proje adı ve konu yazın; diğer seçenekleri değiştirmeden **Proje Oluştur** deyin. Proje sayfası açılır.
+3. **Projeler** ekranına gidin. Uygulamayı kapatıp yeniden açın; projeniz listede kalmalıdır.
+4. İkinci bir deneme projesi oluşturun. İlk projede **Projeyi Sil** deyin. Önce **İptal** ile projenin kaldığını, sonra onay vererek yalnızca ilk projenin silindiğini kontrol edin.
+
+Üretim aşamalarında **Bekliyor / Hazır değil** görünmesi normaldir. Ayrıntılar: [Projeler rehberi](docs/PROJECTS.md).
+
 ## Ayarları Windows'ta deneme
 
 1. Uygulamayı açıp **Ayarlar** kartına tıklayın.
@@ -36,7 +45,7 @@ Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basa
 
 ## Yerel dosyalar
 
-Veritabanı otomatik olarak `data/app.db` dosyasında oluşur. Python bileşenleri `.venv` klasöründe, başlatma kayıtları `logs` klasöründe tutulur. Bu dosyalar ve gizli ayarlar Git'e dahil edilmez. Anahtarlar **Ayarlar** ekranından girilir; `.env` veya kod düzenlemeyin. Şifreli yerel ayarlar `data/secrets` klasöründedir. Bu klasör Git’e dahil edilmez; paylaşmayın. Windows’ta şifreleme anahtarı kullanıcı hesabıyla korunur.
+Veritabanı otomatik olarak `data/app.db` dosyasında oluşur. Proje klasörleri `data/projects` içindedir. Güncelleme yaparken mevcut `data` klasörünüzü koruyun; eski veritabanı otomatik ve güvenli biçimde yükseltilir. Python bileşenleri `.venv` klasöründe, başlatma kayıtları `logs` klasöründe tutulur. Bu dosyalar ve gizli ayarlar Git'e dahil edilmez. Anahtarlar **Ayarlar** ekranından girilir; `.env` veya kod düzenlemeyin. Şifreli yerel ayarlar `data/secrets` klasöründedir. Bu klasör Git’e dahil edilmez; paylaşmayın. Windows’ta şifreleme anahtarı kullanıcı hesabıyla korunur.
 
 ## Geliştiriciler için
 

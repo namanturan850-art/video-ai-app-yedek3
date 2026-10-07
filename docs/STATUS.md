@@ -1,6 +1,29 @@
 # AI Video Studio — Durum
 
-## 2026-10-07 — Aşama 2
+## 2026-10-07 — Aşama 3
+
+Tamamlandı:
+- Türkçe Yeni Proje formu: ad, konu, isteğe bağlı YouTube referansı, dil (varsayılan Almanca), hedef dakika, stil, minimum/maksimum sahne saniyesi, altyazı/müzik/küçük resim tercihleri.
+- Alan doğrulaması, Türkçe alan hataları, kayıt sırasında ilerleme ve oluşturulan projeye yönlendirme.
+- SQLite proje kaydı; benzersiz UUID, güvenli metaveri güncelleme ve UTC created_at/updated_at zamanları.
+- Her proje için script, scenes, stock, voice, subtitles, music, render ve logs klasörleri.
+- Projeler listesi: isim, konu, dil, hedef süre, Türkçe durum, oluşturulma/güncelleme tarihleri; açma ve açık Türkçe onayla silme.
+- Yalnızca seçilen proje kaydı/klasörü silinir; eksik klasörler güvenle ele alınır. Sembolik bağlantı ve Windows reparse/junction denetimleri başka konuma silme yapılmasını engeller.
+- Taslak/Hazır/İşleniyor/Tamamlandı/Hata durumları için veritabanı desteği. Yeni projeler Taslak; bu aşamada üretim durum geçişi yok.
+- Detay ekranında dokuz üretim aşaması yalnızca Bekliyor / Hazır değil yer tutucusu.
+- Eski şema 1'den 2'ye işlemsel, eklemeli yükseltme; mevcut tablolar, şifreli ayarlar ve yerel dosyalar korunur. Proje tablosunda API anahtarı alanı yoktur.
+- Mevcut Windows başlatıcısı değiştirilmedi. Kullanım ve API açıklamaları docs/PROJECTS.md ve README'de.
+
+Kapsam dışında:
+- Referans analizi/indirme, senaryo üretimi, Ollama/OpenAI üretimi, stok medya, AI33, render, altyazı üretimi ve YouTube yükleme yok. **Aşama 4 başlatılmadı.**
+
+Doğrulama:
+- Aşama 1 ve 2 sahibi tarafından birleştirilip gerçek Windows bilgisayarında test edildi.
+- Tam test paketi: **156 geçti, 1 mevcut Windows DPAPI testi Linux nedeniyle atlandı**. Aşama 1–2 testleri de dahil; hata yok.
+- Chromium: eski şema yükseltme, Türkçe hatalar, oluşturma/yönlendirme, sekiz klasör, dokuz yer tutucu, düzenleme, listeleme, silme onayı/iptali, diğer projeyi koruma, yeniden başlatmada proje/ayar kalıcılığı, metinlerin güvenli gösterimi, ağ hatasında yeniden deneme ve mobil görünüm geçti. JavaScript hatası yok.
+- Aşama 3 bu Linux makinesinde doğrulandı; yeni proje akışının gerçek Windows testi henüz burada yapılamadı.
+
+## 2026-10-07 — Aşama 2 (geçmiş kayıt)
 
 Tamamlandı:
 - Türkçe Ayarlar: Genel, Ollama, OpenAI (isteğe bağlı), Pexels, Pixabay, AI33, FFmpeg ve YouTube (Daha sonra).

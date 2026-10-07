@@ -6,7 +6,7 @@ import shutil
 import sqlite3
 import tempfile
 
-from fastapi import FastAPI, Request
+from fastapi import Body, FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
@@ -19,6 +19,7 @@ from app.database import database_healthy, initialize_database
 from app.secret_store import SettingsStore, SettingsStorageError
 from app.settings import SettingsService, SettingsInputError, ffmpeg_status
 from app.provider_checks import check_ollama
+from app.projects import ProjectService, ProjectError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -46,17 +47,21 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application = FastAPI(title="AI Video Studio", version=__version__, lifespan=lifespan)
     settings = SettingsService(SettingsStore(storage / "secrets"))
     application.state.settings = settings
+    projects = ProjectService(storage)
+    application.state.projects = projects
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @application.middleware("http")
-    async def protect_settings(request: Request, call_next):
-        if request.url.path.startswith("/api/settings"):
+    async def protect_local_data(request: Request, call_next):
+        scope = "settings" if request.url.path.startswith("/api/settings") else "projects"
+        if request.url.path.startswith(("/api/settings", "/api/projects")):
             origin = request.headers.get("origin")
             same_origin = not origin or origin == f"{request.url.scheme}://{request.url.netloc}"
             mutation = request.method not in ("GET", "HEAD")
-            if not same_origin or (mutation and request.headers.get("x-ai-video-studio") != "settings"):
-                return JSONResponse(status_code=403, content={"message": "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın."}, headers={"Cache-Control": "no-store"})
+            if not same_origin or (mutation and request.headers.get("x-ai-video-studio") != scope):
+                message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
+                return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             response = await call_next(request)
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
@@ -74,6 +79,31 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.exception_handler(SettingsStorageError)
     async def settings_storage_error(request: Request, error: SettingsStorageError):
         return JSONResponse(status_code=503, content={"message": str(error)})
+
+    @application.exception_handler(ProjectError)
+    async def project_error(request: Request, error: ProjectError):
+        return JSONResponse(status_code=error.status_code, content={"message": str(error), "fields": error.fields})
+
+    @application.post("/api/projects", status_code=201)
+    def create_project(payload: dict):
+        return projects.create(payload)
+
+    @application.get("/api/projects")
+    def list_projects():
+        return {"projects": projects.list()}
+
+    @application.get("/api/projects/{project_id}")
+    def get_project(project_id: str):
+        return projects.get(project_id)
+
+    @application.patch("/api/projects/{project_id}")
+    def update_project(project_id: str, payload: dict):
+        return projects.update(project_id, payload)
+
+    @application.delete("/api/projects/{project_id}")
+    def delete_project(project_id: str, payload: dict | None = Body(default=None)):
+        projects.delete(project_id, payload)
+        return {"message": "Proje ve yerel dosyaları silindi."}
 
     @application.get("/api/settings")
     def read_settings():
@@ -143,6 +173,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get("/")
     @application.get("/new-project")
     @application.get("/projects")
+    @application.get("/projects/{project_id}")
     @application.get("/settings")
     @application.get("/diagnostics")
     def page():

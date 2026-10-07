@@ -1,5 +1,28 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — Gemini Windows bağlantı düzeltmesi
+
+Neden:
+- Arayüz tüm ayar isteklerini 20 saniyede kesiyor, her fetch hatasını yerel uygulamaya ulaşılamaması olarak gösteriyordu. Bu mesaj gerçek hatayı ayırt etmiyordu.
+- Gemini sunucu sorgusu 8 saniyelik HTTP süresi / 15 saniyelik sayfalama bütçesi kullanıyordu; yavaş bağlantılar için kısa kalıyordu.
+- Serbest model alanındaki bir değer, API listesinden doğrulanmadan Hazır sayılabiliyordu. Genel Starlette sunucu-hata işleyicisi beklenmeyen hatayı tekrar yükseltebildiğinden Gemini için iç sınırda güvenli JSON koruması gerekiyordu.
+
+Düzeltildi:
+- Yalnızca Gemini model/test işlemleri için 60 saniyelik tarayıcı süresi; sunucuda 50 saniyelik HTTP/sayfalama bütçesi. Normal yerel ayar işlemleri 20 saniyede kalır.
+- Fetch hatasında üç saniyelik yerel /api/health kontrolü; uygulama erişilemiyor, sağlık kontrolü gecikti, Gemini zaman aşımı, bağlantı kurulamadı, anahtar reddi, kota, model yok ve beklenmeyen sunucu hatası ayrı mesaj/kategorilerdir.
+- İstenen zaman aşımı mesajı aynen kullanılır: Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.
+- Gemini ayar yollarında beklenmeyen istisnalar middleware içinde güvenli JSON 500'e çevrilir. Sırlar, Google'ın ham yanıtı ve stack trace gösterilmez veya loglanmaz.
+- Başlatıcının mevcut server.log günlüğüne yalnızca sabit işlem adı, sonuç, güvenli kategori ve süre kaydedilir.
+- Önce anahtar kaydı, ardından resmi API model keşfi ve gerçek seçim listesi. Sunucu da yalnızca keşfedilmiş modelin kaydını kabul eder; eski `as` gibi değerler Hazır sayılmaz. Geçersiz kayıt varken discovery/test gerçek modelleri yine döndürür.
+- Model listesi/doğrulama yerel şifreli kasada kalıcıdır. Anahtar değişince eski liste ve model sıfırlanır; eşzamanlı anahtar değişimi eski sonucu kaydetmez.
+- Başlatıcı, proje davranışları, şifreli anahtar saklama ve Gemini'nin isteğe bağlı olması korunur. Yeni roadmap aşaması başlatılmadı.
+
+Doğrulama:
+- Tam pytest paketi: **239 geçti, 1 mevcut Windows DPAPI testi Linux nedeniyle atlandı; toplam 240 test.** Paketteki frontend kontrolü ayrıca **19 JavaScript regresyon testini** çalıştırır; tamamı geçti.
+- Taklit API ve sanal saatle 20 saniyeyi aşan başarı, 60 saniye arayüz zaman aşımı, gerçek timeout mesajı, model doğrulama/discovery, anahtar/kota/bağlantı hataları, yerel sağlık sınıflandırması, güvenli JSON ve anahtar/günlük sızıntısı kontrol edildi.
+- Chromium + gerçek yerel FastAPI: **23 saniye süren gerçek gecikmeli sorgu** 20. saniyede de çalışmaya devam edip tamamlandı. Eski model düzeltme, seçim temizliği, yeniden başlatma, hata sınıflandırması, maskeler ve mobil görünüm geçti; JavaScript hatası yok. Gerçek sunucu günlüğünde yalnızca güvenli alanlar olduğu doğrulandı.
+- Google yanıtları taklit edildi; gerçek API anahtarı veya canlı Google bağlantısı kullanılmadı. Bu Linux ortamında gerçek Windows/DPAPI testi yapılamaz.
+
 ## 2026-10-07 — C) Gemini
 
 Tamamlandı:

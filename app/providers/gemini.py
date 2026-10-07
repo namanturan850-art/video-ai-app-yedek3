@@ -9,6 +9,9 @@ from pydantic import SecretStr
 from app.providers.base import ScriptProviderError
 
 API_ROOT = 'https://generativelanguage.googleapis.com/v1beta'
+MODEL_LIST_TIMEOUT = 50
+GEMINI_TIMEOUT_MESSAGE = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.'
+MODEL_UNAVAILABLE_MESSAGE = 'Kayıtlı model Gemini API listesinde bulunamadı. Modelleri Getir düğmesine basıp listeden geçerli bir model seçin ve Kaydet deyin.'
 ORIGINALITY_INSTRUCTION = (
     'Write an original script in the requested language. Reference material may inform only '
     'abstract genre, audience, pacing and structure. Create new characters, wording, scenes, '
@@ -29,7 +32,7 @@ def normalize_model(value: str) -> str:
 class GeminiScriptProvider:
     def __init__(self, api_key: str, model: str = '', *, transport=None):
         if not api_key:
-            raise ScriptProviderError('Önce Ayarlar → Gemini bölümünde API anahtarını kaydedin. Gemini kullanmak zorunda değilsiniz.', 422)
+            raise ScriptProviderError('Önce Ayarlar → Gemini bölümünde API anahtarını kaydedin. Gemini kullanmak zorunda değilsiniz.', 422, category='missing_key')
         if not api_key.isascii() or len(api_key) < 8 or any(char.isspace() or ord(char) < 32 for char in api_key):
             raise ScriptProviderError('Gemini API anahtarını eksiksiz ve boşluksuz girin.', 422)
         self._key = SecretStr(api_key)
@@ -64,35 +67,39 @@ class GeminiScriptProvider:
             status = response.status_code
             if status != 200:
                 if status in (400, 401, 403):
-                    raise ScriptProviderError('Gemini anahtarı veya erişim izni kabul edilmedi. Google AI Studio API anahtarını ve API kısıtlamalarını kontrol edin.', status)
+                    raise ScriptProviderError('Google Gemini API anahtarı veya erişim izni kabul edilmedi. Google AI Studio anahtarını ve API kısıtlamalarını kontrol edin.', status, category='key_rejected')
                 if status == 404:
-                    raise ScriptProviderError('Gemini modeli bulunamadı. Model listesini yenileyip bir model seçin.', 404)
+                    raise ScriptProviderError(MODEL_UNAVAILABLE_MESSAGE, 404, category='model_unavailable')
                 if status == 429:
-                    raise ScriptProviderError('Gemini kullanım sınırına ulaşıldı. Bir süre bekleyip Google AI Studio kotasını kontrol edin.', 429)
-                raise ScriptProviderError('Gemini şu anda yanıt veremiyor. İnternet bağlantınızı kontrol edip daha sonra tekrar deneyin.', 503)
+                    raise ScriptProviderError('Gemini kota veya istek sınırına ulaşıldı. Bir süre bekleyip Google AI Studio kotasını kontrol edin.', 429, category='quota_limit')
+                raise ScriptProviderError('Google Gemini API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.', 503, category='upstream_error')
             result = response.json()
             if not isinstance(result, dict):
                 raise ValueError()
             return result
         except httpx.TimeoutException:
-            raise ScriptProviderError('Gemini zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.', 503) from None
+            raise ScriptProviderError(GEMINI_TIMEOUT_MESSAGE, 504, category='gemini_timeout') from None
+        except (httpx.ConnectError, httpx.ProxyError):
+            raise ScriptProviderError('Gemini API için internet bağlantısı kurulamadı. İnternet bağlantınızı, güvenlik duvarını ve varsa proxy ayarlarını kontrol edin.', 503, category='no_internet') from None
         except (httpx.HTTPError, ValueError, TypeError):
-            raise ScriptProviderError('Gemini yanıtı alınamadı. İnternet bağlantınızı ve API ayarlarını kontrol edip tekrar deneyin.', 502) from None
+            raise ScriptProviderError('Gemini API yanıtı okunamadı. Daha sonra tekrar deneyin.', 502, category='invalid_response') from None
 
     def list_models(self) -> list[str]:
         models = set()
         page_token = ''
         visited = set()
-        deadline = time.monotonic() + 15
-        with self._client(8) as client:
+        deadline = time.monotonic() + MODEL_LIST_TIMEOUT
+        with self._client(MODEL_LIST_TIMEOUT) as client:
             for _ in range(5):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise ScriptProviderError('Gemini model listesi zamanında alınamadı. Daha sonra tekrar deneyin.', 503)
+                    raise ScriptProviderError(GEMINI_TIMEOUT_MESSAGE, 504, category='gemini_timeout')
                 params = {'pageSize': 1000}
                 if page_token:
                     params['pageToken'] = page_token
-                data = self._request(client, 'GET', '/models', params=params, timeout=min(8, remaining))
+                data = self._request(client, 'GET', '/models', params=params, timeout=remaining)
+                if time.monotonic() >= deadline:
+                    raise ScriptProviderError(GEMINI_TIMEOUT_MESSAGE, 504, category='gemini_timeout')
                 items = data.get('models', [])
                 if not isinstance(items, list):
                     raise ScriptProviderError('Gemini model listesi okunamadı. Daha sonra tekrar deneyin.')
@@ -124,11 +131,14 @@ class GeminiScriptProvider:
                 page_token = next_token
         raise ScriptProviderError('Gemini model listesi çok uzun veya tamamlanamadı. Daha sonra tekrar deneyin.')
 
-    def test_connection(self) -> dict:
+    def test_connection(self, *, selected_model: str | None = None) -> dict:
         models = self.list_models()  # No generated content, subscription or website interaction.
-        if self.model and self.model not in models:
-            raise ScriptProviderError('Seçilen model bu anahtarla kullanılamıyor. Model listesini yenileyip bir model seçin.', 422)
-        return {'status': 'Hazır', 'message': 'Gemini API bağlantısı başarılı.' if self.model else 'Gemini API bağlantısı başarılı. Listeden bir model seçip kaydedin.', 'models': models}
+        selected_model = self.model if selected_model is None else selected_model
+        if selected_model and selected_model not in models:
+            # Keep the valid discovery result so the user can correct an old placeholder.
+            return {'status': 'Hata', 'message': MODEL_UNAVAILABLE_MESSAGE,
+                    'category': 'model_unavailable', 'models': models}
+        return {'status': 'Hazır', 'message': 'Gemini API bağlantısı başarılı.' if selected_model else 'Gemini API bağlantısı başarılı. Listeden bir model seçip kaydedin.', 'models': models}
 
     def generate_script(self, prompt: str) -> str:
         if not self.model:

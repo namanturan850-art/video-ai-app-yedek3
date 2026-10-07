@@ -13,7 +13,7 @@ from app.database import initialize_database
 from app.main import create_app
 from app.providers.base import ScriptProvider, ScriptProviderError
 from app.providers.factory import make_script_provider
-from app.providers.gemini import API_ROOT, GeminiScriptProvider
+from app.providers.gemini import API_ROOT, GeminiScriptProvider, GEMINI_TIMEOUT_MESSAGE, MODEL_LIST_TIMEOUT
 from app.secret_store import SettingsStore
 from app.settings import SettingsInputError
 
@@ -37,15 +37,20 @@ def client(tmp_path):
 
 
 def install_mock(client, monkeypatch, handler):
-    def factory(engine, settings):
+    def factory(engine, settings, *, discovery=False):
         assert engine == 'gemini'
         config = settings.gemini_config()
-        return GeminiScriptProvider(config.get('api_key', ''), config['model'], transport=httpx.MockTransport(handler))
+        return GeminiScriptProvider(config.get('api_key', ''), '' if discovery else config['model'], transport=httpx.MockTransport(handler))
     monkeypatch.setattr('app.main.make_script_provider', factory)
 
 
 def save(client, **overrides):
-    response = client.put('/api/settings/gemini', json={'api_key': KEY, 'model': MODEL, **overrides})
+    # The key is saved first; model choices originate from a successful API discovery.
+    response = client.put('/api/settings/gemini', json={'api_key': overrides.get('api_key', KEY)})
+    assert response.status_code == 200, response.text
+    service = client.app.state.settings
+    service.record_gemini_models(service.gemini_config(), [MODEL])
+    response = client.put('/api/settings/gemini', json={'model': overrides.get('model', MODEL)})
     assert response.status_code == 200, response.text
     return response
 
@@ -253,7 +258,7 @@ def test_selected_model_missing_is_an_error(client, monkeypatch):
     install_mock(client, monkeypatch, lambda request: httpx.Response(200, json=model_response('gemini-other-test')))
     response = client.post('/api/settings/gemini/test')
     assert response.json()['result']['status'] == 'Hata'
-    assert 'kullanılamıyor' in response.json()['result']['message']
+    assert 'listesinde bulunamadı' in response.json()['result']['message']
 
 
 def test_completed_generation_uses_official_contract_and_redacts_key(caplog):
@@ -323,7 +328,7 @@ def test_settings_changed_during_test_does_not_save_stale_result(client):
     save(client)
     service = client.app.state.settings
     snapshot = service.gemini_config()
-    service.save('gemini', {'model': 'gemini-different-test'})
+    service.save('gemini', {'api_key': 'synthetic-replacement-key-5678'})
     with pytest.raises(SettingsInputError):
         service.record_gemini_test(snapshot, {'status': 'Hazır', 'message': 'Gemini API bağlantısı başarılı.'})
     assert 'last_test' not in service.gemini_config()
@@ -384,3 +389,175 @@ def test_part3_schema2_migration_preserves_existing_project(tmp_path):
         assert not client.get('/api/settings').json()['gemini']['has_api_key']
         assert client.get('/api/health').status_code == 200
     assert store.vault_path.read_bytes() == before
+
+
+def test_arbitrary_model_is_not_verified_or_saved_before_discovery(client):
+    assert client.put('/api/settings/gemini', json={'api_key': KEY}).status_code == 200
+    response = client.put('/api/settings/gemini', json={'model': 'as'})
+    assert response.status_code == 422
+    assert 'listeden geçerli bir model' in response.json()['message']
+    config = client.get('/api/settings').json()['gemini']
+    assert config['status'] == 'Yapılandırılmadı'
+    assert not config['model_verified']
+    assert config['model'] == ''
+
+
+def test_discovery_repairs_legacy_placeholder_and_preserves_real_choices(client, monkeypatch, tmp_path):
+    store = SettingsStore(tmp_path / 'data/secrets')
+    store.write({'gemini': {'api_key': KEY, 'model': 'as'}})
+    legacy = client.get('/api/settings').json()['gemini']
+    assert legacy['status'] == 'Yapılandırılmadı'
+    assert not legacy['model_verified']
+    install_mock(client, monkeypatch, lambda request: httpx.Response(200, json=model_response()))
+    discovery = client.post('/api/settings/gemini/models')
+    assert discovery.status_code == 200
+    config = discovery.json()['settings']['gemini']
+    assert config['models'] == [MODEL]
+    assert config['status'] == 'Hata'
+    assert 'listesinde bulunamadı' in config['message']
+    assert not config['model_verified']
+    assert client.put('/api/settings/gemini', json={'model': 'as'}).status_code == 422
+    response = client.put('/api/settings/gemini', json={'model': MODEL})
+    assert response.json()['gemini']['model_verified']
+    with TestClient(create_app(tmp_path / 'data')) as restarted:
+        assert restarted.get('/api/settings').json()['gemini']['models'] == [MODEL]
+        assert restarted.get('/api/settings').json()['gemini']['model_verified']
+
+
+def test_model_discovery_ignores_malformed_legacy_model(client, monkeypatch, tmp_path):
+    store = SettingsStore(tmp_path / 'data/secrets')
+    store.write({'gemini': {'api_key': KEY, 'model': '../old-placeholder'}})
+    install_mock(client, monkeypatch, lambda request: httpx.Response(200, json=model_response()))
+    response = client.post('/api/settings/gemini/models')
+    assert response.status_code == 200
+    assert response.json()['models'] == [MODEL]
+    assert not response.json()['settings']['gemini']['model_verified']
+
+
+@pytest.mark.parametrize('saved_model', ['as', '../old-placeholder'])
+def test_invalid_saved_model_connection_still_returns_real_models(client, monkeypatch, tmp_path, saved_model):
+    SettingsStore(tmp_path / 'data/secrets').write({'gemini': {'api_key': KEY, 'model': saved_model}})
+    install_mock(client, monkeypatch, lambda request: httpx.Response(200, json=model_response()))
+    response = client.post('/api/settings/gemini/test')
+    assert response.json()['result']['category'] == 'model_unavailable'
+    assert response.json()['result']['status'] == 'Hata'
+    assert response.json()['models'] == [MODEL]
+    assert response.json()['settings']['gemini']['models'] == [MODEL]
+    assert not response.json()['settings']['gemini']['model_verified']
+
+
+def test_changed_key_clears_old_model_verification(client):
+    save(client)
+    response = client.put('/api/settings/gemini', json={'api_key': 'synthetic-new-key-5678'})
+    config = response.json()['gemini']
+    assert config['models'] == []
+    assert not config['model_verified']
+    assert config['model'] == ''
+    assert config['status'] == 'Yapılandırılmadı'
+
+
+def test_key_changed_during_discovery_does_not_cache_another_keys_models(client):
+    save(client)
+    service = client.app.state.settings
+    original = service.gemini_config()
+    service.save('gemini', {'api_key': 'synthetic-replacement-5678'})
+    with pytest.raises(SettingsInputError):
+        service.record_gemini_models(original, [MODEL])
+    assert client.get('/api/settings').json()['gemini']['models'] == []
+
+
+def test_backend_discovery_can_take_more_than_twenty_seconds(monkeypatch):
+    clock = [0]
+    monkeypatch.setattr('app.providers.gemini.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    def respond(request):
+        assert request.extensions['timeout']['read'] > 20
+        assert request.extensions['timeout']['connect'] > 20
+        clock[0] += 25  # Virtual seconds; no blocking wait or real Google call.
+        return httpx.Response(200, json=model_response())
+    assert provider(respond).list_models() == [MODEL]
+
+
+def test_backend_model_list_total_budget_is_bounded(monkeypatch):
+    clock = [0]
+    monkeypatch.setattr('app.providers.gemini.time', SimpleNamespace(monotonic=lambda: clock[0]))
+    def respond(request):
+        clock[0] += MODEL_LIST_TIMEOUT + 1
+        return httpx.Response(200, json=model_response())
+    with pytest.raises(ScriptProviderError) as error:
+        provider(respond).list_models()
+    assert error.value.category == 'gemini_timeout'
+    assert str(error.value) == GEMINI_TIMEOUT_MESSAGE
+
+
+@pytest.mark.parametrize('operation', ['models', 'test'])
+@pytest.mark.parametrize('error_type, category', [(httpx.ReadTimeout, 'gemini_timeout'), (httpx.ConnectError, 'no_internet'), (httpx.ProxyError, 'no_internet')])
+def test_gemini_network_failure_categories_are_safe(client, monkeypatch, caplog, operation, error_type, category):
+    save(client)
+    def respond(request):
+        raise error_type('private Google details: ' + KEY, request=request)
+    install_mock(client, monkeypatch, respond)
+    caplog.set_level('INFO')
+    response = client.post('/api/settings/gemini/' + operation)
+    result = response.json()['result'] if operation == 'test' else response.json()
+    assert result['category'] == category
+    if category == 'gemini_timeout':
+        assert result['message'] == GEMINI_TIMEOUT_MESSAGE
+    else:
+        assert 'internet bağlantısı kurulamadı' in result['message']
+    assert 'Uygulamaya ulaşılamadı' not in response.text
+    assert KEY not in response.text
+    assert KEY not in caplog.text
+    assert 'private Google details' not in caplog.text
+    assert 'category=' + category in caplog.text
+    assert 'result=failure' in caplog.text
+    assert client.get('/api/health').status_code == 200
+
+
+@pytest.mark.parametrize('status, category', [(403, 'key_rejected'), (429, 'quota_limit'), (503, 'upstream_error')])
+def test_gemini_api_rejection_has_safe_category_and_log(client, monkeypatch, caplog, status, category):
+    save(client)
+    install_mock(client, monkeypatch, lambda request: httpx.Response(status, json={'error': {'message': KEY + ' Google raw body'}}))
+    caplog.set_level('INFO')
+    response = client.post('/api/settings/gemini/models')
+    assert response.json()['category'] == category
+    assert KEY not in response.text + caplog.text
+    assert 'Google raw body' not in response.text + caplog.text
+    assert 'operation=list_models result=failure category=' + category in caplog.text
+    assert 'elapsed_ms=' in caplog.text
+
+
+@pytest.mark.parametrize('method, suffix', [('post', '/models'), ('post', '/test'), ('put', ''), ('delete', '')])
+def test_unexpected_gemini_backend_exception_returns_safe_json_not_reset(client, monkeypatch, caplog, method, suffix):
+    save(client)
+    def explode(*args, **kwargs):
+        raise RuntimeError(KEY + ' raw Google response and private traceback')
+    if suffix:
+        monkeypatch.setattr('app.main.make_script_provider', explode)
+    else:
+        monkeypatch.setattr(client.app.state.settings.store, 'write', explode)
+    caplog.set_level('INFO')
+    # raise_server_exceptions is True: this fails if the middleware re-raises.
+    response = getattr(client, method)('/api/settings/gemini' + suffix, **({'json': {'model': MODEL}} if method == 'put' else {}))
+    assert response.status_code == 500
+    assert response.headers['content-type'] == 'application/json'
+    assert response.headers['cache-control'] == 'no-store'
+    assert response.json()['category'] == 'unexpected_backend'
+    assert 'beklenmeyen bir sunucu hatası' in response.json()['message']
+    assert KEY not in response.text + caplog.text
+    assert 'raw Google response' not in response.text + caplog.text
+    assert 'Traceback' not in caplog.text
+    assert 'result=failure category=unexpected_backend' in caplog.text
+    assert client.get('/api/health').status_code == 200
+
+
+def test_gemini_success_logging_has_only_safe_diagnostics(client, monkeypatch, caplog):
+    save(client)
+    install_mock(client, monkeypatch, lambda request: httpx.Response(200, json=model_response()))
+    caplog.set_level('INFO')
+    assert client.post('/api/settings/gemini/models').status_code == 200
+    assert client.post('/api/settings/gemini/test').json()['result']['status'] == 'Hazır'
+    records = [record.getMessage() for record in caplog.records if record.name.endswith('gemini_settings')]
+    assert len(records) == 2
+    assert all('result=success category=none elapsed_ms=' in message for message in records)
+    assert KEY not in caplog.text
+    assert MODEL not in '\n'.join(records)

@@ -2,7 +2,7 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
-**Aşama 1–3 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar ve proje oluşturma/listeleme/açma/silme. Proje sayfasında üretim aşamaları henüz yer tutucudur; video veya senaryo oluşturulmaz. Hiçbir API anahtarı zorunlu değildir.
+**Aşama 1–3 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar ve proje oluşturma/listeleme/açma/silme. İsteğe bağlı Gemini API sağlayıcısı ve Ollama / OpenAI / Gemini motor seçimi de eklendi. Proje sayfasında üretim aşamaları henüz yer tutucudur; arayüzden video veya senaryo üretim akışı yoktur. Hiçbir API anahtarı zorunlu değildir.
 
 ## Windows'ta nasıl açılır?
 
@@ -42,6 +42,16 @@ Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri k
 4. İsterseniz **Temizle** ile o bölümdeki bilgileri silin. Diğer bölümler değişmez.
 
 Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. FFmpeg otomatik algılanır. **AI33 API belgeleri gerekli** mesajı beklenen durumdur; AI33 testi kapalıdır. Pexels, Pixabay ve OpenAI testleri de bu aşamada açıklamalı yer tutucudur. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
+
+## Gemini'yi Windows'ta deneme
+
+1. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
+2. **Ayarlar → Gemini** bölümünde [Google AI Studio](https://aistudio.google.com/apikey) API anahtarınızı girip **Kaydet** deyin. Tam anahtar tekrar gösterilmez.
+3. **Modelleri Getir** deyin. **Model** alanında listeden bir model seçip **Kaydet** deyin.
+4. **Bağlantıyı Test Et** düğmesine basın; **Hazır** mesajını kontrol edin.
+5. **Yeni Proje → Senaryo motoru (Script Engine)** bölümünde **Gemini** seçip projenizi oluşturun. Seçim proje sayfasında görünür ve yeniden açılışta korunur.
+
+Gemini isteğe bağlıdır. Gemini Plus / Google AI Pro web aboneliği yerine ayrı bir Developer API anahtarı kullanılır. Bağlantı testi senaryo üretmez. Ayrıntılar ve doğrulanmış resmi API kaynakları: [Gemini rehberi](docs/GEMINI.md).
 
 ## Yerel dosyalar
 

@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from app.providers.factory import SCRIPT_ENGINE_LABELS
 
 FOLDERS = ('script', 'scenes', 'stock', 'voice', 'subtitles', 'music', 'render', 'logs')
 STAGES = ('Konsept', 'Senaryo', 'Sahne Planı', 'Stok Medya', 'Seslendirme', 'Altyazı', 'Render', 'Metadata', 'Export')
@@ -33,6 +34,7 @@ class NewProject(BaseModel):
     topic: str = Field(max_length=5000)
     reference_url: str = Field(default='', max_length=2000)
     language: Literal['de', 'tr', 'en'] = 'de'
+    script_engine: Literal['ollama', 'openai', 'gemini'] = 'ollama'
     target_duration_minutes: float = Field(default=5, ge=1, le=180)
     content_style: str = Field(default='Hikâye', max_length=120)
     min_scene_duration_seconds: float = Field(default=4, ge=1, le=120)
@@ -95,7 +97,7 @@ def validate_project(payload: dict) -> NewProject:
     except ValidationError as error:
         messages = {}
         labels = {'name': 'Proje adı', 'topic': 'Konu', 'reference_url': 'Referans URL',
-                  'language': 'Dil', 'target_duration_minutes': 'Video süresi', 'content_style': 'İçerik türü / stil',
+                  'language': 'Dil', 'script_engine': 'Senaryo motoru', 'target_duration_minutes': 'Video süresi', 'content_style': 'İçerik türü / stil',
                   'min_scene_duration_seconds': 'Minimum sahne süresi', 'max_scene_duration_seconds': 'Maksimum sahne süresi',
                   'subtitles_enabled': 'Altyazı seçimi', 'background_music_enabled': 'Müzik seçimi',
                   'thumbnail_planning_enabled': 'Thumbnail planlama seçimi'}
@@ -144,6 +146,7 @@ def public_project(row: sqlite3.Row, detail: bool = False) -> dict:
         project[field] = bool(project[field])
     project['status_label'] = STATUS_LABELS[project['status']]
     project['language_label'] = LANGUAGE_LABELS[project['language']]
+    project['script_engine_label'] = SCRIPT_ENGINE_LABELS[project['script_engine']]
     if detail:
         project['pipeline'] = [{'name': stage, 'status': 'Bekliyor', 'message': 'Hazır değil — sonraki aşamada eklenecek.'} for stage in STAGES]
     return project

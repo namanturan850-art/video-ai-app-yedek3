@@ -3,7 +3,7 @@ from contextlib import closing
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 PROJECT_SCHEMA = """
 CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -11,6 +11,7 @@ CREATE TABLE projects (
     topic TEXT NOT NULL,
     reference_url TEXT NOT NULL DEFAULT '',
     language TEXT NOT NULL DEFAULT 'de',
+    script_engine TEXT NOT NULL DEFAULT 'ollama' CHECK (script_engine IN ('ollama', 'openai', 'gemini')),
     target_duration_minutes REAL NOT NULL CHECK (target_duration_minutes >= 1),
     content_style TEXT NOT NULL,
     min_scene_duration_seconds REAL NOT NULL CHECK (min_scene_duration_seconds >= 1),
@@ -37,6 +38,9 @@ def initialize_database(data_dir: Path) -> Path:
             if version == "1":
                 connection.execute(PROJECT_SCHEMA)
                 connection.execute("CREATE INDEX projects_created_at ON projects(created_at DESC)")
+                connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))
+            elif version == "2":
+                connection.execute("ALTER TABLE projects ADD COLUMN script_engine TEXT NOT NULL DEFAULT 'ollama' CHECK (script_engine IN ('ollama', 'openai', 'gemini'))")
                 connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))
             elif version != SCHEMA_VERSION:
                 raise sqlite3.DatabaseError("Bu veritabanı sürümü desteklenmiyor; mevcut dosyalar değiştirilmedi.")

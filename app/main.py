@@ -20,6 +20,8 @@ from app.secret_store import SettingsStore, SettingsStorageError
 from app.settings import SettingsService, SettingsInputError, ffmpeg_status
 from app.provider_checks import check_ollama
 from app.projects import ProjectService, ProjectError
+from app.providers.base import ScriptProviderError
+from app.providers.factory import make_script_provider
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -84,6 +86,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     async def project_error(request: Request, error: ProjectError):
         return JSONResponse(status_code=error.status_code, content={"message": str(error), "fields": error.fields})
 
+    @application.exception_handler(ScriptProviderError)
+    async def script_provider_error(request: Request, error: ScriptProviderError):
+        return JSONResponse(status_code=error.status_code, content={"message": str(error)})
+
     @application.post("/api/projects", status_code=201)
     def create_project(payload: dict):
         return projects.create(payload)
@@ -119,6 +125,17 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.post("/api/settings/{section}/test")
     def test_connection(section: str):
+        if section == "gemini":
+            config = settings.gemini_config()
+            try:
+                checked = make_script_provider("gemini", settings).test_connection()
+                models = checked.pop("models")
+                outcome = checked
+            except ScriptProviderError as error:
+                models = []
+                outcome = {"status": "Hata", "message": str(error)}
+            view = settings.record_gemini_test(config, outcome)
+            return {"result": outcome, "models": models, "settings": view}
         if section == "ollama":
             config = settings.ollama_config()
             outcome = check_ollama(config)
@@ -141,6 +158,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             prefix = "AI33 " if section == "ai33" else ""
             return {"result": {"status": "API belgeleri gerekli", "message": prefix + "API belgeleri gerekli. Bu aşamada gerçek bağlantı testi kapalıdır."}, "settings": settings.safe_view()}
         raise SettingsInputError("Bu bağlantı testi kullanılamıyor.")
+
+    @application.post("/api/settings/gemini/models")
+    def gemini_models():
+        return {"models": make_script_provider("gemini", settings).list_models()}
 
     @application.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException):

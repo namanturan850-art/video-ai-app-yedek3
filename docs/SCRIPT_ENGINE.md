@@ -17,7 +17,7 @@ Bu sistem yalnızca hikâye üretmez. Konuyu ve varsa kullanıcı tarafından ve
 
 Üretim kesilirse tamamlanan bölümler korunur. Kota/bağlantı sorununu giderdikten sonra **Devam Et** deyin. Devam için aynı sağlayıcı ve model gerekir; farklı sağlayıcı/modelle başlamak için yeni üretim seçin. Otomatik ücretli yeniden deneme yapılmaz. Uygulama kapanırsa yeniden açılışta yarım iş hata/Devam Et durumunda görünür; kendiliğinden API çağrısı yapılmaz.
 
-Bu aşama metin üretir. Sahne planı, stok, seslendirme, altyazı, render ve yükleme henüz çalışmaz; **Aşama 5 başlatılmadı**.
+Senaryo ekranı metin üretir. Onaylanan metin artık ayrı **Görsel / Kurgu Planı** ekranında düzenlenebilir sahnelere dönüştürülebilir: [Aşama 5 rehberi](SCENE_PLANNING.md). Stok medya, seslendirme, altyazı, render ve yükleme henüz çalışmaz; **Aşama 6 başlatılmadı**.
 
 ## İki ayrı çalışma modu
 
@@ -50,7 +50,7 @@ Gelecekteki aşamalar için yalnızca güncel **Onaylandı** sürümünü veren 
 
 ## Yerel kayıt ve güvenlik
 
-SQLite şema sürümü **5**. Sürüm 1/2/3/4'ten yükseltme eklemeli ve işlemseldir; projeler, dosyalar ve mevcut şifreli ayarlar korunur. Senaryo tabloları `script_versions`, `script_state`, `script_jobs`; yeni kalite/görsel hazırlık tabloları `script_artifacts`, `project_production`. Proje silinince yalnızca o projenin bağlı kayıtları silinir. Üretim sürerken proje silme engellenir.
+SQLite şema sürümü **6**. Sürüm 1/2/3/4/5'ten yükseltme eklemeli ve işlemseldir; projeler, dosyalar ve mevcut şifreli ayarlar korunur. Senaryo tabloları `script_versions`, `script_state`, `script_jobs`; kalite/görsel hazırlık tabloları `script_artifacts`, `project_production`; Aşama 5 plan geçmişi `scene_plan_versions`. Proje silinince yalnızca o projenin bağlı kayıtları silinir. Üretim sürerken proje silme engellenir.
 
 Okunabilir dosyalar `data/projects/<project-id>/script/` altında:
 

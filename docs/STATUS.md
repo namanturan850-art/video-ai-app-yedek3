@@ -1,5 +1,27 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — Aşama 5: Sahne / Görsel Planlama
+
+Tamamlandı:
+- Ayrı planlama sistemi yerine mevcut `app/production.py`, `VisualBlock`, görsel sorgular/çeşitlilik kontrolleri, üretim ekranı ve `QualityService` arka plan işleri/checkpoint'leri genişletildi. Mevcut Gemini/Ollama/OpenAI adaptörleri, süre düzeltmesi ve Windows başlatıcısı değiştirilmedi.
+- Yalnızca güncel onaylı senaryodan planlama; onaysız metinde **“Önce senaryo sürümünü onaylayın.”**. Sahne anlatımları boşluk normalizasyonuyla senaryoyu tam ve aynı sırayla kapsamak zorunda. Eksik/değişmiş/sırası bozuk çıktı mevcut planı ezmez.
+- İçerik türüne göre anlam, konu, bilgi, örnek, liste, karşılaştırma ve bölüm geçişlerini dikkate alan AI sahne önerileri. Sabit kelime/saniye sahne kuralı yok; 3–7 / 5–12 saniye yönlendirmesi zorunlu değildir. Uzun metinlerde mevcut bağlam parçalama ve önceki görsellerin kısa özeti kullanılır.
+- Bütün istenen sahne alanları; bir İngilizce birincil ve 2–5 farklı alternatif sorgu, kısa hedef dilde overlay, medya/kompozisyon/çekim/geçiş/hareket önerileri. Sorgu biçimi, alternatifler, puan, boş alan ve overlay uzunluğu doğrulanır. Dil/anlam kalitesi insan kontrolü gerektirir.
+- Türkçe kartlar ve **Düzenle/Kaydet**, **Bu sahneyi yeniden planla**, **Sahneyi böl**, **Sonraki sahneyle birleştir**, **Yukarı/Aşağı taşı**, **Kilitle/Kilidi aç**. Sahibin seçimiyle taşıma yalnız görsel tasarımı taşır; anlatım sırası ve sahne kimlikleri yerinde kalır.
+- Tek sahne yenilemesinde anlatım ve diğer sahneler değişmez. Aynı senaryonun kilitli sahneleri toplu üretimde aynen korunur ve bunlar için AI çağrısı yapılmaz. Bulut maliyet onayı ve sağlayıcı seçimleri korunur; ücretli otomatik fallback yoktur.
+- Hafif sürüm geçmişi, aktif plan seçimi/onayı, kaynak senaryo/sağlayıcı/model/tarih/sahne sayısı/durum. Yeni onaylı senaryo veya proje dili değişiminde eski plan işaretlenir. Eski sekme/başarısız iş daha yeni planı sessizce değiştiremez. Yeniden açılışta aktif plan ve kilitler korunur.
+- Gerçek kelime sayısı ve senaryo sürümünde kayıtlı konuşma hızıyla **Tahmini zamanlama**; ileride gerçek TTS zaman damgaları için mevcut bağlantı korunur. Sahne sayısı/süre, sorgu ve görsel tekrarları/çeşitlilik için Türkçe uyarılar.
+- SQLite şema **6**; eski planları kaybetmeden geçmişe alma, proje/senaryo/şifreli kasa ve dosyaları koruma. SQLite ile `scenes/plan_vN.json`, `scenes/active_plan.json` ve mevcut `script/visual_plan.json` aynaları. Kesilen AI işi JSON aynalarını yeni çağrı/sürüm oluşturmadan onarabilir.
+- Part 6 için sürümlü, güncel/onaylı/tam kapsamlı planla sınırlı `/production/handoff` veri sözleşmesi. [12 basit Windows adımı ve sözleşme](SCENE_PLANNING.md); README/Senaryo rehberi güncellendi.
+
+Doğrulama:
+- **Tam paket: 542 test; 540 geçti, 0 başarısız, 2 gerçek Windows/DPAPI testi Linux nedeniyle atlandı.** Aşama 5 için **48 yeni regresyon**; önceki tüm testler ve pytest içindeki 34 JavaScript kontrolü geçti. `production.js` sözdizimi kontrolü de geçti.
+- Gerçek FastAPI + Chromium ile onay kapısı, oluşturma, tam kapsam, düzenleme, tek sahne yenileme, bölme/birleştirme, iki yönde görsel taşıma, kilitleme/kilit açma ve toplu koruma, 11 plan sürümü/seçim, handoff, yeniden açılış ve mobil görünüm doğrulandı; JavaScript hatası yok.
+- Tarayıcı kontrolünde native Ollama adaptörünün dış HTTP yanıtları ve otomatik sağlayıcı çıktıları taklit edildi. Bu kanıt canlı AI kalitesi iddiası değildir. Sahibi önceki Gemini/Ollama tanılama ve normal Ollama üretimini gerçek Windows'ta başarıyla doğruladı; yeni Part 5 planlarının canlı içerik kalitesi ve Windows kontrolü sahibi tarafından yapılmalıdır.
+
+Sonraki kapsam:
+- **Aşama 6 başlatılmadı.** Pexels/Pixabay arama, medya önizleme/seçim/indirme, tekrar önleme ve izinli AI görsel fallback sonraki aşamada. Bu geçişte görsel üretimi, AI33 seslendirme, altyazı veya FFmpeg render çalıştırması yok.
+
 ## 2026-10-07 — Minimum kelime hedefinin altındaki Ollama metinlerini düzeltme
 
 - Sahibin gerçek Windows testi: Gemini/Ollama'nın beş tanılama testi, normal Ollama üretimi ve kısa Türkçe review sonuçları başarılı. Bu geçiş yalnızca kalan hedef süre davranışını düzeltir; sağlayıcı entegrasyonları değişmedi.

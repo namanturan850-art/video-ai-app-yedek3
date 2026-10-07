@@ -175,12 +175,15 @@ class YouTubeScriptEngine:
         return {'consistent': result['consistent'], 'issues': safe_review_issues(result['issues'][:30])}
 
     def expand_duration(self, text, blueprint, project, options, metrics):
+        target_words = round((metrics['target_word_min'] + metrics['target_word_max']) / 2)
         return self.ask('expand_duration', {'source_text': text, 'blueprint': blueprint,
             'topic': project['topic'], 'language': options['language'], 'tone': options['tone'],
-            'target_word_min': metrics['target_word_min'], 'target_word_max': metrics['target_word_max']},
+            'target_word_min': metrics['target_word_min'], 'target_word_max': metrics['target_word_max'],
+            'target_words': target_words},
             'Perform ONE controlled length correction of this existing narration. Return the complete '
-            'final narration within the target word range. Preserve its topic, facts, section structure, '
-            'tone and target language. Develop only already established points with useful explanations '
+            f'final narration within the target word range. Aim for approximately {target_words} words, '
+            'near the middle of the range, not merely its minimum. Preserve its topic, facts, section structure, '
+            'tone, target language, content type and existing useful content. Develop only already established points with useful explanations '
             'or clearly hypothetical examples. Do not invent facts, pad with filler, repeat paragraphs, '
             'add reasoning, review commentary, headings or JSON. Return only the final script text.')
 

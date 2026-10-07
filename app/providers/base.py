@@ -4,12 +4,32 @@ import re
 
 class ScriptProviderError(Exception):
     """Only fixed Turkish messages; never attach requests or raw API responses."""
-    def __init__(self, message: str, status_code: int = 502, *, category: str = 'provider_error', retry_after: int = 0, upstream_status: int | None = None):
+    def __init__(self, message: str, status_code: int = 502, *, category: str = 'provider_error', retry_after: int = 0, upstream_status: int | None = None, stage: str = 'provider', exception_class: str = 'ScriptProviderError'):
         super().__init__(message)
         self.status_code = status_code
         self.category = category
         self.retry_after = max(0, min(120, retry_after))
         self.upstream_status = upstream_status
+        self.stage = stage
+        self.exception_class = exception_class
+
+
+SAFE_EXCEPTION_CLASSES = {'ScriptProviderError', 'ScriptError', 'SettingsStorageError', 'ValidationError', 'ValueError',
+               'TypeError', 'AttributeError', 'IndexError', 'KeyError', 'RecursionError', 'OverflowError',
+               'OSError', 'PermissionError', 'SSLError', 'TimeoutError', 'ConnectionError', 'ReadTimeout',
+               'ConnectTimeout', 'PoolTimeout', 'WriteTimeout', 'ConnectError', 'ReadError', 'WriteError',
+               'RemoteProtocolError', 'LocalProtocolError', 'ProxyError', 'UnsupportedProtocol',
+               'HTTPStatusError', 'InvalidURL', 'UnicodeDecodeError', 'JSONDecodeError', 'ImportError',
+               'RuntimeError', 'AssertionError', 'Exception'}
+
+
+def safe_exception_name(name):
+    return name if isinstance(name, str) and name in SAFE_EXCEPTION_CLASSES else 'Exception'
+
+
+def safe_exception_class(error):
+    # Class names are diagnostic data, never exception messages/headers/bodies.
+    return safe_exception_name(type(error).__name__)
 
 
 def normalize_text(value: object) -> str:

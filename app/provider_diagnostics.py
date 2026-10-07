@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.providers.base import ScriptProviderError
+from app.providers.base import ScriptProviderError, safe_exception_class, safe_exception_name
 from app.providers.factory import make_script_provider
 from app.scripts.engine import SecretGuard, YouTubeScriptEngine
 from app.scripts.models import ScriptError, word_count
@@ -59,6 +59,17 @@ MESSAGES = {
     'network_error': 'API HTTP bağlantısı tamamlanamadı. Ağ, proxy, güvenlik duvarı ve sağlayıcı durumunu kontrol edin. Bu bir JSON ayrıştırma hatası değildir.',
     'upstream_error': 'Sağlayıcı API’si isteği tamamlayamadı. Daha sonra tekrar deneyin.',
     'unexpected_backend': 'Yerel tanılama işlemi beklenmeyen bir hatayla durdu. Dosyaları silmeden yeniden deneyin; güvenli kategori günlüğe yazıldı.',
+    'provider_error': 'Sağlayıcı isteği tamamlayamadı. Ayarları ve bu testin güvenli aşama bilgisini kontrol edin.',
+    'blocked_response': 'Gemini yanıtı güvenlik veya içerik kısıtlaması nedeniyle engelledi. Bu bağlantı kopması değildir; istek ve modelin kullanım kurallarını kontrol edin.',
+    'no_candidates': 'Gemini kullanılabilir yanıt adayı döndürmedi. Bağlantı sonucunuz korunuyor; üretim yanıtı tamamlanmadı.',
+    'malformed_candidate': 'Gemini yanıt adayının yapısı okunamadı. Ham yanıt gösterilmedi.',
+    'unexpected_finish_reason': 'Gemini yanıtı beklenmeyen bir tamamlanma durumuyla döndü. Eksik çıktı kullanılmadı.',
+    'output_limit': 'Gemini çıktı uzunluğu sınırında durdu. Eksik yanıt başarılı sayılmadı.',
+    'malformed_content': 'Gemini adayındaki içerik alanı beklenen yapıda değil.',
+    'malformed_parts': 'Gemini içerik parçaları beklenen yapıda değil; ham içerik kullanılmadı.',
+    'thought_only_response': 'Gemini yalnızca özel düşünme içeriği döndürdü; son yanıt yok. Düşünme içeriği gösterilmedi veya kullanılmadı.',
+    'response_schema_mismatch': 'Gemini API yanıtının alan veya tür yapısı beklenen sözleşmeyle uyuşmuyor.',
+    'model_unsupported': 'Seçilen Gemini modeli bu metin üretim isteğini desteklemiyor. Ayarlar’dan uyumlu bir metin modeli seçin.',
 }
 STORAGE_ERRORS = {'settings_reopen_mismatch', 'key_decrypt_failed', 'folder_permission', 'temp_file_failed',
                   'atomic_replace_failed', 'encryption_failed', 'storage_locked'}
@@ -76,14 +87,12 @@ class JSONProbe(BaseModel):
 
 
 class DiagnosticScriptProvider:
-    """Check observed reasoning before JSON/format validation can hide its cause."""
+    """Use the provider's final channel; never treat a separate thought as text."""
     def __init__(self, provider, backend):
         self.provider, self.backend = provider, backend
 
     def generate_script(self, prompt):
         text = self.backend.generate_script(prompt)
-        if self.provider == 'ollama' and getattr(self.backend, 'thinking_returned', False):
-            raise ScriptProviderError(MESSAGES['thinking_unsupported'], category='thinking_unsupported')
         return text
 
     def test_connection(self):
@@ -94,9 +103,11 @@ def result_status(category):
     if category == 'none': return 'Başarılı'
     if category in STORAGE_ERRORS: return 'Ayar kaydetme hatası'
     if category in ('free_quota_exhausted', 'quota_limit', 'rate_limit', 'billing_quota'): return 'Kota sınırı'
-    if category in ('model_unavailable', 'invalid_model', 'thinking_unsupported'): return 'Model uyumsuz'
+    if category in ('model_unavailable', 'model_unsupported', 'invalid_model', 'thinking_unsupported'): return 'Model uyumsuz'
     if category in ('invalid_response', 'empty_response', 'incomplete_response', 'reasoning_in_response',
-                    'invalid_json', 'schema_invalid', 'simple_response_mismatch', 'pipeline_output_invalid'): return 'Yanıt biçimi hatası'
+                    'invalid_json', 'schema_invalid', 'simple_response_mismatch', 'pipeline_output_invalid', 'no_candidates',
+                    'malformed_candidate', 'unexpected_finish_reason', 'output_limit', 'malformed_content', 'malformed_parts',
+                    'thought_only_response', 'response_schema_mismatch'): return 'Yanıt biçimi hatası'
     if category in ('no_internet', 'local_connection', 'network_error', 'gemini_timeout', 'generation_timeout'): return 'Bağlantı hatası'
     return 'Hata'
 
@@ -187,7 +198,13 @@ class ProviderDiagnostics:
                 raise ScriptProviderError(MESSAGES['settings_changed'], category='settings_changed')
             if retry and retry[0] > time.monotonic():
                 raise ScriptProviderError(MESSAGES[retry[1]], category=retry[1], retry_after=max(1, int(retry[0] - time.monotonic())), upstream_status=429)
-            backend = DiagnosticScriptProvider(provider, self.provider_factory(provider, self.settings))
+            try:
+                backend = DiagnosticScriptProvider(provider, self.provider_factory(provider, self.settings))
+            except ScriptProviderError as error:
+                if error.stage == 'provider': error.stage = 'configuration'
+                raise
+            except Exception as error:
+                raise ScriptProviderError(MESSAGES['unexpected_backend'], category='unexpected_backend', stage='provider_construction', exception_class=safe_exception_class(error)) from None
             guard = SecretGuard(self.settings.secret_values())
         if test == 'connection':
             outcome = backend.test_connection()
@@ -197,6 +214,8 @@ class ProviderDiagnostics:
                 category = outcome.get('category', 'upstream_error')
                 raise ScriptProviderError(MESSAGES.get(category, MESSAGES['unexpected_backend']), category=category)
             message = 'API bağlantısı ve seçilen model erişimi doğrulandı. Bu sonuç üretim kotasını veya modelin üretim uyumluluğunu garanti etmez.'
+            if not self.settings.script_config(provider).get('model'):
+                message = 'API bağlantısı başarılı; henüz model kaydedilmemiş. Üretimden önce Ayarlar’dan model seçip Kaydet deyin.'
         else:
             engine = YouTubeScriptEngine(backend, guard)
             if test == 'simple_generation':
@@ -221,6 +240,7 @@ class ProviderDiagnostics:
     def _run(self, provider, test):
         started, category, message, metadata = time.monotonic(), 'none', '', {}
         upstream_status, retry_after = None, 0
+        stage, exception_class = test, 'none'
         try:
             if test == 'settings':
                 metadata = self._verify_storage(provider)
@@ -232,13 +252,20 @@ class ProviderDiagnostics:
             else:
                 message = self._network_test(provider, test)
         except SettingsStorageError as error:
+            exception_class = safe_exception_class(error)
             category = error.category if error.category in STORAGE_ERRORS else 'unexpected_backend'
         except ScriptProviderError as error:
             category = error.category if error.category in MESSAGES else 'unexpected_backend'
             upstream_status, retry_after = error.upstream_status, error.retry_after
+            stages = {'provider', 'configuration', 'request_build', 'http_request', 'http_status', 'response_json',
+                      'prompt_feedback', 'candidates', 'finish_reason', 'content', 'parts', 'text', 'provider_construction'}
+            stage = error.stage if error.stage in stages else test
+            exception_class = safe_exception_name(error.exception_class)
         except (SettingsInputError, ScriptError) as error:
+            exception_class = safe_exception_class(error)
             category = error.category if isinstance(error, ScriptError) and error.category in MESSAGES else 'invalid_settings'
-        except Exception:
+        except Exception as error:
+            exception_class = safe_exception_class(error)
             category = 'unexpected_backend'
         elapsed = round((time.monotonic() - started) * 1000)
         if type(upstream_status) is not int or not 100 <= upstream_status <= 599: upstream_status = None
@@ -246,6 +273,7 @@ class ProviderDiagnostics:
         result = {'status': result_status(category), 'safe_error_category': category, 'safe_message': message,
                   'elapsed_ms': elapsed, 'checked_at': datetime.now(timezone.utc).isoformat(),
                   'upstream_http_status': upstream_status, 'retry_after_seconds': retry_after, **metadata}
+        result.update(stage=stage, exception_class=exception_class)
         with self.lock:
             state = self.states[provider]
             state[test + '_status'] = result['status']
@@ -257,8 +285,8 @@ class ProviderDiagnostics:
                 if category == 'settings_changed': state['tests']['settings'] = {**result, 'status': 'Hata'}
             if retry_after and category in ('quota_limit', 'free_quota_exhausted', 'rate_limit', 'billing_quota'):
                 self.retry_at[provider] = (time.monotonic() + retry_after, category)
-        LOG.info('provider=%s operation=%s result=%s category=%s elapsed_ms=%d', provider, test,
-                 'success' if category == 'none' else 'quota' if result['status'] == 'Kota sınırı' else 'failure', category, elapsed)
+        LOG.info('provider=%s operation=%s stage=%s result=%s category=%s exception_class=%s http_status=%s elapsed_ms=%d', provider, test, stage,
+                 'success' if category == 'none' else 'quota' if result['status'] == 'Kota sınırı' else 'failure', category, exception_class, upstream_status or 'none', elapsed)
 
     def close(self):
         with self.lock: self.closed = True

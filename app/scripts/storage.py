@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.projects import linked, now
 from app.scripts.models import ScriptError, duration_metrics
+from app.scripts.review import final_report, safe_review_issues
 
 ACTIVE = ('queued', 'analyzing', 'planning', 'generating', 'checking')
 STATUS_LABELS = {'queued': 'Oluşturuluyor', 'analyzing': 'Analiz ediliyor', 'planning': 'Plan hazırlanıyor',
@@ -64,11 +65,18 @@ class ScriptRepository:
             raise ScriptError('Senaryo sürümü bulunamadı.', 404)
         return row
 
-    def _public_version(self, row, full=False):
+    def _public_version(self, row, full=False, target_minutes=1):
         if row is None:
             return None
         result = dict(row)
         options, report = json.loads(result.pop('options_json')), json.loads(result.pop('report_json'))
+        # Repair public metrics/summaries from legacy reports without modifying
+        # their database records, timestamps or script text.
+        minutes = report.get('target_minutes', target_minutes)
+        if type(minutes) not in (int, float) or minutes <= 0:
+            minutes = target_minutes
+        report = final_report(result['text'], minutes, options, report)
+        result.update(word_count=report['word_count'], estimated_minutes=report['estimated_minutes'])
         result['status_label'] = STATUS_LABELS[result['status']]
         result['report'] = report
         if full:
@@ -80,8 +88,8 @@ class ScriptRepository:
     def view(self, project_id):
         with self.projects.lock, closing(self.projects._connection()) as connection:
             project = dict(self.projects._row(connection, project_id))
-            versions = [self._public_version(row) for row in connection.execute('SELECT * FROM script_versions WHERE project_id=? ORDER BY version DESC', (project_id,))]
-            current = self._public_version(self._current(connection, project_id), full=True)
+            versions = [self._public_version(row, target_minutes=project['target_duration_minutes']) for row in connection.execute('SELECT * FROM script_versions WHERE project_id=? ORDER BY version DESC', (project_id,))]
+            current = self._public_version(self._current(connection, project_id), full=True, target_minutes=project['target_duration_minutes'])
             row = connection.execute('SELECT * FROM script_jobs WHERE project_id=? ORDER BY created_at DESC,id DESC LIMIT 1', (project_id,)).fetchone()
             job = self.public_job(row) if row else None
             return {'project_id': project_id, 'current': current, 'versions': versions, 'job': job,
@@ -91,12 +99,18 @@ class ScriptRepository:
     def public_job(self, row):
         job = dict(row)
         progress = json.loads(job.pop('progress_json'))
+        if 'reviews' in progress:
+            progress['reviews'] = [{'consistent': review.get('consistent') is True,
+                                    'issues': safe_review_issues(review.get('issues', []))}
+                                   for review in progress['reviews'] if isinstance(review, dict)]
         job['options'] = json.loads(job.pop('options_json'))
         job.pop('input_json')
         job['progress'] = progress
         job['status_label'] = STATUS_LABELS[job['status']]
         job['completed_sections'] = len(progress.get('sections', []))
         job['partial_text'] = '\n\n'.join(section['text'] for section in progress.get('sections', []))
+        correction = progress.get('duration_correction', {})
+        if correction.get('applied'): job['partial_text'] = correction['final_text']
         return job
 
     def job(self, job_id):
@@ -135,6 +149,7 @@ class ScriptRepository:
             version = connection.execute('SELECT COALESCE(MAX(version),0)+1 FROM script_versions WHERE project_id=?', (project_id,)).fetchone()[0]
             stamp, version_id = now(), uuid4().hex
             metrics = duration_metrics(text, report.get('target_minutes', project['target_duration_minutes']) if generated else project['target_duration_minutes'], options)
+            report = final_report(text, metrics['target_minutes'], options, report)
             connection.execute('INSERT INTO script_versions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
                 (version_id, project_id, version, provider, model, options['language'], options['mode'], content_type,
                  text, dumps(options), dumps(report), 'draft', metrics['word_count'], metrics['estimated_minutes'], stamp, stamp, None))

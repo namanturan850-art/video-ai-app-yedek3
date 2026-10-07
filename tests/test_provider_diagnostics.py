@@ -179,7 +179,7 @@ def test_openai_storage_success_does_not_mask_disabled_or_missing_key(diagnostic
     (400, {'error': {'details':[{'@type':'type.googleapis.com/google.rpc.ErrorInfo', 'reason':'API_KEY_INVALID'}]}}, 'key_rejected', 'Hata'),
     (400, {'error': {'status':'INVALID_ARGUMENT', 'message':KEY}}, 'invalid_request', 'Hata'),
     (200, {'candidates': [{'finishReason':'STOP','content':{'parts':[]}}]}, 'empty_response', 'Yanıt biçimi hatası'),
-    (200, {'raw_response':KEY}, 'invalid_response', 'Yanıt biçimi hatası'),
+    (200, {'raw_response':KEY}, 'no_candidates', 'Yanıt biçimi hatası'),
 ])
 def test_gemini_generation_failure_layer_does_not_change_connection(diagnostic, status, body, category, result, caplog):
     client, calls, respond = diagnostic
@@ -334,18 +334,19 @@ def test_qwen_native_final_response_only_and_official_think_option(response, exp
     assert provider.generate_script('Tiny test') == expected
 
 
-@pytest.mark.parametrize('body,category', [({'done':True,'response':''},'empty_response'), ({'done':True,'response':'','thinking':'private'},'thinking_unsupported'), ({'done':True,'response':'<think>private</think>TEST_OK'},'thinking_unsupported'), ({'done':False,'response':'partial'},'incomplete_response'), ({'done':True,'message':{'content':'wrong channel'}},'invalid_response')])
+@pytest.mark.parametrize('body,category', [({'done':True,'response':''},'empty_response'), ({'done':True,'response':'','thinking':'private'},'empty_response'), ({'done':True,'response':'<think>private</think>TEST_OK'},'thinking_unsupported'), ({'done':False,'response':'partial'},'incomplete_response'), ({'done':True,'message':{'content':'wrong channel'}},'invalid_response')])
 def test_qwen_incomplete_empty_and_reasoning_never_enter_script(body, category):
     provider = OllamaScriptProvider('http://localhost:11434', OLLAMA_MODEL, transport=httpx.MockTransport(lambda request:httpx.Response(200,json=body)))
     with pytest.raises(ScriptProviderError) as error: provider.generate_script('Tiny test')
     assert error.value.category == category and 'private' not in str(error.value)
 
 
-@pytest.mark.parametrize('body,status', [({'error':'this model does not support think=false'},400), ({'done':True,'thinking':'private reasoning','response':'TEST_OK'},200), ({'done':True,'thinking':'private reasoning','response':'wrong final answer'},200)])
-def test_unsupported_thinking_option_visible_as_model_compatibility(diagnostic, body, status):
+@pytest.mark.parametrize('body,status,expected,category', [({'error':'this model does not support think=false'},400,'Model uyumsuz','thinking_unsupported'), ({'done':True,'thinking':'private reasoning','response':'TEST_OK'},200,'Başarılı','none'), ({'done':True,'thinking':'private reasoning','response':'wrong final answer'},200,'Yanıt biçimi hatası','simple_response_mismatch')])
+def test_unsupported_thinking_option_and_separate_final_channel(diagnostic, body, status, expected, category):
     client, _, _ = diagnostic
     check(client, 'ollama', 'settings')
     install_transport(client,httpx.MockTransport(lambda request:httpx.Response(status,json=body)))
     view = check(client,'ollama','simple_generation')
-    assert view['simple_generation_status'] == 'Model uyumsuz' and view['safe_message'] == MESSAGES['thinking_unsupported']
+    assert view['simple_generation_status'] == expected and view['safe_error_category'] == category
+    if category == 'thinking_unsupported': assert view['safe_message'] == MESSAGES['thinking_unsupported']
     assert 'private reasoning' not in json.dumps(view)

@@ -32,7 +32,11 @@ Projedeki YouTube URL'si indirilmez, transcript kazınmaz, içeriği görülmü�
 
 AI, bölüm sayısını ve düzenini içeriğe göre seçer. Karakter/çatışma/zirve yalnızca uygun anlatı içeriğinde kullanılır; bilgi içerikleri kurguya dönüştürülmez. Blueprint ek soyut alanları destekler. Bölüm planı hedef uzunluk ve geçerli yapı açısından sunucuda kontrol edilir.
 
-Varsayılan konuşma hızı **125–145 kelime/dakika**, ayarlanabilir aralık **80–220**. Örneğin 20 dakika yaklaşık **2.500–2.900 kelime** hedefler. Tahmini süre ortalama hızla hesaplanır; gerçek TTS süresi değildir. Tam hedefi tutturmak için otomatik dolgu yapılmaz; aralık dışı sonuçta uyarı gösterilir.
+Varsayılan konuşma hızı **125–145 kelime/dakika**, ayarlanabilir aralık **80–220**. Örneğin 20 dakika yaklaşık **2.500–2.900 kelime** hedefler. Tahmini süre ortalama hızla hesaplanır; gerçek TTS süresi değildir. Editör, kayıt, rapor ve süre uyarıları aynı son metinden ve o sürümün kaydedilmiş konuşma hızından hesaplanır. Gelecek üretim için form hızını değiştirmek eski sürümün hedefini değiştirmez. Üç dakika için **375–435 kelime**; **385 kelime / 2,85 dakika** hedef aralığındadır ve süre uyarısı almaz.
+
+Ollama özgün senaryosu birleştirildiğinde kelime sayısı alt hedefin %85'inden azsa **en fazla bir** kontrollü süre düzeltmesi denenir. Aynı konu, bilgiler, yapı, ton ve dil korunarak mevcut noktalar geliştirilmesi istenir; dolgu/tekrarlanan paragraf/reasoning istenmez. Deneme bilgisi API çağrısından önce kaydedilir; yeniden açma/Devam Et yeni bir süre düzeltmesi başlatmaz. Hatalı, uzamayan, aşırı uzun veya tekrarlanan paragraflı aday mevcut metnin yerine geçmez. Son metin hâlâ kısaysa **“⚠ Metin hedef süreden kısa.”** gösterilir. Hedefi veya AI içerik kalitesini tutturma garantisi yoktur; insan kontrolü gerekir. Sahiplik onaylı çevirilerde ve bulut sağlayıcılarında bu ek otomatik üretim çağrısı yapılmaz.
+
+Son kontrolün normal kullanıcıya görünen sonucu sabit, kısa Türkçe mesajlardan oluşur. Ham Almanca/İngilizce blueprint incelemesi veya özel düşünme metni gösterilmez. Eski raporlar da API okunurken güvenli özetlenir; eski veritabanı satırı veya metin değiştirilmez.
 
 Uzun metin tek dev istekle oluşturulmaz: bölüm başına hedef 20–900 kelime, genellikle 400–700; en çok 80 bölüm. Her bölüm hemen kaydedilir, sonra kısa bağlam özeti hazırlanır. Bağlam kontrolü kesilse bile o bölümün metni tekrar üretilmez. Son kontrol en çok sekizer bölümün özet ve başlangıç/bitiş parçalarıyla yapılır; tamamlanmış kontroller de devam işleminde korunur.
 

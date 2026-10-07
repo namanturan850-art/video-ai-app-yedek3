@@ -38,6 +38,9 @@ GEMINI_LOG = logging.getLogger('uvicorn.error.gemini_settings')
 GEMINI_UNEXPECTED_MESSAGE = 'Gemini ayarları işlenirken beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin.'
 GEMINI_ERROR_CATEGORIES = {'none', 'gemini_timeout', 'no_internet', 'key_rejected', 'quota_limit',
                           'rate_limit', 'free_quota_exhausted', 'invalid_request', 'network_error',
+                          'model_unsupported', 'blocked_response', 'no_candidates', 'malformed_candidate',
+                          'unexpected_finish_reason', 'output_limit', 'malformed_content', 'malformed_parts',
+                          'thought_only_response', 'response_schema_mismatch', 'empty_response', 'missing_model',
                           'model_unavailable', 'upstream_error', 'invalid_response', 'missing_key',
                           'provider_error', 'invalid_settings', 'local_storage', 'unexpected_backend'}
 

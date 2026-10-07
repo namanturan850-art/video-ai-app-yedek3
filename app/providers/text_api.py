@@ -123,8 +123,8 @@ class OllamaScriptProvider(TextAPIProvider):
             raise ScriptProviderError('Ollama son yanıtı tamamlamadı; kısmi çıktı kullanılmadı.', category='incomplete_response')
         # Never concatenate thinking, message.content or other response channels.
         response = data.get('response')
-        if not response and self.thinking_returned:
-            raise ScriptProviderError('Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.', category='thinking_unsupported')
+        if response == '' or response is None and self.thinking_returned:
+            raise ScriptProviderError('Ollama son yanıtı boş döndürdü. Thinking içeriği yanıt yerine kullanılmadı. Modeli ve Ollama sürümünü kontrol edin.', category='empty_response', stage='text')
         try:
             return normalize_text(response)
         except ScriptProviderError as error:

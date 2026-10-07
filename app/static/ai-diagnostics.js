@@ -63,6 +63,8 @@ if (window.location.pathname === '/settings/ai-diagnostics') {
         row.technical.textContent = '';
         if (result.checked_at) {
           const details = [`Kategori: ${result.safe_error_category === 'none' ? 'yok' : result.safe_error_category}`, `Süre: ${result.elapsed_ms} ms`, new Date(result.checked_at).toLocaleString('tr-TR')];
+          if (result.stage) details.push(`Aşama: ${result.stage}`);
+          if (result.exception_class && result.exception_class !== 'none') details.push(`Hata türü: ${result.exception_class}`);
           if (result.upstream_http_status) details.push(`API HTTP: ${result.upstream_http_status}`);
           if (result.retry_after_seconds) details.push(`Tekrar öncesi en az ${result.retry_after_seconds} saniye bekleyin`);
           if (test === 'settings') {

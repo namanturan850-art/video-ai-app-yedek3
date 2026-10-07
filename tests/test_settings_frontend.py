@@ -15,3 +15,11 @@ def test_settings_request_timeout_and_classification():
     result = subprocess.run([shutil.which('node'), '--test', str(root / 'tests/frontend/settings_http.test.cjs')],
                             cwd=root, capture_output=True, text=True, timeout=20)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(not shutil.which('node'), reason='Frontend metrics regression tests require Node.js (development only).')
+def test_final_script_metrics_and_safe_review():
+    root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([shutil.which('node'), '--test', str(root / 'tests/frontend/script_metrics.test.cjs')],
+                            cwd=root, capture_output=True, text=True, timeout=20)
+    assert result.returncode == 0, result.stdout + result.stderr

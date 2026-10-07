@@ -79,7 +79,9 @@ async function settingsRequest(url, method = 'GET', body) {
         invalid_settings: 'Gemini ayarları sorgu sırasında değişmiş olabilir. Ayarları yeniden açıp tekrar deneyin.',
         local_storage: 'Yerel ayarlar açılamadı. Dosyaları silmeden destek isteyin.',
         upstream_error: 'Google Gemini API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.',
-        invalid_response: 'Gemini API yanıtı okunamadı. Daha sonra tekrar deneyin.'
+        invalid_response: 'Gemini API yanıtı okunamadı. Daha sonra tekrar deneyin.',
+        response_schema_mismatch: 'Gemini API yanıt yapısı beklenen sözleşmeyle uyuşmuyor.',
+        model_unsupported: 'Seçilen Gemini modeli bu metin isteğini desteklemiyor.'
       };
       const known = Object.hasOwn(messages, result.category);
       throw failure(known ? messages[result.category] : unexpectedMessage, known ? result.category : 'unexpected_backend');

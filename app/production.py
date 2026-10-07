@@ -7,13 +7,30 @@ from contextlib import closing
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic_core import PydanticCustomError
 
 from app.projects import now
 from app.scripts.models import ScriptError, word_count
 from app.scripts.storage import dumps
 
 MEDIA_PRIORITY = ['pexels', 'pixabay', 'local', 'cloud_with_permission']
+SCENE_ERRORS = {
+    'narration_units_missing': 'AI bazı senaryo parçalarını sahnelere atamadı.',
+    'narration_units_duplicate': 'AI aynı senaryo parçasını birden fazla sahnede kullandı.',
+    'narration_units_out_of_order': 'AI sahne sırasını değiştirdi; parçalar kaynak sırasıyla ve bitişik kullanılmalı.',
+    'invalid_scene_schema': 'AI sahne alanlarını beklenen JSON biçiminde döndürmedi.',
+    'invalid_stock_queries': 'AI stok arama sorgularını beklenen biçimde döndürmedi.',
+    'invalid_overlay': 'AI vurgu yazısını beklenen kısa biçimde döndürmedi.',
+    'invalid_media_type': 'AI geçerli bir medya türü döndürmedi.',
+    'invalid_transition': 'AI geçerli bir geçiş veya hareket önerisi döndürmedi.',
+    'invalid_composition': 'AI geçerli bir kompozisyon döndürmedi.',
+}
+SCENE_METADATA_ERRORS = {key for key in SCENE_ERRORS if key.startswith('invalid_')}
+
+
+def scene_error(category):
+    return ScriptError(SCENE_ERRORS[category], category=category)
 
 
 def editable(method):
@@ -48,16 +65,16 @@ class VisualBlock(BaseModel):
     @model_validator(mode='after')
     def semantic_queries(self):
         if any(not value.strip() for value in (self.narration,self.purpose,self.mood,self.visual_intent)):
-            raise ValueError('Anlatım, amaç, duygu ve görsel niyet boş olamaz.')
+            raise PydanticCustomError('invalid_scene_schema', 'Anlatım, amaç, duygu ve görsel niyet boş olamaz.')
         queries = [self.stock_query, *self.alternative_stock_queries]
         if any(not 2 <= len(query.split()) <= 12 or len(query) > 300 or re.search(r'[.!?;\n]',query) for query in queries):
-            raise ValueError('Anlamsal stok sorgusu birden fazla anlamlı kelime içermeli.')
+            raise PydanticCustomError('invalid_stock_queries', 'Anlamsal stok sorgusu birden fazla anlamlı kelime içermeli.')
         if len({normalize(query).casefold() for query in queries}) != len(queries):
-            raise ValueError('Aynı sahnenin stok sorguları farklı olmalı.')
+            raise PydanticCustomError('invalid_stock_queries', 'Aynı sahnenin stok sorguları farklı olmalı.')
         if any(not entity.strip() or len(entity)>150 for entity in self.entities):
             raise ValueError('Varlık alanlarını kontrol edin.')
         if word_count(self.overlay_text)>12 or self.overlay_text and normalize(self.overlay_text)==normalize(self.narration):
-            raise ValueError('Vurgu yazısı kısa olmalı; tüm anlatımı tekrarlamamalı.')
+            raise PydanticCustomError('invalid_overlay', 'Vurgu yazısı kısa olmalı; tüm anlatımı tekrarlamamalı.')
         return self
 
 
@@ -75,6 +92,79 @@ class NarrationTiming(BaseModel):
 
 def normalize(text):
     return re.sub(r'\s+', ' ', text).strip()
+
+
+def narration_units(text, words_per_minute=135, *, prefix='U'):
+    """Lossless sentence/paragraph units; long sentences use punctuation only."""
+    if not isinstance(text, str) or not text.strip():
+        raise scene_error('narration_units_missing')
+    sentence_boundary = r'[.!?。！？]+["”’\)\]]*\s+|\r?\n[ \t]*\r?\n'
+    pieces, start = [], 0
+    for match in re.finditer(sentence_boundary, text):
+        end = match.end()
+        if text[start:end].strip():
+            pieces.append(text[start:end]); start = end
+    if start < len(text):
+        if text[start:].strip(): pieces.append(text[start:])
+        elif pieces: pieces[-1] += text[start:]
+    exact = []
+    for piece in pieces:
+        if word_count(piece) / words_per_minute * 60 <= 20:
+            exact.append(piece); continue
+        # No arbitrary word/time cuts, even for a huge sentence without punctuation.
+        start = 0
+        for match in re.finditer(r'[,;:—]["”’\)\]]*\s+', piece):
+            end = match.end()
+            if piece[start:end].strip() and piece[end:].strip():
+                exact.append(piece[start:end]); start = end
+        exact.append(piece[start:])
+    return [{'unit_id':f'{prefix}{index+1}', 'text':piece, 'order':index+1} for index,piece in enumerate(exact)]
+
+
+def narration_segments(text, words_per_minute=135, limit=600):
+    """Bound API context at unit boundaries without losing any source characters."""
+    segments, pending, count = [], [], 0
+    for unit in narration_units(text, words_per_minute):
+        size = word_count(unit['text'])
+        if pending and count + size > limit:
+            segments.append({'text':''.join(item['text'] for item in pending)}); pending=[]; count=0
+        pending.append(unit); count += size
+    if pending: segments.append({'text':''.join(item['text'] for item in pending)})
+    return segments
+
+
+def exact_source_slices(texts, source):
+    """Align legacy whitespace-normalized block/segment boundaries to exact source."""
+    tokens = list(re.finditer(r'\S+', source))
+    if normalize(' '.join(texts)) != normalize(source):
+        raise scene_error('narration_units_missing')
+    result, offset, count = [], 0, 0
+    for text in texts:
+        count += len(text.split())
+        end = tokens[count].start() if count < len(tokens) else len(source)
+        result.append(source[offset:end]); offset = end
+    return result
+
+
+def scene_references(raw, units):
+    """Validate references before metadata; flattened order implies contiguity."""
+    if not isinstance(raw,dict) or not isinstance(raw.get('scenes'),list) or not 1 <= len(raw['scenes']) <= 200:
+        raise scene_error('invalid_scene_schema')
+    groups = []
+    for scene in raw['scenes']:
+        if not isinstance(scene,dict) or not isinstance(scene.get('unit_ids'),list) or not scene['unit_ids']:
+            raise scene_error('narration_units_missing')
+        if any(not isinstance(uid,str) for uid in scene['unit_ids']):
+            raise scene_error('invalid_scene_schema')
+        groups.append(scene['unit_ids'])
+    expected = [unit['unit_id'] for unit in units]
+    expected_set = set(expected)
+    actual = [uid for group in groups for uid in group]
+    if any(uid not in expected_set for uid in actual): raise scene_error('narration_units_missing')
+    if len(set(actual)) != len(actual): raise scene_error('narration_units_duplicate')
+    if set(actual) != set(expected): raise scene_error('narration_units_missing')
+    if actual != expected: raise scene_error('narration_units_out_of_order')
+    return groups
 
 
 def enrich_blocks(blocks):
@@ -127,15 +217,27 @@ def scene_checks(blocks, text):
     return list(dict.fromkeys(warnings))
 
 
-def visual_blocks(raw, source, language, words_per_minute, start=0):
+def visual_blocks(raw, source, language, words_per_minute, start=0, *, units=None, single=False):
+    units = units if units is not None else narration_units(source,words_per_minute)
+    if ''.join(unit['text'] for unit in units) != source: raise scene_error('narration_units_missing')
+    groups = scene_references(raw,units)
+    if set(raw) != {'scenes'} or single and len(groups)!=1: raise scene_error('invalid_scene_schema')
+    source_by_id = {unit['unit_id']:unit['text'] for unit in units}
+    blocks = []
     try:
-        if set(raw) != {'blocks'} or not isinstance(raw['blocks'], list) or not 1 <= len(raw['blocks']) <= 40:
-            raise ValueError()
-        blocks = [VisualBlock.model_validate(block).model_dump() for block in raw['blocks']]
-        if normalize(' '.join(block['narration'] for block in blocks)) != normalize(source):
-            raise ValueError()
-    except (ValueError, TypeError):
-        raise ScriptError('Görsel plan senaryo metniyle eşleşmiyor veya beklenen biçimde değil. Tekrar deneyin.') from None
+        for scene, ids in zip(raw['scenes'],groups):
+            # Ignore unsolicited copied narration. It never owns source wording.
+            metadata = {key:value for key,value in scene.items() if key not in ('unit_ids','narration','narration_text')}
+            blocks.append(VisualBlock.model_validate({**metadata,'narration':''.join(source_by_id[uid] for uid in ids)}).model_dump())
+    except ValidationError as error:
+        fields = {'stock_query':'invalid_stock_queries','alternative_stock_queries':'invalid_stock_queries',
+                  'overlay_text':'invalid_overlay','media_type':'invalid_media_type','transition':'invalid_transition',
+                  'motion':'invalid_transition','composition':'invalid_composition'}
+        detail = error.errors()[0]
+        category = detail['type'] if detail['type'] in SCENE_METADATA_ERRORS else fields.get(detail['loc'][0] if detail['loc'] else '', 'invalid_scene_schema')
+        raise scene_error(category) from None
+    if ''.join(block['narration'] for block in blocks) != source:
+        raise scene_error('narration_units_missing')
     for index, block in enumerate(blocks):
         duration = word_count(block['narration']) / words_per_minute * 60
         block_id = uuid4().hex
@@ -233,20 +335,25 @@ class ProductionService:
         if self.snapshot(project_id)!=snapshot: raise ScriptError('Plan değişti. Sayfayı yenileyip bu plan için yeniden deneyin.',409)
 
     def planning_segments(self, project_id, current):
-        from app.scripts.engine import translation_chunks
+        rate=(current['options']['words_per_minute_min']+current['options']['words_per_minute_max'])/2
         existing=self.view(project_id)['plan']
         if not existing or existing['version_id']!=current['id'] or not any(b['locked'] for b in existing['blocks']):
-            return [{'text':chunk} for chunk in translation_chunks(current['text'],600)]
-        if not coverage(existing['blocks'],current['text']): raise ScriptError('Kilitli plan anlatımı senaryoyla eşleşmiyor. Önce sahne kapsamını kontrol edin.',409)
-        segments, pending=[],[]
-        def flush():
-            segments.extend({'text':chunk} for chunk in translation_chunks(' '.join(pending),600))
-            pending.clear()
-        for block in existing['blocks']:
-            if block['locked']:
-                flush(); segments.append({'text':block['narration'],'locked_block':deepcopy(block)})
-            else: pending.append(block['narration'])
-        flush()
+            segments=narration_segments(current['text'],rate)
+        else:
+            if not coverage(existing['blocks'],current['text']): raise ScriptError('Kilitli plan anlatımı senaryoyla eşleşmiyor. Önce sahne kapsamını kontrol edin.',409)
+            segments, pending=[],[]
+            def flush():
+                if pending: segments.extend(narration_segments(''.join(pending),rate))
+                pending.clear()
+            exact=exact_source_slices([b['narration'] for b in existing['blocks']],current['text'])
+            for block,text in zip(existing['blocks'],exact):
+                if block['locked']:
+                    flush(); segments.append({'text':block['narration'],'locked_block':deepcopy(block)})
+                else: pending.append(text)
+            flush()
+        for index,segment in enumerate(segments):
+            if not segment.get('locked_block'):
+                segment['narration_units']=narration_units(segment['text'],rate,prefix=f'S{index+1}U')
         return segments
 
     def retime(self, plan, options, *, preserve_locked=False):
@@ -309,7 +416,9 @@ class ProductionService:
             plan=deepcopy(inputs['base_plan']);target=self._scene(plan,inputs['scene_id'])
             if target['locked']: raise ScriptError('Önce sahnenin kilidini açın.',409)
             if normalize(block['narration'])!=normalize(target['narration']): raise ScriptError('Tek sahne planlaması anlatımı değiştiremez.',422)
-            target.update({key:block[key] for key in VisualBlock.model_fields if key!='narration'})
+            fields=('visual_intent','stock_query','alternative_stock_queries','media_type','overlay_text',
+                    'transition','motion','composition','shot_suggestion','notes')
+            target.update({key:block[key] for key in fields})
             target.update(media=None,image_status='prepared')
             plan.update(provider=provider,model=model)
             self._save(project_id,plan,new_version=True,job_id=job_id)

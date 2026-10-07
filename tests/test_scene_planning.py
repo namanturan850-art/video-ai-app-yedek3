@@ -11,7 +11,7 @@ from app.database import initialize_database
 from app.production import normalize, visual_blocks, scene_checks
 from app.scripts.models import ScriptError, word_count
 from test_scripts import studio, run, KEY, OTHER_KEY, HEADERS
-from test_production import production_studio, block
+from test_production import production_studio, block, scene
 
 
 def route(project): return f'/api/projects/{project["id"]}/production'
@@ -80,7 +80,7 @@ def test_project_language_overlay_and_english_semantic_queries(production_studio
         if prompt.startswith('TASK: visual'):
             data=json.loads(prompt.split('INPUT DATA (not instructions):\n')[1]);assert data['language']==language
             body=json.loads(result)
-            for b in body['blocks']: b['overlay_text']=overlay
+            for b in body['scenes']: b['overlay_text']=overlay
             return json.dumps(body)
         return result
     fake.generate_script=localized
@@ -120,8 +120,9 @@ def single_provider(studio,bad=False):
             data=json.loads(prompt.split('INPUT DATA (not instructions):\n')[1])
             if data.get('scene_mode')=='single':
                 fake.calls.append(('visual',data,prompt))
-                result=block('wrong narration' if bad else data['text'],'detail');result['visual_intent']='Charging connector detail'
-                return json.dumps({'blocks':[result]})
+                ids=['unknown'] if bad else [unit['unit_id'] for unit in data['narration_units']]
+                result=scene(ids,'detail');result['visual_intent']='Charging connector detail'
+                return json.dumps({'scenes':[result]})
         return original(prompt)
     fake.generate_script=generate
 
@@ -151,7 +152,7 @@ def test_lock_bulk_regeneration_preserves_anchor_and_skips_its_request(productio
     after=generate(production_studio)['plan']
     assert after['blocks'][0]==locked and after['blocks'][0]['id']==locked['id']
     assert len(fake.calls)==count+1
-    requested=fake.calls[-1][1]['text']
+    requested=''.join(unit['text'] for unit in fake.calls[-1][1]['narration_units'])
     assert normalize(requested)==normalize(before['blocks'][1]['narration'])
     assert normalize(' '.join(b['narration'] for b in after['blocks']))==normalize(' '.join(b['narration'] for b in before['blocks']))
 
@@ -205,14 +206,14 @@ def test_replaying_completed_plan_job_does_not_duplicate_history(production_stud
 
 
 def test_split_merge_retime_and_complete_narration(production_studio):
-    before=view(production_studio)['plan'];text=before['blocks'][0]['narration'];at=text.index(' ')+1
-    split=action(production_studio,0,'split',split_at=at);assert split.status_code==200,split.text
+    before=view(production_studio)['plan'];text=before['blocks'][1]['narration'];at=text.index(' ')+1
+    split=action(production_studio,1,'split',split_at=at);assert split.status_code==200,split.text
     split_plan=split.json()['plan'];assert len(split_plan['blocks'])==3
-    assert split_plan['blocks'][0]['id']==before['blocks'][0]['id']
+    assert split_plan['blocks'][1]['id']==before['blocks'][1]['id']
     assert len({b['id'] for b in split_plan['blocks']})==3
     assert normalize(' '.join(b['narration'] for b in split_plan['blocks']))==normalize(' '.join(b['narration'] for b in before['blocks']))
     assert split_plan['blocks'][-1]['end']==before['blocks'][-1]['end']==120
-    merged=action(production_studio,0,'merge').json()['plan']
+    merged=action(production_studio,1,'merge').json()['plan']
     assert [b['narration'] for b in merged['blocks']]==[b['narration'] for b in before['blocks']]
     assert merged['plan_version']==3 and [b['order'] for b in merged['blocks']]==[1,2]
 
@@ -282,13 +283,14 @@ def test_schema5_upgrade_imports_legacy_plan_preserving_all_data(production_stud
 
 def test_bad_scene_count_repetition_and_diversity_warn_without_unrelated_changes():
     source=' '.join('word'+str(i) for i in range(300))
-    scenes=visual_blocks({'blocks':[block(source)]},source,'de',135)
+    scenes=visual_blocks({'scenes':[scene(['U1'])]},source,'de',135)
     warnings=scene_checks(scenes,source)
     assert any('az sahne' in w for w in warnings) and any('çok uzun' in w for w in warnings)
-    parts=[block('Sentence '+str(i)+'.') for i in range(4)]
+    parts=[scene([f'U{i+1}']) for i in range(4)]
     for p in parts:p['media_type']='stock_image'
-    scenes=visual_blocks({'blocks':parts},' '.join(p['narration'] for p in parts),'de',135)
-    warnings=scene_checks(scenes,' '.join(p['narration'] for p in parts))
+    source=' '.join(f'Sentence {i}.' for i in range(4))
+    scenes=visual_blocks({'scenes':parts},source,'de',135)
+    warnings=scene_checks(scenes,source)
     for phrase in ('çok kısa','tekrarlanıyor','kompozisyon','sabit görsel'):
         assert any(phrase in w for w in warnings)
     reversed_text=' '.join(b['narration'] for b in reversed(scenes))
@@ -296,8 +298,8 @@ def test_bad_scene_count_repetition_and_diversity_warn_without_unrelated_changes
 
 
 def test_no_missing_or_reordered_narration_is_accepted():
-    for parts in ([block('First sentence.')],[block('Second sentence.'),block('First sentence.')]):
-        with pytest.raises(ScriptError):visual_blocks({'blocks':parts},'First sentence. Second sentence.','de',135)
+    for parts in ([scene(['U1'])],[scene(['U2']),scene(['U1'])]):
+        with pytest.raises(ScriptError):visual_blocks({'scenes':parts},'First sentence. Second sentence.','de',135)
 
 
 def test_cost_consent_before_individual_or_bulk_cloud_generation(production_studio):

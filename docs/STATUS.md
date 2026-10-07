@@ -1,5 +1,18 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — Gerçek Windows Aşama 5 anlatım sözleşmesi düzeltmesi
+
+- **Kod nedeni:** AI'den onaylı anlatımı her görsel blokta harfi harfine geri yazması isteniyordu; noktalama/büyük harf/tek kelime değişikliği bile kapsam karşılaştırmasını bozuyordu. Alan doğrulama hataları da aynı genel mesajla 0%'ta görünüyordu. Sağlayıcı bağlantısını değiştirmeden anlatım sahipliği düzeltildi; kapsam kontrolü gevşetilmedi.
+- Uygulama kaynak metni kayıpsız, sıralı `unit_id` / `text` / `order` cümle/paragraf birimlerine ayırır. Uzun cümleler uygun virgül/noktalı virgül/iki nokta/uzun çizgi sınırlarında ifade birimlerine ayrılabilir. Sabit saniye/kelime sahneleri yoktur; güvenli noktalama yoksa metin zorla kesilmez. API bağlam parçaları birim sınırında kurulur; kaynak boşlukları/noktalama/kelimeler korunur.
+- AI yalnız `scenes` / `unit_ids` ve görsel metadata döndürür. Her birim tam bir kez, aynı sıra ve bitişik gruplarla kullanılmalıdır. Anlatımı backend orijinal birimlerden birleştirir; fazladan kopya anlatım alanları kaynak olarak kullanılmaz. AI anlam/konu/örnek/liste/geçiş ve görsel fırsatlara göre gruplamaya devam eder.
+- Eksik, tekrarlı, sırası bozuk birimler ile geçersiz sahne şeması, stok sorgusu, overlay, medya türü, geçiş/hareket ve kompozisyon için ayrı sabit Türkçe mesajlar ve güvenli tanı kategorileri. Günlüklerde sağlayıcı/işlem/kategori/süre; ham yanıt, reasoning ve sır yok.
+- Anlaşılır ve geçerli birim kapsamıyla hatalı görsel metadata için **bütün işte en fazla bir** düzeltme. Aynı sağlayıcı/model ve doğrulanmış birim grupları; Ollama otomatik, Gemini/OpenAI ikinci çağrı öncesinde **ayrı maliyet onayı** ister. İptal veya backend'e onaysız istek ikinci çağrıyı başlatmaz. Deneme önce checkpoint'e yazılır; başarısızlık/yeniden açılış/Devam Et bütçeyi sıfırlamaz. Ham hatalı yanıt onarım istemine/kayıtlara/arayüze eklenmez.
+- Tek sahne yenilemesi aynı birim sözleşmesini kullanır; exact anlatım, kimlik, diğer sahneler ve görsel dışındaki sahne alanları korunur. Kilitli sahneler istek dışında kalır; çevresindeki birimler sınırı aşamaz. Eski başarısız işler kaynağa hizalanarak aynı checkpoint'ten sürdürülebilir. Sürüm geçmişi, SQLite şema 6, mevcut planlar/ayarlar/Windows başlatıcıları ve Part 6 handoff sözleşmesi korunur.
+- **Tam paket: 594 test; 592 geçti, 0 başarısız, 2 gerçek Windows/DPAPI testi Linux nedeniyle atlandı.** Bu düzeltme için **52 yeni regresyon**. Önceki sahne testlerinin taklit AI yanıtları yeni referans sözleşmesine güncellendi; önceki tüm işlevler ve pytest içindeki 34 JavaScript kontrolü geçti. İki değişen JavaScript dosyasının sözdizimi kontrolü de geçti.
+- Gerçek FastAPI/Chromium ile onay kapısı, tam kaynak anlatım, düzenleme/tek sahne yenileme/bölme/birleştirme/taşıma/kilitler/11 sürüm/handoff/yeniden açılış/mobil görünüm geçti. Ayrı Gemini arayüz kontrolünde metadata hatası ve kategori, ikinci çağrı onayı, iptalde çağrı yapılmaması, aynı sağlayıcıyla tek düzeltme ve yenilemede kalıcılık geçti; JavaScript hatası yok.
+- Native Qwen 3.5 ve Gemini resmi HTTP adaptörleri taklit yanıtlarla test edildi; reasoning dışarı çıkmadı. Otomatik/tarayıcı sonuçları yeni canlı sağlayıcı başarısı iddiası değildir. **Yeni akışı sahibi gerçek Windows'ta yeniden denemelidir.** [Basit yeniden deneme ve hata rehberi](SCENE_PLANNING.md).
+- Değişen uygulama dosyaları: `app/production.py`, `app/scripts/quality.py`, `app/main.py`, `app/static/production.js`, `app/static/script.js`. Regresyonlar: `tests/test_scene_narration_units.py`, `tests/test_scene_planning.py`, `tests/test_production.py`. Belgeler: bu dosya ve `docs/SCENE_PLANNING.md`. **Part 6 başlatılmadı.**
+
 ## 2026-10-07 — Aşama 5: Sahne / Görsel Planlama
 
 Tamamlandı:

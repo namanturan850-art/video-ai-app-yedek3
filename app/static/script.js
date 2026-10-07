@@ -215,8 +215,10 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
     await mutate(async () => { await request(`${base}/${action}`, 'POST', data); dirty = false; editing = false; });
   }
   async function resumeJob() {
-    if (!discard() || (['generate','apply'].includes(view.job.action) && !confirmReplace()) || !costConfirm(view.job.provider)) return;
-    await mutate(() => request(`${base}/jobs/${view.job.id}/resume`, 'POST', {confirm_replace_approved: view.current?.status === 'approved'}));
+    const repair = ['visual','visual_scene'].includes(view.job.action) && view.job.progress.visual_repair?.status === 'awaiting_cost_confirmation';
+    if (!discard() || (['generate','apply'].includes(view.job.action) && !confirmReplace())) return;
+    if (repair ? !window.confirm('Aynı sağlayıcıyla bir görsel metadata düzeltmesi ek API kotası veya ücret kullanabilir. Bu ikinci çağrıyı onaylıyor musunuz?') : !costConfirm(view.job.provider)) return;
+    await mutate(() => request(`${base}/jobs/${view.job.id}/resume`, 'POST', {confirm_replace_approved: view.current?.status === 'approved', ...(repair ? {visual_repair_cost_confirmed:true} : {})}));
   }
   async function saveEdit() {
     if (!confirmReplace()) return;

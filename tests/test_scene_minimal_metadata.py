@@ -171,9 +171,12 @@ def test_minimal_qwen_or_gemini_native_response_creates_complete_persistent_plan
     current=view(production_studio)
     assert current['coverage_complete'] and ''.join(b['narration'] for b in current['plan']['blocks'])==exact
     for b in current['plan']['blocks']:
-        assert all(b[field]==value for field,value in DEFAULTS.items())
-        assert b['media_type']=='stock_video' and b['stock_query']=='electric car charging station'
-        assert b['alternative_stock_queries']==['electric vehicle charging']
+        assert all(b[field]==value for field,value in DEFAULTS.items() if field!='composition')
+        assert b['composition'] in {'medium','wide','close','detail','object'}
+        assert b['media_type']=='stock_video' and b['stock_query'].startswith(('electric car charging station','electric vehicle charging'))
+        assert b['alternative_stock_queries'] and b['stock_query'] not in b['alternative_stock_queries']
+    assert len({b['composition'] for b in current['plan']['blocks']})>1
+    assert len({b['stock_query'] for b in current['plan']['blocks']})==len(current['plan']['blocks'])
     handoff=client.get(route(project)+'/handoff').json()
     assert handoff['contract_version']==1 and ''.join(b['narration_text'] for b in handoff['scenes'])==exact
     assert all(all(field in b for field in DEFAULTS) for b in handoff['scenes'])
@@ -245,4 +248,5 @@ def test_successful_short_repair_returns_minimal_core_and_backend_adds_editing_f
     install_response(production_studio,bad_then_minimal);result=generate(production_studio)
     assert len(requests)==2 and result['coverage_complete']
     assert ''.join(b['narration'] for b in result['plan']['blocks'])==exact
-    assert all(all(b[field]==value for field,value in DEFAULTS.items()) for b in result['plan']['blocks'])
+    assert all(all(b[field]==value for field,value in DEFAULTS.items() if field!='composition') for b in result['plan']['blocks'])
+    assert len({b['composition'] for b in result['plan']['blocks']})>1

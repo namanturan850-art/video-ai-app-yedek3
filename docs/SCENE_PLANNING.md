@@ -9,7 +9,7 @@ Onaylı senaryo, mevcut **Görsel / Kurgu Planı** ekranında düzenlenebilir sa
 3. Projeye dönüp **Görsel / Kurgu Planı** ekranını açın.
 4. Planlama sağlayıcısı olarak **Ollama** seçin. Ayarlar'da daha önce çalışan yerel modeliniz kayıtlı olsun.
 5. **Görsel / Kurgu Planını Hazırla** deyin; ilerleme bitene kadar bekleyin.
-6. **Onaylı anlatım tam ve aynı sırayla kapsanıyor** mesajını ve sahnelerdeki anlatımı kontrol edin. Süreler **Tahmini zamanlama** olarak görünmelidir.
+6. **Onaylı anlatım tam ve aynı sırayla kapsanıyor** mesajını ve sahnelerdeki anlatımı kontrol edin. Süreler **Tahmini zamanlama** olarak görünmelidir. Üç dakikalık metin artık beş uzun sahneye sıkışmamalı; 18 saniyeyi aşan istisnaların Türkçe gerekçesi olmalıdır.
 7. Bir sahnede **Düzenle** deyin, görsel niyetini değiştirip **Kaydet** deyin.
 8. Başka bir sahnede **Bu sahneyi yeniden planla** deyin. Anlatım ve diğer sahneler aynı kalmalıdır.
 9. Bir sahnede **Kilitle** deyin; görsel niyetini ve sorgularını hatırlayın.
@@ -33,6 +33,23 @@ AI; anlam, konu değişimi, önemli bilgi, örnek, karşılaştırma, liste, duy
 Uygulama önce onaylı metni kimlikli, sıralı cümle/paragraf birimlerine ayırır. Kaynak kelimeler, noktalama ve boşluklar aynen saklanır. Çok uzun cümlede virgül, noktalı virgül, iki nokta veya uzun çizgiyle ayrılmış uygun ifadeler birim olabilir; güvenli noktalama yoksa zorla sabit kelime/saniye dilimleri oluşturulmaz. Böyle uzun bir sahne için süre uyarısı görülebilir.
 
 Uzun metinler yaklaşık 600 kelimelik **API bağlam parçalarına**, birim sınırlarında ayrılır; tek bir büyük birim sınırı aşabilir. Bunlar tek sahne sayılmaz. AI, `scenes` içinde `unit_ids` listeleri ve görsel alanları döndürerek birimleri anlamlı sahnelere gruplar. Her kimlik yalnız bir kez, kaynak sırasıyla ve sahne içinde bitişik kullanılmalıdır. Uygulama her sahnenin anlatımını orijinal birimleri birleştirerek kurar; AI'nin fazladan eklediği kopya anlatım alanları kullanılmaz. Son üç sahnenin görsel özeti sonraki isteğe aktarılır; ilgili görsel çeşitlilik ve devamlılık teşvik edilir.
+
+## Doğal tempo ve görsel çeşitlilik — 2026-10-08
+
+Önceki kalite kontrolü uzun sahneyi yalnızca uyarıyordu; beş büyük AI grubunu daha küçük görsel değişimlere ayırmıyordu. Eksik kompozisyonlar da hep `medium` oluyordu. Yeni kalite adımı, kritik JSON/parça/görsel niyet/sorgu doğrulamasından sonra ve plan kaydedilmeden önce çalışır.
+
+- **18 saniyeyi aşan grup** mevcut anlatım birimi sınırlarından bölünür. Açılışta yaklaşık 5, diğer bölümlerde yaklaşık 10 saniyeye en yakın uygun sınır seçilir. Kısa kuyruklardan kaçınılır. Her yeni parça aynı kaynak metinden kurulur; bir kelime, noktalama veya boşluk eklenmez/silinmez. AI'nin anlamlı grupları birleştirilmez; gerektiğinde yalnız içlerinden bölünür.
+- Planın tahmini toplam süresi en az 30 saniye ve ortalama sahne süresi 15 saniyeden uzunsa fazla kaba kabul edilir; güvenli birim sınırları varsa 12–18 saniyelik gruplar da iyileştirilebilir. Kesin sahne sayısı veya sabit kelime dilimi yoktur. Hesap senaryo sürümünde kayıtlı konuşma hızını kullanır.
+- Tek birim güvenle daha küçük anlatım birimlerine ayrılamıyorsa kelimeler kesilmez. Uzunluk uyarısında gerekçesi yazılır. **Kilitli sahneler** kullanıcının seçimiyle aynen korunur. **Bu sahneyi yeniden planla** tek sahnenin anlatım/sınır sözleşmesini korur; uzun bir sahneyi otomatik bölmek için tüm planı yeniden hazırlayın. Manuel değişiklikler veya eski planlar kendiliğinden yeniden yazılmaz.
+- Bölünen parçaların görsel niyeti, amaç/duygu ve verilmiş bağlam bilgisi korunur. İkinci parçada önce mevcut geçerli alternatif sorgu kullanılır; uygun olduğunda aynı sorguya `close up`, `wide view`, `detail view` gibi yalnız çekim ifadeleri eklenebilir. 2–12 kelime ve farklı birincil/alternatif kuralları korunur. Yeni kişi/yer/olgu uydurulmaz; aynı vurgu yazısı her alt sahnede tekrarlanmaz.
+- Eksik/geçersiz kompozisyonlar sahne sırası ve mevcut görsel niyetteki çekim ipuçlarına göre çeşitlendirilir. Genel bağlamda orta/geniş/yakın; açık detay niyetinde detay/yakın; manzara/ortamda ortam/geniş; grafik niyetinde grafik gibi uyumlu öneriler kullanılır. Açık geniş/orta çekim isteği varsa o ölçek korunur; bu tür tekrarlar uyarı olarak kalabilir. Rastgele kişi veya konum atanmaz. Geçerli AI önerileri kısa, bölünmeyen sahnede korunur; yeni alt parçalar ilgili çekim ölçeğiyle çeşitlenir. Dil/anlam ipuçları bir garanti değildir; görsel niyeti gözden geçirin.
+- Sabit görselde hareket alanı yoksa dönüşümlü yavaş yaklaşma/kaydırma önerilir. Açıkça verilmiş `none` korunur; arka arkaya hareketsiz görseller uyarılır. Bunlar yalnız kurgu önerileridir; bu aşamada medya/render çalıştırılmaz.
+
+Tamamlanan plan süre/sahne sayısı, kompozisyon ve sorgu tekrarları ile arka arkaya hareketsiz görseller için yeniden kontrol edilir. Güvenle giderilemeyen tekrarlar veya bölünemeyen uzun birimler uyarı olarak kalır. **Bu yerel iyileştirme ek AI veya ücretli API çağrısı yapmaz.** Mevcut tek metadata onarımı ve bulut maliyet onayı ayrı olarak korunur.
+
+Taklit regresyon örneği: **405 kelime / 180 saniye / 5 AI grubu → 21 sahne; en uzun 12 saniye**, anlatımın her karakteri aynı. Bu bir sabit sahne sayısı veya canlı içerik kalitesi iddiası değildir. Gerçek metindeki cümle/ifade sınırları ve konuşma hızı sonucu değiştirir.
+
+Ollama hâlâ bozuk JSON döndürebilir. Böyle bir yanıtta **`invalid_scene_schema:json`** gösterilir; geçerli Gemini planı, sürüm geçmişi ve yerel plan dosyaları korunur. Yeni kaliteli plan ancak bütün parçalar doğrulanıp tamamlandıktan sonra aktif olur.
 
 ## Windows'taki 0% hatası ve yeniden deneme
 
@@ -61,8 +78,9 @@ AI'den yalnızca `unit_ids`, `purpose`, `mood`, `visual_intent`, `stock_query`, 
 | `overlay_text`, `location`, `action`, `shot_suggestion`, `notes` | Boş metin `""` |
 | `entities` | Boş liste `[]` |
 | `importance` | `50` |
-| `transition`, `motion` | `none` |
-| `composition` | `medium` |
+| `transition` | `none` |
+| `motion` | Video için `none`; sabit görsel için kalite adımında yavaş yaklaşma/kaydırma |
+| `composition` | Kalite adımında mevcut niyet ve komşularla uyumlu çekim ölçeği |
 
 Bu değerler kişi, yer, olay, tarih veya istatistik üretmez. Eksik/geçersiz görsel niyet, amaç/duygu, kullanılamayan stok sorguları, bozuk JSON ve bütün anlatım referansı hataları kayıt engeli olmaya devam eder. İkincil alanın temizlenmesi gerekiyorsa sabit Türkçe, kritik olmayan bir kalite uyarısı gösterilir; yalnızca alanın hiç gönderilmemesi uyarı gerektirmez.
 
@@ -74,7 +92,7 @@ Vurgu yazısı isteğe bağlıdır, proje dilinde istenir ve en fazla 12 kelime/
 
 Qwen 3.5 istemi kısa açık örnek ve **“Return JSON only. Do not explain.”** talimatıyla biter. Mevcut native Ollama adaptöründe `think=false`, `stream=false` korunur; doğrulanmamış yeni `format`/şema parametresi eklenmedi. Gemini/OpenAI adaptörleri ve maliyet onayları değiştirilmedi. Normalize edilen sahneler mevcut handoff'ta bütün alanları içerir.
 
-Çok az sahne, 2 saniyeden kısa veya 20 saniyeden uzun sahne, tekrar eden sorgu/görsel fikir/kompozisyon/konum/özne, görsel çeşitlilik eksikliği ve arka arkaya çok fazla sabit görsel için Türkçe uyarı gösterilir. Bu eşikler uyarıdır; anlamlı uzun çekimler zorla bölünmez. Eksik veya sırası bozuk anlatım ise kayıt/devretme hatasıdır. Gelecekteki medya/TTS/müzik eksikleri ayrı, açılır bir hazırlık listesinde kalır.
+Çok az sahne, 2 saniyeden kısa veya 18 saniyeden uzun sahne, tekrar eden sorgu/görsel fikir/kompozisyon/konum/özne, görsel çeşitlilik eksikliği ve arka arkaya çok fazla hareketsiz görsel için Türkçe uyarı gösterilir. Yeni planlarda uzun/kaba gruplar güvenli birim sınırında yerel olarak iyileştirilir; sınırı olmayan birim veya kilit zorla kesilmez. Eksik veya sırası bozuk anlatım ise kayıt/devretme hatasıdır. Gelecekteki medya/TTS/müzik eksikleri ayrı, açılır bir hazırlık listesinde kalır.
 
 ## Kilitler, zamanlama ve sürümler
 

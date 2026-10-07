@@ -339,7 +339,7 @@ def test_schema3_upgrade_preserves_projects_and_creates_only_script_tables(tmp_p
     initialize_database(tmp_path)
     with closing(sqlite3.connect(tmp_path / 'app.db')) as connection:
         assert connection.execute('SELECT value FROM personal_data').fetchone()[0] == 'keep'
-        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == '5'
+        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == '6'
         assert connection.execute("SELECT name FROM sqlite_master WHERE name='script_versions'").fetchone()
 
 

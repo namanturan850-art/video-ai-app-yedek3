@@ -4,7 +4,9 @@ Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alan
 
 **Sağlayıcı sorunlarını ayırmak için:** Ayarlar → **AI Tanılama**. Şifreli kayıt, bağlantı, kısa üretim, JSON ve tek senaryo bölümü ayrı test edilir. [Çok basit Windows adımları](docs/AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; otomatik test başarısı canlı API başarısı değildir.
 
-**Aşama 1–4 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler ve genel amaçlı YouTube senaryo motoru. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Gerçek video üretimi henüz yoktur.
+**Aşama 1–5 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler, genel amaçlı YouTube senaryo motoru ve düzenlenebilir sahne planları. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Gerçek video üretimi henüz yoktur.
+
+**Sahne planını denemek için:** Proje → **Senaryoyu Aç → Onayla** → **Görsel / Kurgu Planı → Ollama → Görsel / Kurgu Planını Hazırla**. Sahneyi düzenleyebilir, tek sahneyi yeniden planlayabilir, bölebilir/birleştirebilir, kilitleyebilir ve eski plan sürümünü seçebilirsiniz. Yukarı/Aşağı taşı görsel tasarımı taşır; anlatım sırası korunur. [12 basit Windows deneme adımı](docs/SCENE_PLANNING.md). Süreler tahminidir; medya, ses ve video üretilmez.
 
 **Kararlılık ve geliştirme paketi:** gerçek OpenAI erişim testi, güvenli kasa hata ayrımı, kota bekleme/devam, beş hedef dil, retention/hook/A-B/iddia araçları ve onaylı metinden görsel/kurgu planı eklendi. Görsel sağlayıcı ayarları ve kontrolleri çalışır; medya, gerçek görsel/TTS, müzik işleme, render ve yükleme sonraki çalıştırma için hazırlanmıştır. Ücretli görsel fallback varsayılan **KAPALI**. Tek basit [Windows kontrol listesi](docs/STABILITY_AND_ENHANCEMENTS.md) tüm paketi anlatır.
 
@@ -36,7 +38,7 @@ Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri k
 3. **Projeler** ekranına gidin. Uygulamayı kapatıp yeniden açın; projeniz listede kalmalıdır.
 4. İkinci bir deneme projesi oluşturun. İlk projede **Projeyi Sil** deyin. Önce **İptal** ile projenin kaldığını, sonra onay vererek yalnızca ilk projenin silindiğini kontrol edin.
 
-**Senaryo → Senaryoyu Aç** artık çalışır. Sonraki üretim aşamalarında **Bekliyor / Hazır değil** görünmesi normaldir. Ayrıntılar: [Projeler rehberi](docs/PROJECTS.md).
+**Senaryo → Senaryoyu Aç** ve **Görsel / Kurgu Planı** çalışır. Medya, seslendirme ve render aşamalarında **Bekliyor / Hazır değil** görünmesi normaldir. Ayrıntılar: [Projeler rehberi](docs/PROJECTS.md).
 
 ## Ayarları Windows'ta deneme
 

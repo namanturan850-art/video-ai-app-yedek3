@@ -3,7 +3,7 @@ from contextlib import closing
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "5"
+SCHEMA_VERSION = "6"
 PROJECT_SCHEMA = """
 CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -55,9 +55,28 @@ def initialize_database(data_dir: Path) -> Path:
                 connection.execute('''CREATE TABLE project_production (
                     project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
                     version_id TEXT NOT NULL, plan_json TEXT NOT NULL, updated_at TEXT NOT NULL)''')
-                connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))
-            elif version != SCHEMA_VERSION:
+                version = '5'
+            if version == '5':
+                connection.execute('''CREATE TABLE IF NOT EXISTS scene_plan_versions (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    version_id TEXT NOT NULL REFERENCES script_versions(id) ON DELETE CASCADE,
+                    version INTEGER NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+                    plan_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                    origin_job_id TEXT UNIQUE, UNIQUE(project_id,version))''')
+                # Keep old active plans and import them as the first history entry.
+                import json
+                from uuid import uuid4
+                for row in connection.execute('SELECT project_id,version_id,plan_json,updated_at FROM project_production').fetchall():
+                    plan = json.loads(row[2])
+                    plan_id = uuid4().hex
+                    plan.update(plan_id=plan_id, plan_version=1, revision=1, provider='legacy', model='', created_at=row[3])
+                    connection.execute('INSERT OR IGNORE INTO scene_plan_versions VALUES (?,?,?,?,?,?,?,?,?,?)',
+                        (plan_id,row[0],row[1],1,'legacy','',json.dumps(plan,ensure_ascii=False),row[3],row[3],None))
+                    connection.execute('UPDATE project_production SET plan_json=? WHERE project_id=?',(json.dumps(plan,ensure_ascii=False),row[0]))
+                version = '6'
+            if version != SCHEMA_VERSION:
                 raise sqlite3.DatabaseError("Bu veritabanı sürümü desteklenmiyor; mevcut dosyalar değiştirilmedi.")
+            connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))
     return database
 
 

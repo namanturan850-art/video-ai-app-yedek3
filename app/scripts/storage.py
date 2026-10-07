@@ -22,9 +22,11 @@ class ScriptRepository:
     def __init__(self, projects):
         self.projects = projects
 
-    def _file(self, project_id, name, content):
+    def _file(self, project_id, name, content, *, folder='script'):
+        if folder not in ('script', 'scenes'):
+            raise ScriptError('Geçerli proje kayıt klasörü gerekli.')
         root = self.projects._path(project_id)
-        directory = root / 'script'
+        directory = root / folder
         if linked(directory) or (directory.exists() and not directory.is_dir()):
             raise ScriptError('Senaryo klasöründe dış konuma bağlantı var. Dosyaları korumak için işlem durduruldu.', 409)
         try:

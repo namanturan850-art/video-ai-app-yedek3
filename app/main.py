@@ -200,6 +200,21 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.put('/api/projects/{project_id}/production')
     def production_preferences(project_id: str, payload: dict): return production.update(project_id, payload)
 
+    @application.put('/api/projects/{project_id}/production/scenes/{scene_id}')
+    def edit_production_scene(project_id: str, scene_id: str, payload: dict): return production.edit_scene(project_id,scene_id,payload)
+
+    @application.post('/api/projects/{project_id}/production/scenes/{scene_id}/actions')
+    def production_scene_action(project_id: str, scene_id: str, payload: dict): return production.scene_action(project_id,scene_id,payload)
+
+    @application.post('/api/projects/{project_id}/production/scenes/{scene_id}/regenerate',status_code=202)
+    def regenerate_production_scene(project_id: str, scene_id: str, payload: dict): return quality.start_scene(project_id,scene_id,payload)
+
+    @application.post('/api/projects/{project_id}/production/versions/{plan_id}/select')
+    def choose_production_plan(project_id: str, plan_id: str, payload: dict): return production.select_plan(project_id,plan_id,payload)
+
+    @application.get('/api/projects/{project_id}/production/handoff')
+    def production_handoff(project_id: str): return production.handoff(project_id)
+
     @application.put('/api/projects/{project_id}/production/blocks/{block_id}/media')
     def production_media(project_id: str, block_id: str, payload: dict): return production.attach_media(project_id, block_id, payload)
 
@@ -260,8 +275,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             project['pipeline'][0].update(status='Hazır', message='Konsept analizi Senaryo ekranında görüntülenebilir.')
         if view['current'] or view['job']:
             project['pipeline'][1].update(status=view['status'], message='Senaryoyu açıp inceleyebilir, düzenleyebilir ve onaylayabilirsiniz.')
-        if production.view(project_id)['plan']:
-            project['pipeline'][2].update(status='Çalıştırma daha sonra', message='Görsel/kurgu önerileri ayrı plan ekranında hazır. Gerçek medya ve sahne çalıştırması henüz yok.')
+        scene_plan = production.view(project_id)['plan']
+        if scene_plan:
+            project['pipeline'][2].update(status='Plan hazır' if scene_plan['status']=='ready' else 'Eski plan / onay gerekli',
+                                         message='Sahne planını açıp düzenleyebilirsiniz. Medya, ses ve render sonraki aşamalarda.')
         return project
 
     @application.patch("/api/projects/{project_id}")

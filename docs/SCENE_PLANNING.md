@@ -38,19 +38,41 @@ Uzun metinler yaklaşık 600 kelimelik **API bağlam parçalarına**, birim sın
 
 Önceki sözleşme AI'den kaynak anlatımı harfi harfine geri yazmasını istiyordu. Küçük bir kelime/noktalama değişikliği bile kapsam doğrulamasını geçemiyordu; görsel alan hataları da aynı genel mesajla gösteriliyordu. Yeni akışta anlatımın sahibi uygulamadır. Kapsam kontrolü gevşetilmedi; parça referansları kesin olarak doğrulanır.
 
-Güncel sürümü açıp mevcut onaylı projenizde **Görsel / Kurgu Planı → Ollama → Görsel / Kurgu Planını Hazırla** deyin. Anlatımın tam kapsandığı mesajını kontrol edin. Ardından bir sahneyi yeniden planlayıp anlatımın değişmediğini, bir sahneyi kilitleyip toplu yenilemede korunduğunu deneyin. Mevcut eski planlar/senaryolar/ayarlar korunur. Önceki sürümde 0%'ta kalmış bir iş de **Plan İşlemine Devam Et** ile kaynak birimlerine dönüştürülerek sürdürülebilir.
+Güncel sürümü açıp mevcut onaylı projenizde **Görsel / Kurgu Planı → Ollama → Görsel / Kurgu Planını Hazırla** deyin. Anlatımın tam kapsandığı mesajını kontrol edin. Ardından bir sahneyi yeniden planlayıp anlatımın değişmediğini, bir sahneyi kilitleyip toplu yenilemede korunduğunu deneyin. Mevcut eski planlar/senaryolar/ayarlar korunur. Önceki sürümde 0%'ta kalmış bir iş de **Plan İşlemine Devam Et** ile kaynak birimlerine dönüştürülerek sürdürülebilir. Ancak o işin tek düzeltme denemesi zaten kullanılmışsa yeniden deneme için **Görsel / Kurgu Planını Hazırla** ile yeni bir plan işi başlatın; senaryoyu yeniden üretmeniz gerekmez.
 
 Anlaşılır parça kapsamı varsa ama görsel alanlar hatalıysa **bütün plan işi için en fazla bir** metadata düzeltme çağrısı yapılabilir. Bu çağrı aynı sağlayıcı/modeli ve aynı parça gruplarını kullanır; anlatım değişmez. Ham hatalı yanıt tekrar istenmez veya arayüze verilmez.
+
+Düzeltme istemi kısadır: sabit parça grupları, güvenli hata kategorisi/alanı, anlamı korumak için kaynak birimler ve yedi alanlı küçük JSON örneği. Önceki hatalı JSON ve büyük açıklama yeniden gönderilmez.
 
 - **Ollama:** tek düzeltme otomatik yapılabilir.
 - **Gemini/OpenAI:** ilk hata sonrası durur. **Plan İşlemine Devam Et** düğmesi ikinci çağrının ek kotası/ücreti için ayrı onay ister. İptal ederseniz ikinci çağrı yapılmaz. İlk plan maliyet onayı bu ikinci çağrı için yeterli sayılmaz.
 - Eksik/yinelenen/sırası bozuk kimlikler veya anlaşılmayan JSON otomatik onarılmaz. Tek düzeltme başarısızsa önceki plan ve tamamlanan parçalar kalır. Yeniden açılış/Devam Et kullanılmış düzeltme hakkını sıfırlamaz; isterseniz açık onayla yeni bir plan işi başlatabilirsiniz.
 
-Hata mesajının yanında güvenli **Tanı** kategorisi gösterilir: `narration_units_missing`, `narration_units_duplicate`, `narration_units_out_of_order`, `invalid_scene_schema`, `invalid_stock_queries`, `invalid_overlay`, `invalid_media_type`, `invalid_transition`, `invalid_composition`. Günlükler işlem/sağlayıcı/güvenli kategori/süre içerir; ham sağlayıcı yanıtı, reasoning ve sırlar içermez.
+Hata mesajının yanında güvenli **Tanı** kategorisi ve başarısız kritik alan gösterilir: örneğin `invalid_scene_schema:visual_intent`, `invalid_stock_queries:stock_query`, `invalid_media_type:media_type` veya `invalid_scene_schema:json`. Türkçe mesaj alanı da söyler: **“AI sahne planında 'görsel niyet' alanını eksik döndürdü.”** Parça kapsamı hataları `narration_units_missing`, `narration_units_duplicate` veya `narration_units_out_of_order` olarak kalır. Günlükler işlem/sağlayıcı/güvenli kategori/alan/süre içerir; ham sağlayıcı yanıtı, reasoning ve sırlar içermez.
 
-Her sahnede bir İngilizce birincil sorgu ve 2–5 farklı alternatif istenir. Sorgular kısa, anlamlı arama terimleri olmalıdır; cümle veya anlatımın kopyası olmamalıdır. Uygulama sorgu uzunluğu/biçimi ve aynı sahnedeki tekrarları doğrular. İngilizce olma, hedef dilde overlay ve içerikle anlam ilişkisi AI talimatlarıyla yönlendirilir; otomatik dil/anlam doğrulama garantisi yoktur. Kullanıcı sorguları ve görsel niyeti inceleyip düzeltebilir.
+## Küçük AI sözleşmesi ve güvenli tamamlama — 2026-10-08
 
-Vurgu yazısı isteğe bağlıdır, proje dilinde istenir ve en fazla 12 kelime/150 karakterdir; tüm anlatımı tekrarlayamaz. Medya türü, kompozisyon, geçiş ve hareket yalnızca öneridir; dosya üretmez.
+Kalan Windows `invalid_scene_schema` hatasının kod katmanındaki nedeni, AI çıktısının bütün kurgu alanlarıyla birlikte doğrudan katı `VisualBlock` doğrulamasından geçirilmesiydi. Eksik geçiş/hareket/kompozisyon/önem veya geçersiz bir ikincil alan, geçerli parça gruplarına sahip planı da düşürüyordu. Genel hata hangi alanın sorunlu olduğunu göstermiyordu; sahibin o yanıtında eksik olan kesin alan ham yanıt olmadan belirlenemez. Artık anlatım kapsamı doğrulandıktan sonra kritik görsel bilgiler doğrulanır, ardından ikincil alanlar güvenle tamamlanır.
+
+AI'den yalnızca `unit_ids`, `purpose`, `mood`, `visual_intent`, `stock_query`, `alternative_stock_queries` ve `media_type` istenir. `overlay_text`, `entities`, `location`, `action`, `shot_suggestion` isteğe bağlıdır. Eksik veya geçersiz ikincil alanlar aşağıdaki sabit değerlerle tamamlanır; geçerli gönderilmiş değerler korunur.
+
+| Alan | Güvenli varsayılan |
+| --- | --- |
+| `overlay_text`, `location`, `action`, `shot_suggestion`, `notes` | Boş metin `""` |
+| `entities` | Boş liste `[]` |
+| `importance` | `50` |
+| `transition`, `motion` | `none` |
+| `composition` | `medium` |
+
+Bu değerler kişi, yer, olay, tarih veya istatistik üretmez. Eksik/geçersiz görsel niyet, amaç/duygu, kullanılamayan stok sorguları, bozuk JSON ve bütün anlatım referansı hataları kayıt engeli olmaya devam eder. İkincil alanın temizlenmesi gerekiyorsa sabit Türkçe, kritik olmayan bir kalite uyarısı gösterilir; yalnızca alanın hiç gönderilmemesi uyarı gerektirmez.
+
+Medya türü içeride yalnız `stock_video`, `stock_image`, `ai_image`, `motion_graphic`, `user_media` olabilir. Bilinen tam eşdeğerler (`video`, `stock video`, `image`, `stock image`, `ai image`, `motion graphic`, `user media`) bu değerlere çevrilir. Medya alanı eksikse `stock_video` kullanılır; gönderilmiş bilinmeyen bir tür tahmin edilmez ve reddedilir.
+
+Her sahnede bir İngilizce birincil sorgu ve **1–5 farklı geçerli alternatif** yeterlidir. Baş/son boşluklar, yinelenen boşluklar ve sondaki noktalama temizlenir: `Florida panther habitat.` → `Florida panther habitat`. Boş/kullanılamayan birincil sorgu, paragraf biçimi ve aynı sahnedeki birincil/alternatif tekrarları reddedilir. Kullanılamayan alternatifler çıkarılabilir; en az bir geçerli alternatif kalmalıdır. Tek alternatif varsa ikinci sorgu veya yeni olgu uydurulmaz. İngilizce olma, hedef dilde overlay ve içerikle anlam ilişkisi AI talimatlarıyla yönlendirilir; otomatik dil/anlam doğrulama garantisi yoktur. Kullanıcı sorguları ve görsel niyeti inceleyip düzeltebilir.
+
+Vurgu yazısı isteğe bağlıdır, proje dilinde istenir ve en fazla 12 kelime/150 karakterdir; tüm anlatımı tekrarlayamaz. AI'nin uzun veya anlatımı kopyalayan vurgu yazısı boşaltılır ve uyarı gösterilir; plan kaydedilebilir. Manuel editör geçersiz değerleri Türkçe mesajla düzeltmenizi ister. Medya türü, kompozisyon, geçiş ve hareket yalnızca öneridir; dosya üretmez.
+
+Qwen 3.5 istemi kısa açık örnek ve **“Return JSON only. Do not explain.”** talimatıyla biter. Mevcut native Ollama adaptöründe `think=false`, `stream=false` korunur; doğrulanmamış yeni `format`/şema parametresi eklenmedi. Gemini/OpenAI adaptörleri ve maliyet onayları değiştirilmedi. Normalize edilen sahneler mevcut handoff'ta bütün alanları içerir.
 
 Çok az sahne, 2 saniyeden kısa veya 20 saniyeden uzun sahne, tekrar eden sorgu/görsel fikir/kompozisyon/konum/özne, görsel çeşitlilik eksikliği ve arka arkaya çok fazla sabit görsel için Türkçe uyarı gösterilir. Bu eşikler uyarıdır; anlamlı uzun çekimler zorla bölünmez. Eksik veya sırası bozuk anlatım ise kayıt/devretme hatasıdır. Gelecekteki medya/TTS/müzik eksikleri ayrı, açılır bir hazırlık listesinde kalır.
 

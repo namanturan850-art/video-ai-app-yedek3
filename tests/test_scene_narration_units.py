@@ -112,21 +112,28 @@ def test_missing_duplicate_reordered_noncontiguous_and_unknown_ids_rejected(grou
 
 @pytest.mark.parametrize('change,category',[
     ({'stock_query':'car'},'invalid_stock_queries'),
-    ({'alternative_stock_queries':['car road']},'invalid_stock_queries'),
+    ({'alternative_stock_queries':[]},'invalid_stock_queries'),
     ({'alternative_stock_queries':['car road','car road']},'invalid_stock_queries'),
-    ({'overlay_text':' '.join(['word']*13)},'invalid_overlay'),
-    ({'overlay_text':'x'*151},'invalid_overlay'),
+    ({'overlay_text':' '.join(['word']*13)},None),
+    ({'overlay_text':'x'*151},None),
     ({'media_type':'unknown'},'invalid_media_type'),
-    ({'transition':'spin'},'invalid_transition'),
-    ({'motion':'spin'},'invalid_transition'),
-    ({'composition':'invalid'},'invalid_composition'),
-    ({'importance':101},'invalid_scene_schema'),
+    ({'transition':'spin'},None),
+    ({'motion':'spin'},None),
+    ({'composition':'invalid'},None),
+    ({'importance':101},None),
     ({'purpose':'   '},'invalid_scene_schema'),
 ])
 def test_visual_metadata_has_specific_safe_categories(change,category):
     raw={'scenes':[scene(['U1','U2','U3'])]};raw['scenes'][0].update(change)
+    if category is None:
+        result=visual_blocks(raw,SOURCE,'de',135)[0]
+        field=next(iter(change));defaults={'overlay_text':'','transition':'none','motion':'none','composition':'medium','importance':50}
+        assert result[field]==defaults[field] and result['metadata_warnings']
+        assert result['narration']==SOURCE
+        return
     with pytest.raises(ScriptError) as error: visual_blocks(raw,SOURCE,'de',135)
-    assert error.value.category==category and str(error.value)==SCENE_ERRORS[category]
+    assert error.value.category==category and error.value.field==next(iter(change))
+    assert error.value.diagnostic==category+':'+next(iter(change))
 
 
 @pytest.mark.parametrize('copied_narration',[

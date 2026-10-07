@@ -2,6 +2,7 @@
 async function settingsRequest(url, method = 'GET', body) {
   const gemini = /^\/api\/settings\/(gemini|images\/gemini)\/(models|test)$/.test(url);
   const openai = ['/api/settings/openai/test', '/api/settings/images/openai/test'].includes(url);
+  const stock = ['/api/settings/pexels/test','/api/settings/pixabay/test'].includes(url);
   const diagnostics = url.startsWith('/api/settings/ai-diagnostics');
   const timeoutMessage = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';
   const unexpectedMessage = 'Gemini ayarları işlenirken beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin.';
@@ -24,7 +25,7 @@ async function settingsRequest(url, method = 'GET', body) {
     if (gemini) return failure(unexpectedMessage, 'unexpected_backend');
     return failure('Yerel uygulama çalışıyor ancak işlem tamamlanamadı. Bir süre bekleyip tekrar deneyin.', 'local_request_failed');
   }
-  const options = {method, cache: 'no-store', signal: AbortSignal.timeout(gemini || openai ? 60000 : 20000), headers: {'X-AI-Video-Studio': 'settings'}};
+  const options = {method, cache: 'no-store', signal: AbortSignal.timeout(gemini || openai || stock ? 60000 : 20000), headers: {'X-AI-Video-Studio': 'settings'}};
   if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
   let response;
   try { response = await fetch(url, options); }

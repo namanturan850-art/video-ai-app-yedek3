@@ -1,4 +1,4 @@
-/* Existing production editor. No media/image/voice/render execution. */
+/* Existing Part 5 production editor; stock.js adds only Part 6 media slots. */
 if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const id=window.location.pathname.split('/')[2], base=`/api/projects/${id}/production`;
   const root=document.querySelector('#production-content');root.hidden=false;
@@ -7,7 +7,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.dataset.unavailable=String(disabled);b.addEventListener('click',fn);parent.append(b);return b;}
   const back=node('a','← Projeye dön');back.href=`/projects/${id}`;root.append(back);
-  root.append(node('p','Onaylı senaryodan anlamlı sahneler, B-roll sorguları ve kurgu önerileri hazırlayın. Bu aşama medya indirme, görüntü, ses veya video üretmez.'));
+  root.append(node('p','Onaylı senaryodan anlamlı sahneler ve kurgu önerileri hazırlayın. Stok medyayı aşağıdaki medya yuvalarına indirin. Seslendirme ve video oluşturma sonraki aşamalardadır.'));
   root.append(node('p','Yukarı/Aşağı taşı yalnızca görsel tasarımı taşır; onaylı anlatım aynı sırada kalır. Kilitli sahneler yeniden planlamada korunur.','note'));
   const status=node('p','Yükleniyor…');status.id='production-status';status.setAttribute('role','status');root.append(status);
   const provider=node('select');provider.id='production-provider';
@@ -59,7 +59,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     button(controls,'Aşağı taşı',()=>action(block,'down'),disabled||index===view.plan.blocks.length-1||view.plan.blocks[index+1]?.locked);
     button(controls,block.locked?'Kilidi aç':'Kilitle',()=>action(block,block.locked?'unlock':'lock'),stale);return card;
   }
-  function renderCards(){blocks.replaceChildren();for(const [index,block]of(view?.plan?.blocks||[]).entries())blocks.append(sceneCard(block,index));}
+  function renderCards(){blocks.replaceChildren();for(const [index,block]of(view?.plan?.blocks||[]).entries())blocks.append(sceneCard(block,index));window.dispatchEvent(new CustomEvent('production-plan-rendered'));}
   function cancelEditor(){editing=null;renderCards();sync();}
   function openEditor(card,block){
     if(editing)return;editing=block.id;sync();const form=node('form','','scene-editor');card.append(form);

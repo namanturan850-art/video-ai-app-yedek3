@@ -24,6 +24,8 @@ from app.provider_checks import check_ollama
 from app.projects import ProjectService, ProjectError
 from app.providers.base import ScriptProviderError
 from app.providers.factory import make_script_provider
+from app.scripts.service import ScriptService
+from app.scripts.models import ScriptError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -54,15 +56,21 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     async def lifespan(application: FastAPI):
         try:
             application.state.database = initialize_database(storage)
+            scripts.recover()
         except (OSError, sqlite3.Error) as error:
             raise RuntimeError("Veri klasörü açılamadı. Uygulamayı yazma izniniz olan bir klasöre taşıyıp yeniden açın.") from error
-        yield
+        try:
+            yield
+        finally:
+            scripts.close()
 
     application = FastAPI(title="AI Video Studio", version=__version__, lifespan=lifespan)
     settings = SettingsService(SettingsStore(storage / "secrets"))
     application.state.settings = settings
     projects = ProjectService(storage)
     application.state.projects = projects
+    scripts = ScriptService(projects, settings)
+    application.state.scripts = scripts
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -77,12 +85,15 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
+            script_route = '/script' in request.url.path and request.url.path.startswith('/api/projects/')
             started = time.monotonic()
             try:
                 response = await call_next(request)
             except Exception:
-                if not gemini:
+                if not gemini and not script_route:
                     raise
+                if script_route:
+                    return JSONResponse(status_code=500, content={'message': 'Senaryo işlemi tamamlanamadı. Sayfayı yeniden açıp tekrar deneyin.'}, headers={'Cache-Control': 'no-store'})
                 # Catch inside the middleware, before Starlette's outer server-error
                 # handler can re-raise and reset the connection. Never log the exception.
                 request.state.gemini_category = 'unexpected_backend'
@@ -131,6 +142,50 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         request.state.gemini_category = error.category
         return JSONResponse(status_code=error.status_code, content={"message": str(error), 'category': error.category})
 
+    @application.exception_handler(ScriptError)
+    async def script_error(request: Request, error: ScriptError):
+        return JSONResponse(status_code=error.status_code, content={'message': str(error)})
+
+    @application.get('/api/projects/{project_id}/script')
+    def get_script(project_id: str):
+        return scripts.repository.view(project_id)
+
+    @application.post('/api/projects/{project_id}/script/analyze', status_code=202)
+    def analyze_script(project_id: str, payload: dict):
+        return scripts.start(project_id, payload, 'analyze')
+
+    @application.post('/api/projects/{project_id}/script/generate', status_code=202)
+    def generate_script(project_id: str, payload: dict):
+        return scripts.start(project_id, payload)
+
+    @application.post('/api/projects/{project_id}/script/jobs/{job_id}/resume', status_code=202)
+    def resume_script(project_id: str, job_id: str, payload: dict):
+        if set(payload) != {'confirm_replace_approved'} or type(payload.get('confirm_replace_approved')) is not bool:
+            raise ScriptError('Devam Et için açık onay tercihi gerekli.')
+        return scripts.resume(project_id, job_id, payload['confirm_replace_approved'])
+
+    @application.post('/api/projects/{project_id}/script/versions', status_code=201)
+    def edit_script(project_id: str, payload: dict):
+        return scripts.edit(project_id, payload)
+
+    @application.post('/api/projects/{project_id}/script/versions/{version_id}/select')
+    def select_script(project_id: str, version_id: str, payload: dict):
+        if set(payload) != {'confirm_replace_approved'} or type(payload.get('confirm_replace_approved')) is not bool:
+            raise ScriptError('Sürüm değiştirmek için açık onay tercihi gerekli.')
+        scripts.repository.select(project_id, version_id, payload['confirm_replace_approved'])
+        return scripts.repository.view(project_id)
+
+    @application.post('/api/projects/{project_id}/script/versions/{version_id}/approve')
+    def approve_script(project_id: str, version_id: str, payload: dict):
+        if set(payload) != {'confirm'} or type(payload.get('confirm')) is not bool:
+            raise ScriptError('Senaryoyu onaylamak için açık onay gerekli.')
+        scripts.repository.approve(project_id, version_id, payload['confirm'])
+        return scripts.repository.view(project_id)
+
+    @application.get('/api/projects/{project_id}/script/approved')
+    def approved_script(project_id: str):
+        return scripts.repository.approved_current(project_id)
+
     @application.post("/api/projects", status_code=201)
     def create_project(payload: dict):
         return projects.create(payload)
@@ -141,7 +196,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.get("/api/projects/{project_id}")
     def get_project(project_id: str):
-        return projects.get(project_id)
+        project = projects.get(project_id)
+        view = scripts.repository.view(project_id)
+        if view['job'] and view['job']['progress'].get('blueprint'):
+            project['pipeline'][0].update(status='Hazır', message='Konsept analizi Senaryo ekranında görüntülenebilir.')
+        if view['current'] or view['job']:
+            project['pipeline'][1].update(status=view['status'], message='Senaryoyu açıp inceleyebilir, düzenleyebilir ve onaylayabilirsiniz.')
+        return project
 
     @application.patch("/api/projects/{project_id}")
     def update_project(project_id: str, payload: dict):
@@ -235,13 +296,14 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             "database_ok": database_healthy(storage / "app.db"),
             "data_directory_writable": directory_writable(storage),
             "ffmpeg_found": shutil.which("ffmpeg") is not None,
-            "providers": "Sağlayıcı tercihleri Ayarlar ekranından yönetilir. İçerik üretimi henüz eklenmedi.",
+            "providers": "Senaryo motorları: Gemini, Ollama ve OpenAI (isteğe bağlı). Anahtarlar yalnızca Ayarlar ekranında yönetilir.",
         }
 
     @application.get("/")
     @application.get("/new-project")
     @application.get("/projects")
     @application.get("/projects/{project_id}")
+    @application.get("/projects/{project_id}/script")
     @application.get("/settings")
     @application.get("/diagnostics")
     def page():

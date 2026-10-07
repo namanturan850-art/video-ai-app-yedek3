@@ -1,12 +1,21 @@
 """Provider selection without hardcoded models or implicit fallback."""
 from app.providers.base import ScriptProvider, ScriptProviderError
 from app.providers.gemini import GeminiScriptProvider
+from app.providers.text_api import OllamaScriptProvider, OpenAIScriptProvider
 
 SCRIPT_ENGINE_LABELS = {'ollama': 'Ollama', 'openai': 'OpenAI', 'gemini': 'Gemini'}
 
 
 def make_script_provider(engine: str, settings, *, discovery: bool = False) -> ScriptProvider:
-    if engine != 'gemini':
-        raise ScriptProviderError('Bu motorun senaryo üretim akışı henüz eklenmedi. Motor tercihiniz projede saklanabilir.', 422)
-    config = settings.gemini_config()
-    return GeminiScriptProvider(config.get('api_key', ''), '' if discovery else config['model'])
+    if engine == 'gemini':
+        config = settings.gemini_config()
+        return GeminiScriptProvider(config.get('api_key', ''), '' if discovery else config['model'])
+    if engine == 'ollama':
+        config = settings.script_config(engine)
+        return OllamaScriptProvider(config['base_url'], config['model'])
+    if engine == 'openai':
+        config = settings.script_config(engine)
+        if not config['enabled']:
+            raise ScriptProviderError('OpenAI isteğe bağlıdır. Kullanmak için Ayarlar bölümünde etkinleştirin.', 422)
+        return OpenAIScriptProvider(config.get('api_key', ''), config['model'])
+    raise ScriptProviderError('Geçerli bir senaryo motoru seçin.', 422)

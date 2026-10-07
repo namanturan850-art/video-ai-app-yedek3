@@ -107,13 +107,13 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     field(form, 'language', 'Dil', 'select', 'de', {choices: [['de', 'Almanca'], ['tr', 'Türkçe'], ['en', 'İngilizce']]});
     field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', 'ollama', {choices: [['ollama', 'Ollama'], ['openai', 'OpenAI'], ['gemini', 'Gemini']]});
     field(form, 'target_duration_minutes', 'Hedef video süresi (dakika)', 'number', 5, {min: 1, max: 180});
-    field(form, 'content_style', 'İçerik türü / stil', 'text', 'Hikâye', {maxLength: 120, required: true});
+    field(form, 'content_style', 'İçerik türü / stil', 'text', 'Otomatik', {maxLength: 120, required: true});
     field(form, 'min_scene_duration_seconds', 'Minimum sahne süresi (saniye)', 'number', 4, {min: 1, max: 120});
     field(form, 'max_scene_duration_seconds', 'Maksimum sahne süresi (saniye)', 'number', 8, {min: 1, max: 120});
     field(form, 'subtitles_enabled', 'Altyazı planlansın', 'checkbox', true);
     field(form, 'background_music_enabled', 'Arka plan müziği planlansın', 'checkbox', false);
     field(form, 'thumbnail_planning_enabled', 'Küçük resim (thumbnail) planlansın', 'checkbox', true);
-    form.append(make('p', 'Bu tercihler ilerisi için saklanır. Şu anda senaryo, ses veya video üretilmez.', 'note'));
+    form.append(make('p', 'Proje oluşturduktan sonra Senaryo aşamasını açabilirsiniz. Ses ve video üretimi daha sonra eklenecek.', 'note'));
     const submit = make('button', 'Proje Oluştur'); submit.type = 'submit';
     form.append(submit); container.append(form);
     form.addEventListener('submit', async event => {
@@ -188,10 +188,12 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
           render(updated); feedback.textContent = 'Proje bilgileri kaydedildi.';
         } catch (error) { feedback.textContent = error.message; errors(form, error.fields); busy(form, false); }
       });
-      detail.append(make('h2', 'Üretim aşamaları'), make('p', 'Bu aşamalar henüz çalıştırılamaz. Proje bilgilerinizi hazırlayıp saklayabilirsiniz.', 'note'));
+      detail.append(make('h2', 'Üretim aşamaları'), make('p', 'Senaryo aşamasını açıp metninizi hazırlayabilirsiniz. Diğer üretim aşamaları daha sonra eklenecek.', 'note'));
       const pipeline = make('ol', '', 'pipeline'); pipeline.id = 'project-pipeline';
       for (const stage of project.pipeline) {
-        const item = make('li'); item.append(make('h3', stage.name), make('span', stage.status, 'badge'), make('p', stage.message, 'note')); pipeline.append(item);
+        const item = make('li'); item.append(make('h3', stage.name), make('span', stage.status, 'badge'), make('p', stage.message, 'note'));
+        if (stage.name === 'Senaryo') item.append(link('Senaryoyu Aç', `/projects/${id}/script`, 'action-link'));
+        pipeline.append(item);
       }
       detail.append(pipeline);
       const removeButton = make('button', 'Projeyi Sil', 'danger'); removeButton.type = 'button';

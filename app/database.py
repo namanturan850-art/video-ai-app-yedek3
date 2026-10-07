@@ -3,7 +3,7 @@ from contextlib import closing
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "3"
+SCHEMA_VERSION = "4"
 PROJECT_SCHEMA = """
 CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -38,9 +38,14 @@ def initialize_database(data_dir: Path) -> Path:
             if version == "1":
                 connection.execute(PROJECT_SCHEMA)
                 connection.execute("CREATE INDEX projects_created_at ON projects(created_at DESC)")
-                connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))
+                version = '3'
             elif version == "2":
                 connection.execute("ALTER TABLE projects ADD COLUMN script_engine TEXT NOT NULL DEFAULT 'ollama' CHECK (script_engine IN ('ollama', 'openai', 'gemini'))")
+                version = '3'
+            if version == '3':
+                from app.scripts.schema import STATEMENTS
+                for statement in STATEMENTS:
+                    connection.execute(statement)
                 connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))
             elif version != SCHEMA_VERSION:
                 raise sqlite3.DatabaseError("Bu veritabanı sürümü desteklenmiyor; mevcut dosyalar değiştirilmedi.")

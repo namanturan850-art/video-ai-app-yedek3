@@ -2,7 +2,7 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
-**Aşama 1–3 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar ve proje oluşturma/listeleme/açma/silme. İsteğe bağlı Gemini API sağlayıcısı ve Ollama / OpenAI / Gemini motor seçimi de eklendi. Proje sayfasında üretim aşamaları henüz yer tutucudur; arayüzden video veya senaryo üretim akışı yoktur. Hiçbir API anahtarı zorunlu değildir.
+**Aşama 1–4 hazır:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler ve genel amaçlı YouTube senaryo motoru. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Video üretimi ve Aşama 5 henüz yoktur.
 
 ## Windows'ta nasıl açılır?
 
@@ -32,7 +32,7 @@ Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri k
 3. **Projeler** ekranına gidin. Uygulamayı kapatıp yeniden açın; projeniz listede kalmalıdır.
 4. İkinci bir deneme projesi oluşturun. İlk projede **Projeyi Sil** deyin. Önce **İptal** ile projenin kaldığını, sonra onay vererek yalnızca ilk projenin silindiğini kontrol edin.
 
-Üretim aşamalarında **Bekliyor / Hazır değil** görünmesi normaldir. Ayrıntılar: [Projeler rehberi](docs/PROJECTS.md).
+**Senaryo → Senaryoyu Aç** artık çalışır. Sonraki üretim aşamalarında **Bekliyor / Hazır değil** görünmesi normaldir. Ayrıntılar: [Projeler rehberi](docs/PROJECTS.md).
 
 ## Ayarları Windows'ta deneme
 
@@ -41,7 +41,7 @@ Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri k
 3. Pexels bölümünde yalnızca deneme için `deneme-anahtari-1234` yazıp **Kaydet** deyin. Alan boşalır, maskede yalnızca `1234` görünür. Uygulamayı kapatıp yeniden açın; maskeli kayıt korunmalıdır. Bu deneme anahtarı gerçek bir hizmet anahtarı değildir.
 4. İsterseniz **Temizle** ile o bölümdeki bilgileri silin. Diğer bölümler değişmez.
 
-Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. FFmpeg otomatik algılanır. **AI33 API belgeleri gerekli** mesajı beklenen durumdur; AI33 testi kapalıdır. Pexels, Pixabay ve OpenAI testleri de bu aşamada açıklamalı yer tutucudur. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
+Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. FFmpeg otomatik algılanır. **AI33 API belgeleri gerekli** mesajı beklenen durumdur; AI33 testi kapalıdır. Pexels/Pixabay testleri ve OpenAI'nin ayrı Ayarlar testi açıklamalı yer tutucudur; OpenAI senaryo üretimi kullanılabilir. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
 
 ## Gemini'yi Windows'ta deneme
 
@@ -54,6 +54,16 @@ Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basa
 Gemini isteğe bağlıdır. Gemini Plus / Google AI Pro web aboneliği yerine ayrı bir Developer API anahtarı kullanılır. Bağlantı testi senaryo üretmez. Ayrıntılar ve doğrulanmış resmi API kaynakları: [Gemini rehberi](docs/GEMINI.md).
 
 Eski modeliniz listede yoksa listeden yeni bir model seçip **Kaydet** deyin. Gemini zaman aşımı artık uygulamanın kapalı olduğu şeklinde gösterilmez; arayüz gerektiğinde yerel uygulamayı ayrıca kontrol eder.
+
+## Gemini ile ilk Almanca senaryo
+
+1. Gemini **Hazır** ise mevcut anahtar/modeli kullanın.
+2. **Yeni Proje**: bir ad ve konu yazın; örneğin **Elektrikli ve hibrit otomobillerin günlük kullanım karşılaştırması**. İlk denemede süre **5 dakika**, motor **Gemini** olsun. **Proje Oluştur** deyin.
+3. **Senaryoyu Aç**: **Gemini**, **Almanca**, **Konseptten Özgün Senaryo** seçili olsun. İçerik türünü **AI otomatik algılasın** olarak bırakın.
+4. **Analiz Et**, ardından **Senaryo Oluştur** deyin. Siyah pencereyi açık bırakıp ilerlemeyi takip edin.
+5. Metni okuyun. Gerekirse **Düzenle → Kaydet**, sonra **Onayla** deyin. Her kayıt yeni sürümdür.
+
+Kesilirse bölümler korunur; sorunu giderip **Devam Et** deyin. Onaylı sürüm açık onayınız olmadan değiştirilmez. Kendi metniniz için ayrıca **Kendi Metnimi Almancaya Çevir** modu ve sahiplik onayı vardır. Referans URL'den video/transcript alınmaz. Ayrıntılı basit kullanım ve sınırlar: [Senaryo rehberi](docs/SCRIPT_ENGINE.md).
 
 ## Yerel dosyalar
 

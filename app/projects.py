@@ -36,7 +36,7 @@ class NewProject(BaseModel):
     language: Literal['de', 'tr', 'en'] = 'de'
     script_engine: Literal['ollama', 'openai', 'gemini'] = 'ollama'
     target_duration_minutes: float = Field(default=5, ge=1, le=180)
-    content_style: str = Field(default='Hikâye', max_length=120)
+    content_style: str = Field(default='Otomatik', max_length=120)
     min_scene_duration_seconds: float = Field(default=4, ge=1, le=120)
     max_scene_duration_seconds: float = Field(default=8, ge=1, le=120)
     subtitles_enabled: bool = True
@@ -162,6 +162,7 @@ class ProjectService:
     def _connection(self):
         connection = sqlite3.connect(self.database.resolve().as_uri() + '?mode=rw', uri=True, timeout=5)
         connection.row_factory = sqlite3.Row
+        connection.execute('PRAGMA foreign_keys = ON')
         return connection
 
     def _path(self, project_id: str) -> Path:
@@ -264,6 +265,8 @@ class ProjectService:
             with self.lock, closing(self._connection()) as connection, connection:
                 connection.execute('BEGIN IMMEDIATE')
                 self._row(connection, project_id)
+                if connection.execute("SELECT 1 FROM script_jobs WHERE project_id=? AND status IN ('queued','analyzing','planning','generating','checking')", (project_id,)).fetchone():
+                    raise ProjectError('Senaryo üretimi sürerken proje silinemez. İşlemin bitmesini bekleyin.', 409)
                 path = self._path(project_id)
                 if path.exists():
                     self._check_tree(path)

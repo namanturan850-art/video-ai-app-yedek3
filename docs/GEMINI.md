@@ -30,7 +30,7 @@ Bir `fetch` başarısız olduğunda arayüz yalnızca yerel `/api/health` adresi
 
 Başlatıcının mevcut `logs/server.log` dosyasında güvenli Gemini tanılama satırları vardır: işlem adı, başarı/başarısızlık, sabit hata kategorisi ve geçen milisaniye. Anahtar, model/istek gövdesi, Google'ın ham yanıtı veya stack trace bu satırlara yazılmaz. Örnek: `gemini_settings operation=list_models result=failure category=gemini_timeout elapsed_ms=50000`.
 
-Bu değişiklik Gemini sağlayıcı adaptörünü ve motor seçimini ekler. Mevcut uygulamada henüz uçtan uca **Senaryo Oluştur** ekranı/iş akışı yoktur. Motor seçmek üretimi başlatmaz. Ollama ve OpenAI için mevcut ayar desteği korunur; onların üretim adaptörleri bu değişikliğe dahil değildir.
+Aşama 4'te **Proje → Senaryo → Senaryoyu Aç** üzerinden uçtan uca genel amaçlı senaryo akışı eklendi. Mevcut anahtar ve keşfedilip kaydedilmiş model yeniden kullanılır; Settings model keşfi/bağlantı akışı korunur. Üretim arka planda bölümler halinde ilerler; üretim çağrısının HTTP süresi 120 saniyedir, Settings süreleri yukarıdaki gibi kalır. Ollama ve OpenAI üretim adaptörleri de isteğe bağlıdır. Kullanım: [Senaryo rehberi](SCRIPT_ENGINE.md). Motor seçmek tek başına üretim başlatmaz.
 
 ## Güvenlik
 
@@ -77,6 +77,6 @@ Gerçek model kimliği tahmin edilmez veya varsayılan olarak sabitlenmez. Liste
 - Değişiklik/test/listeleme istekleri mevcut aynı köken, yerel Host ve `X-AI-Video-Studio: settings` korumasını kullanır; yanıtlar önbelleğe alınmaz.
 - Projedeki `script_engine`: `ollama`, `openai` veya `gemini`. Şema 2 → 3 yükseltmesi mevcut projelere `ollama` varsayılanını ekler; eski kayıtları, zamanları, klasörleri ve şifreli ayarları korur.
 
-Testlerdeki model kimlikleri ve anahtarlar yalnızca uydurma test verileridir. Gemini HTTP yanıtları taklit edilerek başarı, kota/erişim/ağ hataları, yanıt doğrulaması ve gizli bilgi sızıntısı test edilir. Chromium kontrolünde de Google yanıtları taklit edilmiştir. **Gerçek Google API anahtarıyla canlı bağlantı veya üretim denenmedi.**
+Testlerdeki model kimlikleri ve anahtarlar yalnızca uydurma test verileridir. Gemini HTTP yanıtları taklit edilerek başarı, kota/erişim/ağ hataları, yanıt doğrulaması ve gizli bilgi sızıntısı test edilir. Chromium kontrolünde de Google yanıtları taklit edilmiştir. Sahibi Gemini Settings bağlantısını gerçek Windows'ta başarıyla doğruladı. **Bu bulut ortamında yeni senaryo akışı canlı Google API anahtarıyla veya gerçek Windows'ta denenmedi.**
 
 `tests/frontend/settings_http.test.cjs`, gerçek arayüz istek yardımcısını sanal saatle çalıştırır; 25/60 saniyelik senaryolar için beklemek gerekmez. Pytest, Node.js varsa bu 19 testi de çalıştırır; Node yoksa bu geliştirici kontrolünü açıkça atlar. Node uygulamayı başlatmak için gerekli değildir. Chromium kontrolünde ayrıca gerçek 23 saniyelik gecikme uygulanıp 20. saniyede yanlış uygulama hatası çıkmadığı doğrulandı.

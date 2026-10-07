@@ -6,6 +6,7 @@ const pages = {
 };
 const path = window.location.pathname;
 if (/^\/projects\/[^/]+$/.test(path)) pages[path] = ['Proje', 'Proje bilgileri ve ileride kullanılacak üretim aşamaları.'];
+if (/^\/projects\/[^/]+\/script$/.test(path)) pages[path] = ['Senaryo', 'Konuya uygun özgün bir YouTube senaryosu oluşturun, düzenleyin ve onaylayın.'];
 if (pages[path]) {
   document.querySelector('#dashboard').hidden = true;
   document.querySelector('#detail').hidden = false;

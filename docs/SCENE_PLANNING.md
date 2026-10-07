@@ -22,7 +22,7 @@ Onaylı senaryo, mevcut **Görsel / Kurgu Planı** ekranında düzenlenebilir sa
 ## Onay, maliyet ve anlatımın korunması
 
 - Güncel senaryo onaylı değilse **“Önce senaryo sürümünü onaylayın.”** görünür; sağlayıcıya planlama isteği gönderilmez.
-- Bütün sahne anlatımlarının birleşimi, yalnızca boşluk normalizasyonuyla, onaylı senaryoya tam ve aynı sırayla eşit olmalıdır. Eksik/değişmiş/sırası bozuk AI çıktısı kaydedilmez; önceki plan korunur.
+- Bütün sahne anlatımlarının birleşimi, yalnızca boşluk normalizasyonuyla, onaylı senaryoya tam ve aynı sırayla eşit olmalıdır. Anlatımı uygulama kaynak metinden kurar; AI anlatım yazmaz. Eksik, yinelenen veya sırası bozuk parça referansları kaydedilmez; önceki plan korunur.
 - Anlatım sahne editöründen değiştirilemez. Metni Senaryo ekranında değiştirirseniz eski plan **Eski plan** olur; yeni sürümü onaylayıp yeni plan hazırlayın. Proje dilini değiştirmek de eski planı işaretler. Eski plan görülebilir; düzenleme ve sonraki aşama devri engellenir.
 - Gemini/OpenAI işlemi başlamadan API kotası/ücreti için açık onay alınır. Ollama'dan ücretli sağlayıcıya otomatik geçiş yoktur. Mevcut, Windows'ta doğrulanmış sağlayıcı adaptörleri değiştirilmedi.
 
@@ -30,7 +30,23 @@ Onaylı senaryo, mevcut **Görsel / Kurgu Planı** ekranında düzenlenebilir sa
 
 AI; anlam, konu değişimi, önemli bilgi, örnek, karşılaştırma, liste, duygusal geçiş ve bölüm sınırına göre sahneler önerir. Açılış için 3–7, ana içerik için 5–12 saniye yalnızca yönlendirmedir; sabit sahne süresi uygulanmaz. Belgesel, teknoloji, finans, liste, tarih, spor ve anlatı içerikleri kendi bağlamında planlanır; her konu hikâyeye çevrilmez.
 
-Uzun metinler mevcut senaryo parçalama yardımcısıyla yaklaşık 600 kelimelik, mümkünse cümle/paragraf sınırındaki **API bağlam parçalarına** ayrılır. Bunlar tek sahne sayılmaz; her parçada sahne sınırlarını AI seçer. Son üç sahnenin görsel özeti sonraki isteğe aktarılır; ilgili görsel çeşitlilik ve devamlılık teşvik edilir.
+Uygulama önce onaylı metni kimlikli, sıralı cümle/paragraf birimlerine ayırır. Kaynak kelimeler, noktalama ve boşluklar aynen saklanır. Çok uzun cümlede virgül, noktalı virgül, iki nokta veya uzun çizgiyle ayrılmış uygun ifadeler birim olabilir; güvenli noktalama yoksa zorla sabit kelime/saniye dilimleri oluşturulmaz. Böyle uzun bir sahne için süre uyarısı görülebilir.
+
+Uzun metinler yaklaşık 600 kelimelik **API bağlam parçalarına**, birim sınırlarında ayrılır; tek bir büyük birim sınırı aşabilir. Bunlar tek sahne sayılmaz. AI, `scenes` içinde `unit_ids` listeleri ve görsel alanları döndürerek birimleri anlamlı sahnelere gruplar. Her kimlik yalnız bir kez, kaynak sırasıyla ve sahne içinde bitişik kullanılmalıdır. Uygulama her sahnenin anlatımını orijinal birimleri birleştirerek kurar; AI'nin fazladan eklediği kopya anlatım alanları kullanılmaz. Son üç sahnenin görsel özeti sonraki isteğe aktarılır; ilgili görsel çeşitlilik ve devamlılık teşvik edilir.
+
+## Windows'taki 0% hatası ve yeniden deneme
+
+Önceki sözleşme AI'den kaynak anlatımı harfi harfine geri yazmasını istiyordu. Küçük bir kelime/noktalama değişikliği bile kapsam doğrulamasını geçemiyordu; görsel alan hataları da aynı genel mesajla gösteriliyordu. Yeni akışta anlatımın sahibi uygulamadır. Kapsam kontrolü gevşetilmedi; parça referansları kesin olarak doğrulanır.
+
+Güncel sürümü açıp mevcut onaylı projenizde **Görsel / Kurgu Planı → Ollama → Görsel / Kurgu Planını Hazırla** deyin. Anlatımın tam kapsandığı mesajını kontrol edin. Ardından bir sahneyi yeniden planlayıp anlatımın değişmediğini, bir sahneyi kilitleyip toplu yenilemede korunduğunu deneyin. Mevcut eski planlar/senaryolar/ayarlar korunur. Önceki sürümde 0%'ta kalmış bir iş de **Plan İşlemine Devam Et** ile kaynak birimlerine dönüştürülerek sürdürülebilir.
+
+Anlaşılır parça kapsamı varsa ama görsel alanlar hatalıysa **bütün plan işi için en fazla bir** metadata düzeltme çağrısı yapılabilir. Bu çağrı aynı sağlayıcı/modeli ve aynı parça gruplarını kullanır; anlatım değişmez. Ham hatalı yanıt tekrar istenmez veya arayüze verilmez.
+
+- **Ollama:** tek düzeltme otomatik yapılabilir.
+- **Gemini/OpenAI:** ilk hata sonrası durur. **Plan İşlemine Devam Et** düğmesi ikinci çağrının ek kotası/ücreti için ayrı onay ister. İptal ederseniz ikinci çağrı yapılmaz. İlk plan maliyet onayı bu ikinci çağrı için yeterli sayılmaz.
+- Eksik/yinelenen/sırası bozuk kimlikler veya anlaşılmayan JSON otomatik onarılmaz. Tek düzeltme başarısızsa önceki plan ve tamamlanan parçalar kalır. Yeniden açılış/Devam Et kullanılmış düzeltme hakkını sıfırlamaz; isterseniz açık onayla yeni bir plan işi başlatabilirsiniz.
+
+Hata mesajının yanında güvenli **Tanı** kategorisi gösterilir: `narration_units_missing`, `narration_units_duplicate`, `narration_units_out_of_order`, `invalid_scene_schema`, `invalid_stock_queries`, `invalid_overlay`, `invalid_media_type`, `invalid_transition`, `invalid_composition`. Günlükler işlem/sağlayıcı/güvenli kategori/süre içerir; ham sağlayıcı yanıtı, reasoning ve sırlar içermez.
 
 Her sahnede bir İngilizce birincil sorgu ve 2–5 farklı alternatif istenir. Sorgular kısa, anlamlı arama terimleri olmalıdır; cümle veya anlatımın kopyası olmamalıdır. Uygulama sorgu uzunluğu/biçimi ve aynı sahnedeki tekrarları doğrular. İngilizce olma, hedef dilde overlay ve içerikle anlam ilişkisi AI talimatlarıyla yönlendirilir; otomatik dil/anlam doğrulama garantisi yoktur. Kullanıcı sorguları ve görsel niyeti inceleyip düzeltebilir.
 

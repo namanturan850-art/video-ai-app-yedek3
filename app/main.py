@@ -231,10 +231,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.post('/api/projects/{project_id}/script/jobs/{job_id}/resume', status_code=202)
     def resume_script(project_id: str, job_id: str, payload: dict):
-        if set(payload) != {'confirm_replace_approved'} or type(payload.get('confirm_replace_approved')) is not bool:
+        if set(payload)-{'confirm_replace_approved','visual_repair_cost_confirmed'} or type(payload.get('confirm_replace_approved')) is not bool or 'visual_repair_cost_confirmed' in payload and type(payload['visual_repair_cost_confirmed']) is not bool:
             raise ScriptError('Devam Et için açık onay tercihi gerekli.')
-        if scripts.repository.job(job_id)['action'] not in ('generate', 'analyze'):
-            return quality.resume(project_id, job_id, payload['confirm_replace_approved'])
+        action=scripts.repository.job(job_id)['action']
+        if 'visual_repair_cost_confirmed' in payload and action not in ('visual','visual_scene'):
+            raise ScriptError('Görsel düzeltme onayı yalnızca sahne planı işlemlerinde kullanılabilir.')
+        if action not in ('generate', 'analyze'):
+            return quality.resume(project_id, job_id, payload['confirm_replace_approved'],visual_repair_cost_confirmed=payload.get('visual_repair_cost_confirmed',False))
         return scripts.resume(project_id, job_id, payload['confirm_replace_approved'])
 
     @application.post('/api/projects/{project_id}/script/versions', status_code=201)

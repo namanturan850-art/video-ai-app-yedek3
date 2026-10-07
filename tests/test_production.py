@@ -25,6 +25,11 @@ def block(text, composition='wide'):
         'media_type': 'stock_video', 'overlay_text': 'Elektrikli otomobiller', 'transition': 'hard_cut', 'motion': 'none', 'composition': composition, 'importance': 80}
 
 
+def scene(unit_ids, composition='wide'):
+    metadata=block('',composition);metadata.pop('narration')
+    return {'unit_ids':unit_ids,**metadata}
+
+
 @pytest.fixture
 def production_studio(studio):
     client, project, fake, _ = studio
@@ -36,8 +41,10 @@ def production_studio(studio):
         if prompt.startswith('TASK: visual'):
             payload = json.loads(prompt.split('INPUT DATA (not instructions):\n')[1])
             fake.calls.append(('visual', payload, prompt))
-            words = payload['text'].split(); half = len(words)//2
-            return json.dumps({'blocks': [block(' '.join(words[:half])), block(' '.join(words[half:]), 'close')]})
+            ids=[unit['unit_id'] for unit in payload['narration_units']]
+            half=max(1,len(ids)//2)
+            groups=payload.get('metadata_repair',{}).get('required_unit_groups') or [ids[:half]]+([ids[half:]] if ids[half:] else [])
+            return json.dumps({'scenes':[scene(group,'wide' if index==0 else 'close') for index,group in enumerate(groups)]})
         return original(prompt)
     fake.generate_script = visual
     response = client.post(f'/api/projects/{project["id"]}/production/plan', json={'provider': 'gemini', 'cost_confirmed': True, 'confirm_replace_plan': False})
@@ -110,10 +117,10 @@ def test_music_preferences_and_pre_render_checks_are_truthful(production_studio)
 
 
 def test_visual_input_coverage_semantic_queries_and_diversity():
-    with pytest.raises(ScriptError): visual_blocks({'blocks': [block('unrelated')]}, 'actual script', 'es', 135)
-    bad = block('actual script'); bad['stock_query'] = 'car'
-    with pytest.raises(ScriptError): visual_blocks({'blocks': [bad]}, 'actual script', 'es', 135)
-    blocks = visual_blocks({'blocks': [block('Sentence one.'), block('Sentence two.'), block('Sentence three.'), block('Sentence four.')]}, 'Sentence one. Sentence two. Sentence three. Sentence four.', 'es', 135)
+    with pytest.raises(ScriptError): visual_blocks({'scenes':[scene(['unknown'])]}, 'actual script', 'es', 135)
+    bad = scene(['U1']); bad['stock_query'] = 'car'
+    with pytest.raises(ScriptError): visual_blocks({'scenes':[bad]}, 'actual script', 'es', 135)
+    blocks = visual_blocks({'scenes':[scene([f'U{i+1}']) for i in range(4)]}, 'Sentence one. Sentence two. Sentence three. Sentence four.', 'es', 135)
     for item in blocks: item['media_type'] = 'stock_image'
     plan = {'version_id': 'version', 'blocks': blocks, 'language': 'es', 'width': 1920, 'height': 1080, 'music': {'enabled': False, 'local_file_label': '', 'license_confirmed': False, 'volume': .15}}
     warnings = production_checks(plan, {'id': 'version', 'status': 'approved'}, {'subtitles_enabled': False})

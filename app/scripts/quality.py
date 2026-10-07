@@ -10,6 +10,8 @@ from app.scripts.engine import YouTubeScriptEngine, SecretGuard, translation_chu
 from app.scripts.models import ScriptError
 from app.scripts.storage import dumps
 from app.providers.base import ScriptProviderError
+from app.production import (SCENE_ERRORS, SCENE_METADATA_ERRORS, scene_error, scene_references,
+                            narration_units, exact_source_slices, visual_blocks)
 
 KINDS = ('retention', 'hooks', 'alternatives', 'claims', 'visual')
 RATINGS = ('Güçlü', 'Orta', 'Geliştirilebilir')
@@ -26,7 +28,7 @@ class QualityService:
         with closing(self.projects._connection()) as connection:
             return [{key: row[key] for key in ('id', 'version_id', 'kind', 'language', 'created_at')} | {'result': json.loads(row['result_json'])} for row in connection.execute('SELECT * FROM script_artifacts WHERE project_id=? ORDER BY created_at DESC', (project_id,))]
 
-    def resume(self, project_id, job_id, confirmed):
+    def resume(self, project_id, job_id, confirmed, *, visual_repair_cost_confirmed=False):
         with self.projects.lock, closing(self.projects._connection()) as connection, connection:
             self.repo._idle(connection, project_id)
             job = self.repo.job(job_id)
@@ -44,6 +46,13 @@ class QualityService:
                 with closing(self.projects._connection()) as reader:
                     committed=reader.execute('SELECT 1 FROM scene_plan_versions WHERE origin_job_id=?',(job_id,)).fetchone()
                 if not committed: self.production.check_snapshot(project_id,json.loads(job['input_json']).get('plan_snapshot'))
+                progress=json.loads(job['progress_json'])
+                repair=progress.get('visual_repair',{})
+                if repair.get('status')=='awaiting_cost_confirmation' and not repair.get('attempted'):
+                    if not visual_repair_cost_confirmed:
+                        raise ScriptError('Tek görsel düzeltme ek API kotası veya ücret kullanabilir. Devam etmeden önce maliyet onayı verin.',409)
+                    repair['status']='confirmed'
+                    connection.execute('UPDATE script_jobs SET progress_json=? WHERE id=?',(dumps(progress),job_id))
             if job['action'] == 'apply': self.repo.protect(connection, project_id, confirmed)
             provider, model, guard = self.scripts._provider(job['provider'])
             if model != job['model']: raise ScriptError('Aynı modeli seçip yeniden deneyin.', 409)
@@ -126,6 +135,8 @@ class QualityService:
                     block=self.production._scene(plan,payload['scene_id'])
                     if block['locked']: raise ScriptError('Önce sahnenin kilidini açın.',409)
                     inputs.update(base_plan=plan,scene_id=block['id'],text=block['narration'])
+                    rate=(saved_options['words_per_minute_min']+saved_options['words_per_minute_max'])/2
+                    inputs['planning_segments']=[{'text':block['narration'],'narration_units':narration_units(block['narration'],rate)}]
             guard.validate(inputs)
             job_id, stamp = uuid4().hex, now()
             progress = {'phase': kind, 'percent': 0, 'sections': [], 'version_id': None}
@@ -158,6 +169,16 @@ class QualityService:
                 return
             checkpoint('analyzing')
             segments=inputs.get('planning_segments',[{'text':inputs['text']}]) if visual else None
+            if visual and any('narration_units' not in segment and not segment.get('locked_block') for segment in segments):
+                # Resume pre-fix jobs from their original source, not normalized AI copies.
+                exact=exact_source_slices([segment['text'] for segment in segments],inputs['text'])
+                rate=(options['words_per_minute_min']+options['words_per_minute_max'])/2
+                for index,(segment,text) in enumerate(zip(segments,exact)):
+                    if not segment.get('locked_block'):
+                        segment.update(text=text,narration_units=narration_units(text,rate,prefix=f'S{index+1}U'))
+                inputs['planning_segments']=segments
+                with self.projects.lock, closing(self.projects._connection()) as connection,connection:
+                    connection.execute('UPDATE script_jobs SET input_json=? WHERE id=?',(dumps(guard.clean(inputs)),job_id))
             chunks = [segment['text'] for segment in segments] if visual else translation_chunks(inputs['text'], 600)
             if kind == 'apply':
                 texts = [section['text'] for section in progress['sections']]
@@ -182,17 +203,17 @@ class QualityService:
                         parts.append([segments[index]['locked_block']]);progress['percent']=round((index+1)/len(chunks)*90);checkpoint('analyzing');continue
                     data={'language': options['language'], 'text': text, 'is_video_opening': index == 0, 'is_video_ending': index == len(chunks)-1, 'content_outline': [chunk[:250] for chunk in (chunks[:79] + chunks[-1:])] if kind in ('hooks', 'alternatives') else [], 'segment_index': index, 'segment_count': len(chunks), 'content_type': inputs['content_type']}
                     if visual:
+                        data.pop('text')
+                        data['narration_units']=segments[index]['narration_units']
                         data.update(scene_mode='single' if kind=='visual_scene' else 'semantic',topic=self.projects.get(job['project_id'])['topic'],
                                     speech_rate_min=options['words_per_minute_min'],speech_rate_max=options['words_per_minute_max'])
                         prior=[block for part in parts for block in part][-3:]
                         data['previous_visuals']=[{key:b.get(key) for key in ('visual_intent','composition','media_type','entities','location','stock_query')} for b in prior]
-                    raw = engine.structured('visual' if visual else kind, data, self._instructions('visual' if visual else kind)+(' Return EXACTLY ONE block for this unchanged narration.' if kind=='visual_scene' else ''))
                     if visual:
-                        from app.production import visual_blocks
                         start = parts[-1][-1]['end'] if parts else 0
-                        parts.append(visual_blocks(raw, text, options['language'], (options['words_per_minute_min'] + options['words_per_minute_max'])/2, start))
-                        if kind=='visual_scene' and len(parts[-1])!=1: raise ScriptError('Tek sahne yeniden planlaması tam bir sahne döndürmeli.')
+                        parts.append(self._visual_part(engine,data,text,options,start,job,progress,checkpoint,kind=='visual_scene'))
                     else:
+                        raw = engine.structured(kind,data,self._instructions(kind))
                         parts.append(self._validate(kind, raw, options['language']))
                     progress['percent'] = round((index+1)/len(chunks)*90)
                     checkpoint('analyzing')
@@ -206,22 +227,64 @@ class QualityService:
                     connection.execute('UPDATE script_jobs SET progress_json=? WHERE id=?', (dumps(progress), job_id))
                 self.repo._file(job['project_id'], 'tool_' + artifact_id + '.json', dumps(result))
                 if visual: save_visual(result['blocks'])
+            progress.pop('error_category',None)
             progress.update(phase='done', percent=100)
             checkpoint('draft')
         except Exception as error:
-            category = error.category if isinstance(error, ScriptProviderError) and error.category in ('quota_limit','free_quota_exhausted','rate_limit','billing_quota','key_rejected','no_internet','local_connection','network_error','generation_timeout','gemini_timeout','model_unavailable','invalid_response','invalid_json','thinking_unsupported','empty_response','upstream_error') else 'tool_error'
+            allowed_categories=set(SCENE_ERRORS)|{'quota_limit','free_quota_exhausted','rate_limit','billing_quota','key_rejected','no_internet','local_connection','network_error','generation_timeout','gemini_timeout','model_unavailable','invalid_response','invalid_json','thinking_unsupported','empty_response','upstream_error'}
+            category = error.category if isinstance(error,(ScriptProviderError,ScriptError)) and error.category in allowed_categories else 'tool_error'
             allowed = {'quota_limit': 'Kullanım sınırına ulaşıldı.', 'free_quota_exhausted': 'Gemini ücretsiz API kotasını kontrol edin.', 'rate_limit': 'İstek hız sınırına ulaşıldı.', 'billing_quota': 'API bakiye/kota sınırını kontrol edin.', 'no_internet': 'Sağlayıcı bağlantısı kurulamadı.', 'local_connection': 'Yerel Ollama sunucusuna ulaşılamadı.', 'network_error': 'API HTTP bağlantısı tamamlanamadı.', 'thinking_unsupported': 'Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.', 'invalid_json': 'Sağlayıcı tek ve geçerli JSON döndürmedi.', 'empty_response': 'Sağlayıcı boş son yanıt döndürdü.'}
             message = str(error) if isinstance(error, ScriptError) else allowed.get(category, 'AI aracı tamamlanamadı. Tekrar deneyin.')
             with self.projects.lock, closing(self.projects._connection()) as connection, connection:
                 saved = json.loads(connection.execute('SELECT progress_json FROM script_jobs WHERE id=?', (job_id,)).fetchone()['progress_json'])
+                if saved.get('visual_repair',{}).get('status')=='running':
+                    saved['visual_repair'].update(status='failed',error_category=category)
                 saved.update(error_category=category, retry_not_before=time.time() + (error.retry_after if isinstance(error, ScriptProviderError) else 0))
                 connection.execute("UPDATE script_jobs SET status='error',error_message=?,progress_json=?,updated_at=? WHERE id=?", (guard.clean(message) + ' Önceki sürüm ve tamamlanan parçalar korundu.', dumps(saved), now(), job_id))
         finally:
             logging.getLogger('uvicorn.error.providers').info('provider=%s operation=%s category=%s elapsed_ms=%.0f', job['provider'], kind, category, (time.monotonic() - started) * 1000)
 
+    def _visual_part(self, engine, data, source, options, start, job, progress, checkpoint, single):
+        """One job-wide repair budget; persist consent/attempt before any extra call."""
+        units=data['narration_units'];index=data['segment_index']
+        instructions=self._instructions('visual').replace('"first supplied unit_id"',json.dumps(units[0]['unit_id']))
+        instructions+=' Use the actual IDs in narration_units; the example shows the response shape, not the complete scene plan.'
+        if single: instructions+=' Return EXACTLY ONE scene containing all supplied unit IDs.'
+        def ask(payload):
+            try: return engine.structured('visual',payload,instructions)
+            except (ScriptError,ScriptProviderError) as error:
+                if error.category in ('invalid_json','schema_invalid'): raise scene_error('invalid_scene_schema') from None
+                raise
+        def reconstruct(raw):
+            return visual_blocks(raw,source,options['language'],(options['words_per_minute_min']+options['words_per_minute_max'])/2,start,units=units,single=single)
+        repair=progress.get('visual_repair')
+        if not repair or repair['segment_index']!=index:
+            raw=ask(data)
+            try: return reconstruct(raw)
+            except ScriptError as error:
+                if error.category not in SCENE_METADATA_ERRORS or repair and repair.get('attempted'): raise
+                # Missing/duplicate/reordered references are never repaired automatically.
+                groups=scene_references(raw,units)
+                if single: groups=[[uid for group in groups for uid in group]]
+                repair={'segment_index':index,'unit_groups':groups,'error_category':error.category,
+                        'attempted':False,'status':'ready' if job['provider']=='ollama' else 'awaiting_cost_confirmation'}
+                progress['visual_repair']=repair;checkpoint('analyzing')
+        if repair.get('attempted'):
+            raise ScriptError('Tek görsel düzeltme denemesi kullanıldı. Önceki plan korunuyor; isterseniz yeni plan işlemi başlatın.',category=repair['error_category'])
+        if job['provider']!='ollama' and repair['status']!='confirmed':
+            raise ScriptError(SCENE_ERRORS[repair['error_category']]+' Tek düzeltme ek API kotası veya ücret kullanabilir; Plan İşlemine Devam Et ile onay verin.',category=repair['error_category'])
+        repair.update(attempted=True,status='running');checkpoint('analyzing')
+        raw=ask({**data,'metadata_repair':{'safe_error_category':repair['error_category'],'required_unit_groups':repair['unit_groups'],
+                 'instruction':'Correct scene JSON/visual metadata only. Keep these exact unit groups; never write narration or change source units.'}})
+        if scene_references(raw,units)!=repair['unit_groups']: raise scene_error('invalid_scene_schema')
+        blocks=reconstruct(raw)
+        repair['status']='succeeded'
+        return blocks
+
     @staticmethod
     def _instructions(kind):
         common = 'Use the selected target language for generated narration/titles/CTA; explanations to the user in Turkish. No invented facts, false promises or verification claims. '
+        if kind=='visual': common='Visual metadata only; explanations/notes to the user in Turkish. No invented facts, false promises or verification claims. '
         return common + {
             'retention': 'Evaluate opening 10–30 seconds, hook, slow sections, repetition, transitions, overload, pacing, section length, curiosity, payoff and ending. Return JSON {"ratings":{"opening_10_30_seconds":"Orta","hook":"Orta","slow_sections":"Orta","repetition":"Orta","transitions":"Orta","overload":"Orta","pacing":"Orta","section_length":"Orta","curiosity":"Orta","payoff":"Orta","ending":"Orta"},"suggestions":[{"scope":"opening or specific segment","suggestion":"Turkish actionable suggestion"}]}. Ratings only Güçlü, Orta, Geliştirilebilir.',
             'hooks': 'Create EXACTLY three distinct optional opening hooks in the target language based on actual subject/content. Do not promise unseen content. Return JSON {"hooks":["...","...","..."]}.',
@@ -231,14 +294,17 @@ class QualityService:
                 'Each scene is one coherent visual idea. Choose boundaries by meaning, topic changes, important facts, emotional beats, examples, comparisons, lists and section transitions. '
                 'Opening usually benefits from faster 3–7 second beats and main content from 5–12 seconds, as guidance ONLY, never fixed shot lengths. Longer coherent shots are allowed. '
                 'Adapt to the actual content_type: documentary contexts/maps, tech devices/interfaces, finance business/charts, lists item boundaries, history objects/places, sport action/equipment, narrative continuity ONLY if appropriate. Never turn all topics into stories. '
-                'Cover the supplied narration EXACTLY once and in order, without altering words. Plan only, never claim media exists. '
+                'The APPLICATION owns exact narration. Return unit_ids only, NEVER narration or narration_text. '
+                'Use every supplied unit_id EXACTLY once, in source order; each scene uses contiguous units. Never skip, duplicate, reorder, rewrite or consume units outside this request. '
+                'AI decides semantic grouping of these sentence/phrase units, not fixed time or word chunks. Plan only, never claim media exists. '
                 'Use semantically relevant ENGLISH stock queries with subject/action/location/mood/environment/context and fallback queries, not single keywords. '
                 'Provide one primary query and 2–5 DIFFERENT fallback queries, each 2–12 words, concise search terms rather than sentences or copied narration; avoid unnecessary proper nouns. '
-                'Keep variety relevant: vary composition, prefer stock_video, do not overuse static images. Overlay text in target language '
-                'should follow the project language. Use previous_visuals for contextual continuity and avoid repeating concepts, people/locations, queries or composition; never add unrelated variety. '
-                'is optional, 12 words or fewer; empty means no overlay. Never repeat full narration. Recommend ai_image for unavailable specific/historical scenes or abstract illustrations, but never generate it. '
-                'only for important numbers/dates/names/key points; do not copy entire narration into overlay. Choose transitions/motion '
-                'based on topic changes, pacing, emotion, importance and visual intent. Return JSON {"blocks":[{"narration":"exact source sentences",'
+                'Keep variety relevant: vary composition, prefer stock_video, do not overuse static images. '
+                'Use previous_visuals for contextual continuity and avoid repeating concepts, people/locations, queries or composition; never add unrelated variety. '
+                'Overlay text follows the project language and is optional, 12 words or fewer; empty means no overlay. '
+                'Use it only for important numbers/dates/names/key points; never copy full narration. '
+                'Recommend ai_image for unavailable specific/historical scenes or abstract illustrations, but never generate it. Choose transitions/motion '
+                'based on topic changes, pacing, emotion, importance and visual intent. If metadata_repair exists, preserve its required_unit_groups exactly and correct only JSON/visual metadata. Return JSON {"scenes":[{"unit_ids":["first supplied unit_id"],'
                 '"purpose":"...","mood":"...","visual_intent":"...","stock_query":"...",'
                 '"alternative_stock_queries":["..."],"media_type":"stock_video|stock_image|ai_image|motion_graphic|user_media",'
                 '"overlay_text":"","transition":"hard_cut|crossfade|fade|none","motion":"none|slow_zoom|pan|ken_burns|overlay|emphasis_text",'

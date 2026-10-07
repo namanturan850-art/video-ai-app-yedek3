@@ -1,10 +1,11 @@
 const pages = {
-  '/new-project': ['Yeni Proje', 'Proje oluşturma sonraki aşamada eklenecek. Şimdilik ana sayfaya dönebilir veya Tanılama ekranını kullanabilirsiniz.'],
-  '/projects': ['Projeler', 'Proje listesi sonraki aşamada eklenecek. Henüz proje oluşturulmadı.'],
+  '/new-project': ['Yeni Proje', 'Video fikrinizi ve tercihlerinizi kaydedin. Bu adım video veya senaryo üretmez.'],
+  '/projects': ['Projeler', 'Kaydettiğiniz projeleri açın veya istemediklerinizi silin.'],
   '/settings': ['Ayarlar', 'Kullanmak istediğiniz hizmetlerin bilgilerini buradan kaydedin. İstemediğiniz bölümleri boş bırakabilirsiniz.'],
   '/diagnostics': ['Tanılama', 'Bilgisayarınızın ve uygulamanın durumunu buradan kontrol edebilirsiniz.']
 };
 const path = window.location.pathname;
+if (/^\/projects\/[^/]+$/.test(path)) pages[path] = ['Proje', 'Proje bilgileri ve ileride kullanılacak üretim aşamaları.'];
 if (pages[path]) {
   document.querySelector('#dashboard').hidden = true;
   document.querySelector('#detail').hidden = false;

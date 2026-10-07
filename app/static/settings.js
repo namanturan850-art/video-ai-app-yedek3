@@ -9,6 +9,7 @@ if (window.location.pathname === '/settings') {
     {id: 'general', title: 'Genel', description: 'Varsayılan içerik dilini seçin. İçerik üretimi sonraki aşamalarda eklenecek.', fields: [{name: 'content_language', label: 'Varsayılan içerik dili', type: 'select'}]},
     {id: 'ollama', title: 'Ollama', description: 'İsteğe bağlı yerel senaryo hizmeti. Ollama kullanmayacaksanız model adını boş bırakın. Testten önce ayarları kaydedin.', fields: [{name: 'base_url', label: 'Yerel adres (Base URL)', type: 'url'}, {name: 'model', label: 'Bilgisayarınızda kurulu modelin adı', type: 'text'}], test: true},
     {id: 'openai', title: 'OpenAI (isteğe bağlı)', description: 'OpenAI zorunlu değildir. Burada yalnızca tercihlerinizi ve anahtarınızı kaydedebilirsiniz.', fields: [{name: 'enabled', label: 'İleride OpenAI kullanmak istiyorum', type: 'checkbox'}, {name: 'model', label: 'Model adı (isteğe bağlı)', type: 'text'}], secret: true, test: false},
+    {id: 'gemini', title: 'Gemini (isteğe bağlı)', description: 'Google Gemini Developer API anahtarınızı kaydedin. Gemini Plus / Google AI Pro web aboneliği API erişimi yerine geçmez. Kullanmak zorunda değilsiniz.', fields: [{name: 'model', label: 'Model (listeden seçin veya API model adını girin)', type: 'text'}], secret: true, test: true},
     {id: 'pexels', title: 'Pexels', description: 'Stok medya bağlantısı için API anahtarınızı kaydedebilirsiniz. Medya araması henüz eklenmedi.', fields: [], secret: true, test: false},
     {id: 'pixabay', title: 'Pixabay', description: 'Alternatif stok medya bağlantısı için API anahtarınızı kaydedebilirsiniz. Medya araması henüz eklenmedi.', fields: [], secret: true, test: false},
     {id: 'ai33', title: 'AI33', description: 'Planlanan ana seslendirme sağlayıcısı. Bilgiler burada saklanabilir; gerçek bağlantı ve seslendirme kapalıdır.', fields: [{name: 'base_url', label: 'Base URL (belgelenmiş adres varsa)', type: 'url'}, {name: 'voice_id', label: 'Voice ID / Ses kimliği (isteğe bağlı)', type: 'text'}, {name: 'model', label: 'Model (isteğe bağlı)', type: 'text'}], secret: true, test: false}
@@ -41,6 +42,10 @@ if (window.location.pathname === '/settings') {
       input.maxLength = field.name === 'api_key' ? 4096 : field.type === 'url' ? 500 : 150;
       input.autocomplete = field.name === 'api_key' ? 'new-password' : 'off';
       input.spellcheck = false;
+      if (provider === 'gemini' && field.name === 'model') {
+        input.setAttribute('list', 'gemini-model-options');
+        const choices = element('datalist'); choices.id = 'gemini-model-options'; wrapper.append(choices);
+      }
     }
     wrapper.append(label, input);
     form.append(wrapper);
@@ -84,6 +89,21 @@ if (window.location.pathname === '/settings') {
         } else perform(definition, 'POST');
       });
       actions.append(test);
+    }
+    if (definition.id === 'gemini') {
+      const models = element('button', 'Modelleri Getir', 'secondary'); models.type = 'button';
+      models.addEventListener('click', async () => {
+        if (form.dataset.dirty === 'true') { status.textContent = 'Önce Kaydet düğmesine basın; model listesi kayıtlı anahtarı kullanır.'; return; }
+        setBusy(form, true, definition); status.textContent = 'Gemini modelleri alınıyor…';
+        try {
+          const result = await request('/api/settings/gemini/models', 'POST');
+          showGeminiModels(result.models);
+          status.textContent = 'Model listesi hazır. Model alanından seçip Kaydet düğmesine basın.';
+        } catch (error) { status.textContent = `Hata · ${error.message}`; }
+        finally { setBusy(form, false, definition); }
+      });
+      actions.append(models);
+      form.append(element('p', 'Önce anahtarı Kaydet, sonra Modelleri Getir veya Bağlantıyı Test Et. Listeden model seçip tekrar Kaydet. Bağlantı testi senaryo üretmez.', 'note'));
     }
     form.append(actions);
     if (definition.test === false) form.append(element('p', definition.id === 'ai33' ? 'AI33 API belgeleri gerekli' : 'API belgeleri gerekli. Bağlantı testi bu aşamada kullanılamaz.', 'note'));
@@ -143,8 +163,12 @@ if (window.location.pathname === '/settings') {
     ffmpegPath.textContent = settings.ffmpeg.executable_path ? `Algılanan dosya: ${settings.ffmpeg.executable_path}` : '';
     loaded = true;
   }
+  function showGeminiModels(models) {
+    const choices = document.querySelector('#gemini-model-options'); choices.replaceChildren();
+    for (const model of models) { const option = element('option', model); option.value = model; choices.append(option); }
+  }
   async function request(url, method = 'GET', body) {
-    const options = {method, cache: 'no-store', signal: AbortSignal.timeout(12000), headers: {'X-AI-Video-Studio': 'settings'}};
+    const options = {method, cache: 'no-store', signal: AbortSignal.timeout(20000), headers: {'X-AI-Video-Studio': 'settings'}};
     if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
     let response;
     try { response = await fetch(url, options); }
@@ -172,6 +196,8 @@ if (window.location.pathname === '/settings') {
     try {
       const result = await request(`/api/settings/${definition.id}${method === 'POST' ? '/test' : ''}`, method, body);
       showSettings(result.settings || result, method === 'POST' ? null : definition.id);
+      if (definition.id === 'gemini' && result.models) showGeminiModels(result.models);
+      if (definition.id === 'gemini' && (method === 'DELETE' || (method === 'PUT' && body.api_key))) showGeminiModels([]);
       if (method === 'POST') status.textContent = `${result.result.status} · ${result.result.message}`;
       pageStatus.textContent = method === 'POST' ? 'Bağlantı kontrolü tamamlandı.' : method === 'DELETE' ? 'Bu bölümdeki kayıtlı bilgiler temizlendi.' : 'Ayarlar kaydedildi. Anahtarlar yalnızca bu bilgisayarda saklanır.';
     } catch (error) { status.textContent = `Hata · ${error.message}`; }

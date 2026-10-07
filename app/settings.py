@@ -6,6 +6,7 @@ import shutil
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
 from app.secret_store import SettingsStore
+from app.providers.gemini import normalize_model
 
 
 class SettingsInputError(Exception):
@@ -78,6 +79,22 @@ class OpenAISettings(KeySettings):
     model: str = Field(default="", max_length=150)
 
 
+class GeminiSettings(KeySettings):
+    model: str = Field(default="", max_length=157)
+
+    @field_validator("model")
+    @classmethod
+    def model_name(cls, value):
+        return normalize_model(value)
+
+    @field_validator("api_key")
+    @classmethod
+    def header_key(cls, value):
+        if value is not None and not value.get_secret_value().isascii():
+            raise ValueError("API anahtarını olduğu gibi, boşluksuz girin.")
+        return value
+
+
 class AI33Settings(KeySettings):
     base_url: str = Field(default="", max_length=500)
     voice_id: str = Field(default="", max_length=150)
@@ -90,8 +107,8 @@ class AI33Settings(KeySettings):
 
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
-          "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings}
-PROVIDERS = ("ollama", "openai", "pexels", "pixabay", "ai33")
+          "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings}
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33")
 
 
 def mask_secret(value: str) -> str:
@@ -133,7 +150,11 @@ class SettingsService:
                 public_fields = MODELS[name]().model_dump(exclude={"api_key"})
                 public = {key: config[key] for key in public_fields}
                 key = config.get("api_key", "")
+                if name == "gemini" and key and key in public["model"]:
+                    public["model"] = ""  # Never echo even a damaged vault's key-as-model value.
                 configured = bool(config["model"]) if name == "ollama" else bool(key)
+                if name == "gemini":
+                    configured = configured and bool(public["model"])
                 if name == "openai":
                     configured = configured and config["enabled"]
                 status = "Hazır" if configured else "Yapılandırılmadı"
@@ -146,7 +167,7 @@ class SettingsService:
                     status = test["status"] if configured or test["status"] == "Hata" else status
                     message = test["message"]
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name == "ollama"))
+                              message=message, connection_test_available=(name in ("ollama", "gemini")))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result["youtube"] = {"status": "Daha sonra", "message": "YouTube bağlantısı bu aşamada kullanılamaz."}
@@ -168,6 +189,11 @@ class SettingsService:
             raise SettingsInputError("Geçersiz bilgi: " + ", ".join(dict.fromkeys(hints)) + ". Adresi http:// veya https:// ile girin; anahtar en az 8 karakter olmalı ve boşluk içermemelidir.") from None
         with self.store.lock:
             values = self._values()
+            if section == "gemini":
+                secret = model.api_key.get_secret_value() if model.api_key is not None else values[section].get("api_key", "")
+                proposed_model = model.model if "model" in model.model_fields_set else values[section]["model"]
+                if secret and secret in proposed_model:
+                    raise SettingsInputError("API anahtarını yalnızca anahtar alanına girin; model alanını düzeltin.")
             updated = model.model_dump(exclude_unset=True, exclude={"api_key"})
             values[section].update(updated)
             if isinstance(model, KeySettings) and model.api_key is not None:
@@ -188,6 +214,21 @@ class SettingsService:
     def ollama_config(self) -> dict:
         with self.store.lock:
             return self._values()["ollama"].copy()
+
+    def gemini_config(self) -> dict:
+        """Backend-only credentials; this snapshot is never an HTTP response."""
+        with self.store.lock:
+            return self._values()["gemini"].copy()
+
+    def record_gemini_test(self, tested: dict, outcome: dict) -> dict:
+        with self.store.lock:
+            values = self._values()
+            if any(values["gemini"].get(key, "") != tested.get(key, "") for key in ("api_key", "model")):
+                raise SettingsInputError("Gemini ayarları test sırasında değişti. Bağlantıyı yeniden test edin.")
+            # Only fixed, safe status messages are stored; no Google response body.
+            values["gemini"]["last_test"] = {"status": outcome["status"], "message": outcome["message"]}
+            self.store.write(values)
+            return self.safe_view()
 
     def record_ollama_test(self, tested: dict, outcome: dict) -> dict:
         with self.store.lock:

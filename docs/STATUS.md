@@ -1,5 +1,25 @@
 # AI Video Studio — Durum
 
+## 2026-10-07 — C) Gemini
+
+Tamamlandı:
+- İsteğe bağlı Gemini Ayarlar bölümü: web arayüzünden API anahtarı, mevcut şifreli yerel kasa, boş parola alanı ve yalnızca maskeli güvenli yanıtlar.
+- Model alanı ve resmi Developer API'den alınan model listesi; sabit/tahmin edilen gerçek model kimliği yok.
+- Kaydet, onaylı Temizle, Modelleri Getir ve salt okunur Bağlantıyı Test Et; Türkçe ilerleme, eksik ayar, erişim, kota ve ağ hata mesajları.
+- `ScriptProvider` protokolü ve Gemini adaptörü: resmi `generateContent` çağrısı, özgün içerik talimatı, düşünce parçalarını dışlama, tamamlanmamış/engellenmiş çıktıyı reddetme ve olası anahtar yankısını maskeleme.
+- Yalnızca resmi Google Gemini Developer API; web sitesi tarama/otomasyon veya Gemini Plus / Google AI Pro abonelik oturumu yok. API anahtarı yalnızca resmi HTTPS başlığında, yönlendirme takibi yok.
+- Yeni Proje ve mevcut proje düzenleme ekranlarında Ollama / OpenAI / Gemini motor seçimi; seçim SQLite'ta kalıcıdır, anahtarlar projeye yazılmaz.
+- Şema 1/2 → 3 güvenli yükseltme; eski projeler varsayılan Ollama ile korunur, yerel ayarlar ve dosyalar silinmez.
+- Windows başlatıcısı ve mevcut Aşama 1–3 davranışları korunur; API anahtarı yokken uygulama açılır.
+- Kullanım ve doğrulanmış resmi API sözleşmesi kaynakları: docs/GEMINI.md; README, Ayarlar ve Projeler rehberleri güncellendi.
+
+Kapsam ve doğrulama:
+- Gemini yalnızca sağlayıcı adaptörü/ayar/motor seçimi olarak eklendi. Uçtan uca Senaryo Oluştur ekranı ve diğer üretim aşamaları henüz yok; Ollama/OpenAI üretim adaptörleri bu değişiklikte eklenmedi.
+- Tam test paketi: **215 geçti, 1 mevcut Windows DPAPI testi Linux nedeniyle atlandı; toplam 216 test, hata yok.** Gemini için 59 yeni test; gerçek anahtarlar yerine sentetik test verileri ve taklit Google API yanıtları kullanıldı.
+- Testler: isteğe bağlı çevrimdışı başlangıç, şifreli kayıt, maskeleme, API/günlük/proje sızıntısı, doğrulama, kalıcılık, model listeleme/sayfalama, resmi istek sözleşmesi, erişim/kota/zaman aşımı/yönlendirme hataları, engellenmiş/eksik üretim, üç motor seçimi ve eski şema yükseltmesi.
+- Chromium: anahtarsız açılış, maskeli kayıt, model listesi/seçimi, bağlantı testi, hata gövdesinin gizlenmesi, temizleme, üç motor, mevcut proje düzenleme, yeniden başlatmada kalıcılık ve mobil görünüm geçti; JavaScript hatası yok. Google API yanıtları taklit edildi.
+- **Gerçek Google API anahtarıyla canlı bağlantı/üretim denenmedi.** Bu bulut ortamında Windows çift tıklama/DPAPI doğrulaması yapılamaz; önceki sürümlerin Windows testi sahibi tarafından tamamlanmıştır.
+
 ## 2026-10-07 — Aşama 3
 
 Tamamlandı:

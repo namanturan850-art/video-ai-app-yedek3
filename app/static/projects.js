@@ -105,6 +105,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     field(form, 'reference_url', "Referans YouTube URL’si (isteğe bağlı)", 'url', '', {maxLength: 2000});
     form.append(make('p', 'Referans yalnızca kaydedilir. Video analiz edilmez, indirilmez veya kopyalanmaz.', 'note'));
     field(form, 'language', 'Dil', 'select', 'de', {choices: [['de', 'Almanca'], ['tr', 'Türkçe'], ['en', 'İngilizce']]});
+    field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', 'ollama', {choices: [['ollama', 'Ollama'], ['openai', 'OpenAI'], ['gemini', 'Gemini']]});
     field(form, 'target_duration_minutes', 'Hedef video süresi (dakika)', 'number', 5, {min: 1, max: 180});
     field(form, 'content_style', 'İçerik türü / stil', 'text', 'Hikâye', {maxLength: 120, required: true});
     field(form, 'min_scene_duration_seconds', 'Minimum sahne süresi (saniye)', 'number', 4, {min: 1, max: 120});
@@ -167,22 +168,23 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       detail.append(information([
         ['Konu', project.topic], ['Referans YouTube URL’si', project.reference_url || 'Eklenmedi'],
         ['Dil', project.language_label], ['Hedef video süresi', `${project.target_duration_minutes} dakika`],
-        ['İçerik türü / stil', project.content_style],
+        ['Senaryo motoru', project.script_engine_label], ['İçerik türü / stil', project.content_style],
         ['Sahne süresi', `${project.min_scene_duration_seconds} – ${project.max_scene_duration_seconds} saniye`],
         ['Altyazı', project.subtitles_enabled ? 'Açık' : 'Kapalı'], ['Arka plan müziği', project.background_music_enabled ? 'Açık' : 'Kapalı'],
         ['Küçük resim planlama', project.thumbnail_planning_enabled ? 'Açık' : 'Kapalı'],
         ['Durum', project.status_label], ...timestamps(project)
       ]));
       const edit = make('details', '', 'settings-panel');
-      edit.append(make('summary', 'Proje adı ve konusunu düzenle'));
+      edit.append(make('summary', 'Proje bilgilerini düzenle'));
       const form = make('form'); form.id = 'edit-project-form'; form.noValidate = true;
       field(form, 'name', 'Proje adı', 'text', project.name, {maxLength: 120, required: true});
       field(form, 'topic', 'Konu', 'textarea', project.topic, {maxLength: 5000, required: true});
+      field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', project.script_engine, {choices: [['ollama', 'Ollama'], ['openai', 'OpenAI'], ['gemini', 'Gemini']]});
       const save = make('button', 'Bilgileri Kaydet'); save.type = 'submit'; form.append(save); edit.append(form); detail.append(edit);
       form.addEventListener('submit', async event => {
         event.preventDefault(); errors(form); busy(form, true); feedback.textContent = 'Proje bilgileri kaydediliyor…';
         try {
-          const updated = await request(`/api/projects/${id}`, 'PATCH', {name: form.elements.namedItem('name').value, topic: form.elements.namedItem('topic').value});
+          const updated = await request(`/api/projects/${id}`, 'PATCH', {name: form.elements.namedItem('name').value, topic: form.elements.namedItem('topic').value, script_engine: form.elements.namedItem('script_engine').value});
           render(updated); feedback.textContent = 'Proje bilgileri kaydedildi.';
         } catch (error) { feedback.textContent = error.message; errors(form, error.fields); busy(form, false); }
       });

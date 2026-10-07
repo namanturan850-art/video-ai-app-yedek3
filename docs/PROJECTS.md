@@ -5,9 +5,11 @@
 1. `START_AI_VIDEO_STUDIO.bat` dosyasına çift tıklayın.
 2. **Yeni Proje** kartını açın. Bir **Proje adı** ve **Konu** yazın.
 3. Diğer seçenekleri kontrol edip **Proje Oluştur** düğmesine basın. Proje sayfası kendiliğinden açılır.
-4. **Projeler** ekranından kayıtlı projeleri açabilirsiniz. Proje sayfasındaki **Proje adı ve konusunu düzenle** bölümünden metinleri düzeltebilirsiniz.
+4. **Projeler** ekranından kayıtlı projeleri açabilirsiniz. Proje sayfasındaki **Proje bilgilerini düzenle** bölümünden metinleri ve senaryo motorunu değiştirebilirsiniz.
 
 Varsayılan dil **Almanca**, hedef süre **5 dakika**, sahne süresi **4–8 saniye**. Altyazı ve küçük resim planlama açık, müzik kapalıdır. Bunlar yalnızca gelecekteki üretim tercihleri olarak saklanır. Genel Ayarlar'daki dil tercihi bu aşamada Yeni Proje'nin Almanca varsayılanını değiştirmez.
+
+**Senaryo motoru (Script Engine): Ollama, OpenAI veya Gemini.** Varsayılan Ollama'dır; eski projelerde de bu tercih eklenir. Seçim projede kalıcı olarak saklanır, anahtarlar projeye kopyalanmaz. Sağlayıcı henüz yapılandırılmamış olsa bile proje oluşturulabilir. Motor seçmek üretimi başlatmaz. Gemini ayarları ve adaptörü için [Gemini rehberi](GEMINI.md).
 
 Referans YouTube URL'si boş bırakılabilir. YouTube izleme, kısa bağlantı, shorts, live veya embed video adresleri kabul edilir. Bağlantının biçimi kontrol edilir; videonun gerçekten mevcut olduğu kontrol edilmez. **Video analiz edilmez veya indirilmez.**
 
@@ -51,7 +53,7 @@ data/projects/<project-id>/
   logs/
 ```
 
-Aşama 1/2'nin şema sürümü 1, bir SQLite işlemi içinde yeni proje tablosu ve indeks eklenerek sürüm 2'ye yükseltilir. Mevcut tablolar, kullanıcı verileri, klasörler ve şifreli ayarlar korunur. Yükseltme başarısızsa işlem geri alınır. Bilinmeyen daha yeni şema sürümü otomatik düşürülmez veya silinmez. Uygulamayı güncellerken mevcut `data` klasörünü koruyun.
+Aşama 1/2'nin şema sürümü 1, bir SQLite işlemi içinde yeni proje tablosu ve indeks eklenerek güncel sürüm 3'e yükseltilir. Aşama 3'ün şema sürümü 2 ise `script_engine` sütunu Ollama varsayılanıyla eklenerek sürüm 3'e yükseltilir. Mevcut tablolar, kullanıcı verileri, zamanları, klasörler ve şifreli ayarlar korunur. Yükseltme başarısızsa işlem geri alınır. Bilinmeyen daha yeni şema sürümü otomatik düşürülmez veya silinmez. Uygulamayı güncellerken mevcut `data` klasörünü koruyun.
 
 Yeni proje klasörü oluşturulamazsa kayıt eklenmez. Kayıt eklenemezse yalnızca o oluşturma denemesinin yeni klasörü temizlenir; önceden var olan klasörlere dokunulmaz. Proje adı hiçbir dosya yoluna dönüştürülmez. SQLite bağlantıları işlemler bittikten sonra kapatılır; Windows'ta gereksiz dosya kilitleri tutulmaz.
 
@@ -65,4 +67,4 @@ Yeni proje klasörü oluşturulamazsa kayıt eklenmez. Kayıt eklenemezse yalnı
 
 Değişiklik isteklerinde `X-AI-Video-Studio: projects` başlığı gerekir. Aynı köken ve yerel Host koruması Ayarlar ile birlikte uygulanır. Yanıtlar önbelleğe alınmaz; doğrulama hataları Türkçedir ve gönderilen gizli değerleri geri yansıtmaz.
 
-Senaryo üretimi, Ollama/OpenAI üretimi, stok medya, AI33, FFmpeg render, altyazı üretimi ve YouTube yükleme **uygulanmadı**. Aşama 4 başlatılmadı.
+Uçtan uca senaryo üretim ekranı, Ollama/OpenAI üretim adaptörleri, stok medya, AI33, FFmpeg render, altyazı üretimi ve YouTube yükleme **uygulanmadı**. İstenen Gemini sağlayıcı adaptörü ve motor seçimi eklendi; diğer üretim aşamaları yer tutucu olarak korunur.

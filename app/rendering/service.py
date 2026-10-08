@@ -21,6 +21,7 @@ from app.rendering import files, tools, timeline, probe
 from app.rendering.models import ACTIVE, LABELS, SOURCE_MESSAGE, RenderError, options, encoder_label
 from app.rendering.runner import ProcessRunner
 from app.rendering.engine import FFmpegRenderProvider
+from app.rendering.diagnostics import safe_diagnostic
 
 LOG=logging.getLogger('uvicorn.error.rendering')
 
@@ -120,15 +121,17 @@ class RenderService:
                 self.executor.submit(self._run,pid,jid,vid,version,inputs,tool,runner)
         return {'job_id':jid,'render_version_id':vid,'version':version,'status':'queued'}
 
-    def _log(self,pid,version,event,*,encoder="",elapsed=0):
+    def _log(self,pid,version,event,*,encoder="",elapsed=0,diagnostic=None):
         # Caller supplies controlled event/category tokens only; never stderr/commands/text.
         if not isinstance(event,str) or not event.replace('_','').isalnum():event='unexpected_backend'
         encoder=encoder if encoder in ('libx264','h264_nvenc') else 'pending'
         elapsed=round(max(0,elapsed),1)
-        LOG.info('render operation=%s version=%s encoder=%s elapsed_seconds=%s',event,version,encoder,elapsed)
+        safe=safe_diagnostic(diagnostic)
+        details=' diagnostic='+json.dumps(safe,ensure_ascii=False,separators=(',',':')) if safe else ''
+        LOG.info('render operation=%s version=%s encoder=%s elapsed_seconds=%s%s',event,version,encoder,elapsed,details)
         path=files.directory(self.projects,pid)/f'render-v{version}.log'
         if linked(path):raise RenderError('local_storage','Render günlüğü güvenli değil.')
-        with path.open('a',encoding='utf-8') as f:f.write(f'{now()} event={event} encoder={encoder} elapsed_seconds={elapsed}\n')
+        with path.open('a',encoding='utf-8') as f:f.write(f'{now()} event={event} encoder={encoder} elapsed_seconds={elapsed}{details}\n')
 
     def _progress(self,pid,jid,vid,start,phase,percent,encoder,warnings):
         with self.projects.lock,closing(self.projects._connection()) as c,c:
@@ -143,6 +146,10 @@ class RenderService:
     def _run(self,pid,jid,vid,version,inputs,tool,runner):
         started=time.monotonic();final=None
         try:
+            def record_diagnostic(value):
+                try:self._log(pid,version,'render_failed',diagnostic=value,encoder=value['encoder'],elapsed=time.monotonic()-started)
+                except (OSError,RenderError):pass  # Logging failure must not replace the actual safe failure.
+            runner.diagnostic_callback=record_diagnostic
             self._log(pid,version,'started');inputs['temporary']=files.job_directory(self.projects,pid,jid)
             if runner.event.is_set():raise RenderError('render_cancelled','Render iptal edildi.')
             engine=self.factory(tool,runner,lambda *args:self._progress(pid,jid,vid,started,*args),lambda event:self._log(pid,version,event))
@@ -175,10 +182,15 @@ class RenderService:
             category=error.category if isinstance(error,RenderError) else 'local_storage' if isinstance(error,OSError) else 'render_failed'
             message=str(error) if isinstance(error,RenderError) else 'Video oluşturulamadı. Boş alanı ve yerel dosyaları kontrol edip yeniden deneyin. Önceki videolar korundu.'
             status='cancelled' if category=='render_cancelled' else 'error'
+            safe=safe_diagnostic(error.diagnostic) if isinstance(error,RenderError) else None
             with self.projects.lock,closing(self.projects._connection()) as c,c:
+                row=c.execute('SELECT progress_json FROM render_jobs WHERE id=?',(jid,)).fetchone()
+                progress=json.loads(row[0]);progress['elapsed_seconds']=round(time.monotonic()-started,1)
+                if safe:progress['diagnostic']=safe
+                c.execute('UPDATE render_jobs SET progress_json=? WHERE id=?',(json.dumps(progress,ensure_ascii=False),jid))
                 c.execute('UPDATE render_jobs SET status=?,error_category=?,error_message=?,updated_at=? WHERE id=?',(status,category,message,now(),jid))
                 c.execute('UPDATE render_versions SET status=?,updated_at=? WHERE id=?',(status,now(),vid))
-            try:self._log(pid,version,category,elapsed=time.monotonic()-started)
+            try:self._log(pid,version,category,elapsed=time.monotonic()-started,diagnostic=safe,encoder=safe['encoder'] if safe else '')
             except (OSError,RenderError):pass
         finally:
             try:files.cleanup(self.projects,pid,jid)
@@ -242,6 +254,7 @@ class RenderService:
             job=dict(jobs) if jobs else None
             if job:
                 job['progress']=json.loads(job.pop('progress_json'));job['status_label']=LABELS[job['status']];job['encoder_label']=encoder_label(job['progress'].get('encoder_used'))
+                if 'diagnostic' in job['progress']:job['progress']['diagnostic']=safe_diagnostic(job['progress']['diagnostic'])
                 if job['status'] in ACTIVE:
                     from datetime import datetime,timezone
                     job['progress']['elapsed_seconds']=round((datetime.now(timezone.utc)-datetime.fromisoformat(job['created_at'])).total_seconds(),1)

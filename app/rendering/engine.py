@@ -5,6 +5,7 @@ subtract master-clock frames. All temporary inputs use internally fixed names.
 """
 from pathlib import Path
 from app.rendering.models import RenderError
+from app.rendering.diagnostics import diagnostic
 from app.rendering.tools import select_encoder
 from app.rendering.files import write
 from app.rendering import ass,probe
@@ -22,7 +23,7 @@ class FFmpegRenderProvider:
         return ['-c:v','libx264','-preset','medium','-crf','20','-threads','4','-pix_fmt','yuv420p','-color_range','tv','-colorspace','bt709','-color_primaries','bt709','-color_trc','bt709','-r','30']
 
     def graph(self,folder,text):
-        self.counter+=1;name=f'filter-{self.counter}.txt';write(folder/name,text);return ['-filter_complex_script',name]
+        self.counter+=1;name=f'filter-{self.counter}.txt';write(folder/name,text);return ['-/filter_complex',name]
 
     def render(self,plan):
         requested=plan['options']['encoder'];encoder=select_encoder(requested,self.tools)
@@ -38,7 +39,18 @@ class FFmpegRenderProvider:
         folder=plan['temporary'];timeline=plan['timeline'];duration=timeline['duration'];slots=timeline['slots'];opts=plan['options']
         self.progress('preparing',2,encoder,self.warnings)
         if opts['subtitle_burned'] and 'ass' not in self.tools['filters']:
-            raise RenderError('subtitle_invalid','Bu FFmpeg sürümü altyazı yazmayı desteklemiyor. Altyazı seçimini kapatın veya libass destekli FFmpeg kullanın.')
+            raise RenderError('subtitle_invalid','Bu FFmpeg sürümü altyazı yazmayı desteklemiyor. Altyazı seçimini kapatın veya libass destekli FFmpeg kullanın.',diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder))
+        timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]
+        for scene,original in zip(timed,timeline['scenes']):scene.update(start=original['start'],end=original['end'])
+        try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays='ass' in self.tools['filters'])
+        except RenderError as error:
+            raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
+        self.warnings+=warnings;caption_name=None
+        if has_text:
+            self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
+            # One local frame checks libass/file syntax before any expensive slot encode.
+            args=self.command()+['-f','lavfi','-i','color=s=1920x1080:r=30:d=0.04','-vf',f'ass=filename={caption_name}','-frames:v','1','-an','-f','null','-']
+            self.runner.run(args,folder,phase='subtitle_preflight')
         incoming=[0]*len(slots);outgoing=[0]*len(slots);fades=[False]*len(slots)
         for i,slot in enumerate(slots[:-1]):
             if slot['scene_id']==slots[i+1]['scene_id']:continue
@@ -53,11 +65,15 @@ class FFmpegRenderProvider:
         completed=0
         for i,slot in enumerate(slots):
             count=slot['frames'];total=count+outgoing[i];length=total/30
-            media=plan['media'][slot['slot_id']];args=self.command();actual=probe.metadata(self.tools['ffprobe'],media['path'])
-            video=next((s for s in actual['streams'] if s.get('codec_type')=='video'),None) if actual else None
-            if actual and not video:raise RenderError('input_invalid','Seçili stok dosyasında görsel/video akışı bulunamadı.')
+            media=plan['media'][slot['slot_id']];args=self.command()
+            context={'slot_index':i,'slot_id':slot['slot_id'],'slot_count':len(slots),'media_type':media['type'],'encoder':encoder}
+            actual=probe.stock(self.tools['ffprobe'],media['path'],media['type'],**{k:v for k,v in context.items() if k!='media_type'})
+            if actual is None:
+                # ffprobe remains optional: verify actual decoding when unavailable.
+                self.runner.run(self.command()+['-i',str(media['path']),'-map','0:v:0','-frames:v','1','-an','-f','null','-'],folder,phase='input_preflight',**context)
+                self.warnings.append('ffprobe bulunamadı; stok medya dekodu kontrol edildi ancak kaynak boyutu ve süresi ön kontrolde ölçülemedi.')
             if media['type']=='video':
-                source_duration=float(actual.get('format',{}).get('duration',media.get('duration') or 0)) if actual else media.get('duration') or 0
+                source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
                 seek=max(0,(source_duration-length)/2) if source_duration>length else 0
                 args+=['-stream_loop','-1','-ss',f'{seek:.6f}','-t',f'{length:.6f}','-i',str(media['path'])]
             else:args+=['-loop','1','-framerate','30','-t',f'{length:.6f}','-i',str(media['path'])]
@@ -84,7 +100,7 @@ class FFmpegRenderProvider:
             args+=self.graph(folder,graph.rstrip(';\n'))
             for name,start,end in parts:args+=['-map',f'[{name}]','-an',*self.codec(encoder),'-frames:v',str(end-start),f'{name}-{i}.mp4']
             self.progress('rendering',8+62*completed/timeline['frames'],encoder,self.warnings)
-            self.runner.run(args,folder,lambda seconds:self.progress('rendering',min(70,8+62*(completed+min(count,seconds*30))/timeline['frames']),encoder,self.warnings),encoder=encoder)
+            self.runner.run(args,folder,lambda seconds:self.progress('rendering',min(70,8+62*(completed+min(count,seconds*30))/timeline['frames']),encoder,self.warnings),phase='slot_render',**context)
             completed+=count
         assembly=[]
         for i,slot in enumerate(slots):
@@ -93,7 +109,7 @@ class FFmpegRenderProvider:
                 args=self.command()+['-i',f'tail-{i-1}.mp4','-i',f'head-{i}.mp4']
                 graph=f'[0:v]settb=1/30,setpts=PTS-STARTPTS,fps=30[a];[1:v]settb=1/30,setpts=PTS-STARTPTS,fps=30[b];[a][b]xfade=transition=fade:duration={d:.6f}:offset=0,format=yuv420p[v]'
                 args+=self.graph(folder,graph)+['-map','[v]','-an',*self.codec(encoder),'-frames:v',str(incoming[i]),transition]
-                try:self.runner.run(args,folder,encoder=encoder);assembly.append(transition)
+                try:self.runner.run(args,folder,encoder=encoder,phase='crossfade',slot_index=i,slot_id=slot['slot_id'],slot_count=len(slots),media_type=plan['media'][slot['slot_id']]['type']);assembly.append(transition)
                 except RenderError as error:
                     if error.category!='render_failed':raise
                     self.warnings.append('Bir crossfade uygulanamadı; aynı süre korunarak temiz kesme kullanıldı.')
@@ -101,16 +117,11 @@ class FFmpegRenderProvider:
             assembly.append(f'core-{i}.mp4')
         concat='ffconcat version 1.0\n'+''.join(f"file '{name}'\n" for name in assembly)
         self.counter+=1;manifest=f'assembly-{self.counter}.ffconcat';write(folder/manifest,concat)
-        timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]
-        # Timings MUST come from Part 8, not editing metadata's estimates.
-        for scene,original in zip(timed,timeline['scenes']):scene.update(start=original['start'],end=original['end'])
-        content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays='ass' in self.tools['filters'])
-        self.warnings+=warnings
         if 'ass' not in self.tools['filters'] and any(s.get('overlay_text') for s in timed):self.warnings.append('Vurgu yazıları desteklenmiyor; atlandı.')
         args=self.command()+['-f','concat','-safe','1','-i',manifest,'-i',str(plan['audio'])]
         vf='[0:v]null'
         if has_text:
-            self.counter+=1;name=f'captions-{self.counter}.ass';write(folder/name,content);vf+=f",ass=filename={name}"
+            vf+=f",ass=filename={caption_name}"
         graph=vf+'[v];\n'+f'[1:a]aresample=48000,apad,atrim=duration={duration:.6f},asetpts=PTS-STARTPTS[nar]'
         if opts['music_enabled']:
             args+=['-stream_loop','-1','-i',str(plan['music'])]
@@ -128,14 +139,17 @@ class FFmpegRenderProvider:
         args+=self.graph(folder,graph)+['-map','[v]','-map','[a]',*self.codec(encoder),'-frames:v',str(timeline['frames']),
             '-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-t',f'{duration:.6f}','-movflags','+faststart','output.mp4']
         self.progress('rendering',75,encoder,self.warnings)
-        self.runner.run(args,folder,lambda seconds:self.progress('rendering',min(95,75+20*seconds/duration),encoder,self.warnings),encoder=encoder)
+        self.runner.run(args,folder,lambda seconds:self.progress('rendering',min(95,75+20*seconds/duration),encoder,self.warnings),encoder=encoder,phase='final_assembly')
         self.progress('validating',96,encoder,self.warnings)
-        output=folder/'output.mp4';validated=probe.validate(self.tools['ffprobe'],output,duration)
+        output=folder/'output.mp4'
+        try:validated=probe.validate(self.tools['ffprobe'],output,duration)
+        except RenderError as error:
+            raise RenderError(error.category,str(error),diagnostic=diagnostic('output_validation_failed',phase='output_validation',encoder=encoder)) from None
         if validated is None:
             # Without ffprobe verify both streams actually decode and the measured end.
             cmd=self.command()+['-i','output.mp4','-map','0:v:0','-map','0:a:0','-f','null','-']
-            end=self.runner.run(cmd,folder)
-            if abs(end-duration)>.04:raise RenderError('output_invalid','Video süresi yerel dekod kontrolünde eşleşmedi.')
+            end=self.runner.run(cmd,folder,phase='output_decode_validation',encoder=encoder)
+            if abs(end-duration)>.04:raise RenderError('output_invalid','Video süresi yerel dekod kontrolünde eşleşmedi.',diagnostic=diagnostic('output_validation_failed',phase='output_decode_validation',encoder=encoder))
             validated={'duration':duration,'width':1920,'height':1080,'fps':30,'video_codec':'h264','audio_codec':'aac','validation_method':'ffmpeg_decode_configured_format'}
             self.warnings.append('ffprobe bulunamadı; akışlar ve süre FFmpeg dekoduyla kontrol edildi. Biçim alanları render ayarlarından alınmıştır.')
         validated.update(encoder_used=encoder,subtitle_burned=opts['subtitle_burned'],music_enabled=opts['music_enabled'],warnings=list(dict.fromkeys(self.warnings)))

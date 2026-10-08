@@ -7,11 +7,15 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   section.append(node('h2','Stok Medya — video ve görsel seçimi'),node('p','Bir sahne birden fazla medya taşıyabilir. Yuvaların süreleri tahminidir; kesme, seslendirme ve render henüz yapılmaz.'));
   const message=node('p','Güncel sahne planı kontrol ediliyor…');message.setAttribute('role','status');
   const controls=node('div','','settings-actions'),warningList=node('ul');section.append(message,controls,warningList);root.insertBefore(section,blocks);
+  const mix=node('p'),recent=node('details');recent.append(node('summary','Son arama tanısı'));section.append(mix,recent);
   let state=null,pending=false,timer=null,loading=false,candidateSlot=null,previewSlot=null;
   const active=()=>pending||['queued','running'].includes(state?.job?.status);
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.disabled=disabled;b.addEventListener('click',fn);parent.append(b);return b;}
   const auto=button(controls,'Medyayı Otomatik Bul',()=>start('auto'));
   const missing=button(controls,'Eksik Medyaları Tamamla',()=>start('missing'));
+  const bulk=button(controls,'Uygun görselleri videoyla değiştir',()=>{if(window.confirm('Video tercihli, kilitsiz görsel yuvalarında video aranacak. Mevcut görseller yalnız video başarıyla indirildiğinde değiştirilecek. Devam edilsin mi?'))start('replace_images');});
+  const toleranceLabel=node('label','Kısa video toleransı (sn) '),tolerance=node('select');
+  for(const value of [0,.5,1,1.25,1.5]){const option=node('option',String(value).replace('.',','));option.value=String(value);tolerance.append(option);}tolerance.value='1.25';toleranceLabel.append(tolerance);controls.append(toleranceLabel);
   const resume=button(controls,'Devam Et',()=>operate(()=>request(`${base}/jobs/${state.job.id}/resume`,'POST',stamp())));resume.hidden=true;
   button(controls,'Medya Durumunu Yenile',load);
   const stamp=()=>({plan_id:state.plan_id,revision:state.revision});
@@ -23,18 +27,19 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     if(!response.ok){const error=new Error(result.message||'Medya işlemi tamamlanamadı.');error.category=result.category;throw error;}
     return result;
   }
-  function sync(){auto.disabled=active()||!state;missing.disabled=active()||!state;resume.hidden=state?.job?.status!=='error';resume.disabled=active();}
+  function sync(){auto.disabled=active()||!state;missing.disabled=active()||!state;resume.hidden=state?.job?.status!=='error';resume.disabled=active();tolerance.disabled=active()||!state;bulk.disabled=active()||!state?.slots.some(s=>!s.locked&&s.preferred_type==='stock_video'&&s.selected_media?.media_type==='image');}
   async function operate(fn){if(active())return;pending=true;sync();try{await fn();await load();}catch(error){message.textContent=error.message;}finally{pending=false;render();}}
-  function start(action){return operate(()=>request(base+'/jobs','POST',{...stamp(),action}));}
-  function slotJob(slot,action,extra={}){return operate(()=>request(`${base}/slots/${slot.slot_id}/jobs`,'POST',{...stamp(),action,...extra}));}
+  function start(action){return operate(()=>request(base+'/jobs','POST',{...stamp(),action,video_duration_tolerance_seconds:Number(tolerance.value)}));}
+  function slotJob(slot,action,extra={}){return operate(()=>request(`${base}/slots/${slot.slot_id}/jobs`,'POST',{...stamp(),action,video_duration_tolerance_seconds:Number(tolerance.value),...extra}));}
   function slotAction(slot,action){return operate(()=>request(`${base}/slots/${slot.slot_id}/actions`,'POST',{...stamp(),action}));}
   function candidateID(m){return `${m.provider}:${m.media_type}:${m.media_id}`;}
   async function select(slot,media){
-    const duplicate=state.slots.some(s=>s.slot_id!==slot.slot_id&&s.selected_media?.provider===media.provider&&s.selected_media?.media_id===media.media_id);
+    const duplicate=state.slots.some(s=>s.slot_id!==slot.slot_id&&s.selected_media?.provider===media.provider&&s.selected_media?.media_id===media.media_id&&s.selected_media?.media_type===media.media_type);
     if(duplicate&&!window.confirm('Bu medya başka yuvada kullanılıyor. Aynı dosyanın tekrar kullanımını onaylıyor musunuz?'))return;
     candidateSlot=null;await slotJob(slot,'select',{candidate_id:candidateID(media),allow_duplicate:duplicate});
   }
   function thumbnail(media){
+    if(!media.preview_url)return node('p','Küçük önizleme yok; indirdikten sonra Önizle düğmesini kullanın.','note');
     const img=node('img');img.className='stock-thumbnail';img.alt=`${media.provider} ${media.media_type==='video'?'video':'görsel'} önizlemesi`;
     img.src=media.preview_url;img.loading='lazy';img.referrerPolicy='no-referrer';return img;
   }
@@ -57,10 +62,13 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const media=slot.selected_media;
     if(media)card.append(thumbnail(media),node('p',mediaInfo(media)),sourceInfo(media));
     if(slot.message)card.append(node('p',slot.message));for(const warning of slot.warnings)card.append(node('p',warning,'note'));
+    if(slot.coverage_warning)card.append(node('p',slot.coverage_warning,'note'));
+    if(slot.search_diagnostics?.length){const diag=node('details');diag.append(node('summary','Arama Tanısı'));for(const d of slot.search_diagnostics)diag.append(node('p',`${d.query} · ${d.summary}`));card.append(diag);}
     const buttons=node('div','','settings-actions');card.append(buttons);
     button(buttons,'Önizle',()=>{previewSlot=previewSlot===slot.slot_id?null:slot.slot_id;render();},!media);
     button(buttons,'Değiştir',()=>{candidateSlot=candidateSlot===slot.slot_id?null:slot.slot_id;render();},active()||slot.locked);
     button(buttons,'Yeniden Ara',()=>{candidateSlot=slot.slot_id;slotJob(slot,'search');},active()||slot.locked);
+    if(media?.media_type==='image')button(buttons,'Video ile değiştirmeyi dene',()=>{candidateSlot=slot.slot_id;slotJob(slot,'search_videos');},active()||slot.locked);
     button(buttons,slot.locked?'Kilidi Aç':'Kilitle',()=>slotAction(slot,slot.locked?'unlock':'lock'),active()||(!slot.locked&&(!media||slot.status!=='complete')));
     button(buttons,'Kaldır',()=>{if(window.confirm('Medya bu yuvadan kaldırılacak. İndirilen dosya proje önbelleğinde korunacak. Devam edilsin mi?'))slotAction(slot,'remove');},active()||slot.locked||!media);
     if(previewSlot===slot.slot_id&&media){
@@ -75,11 +83,13 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
       const slots=state?.slots.filter(s=>s.scene_id===sceneCard.dataset.sceneId)||[];if(!slots.length)continue;
       const media=node('section','','stock-scene');media.append(node('h3',`Medya Yuvaları · ${slots.length} görsel çekim`));for(const slot of slots)media.append(slotCard(slot));sceneCard.append(media);
     }
+    const counts=state?.media_mix;mix.textContent=counts?`${counts.total_slots} medya yuvası · ${counts.selected_videos} video · ${counts.selected_images} görsel · ${counts.unresolved_slots} eksik`:'';
+    while(recent.children.length>1)recent.lastChild.remove();for(const d of state?.job?.progress?.search_diagnostics||[])recent.append(node('p',`${d.query} · ${d.summary}`));recent.hidden=recent.children.length===1;
     warningList.replaceChildren();for(const text of state?.warnings||[])warningList.append(node('li',text));sync();
   }
   async function load(){
     if(loading)return;loading=true;
-    try{state=await request(base);const job=state.job;
+    try{state=await request(base);if(state.search_options)tolerance.value=String(state.search_options.video_duration_tolerance_seconds);const job=state.job;
       message.textContent=job?.status==='error'?`${job.error_message} · Tanı: ${job.progress.category}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pexels&&!state.providers.pixabay?'Ayarlar → Pexels veya Pixabay bölümünde API anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}`;
       render();
     }catch(error){state=null;message.textContent=error.message;render();}

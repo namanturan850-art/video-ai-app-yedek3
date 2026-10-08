@@ -2,6 +2,7 @@
 async function settingsRequest(url, method = 'GET', body) {
   const gemini = /^\/api\/settings\/(gemini|images\/gemini)\/(models|test)$/.test(url);
   const openai = ['/api/settings/openai/test', '/api/settings/images/openai/test'].includes(url);
+  const ai33=['/api/settings/ai33/test','/api/settings/ai33/voices'].includes(url);
   const stock = ['/api/settings/pexels/test','/api/settings/pixabay/test'].includes(url);
   const diagnostics = url.startsWith('/api/settings/ai-diagnostics');
   const timeoutMessage = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';
@@ -18,6 +19,7 @@ async function settingsRequest(url, method = 'GET', body) {
       if (timedOut(healthError)) return failure('Yerel uygulama sağlık kontrolüne zamanında yanıt vermedi. Bir süre bekleyip tekrar deneyin.', 'local_health_timeout');
       return failure('Uygulamaya ulaşılamadı. Uygulama penceresini kontrol edip yeniden açın.', 'local_unreachable');
     }
+    if(ai33&&timedOut(error))return failure('AI33 API zaman aşımına uğradı. İnternet bağlantısını kontrol edip tekrar deneyin.','timeout');
     if (gemini && timedOut(error)) return failure(timeoutMessage, 'gemini_timeout');
     if (openai && timedOut(error)) return failure('OpenAI API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.', 'generation_timeout');
     if (gemini && globalThis.navigator?.onLine === false) return failure('Gemini API için internet bağlantısı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.', 'no_internet');
@@ -25,7 +27,7 @@ async function settingsRequest(url, method = 'GET', body) {
     if (gemini) return failure(unexpectedMessage, 'unexpected_backend');
     return failure('Yerel uygulama çalışıyor ancak işlem tamamlanamadı. Bir süre bekleyip tekrar deneyin.', 'local_request_failed');
   }
-  const options = {method, cache: 'no-store', signal: AbortSignal.timeout(gemini || openai || stock ? 60000 : 20000), headers: {'X-AI-Video-Studio': 'settings'}};
+  const options = {method, cache: 'no-store', signal: AbortSignal.timeout(gemini || openai || stock || ai33 ? 60000 : 20000), headers: {'X-AI-Video-Studio': 'settings'}};
   if (body !== undefined) { options.headers['Content-Type'] = 'application/json'; options.body = JSON.stringify(body); }
   let response;
   try { response = await fetch(url, options); }
@@ -86,6 +88,15 @@ async function settingsRequest(url, method = 'GET', body) {
       };
       const known = Object.hasOwn(messages, result.category);
       throw failure(known ? messages[result.category] : unexpectedMessage, known ? result.category : 'unexpected_backend');
+    }
+    if(ai33){
+      const messages={missing_key:'Önce AI33 / OpenSpeaker API anahtarını kaydedin.',key_rejected:'API anahtarı reddedildi. Kaydettiğiniz AI33 anahtarını kontrol edin.',
+        connection_error:'API bağlantısı kurulamadı. İnternet bağlantısını kontrol edip tekrar deneyin.',timeout:'AI33 API zaman aşımına uğradı. İnternet bağlantısını kontrol edip tekrar deneyin.',
+        credits_unavailable:'Kullanım/kredi bilgisi alınamadı. Daha sonra tekrar deneyin.',rate_limit:'AI33 istek sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+        invalid_request:'Ses sağlayıcısını, arama metnini ve sayfa seçimini kontrol edin.',unexpected_voice_schema:'AI33 ses listesi alanları resmî belgede tanımlanmamış. Ses yanıt belgesi gerekli; ücretli görev başlatılmadı.',
+        unexpected_task_schema:'AI33 görev yanıtı bu sürümün beklediği biçimden farklı.',documentation_required:'AI33 ses listesi ve görev çıktı yanıt belgesi gerekli. Ücretli görev başlatılmadı.'};
+      const known=Object.hasOwn(messages,result.category),error=failure(known?messages[result.category]:'AI33 ayarları işlenirken beklenmeyen hata oluştu. Dosyaları silmeden tekrar deneyin.',known?result.category:'unexpected_backend');
+      if(known)error.diagnostic=result.diagnostic;throw error;
     }
     throw failure(result.message || 'İşlem tamamlanamadı. Bilgileri kontrol edip tekrar deneyin.', result.category || 'invalid_settings');
   }

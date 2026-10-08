@@ -113,9 +113,18 @@ class GeminiSettings(KeySettings):
 
 
 class AI33Settings(KeySettings):
-    base_url: str = Field(default="", max_length=500)
+    base_url: str = Field(default="https://api.openspeaker.ai", max_length=500)
     voice_id: str = Field(default="", max_length=150)
     model: str = Field(default="", max_length=150)
+    voice_provider: Literal['elevenlabs','minimax','clone','edge','vbee','fishaudio'] = 'elevenlabs'
+    speed: float = Field(default=1.0,ge=.5,le=1.5,allow_inf_nan=False)
+
+    @field_validator('api_key')
+    @classmethod
+    def ascii_key(cls,value):
+        if value is not None and not value.get_secret_value().isascii():
+            raise ValueError('API anahtarını olduğu gibi, boşluksuz girin.')
+        return value
 
     @field_validator("base_url")
     @classmethod
@@ -206,9 +215,15 @@ class SettingsService:
                 status = "Hazır" if configured else "Yapılandırılmadı"
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
                 if name == "ai33":
-                    status = "API belgeleri gerekli" if key else "Yapılandırılmadı"
-                    message = "AI33 API belgeleri gerekli. Seslendirme ve gerçek bağlantı testi kapalıdır."
+                    from app.narration.provider import OpenSpeakerProvider
+                    public.update(official_base_url='https://api.openspeaker.ai',
+                                  voices=guard.clean(config.get('available_voices',[])),
+                                  voice_name=guard.clean(config.get('voice_name','')),
+                                  contract_ready=OpenSpeakerProvider.contract_ready,
+                                  documentation_message='' if OpenSpeakerProvider.contract_ready else 'Ses kayıtları ve tamamlanan görev çıktı alanları için giriş sonrası API belgesi gerekli. Ücretli görev başlatılmaz.')
+                    message = 'Anahtar kaydedildi. Bağlantı testi yalnız kredi erişimini kontrol eder; ses üretmez.' if key else message
                 test = config.get("last_test")
+                if name=='ai33' and test and test.get('status')=='API belgeleri gerekli':test=None
                 if test:
                     status = test["status"] if configured or test["status"] == "Hata" else status
                     message = test["message"]
@@ -219,7 +234,7 @@ class SettingsService:
                         status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result["youtube"] = {"status": "Daha sonra", "message": "YouTube bağlantısı bu aşamada kullanılamaz."}
@@ -240,9 +255,9 @@ class SettingsService:
             for item in error.errors(include_input=False, include_context=False):
                 field = str(item["loc"][0]) if item["loc"] else "alan"
                 labels = {"api_key": "API anahtarı", "base_url": "Adres", "model": "Model",
-                          "voice_id": "Ses kimliği", "enabled": "OpenAI seçimi", "content_language": "Dil"}
+                          "voice_id": "Ses kimliği", "voice_provider":"Ses sağlayıcısı", "speed":"Hız", "enabled": "OpenAI seçimi", "content_language": "Dil"}
                 hints.append(labels.get(field, "Ayar alanı"))
-            detail = 'API anahtarını eksiksiz, boşluksuz ve maskesiz girin (en az 8 karakter).' if 'API anahtarı' in hints else 'Model adını boşluksuz girin.' if 'Model' in hints else 'Adres http:// veya https:// ile başlamalı; anahtar veya parola içermemeli.' if 'Adres' in hints else 'Seçimi ekrandaki seçeneklerle yapın; yalnızca bu bölümün alanlarını kaydedin.'
+            detail = 'API anahtarını eksiksiz, boşluksuz ve maskesiz girin (en az 8 karakter).' if 'API anahtarı' in hints else 'Hız 0,5–1,5 arasında olmalı.' if 'Hız' in hints else 'Model adını boşluksuz girin.' if 'Model' in hints else 'Adres http:// veya https:// ile başlamalı; anahtar veya parola içermemeli.' if 'Adres' in hints else 'Seçimi ekrandaki seçeneklerle yapın; yalnızca bu bölümün alanlarını kaydedin.'
             raise SettingsInputError('Geçersiz bilgi: ' + ', '.join(dict.fromkeys(hints)) + '. ' + detail) from None
         with self.store.lock:
             values = self._values()
@@ -265,8 +280,20 @@ class SettingsService:
                     values[section].pop('available_models', None)
                     values[section]['model'] = ''
             updated = model.model_dump(exclude_unset=True, exclude={"api_key"})
+            if section=='ai33':
+                config=values[section]
+                if 'voice_id' in updated and updated['voice_id'] and updated['voice_id']!=config['voice_id']:
+                    voices=config.get('available_voices',[])
+                    chosen=next((v for v in voices if v['voice_id']==updated['voice_id'] and v['provider']==updated.get('voice_provider',config['voice_provider'])),None)
+                    if not chosen:raise SettingsInputError('Önce Sesleri Getir düğmesiyle doğrulanmış listeden ses seçin. Ses yanıt belgesi henüz doğrulanmadı.')
+                    config['voice_name']=chosen['display_name']
+                if 'voice_provider' in updated and updated['voice_provider']!=config['voice_provider']:
+                    if not updated.get('voice_id') or updated['voice_id']==config['voice_id']:updated['voice_id']=''
+                    config['available_voices']=[];config['voice_name']=''
             values[section].update(updated)
             if isinstance(model, KeySettings) and model.api_key is not None:
+                if section=='ai33' and values[section].get('api_key')!=model.api_key.get_secret_value():
+                    values[section]['available_voices']=[]
                 values[section]["api_key"] = model.api_key.get_secret_value()
             values[section].pop("last_test", None)
             self.store.write(values)
@@ -310,6 +337,38 @@ class SettingsService:
             raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
         with self.store.lock:
             return dict(self._values()[provider])
+
+    def tts_config(self):
+        """Private key and legacy values; outbound URL is always the official API."""
+        with self.store.lock:return dict(self._values()['ai33'])
+
+    def record_tts_test(self,tested,outcome):
+        with self.store.lock:
+            values=self._values()
+            if values['ai33'].get('api_key','')!=tested.get('api_key',''):
+                raise SettingsInputError('AI33 anahtarı test sırasında değişti. Yeniden test edin.')
+            from app.scripts.engine import SecretGuard
+            values['ai33']['last_test']=SecretGuard(stored_secrets(values)).clean(outcome)
+            self.store.write(values)
+        return self.safe_view()
+
+    def record_tts_voices(self,tested,voices):
+        from app.narration.models import Voice
+        from app.scripts.engine import SecretGuard
+        with self.store.lock:
+            values=self._values();config=values['ai33']
+            if any(config.get(k,'')!=tested.get(k,'') for k in ('api_key','voice_provider')):
+                raise SettingsInputError('AI33 ayarları arama sırasında değişti. Sesleri yeniden getirin.')
+            try:voices=[Voice.model_validate(v).model_dump() for v in voices]
+            except (ValidationError,TypeError):raise SettingsInputError('Doğrulanmış ses listesi okunamadı.') from None
+            SecretGuard(stored_secrets(values)).validate(voices)
+            if any(v['provider']!=config['voice_provider'] for v in voices):
+                raise SettingsInputError('Ses sağlayıcısı arama sırasında değişti. Yeniden deneyin.')
+            combined={(v['provider'],v['voice_id']):v for v in config.get('available_voices',[])}
+            combined.update({(v['provider'],v['voice_id']):v for v in voices})
+            config['available_voices']=list(combined.values())[-1000:]
+            self.store.write(values)
+        return self.safe_view()
 
     def record_stock_test(self, provider, tested, outcome):
         with self.store.lock:

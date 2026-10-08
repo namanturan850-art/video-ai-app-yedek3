@@ -62,10 +62,14 @@ def test_general_and_optional_provider_fields(settings_client):
     assert data['openai']['enabled'] is True
     assert data['openai']['status'] == 'Hazır'
     assert data['openai']['connection_test_available'] is True
-    data = settings_client.put('/api/settings/ai33', json={'base_url': 'https://example.com', 'voice_id': 'supplied-voice', 'model': 'supplied-model', 'api_key': SECRET}).json()
-    assert data['ai33']['voice_id'] == 'supplied-voice'
-    assert data['ai33']['status'] == 'API belgeleri gerekli'
-    assert data['ai33']['connection_test_available'] is False
+    # Historical AI33 fields survive the additive Part 7 settings defaults.
+    settings_client.app.state.settings.store.write({'ai33':{'base_url':'https://example.com','voice_id':'supplied-voice','model':'supplied-model','api_key':SECRET}})
+    data=settings_client.get('/api/settings').json()
+    assert data['ai33']['voice_id']=='supplied-voice'
+    assert data['ai33']['base_url']=='https://example.com' and data['ai33']['model']=='supplied-model'
+    assert data['ai33']['connection_test_available'] is True
+    assert data['ai33']['masked_api_key']=='••••••••••1234'
+
 
 
 def test_blank_or_omitted_key_preserves_existing(settings_client):
@@ -173,15 +177,15 @@ def test_ffmpeg_test_success_and_failure(settings_client, monkeypatch):
 
 
 @pytest.mark.parametrize('section', ['ai33'])
-def test_undocumented_providers_never_make_network_calls(settings_client, monkeypatch, section):
+def test_ai33_missing_key_never_makes_network_calls(settings_client, monkeypatch, section):
     def forbidden(*args, **kwargs):
         raise AssertionError('No provider network calls allowed')
     monkeypatch.setattr('app.main.check_ollama', forbidden)
     monkeypatch.setattr('app.provider_checks.httpx.Client', forbidden)
     response = settings_client.post(f'/api/settings/{section}/test')
     assert response.status_code == 200
-    assert response.json()['result']['status'] == 'API belgeleri gerekli'
-    assert 'API belgeleri gerekli' in response.json()['result']['message']
+    assert response.json()['result']['status']=='Hata'
+    assert response.json()['result']['category']=='missing_key'
 
 
 @pytest.mark.parametrize('method', ['PUT', 'DELETE', 'POST'])

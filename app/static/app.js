@@ -9,6 +9,7 @@ const path = window.location.pathname;
 if (/^\/projects\/[^/]+$/.test(path)) pages[path] = ['Proje', 'Proje bilgileri ve ileride kullanılacak üretim aşamaları.'];
 if (/^\/projects\/[^/]+\/script$/.test(path)) pages[path] = ['Senaryo', 'Konuya uygun özgün bir YouTube senaryosu oluşturun, düzenleyin ve onaylayın.'];
 if (/^\/projects\/[^/]+\/production$/.test(path)) pages[path] = ['Görsel ve Kurgu Hazırlığı', 'Planları ve eksikleri inceleyin. Medya arama, seslendirme ve render henüz çalıştırılmaz.'];
+if (/^\/projects\/[^/]+\/narration$/.test(path)) pages[path]=['Seslendirme','Onaylı senaryonuz için ses seçin, görev durumunu izleyin ve ses dosyanızı dinleyin.'];
 if (pages[path]) {
   document.querySelector('#dashboard').hidden = true;
   document.querySelector('#detail').hidden = false;

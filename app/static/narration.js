@@ -32,7 +32,7 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
     if(!window.confirm(warning))return;
     return operate(()=>request(base+'/jobs','POST',{source_script_version_id:state.approved_script.id,voice_provider:provider.value,voice_id:voice.value,speed:Number(speed.value),kind,cost_confirmed:true,regenerate_confirmed:regenerate}));
   }
-  const create=button(controls,'Seslendirmeyi Oluştur',()=>generate()),sample=button(controls,'Ses Önizle',()=>generate('preview'));
+  const create=button(controls,'Seslendirmeyi Oluştur',()=>generate()),sample=button(controls,'Kısa TTS Testi (kredi kullanır)',()=>generate('preview'));sample.className='secondary';
   const regenerate=button(controls,'Yeniden Oluştur',()=>generate('narration',true));
   const resume=button(controls,'Devam Et',()=>operate(()=>request(`${base}/jobs/${state.job.id}/resume`,'POST',{})));
   button(controls,'Yenile',load);
@@ -42,9 +42,10 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
     voice.value=selected&&Array.from(voice.options).some(o=>o.value===selected)?selected:provider.value===state?.settings.voice_provider?state.settings.voice_id:'';
     sync();
   }
-  provider.addEventListener('change',voiceChoices);voice.addEventListener('change',sync);
+  provider.addEventListener('change',voiceChoices);voice.addEventListener('change',sync);speed.addEventListener('input',sync);
   function sync(){
-    const usable=state?.settings.contract_ready&&state.approved_script&&voice.value;
+    const chosen=state?.settings.voices.find(v=>v.provider===provider.value&&v.voice_id===voice.value),rate=Number(speed.value);
+    const usable=state?.settings.contract_ready&&state.settings.has_api_key&&state.approved_script&&chosen&&/^(elevenlabs|minimax|clone|edge|kokoro|vbee|fishaudio)_\S+$/.test(voice.value)&&Number.isFinite(rate)&&rate>=.5&&rate<=1.5;
     create.disabled=sample.disabled=regenerate.disabled=active()||!usable;
     create.hidden=!!state?.versions.some(v=>v.kind==='narration');regenerate.hidden=!create.hidden;
     resume.hidden=state?.job?.status!=='error';resume.disabled=active()||!state?.job?.progress.task_id;
@@ -56,7 +57,7 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
     versions.replaceChildren();versions.append(node('h2','Seslendirme sürümleri'));
     for(const v of state?.versions||[]){
       const m=v.metadata,card=node('article');card.className='settings-panel';
-      card.append(node('h3',`${v.kind==='preview'?'Ses önizlemesi':'Seslendirme'} Sürümü ${v.version}${state.active?.id===v.id?' · Aktif seslendirme':''}`),node('p',`${m.provider} · ${m.voice_provider} · ${m.voice_name||m.voice_id} · Hız: ${m.speed}`),node('p',`Dil: ${languageName(m.target_language)} · ${m.character_count} karakter · ${new Date(v.created_at).toLocaleString('tr-TR')}`),node('p',`Kaynak senaryo: ${m.source_script_version?'Sürüm '+m.source_script_version:v.source_script_version_id}`),node('p',`Görev: ${m.task_id||'Henüz oluşturulmadı'}`));
+      card.append(node('h3',`${v.kind==='preview'?'Kısa TTS Testi':'Seslendirme'} Sürümü ${v.version}${state.active?.id===v.id?' · Aktif seslendirme':''}`),node('p',`${m.provider} · ${m.voice_provider} · ${m.voice_name||m.voice_id} · Hız: ${m.speed}`),node('p',`Dil: ${languageName(m.target_language)} · ${m.character_count} karakter · ${new Date(v.created_at).toLocaleString('tr-TR')}`),node('p',`Kaynak senaryo: ${m.source_script_version?'Sürüm '+m.source_script_version:v.source_script_version_id}`),node('p',`Görev: ${m.task_id||'Henüz oluşturulmadı'}`));
       card.append(node('p',`Durum: ${{queued:'Görev oluşturuluyor',running:'Görev bekleniyor',completed:'Tamamlandı',error:'Hata'}[m.status]||'Bekliyor'}`));
       if(v.stale)card.append(node('p','Eski senaryo sürümüne ait'));
       if(!m.audio)card.append(node('p','Ses dosyası henüz hazır değil.'));

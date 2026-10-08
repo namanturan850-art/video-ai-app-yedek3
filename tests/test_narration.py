@@ -145,6 +145,7 @@ def test_cost_confirmation_required_and_api_key_no_sqlite_or_html(narration_stud
 
 def test_missing_output_documentation_blocks_paid_create(narration_studio):
     st=narration_studio;provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(lambda request:(_ for _ in ()).throw(AssertionError('No paid call without output contract'))))
+    provider.contract_ready=False  # Preserve the defensive gate for future unverified adapters.
     st[0].app.state.narration.factory=lambda settings:provider
     r=st[0].post(base(st)+'/jobs',json=payload(st))
     assert r.status_code==409 and r.json()['category']=='documentation_required' and not view(st)['versions']
@@ -285,7 +286,6 @@ def test_job_blocks_project_deletion_and_shutdown_preserves_id(narration_studio)
 def test_unknown_creation_result_keeps_verified_task_id_for_resume(narration_studio):
     st=narration_studio;service=st[0].app.state.narration
     provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(lambda r:httpx.Response(200,json={'success':'unknown','task_id':'verified-task-8899','other':AUDIO})))
-    provider.contract_ready=True  # Internal workflow exercise, not a live contract claim.
     service.factory=lambda settings:provider
     failed=start(st)
     assert failed['job']['status']=='error' and failed['job']['progress']['task_id']=='verified-task-8899'
@@ -353,7 +353,7 @@ def test_actual_settings_routes_official_readonly_and_unknown_voice_shape(narrat
     service.factory=lambda values:OpenSpeakerProvider(KEY,transport=httpx.MockTransport(serve))
     result=st[0].post('/api/settings/ai33/test',headers=SETTINGS_HEADERS)
     assert result.status_code==200 and result.json()['result']['status']=='Hazır'
-    assert result.json()['result']['credits'] is None and not result.json()['settings']['ai33']['contract_ready']
+    assert result.json()['result']['credits'] is None and result.json()['settings']['ai33']['contract_ready']
     failed=st[0].post('/api/settings/ai33/voices',headers=SETTINGS_HEADERS,json={'provider':'edge','search':'German','page':2,'page_size':30})
     assert failed.status_code==502 and failed.json()['category']=='unexpected_voice_schema'
     assert 'private-token' not in failed.text and KEY not in failed.text
@@ -387,7 +387,7 @@ def test_documented_voice_prefixes_and_unicode_narration_form(prefix):
         return httpx.Response(200,json={'success':True,'task_id':'verified-task'})
     provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(serve))
     assert provider.synthesize(text,prefix+'fixture-id',{'speed':.85})=={'task_id':'verified-task'}
-    assert len(calls)==1 and not provider.contract_ready
+    assert len(calls)==1 and provider.contract_ready
 
 
 @pytest.mark.parametrize('voice',['unprefixed','provider:voice-id','unknown_voice','edge','edge_',' edge_voice','edge_voice name'])
@@ -407,7 +407,7 @@ def test_voice_nested_diagnostic_first_record_only_safe_api_and_logs(narration_s
     provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(lambda r:httpx.Response(200,json=body)))
     st[0].app.state.narration.factory=lambda settings:provider
     r=st[0].post('/api/settings/ai33/voices',headers=SETTINGS_HEADERS,json={'provider':'edge','page':2,'page_size':30})
-    assert r.status_code==502 and not provider.contract_ready
+    assert r.status_code==502 and provider.contract_ready
     diagnostic=r.json()['diagnostic']
     assert diagnostic['top_level_fields']==[{'name':'success','type':'boolean'},{'name':'format_version','type':'string'},{'name':'data','type':'array'},{'name':'pagination','type':'object'}]
     assert diagnostic['data_first_item_type']=='object'
@@ -442,7 +442,7 @@ def test_base_contract_change_preserves_existing_vault_and_project(narration_stu
     script=st[0].get(f'/api/projects/{st[1]["id"]}/script').json()
     with TestClient(create_app(st[3]),headers=HEADERS) as reopened:
         safe=reopened.get('/api/settings').json()['ai33']
-        assert safe['official_base_url']=='https://api.ai33.pro' and not safe['contract_ready']
+        assert safe['official_base_url']=='https://api.ai33.pro' and safe['contract_ready']
         assert safe['base_url']=='https://api.openspeaker.ai' and safe['model']=='saved-legacy-model'
         assert safe['voice_id']==VOICE['voice_id'] and safe['speed']==.9 and safe['masked_api_key'].endswith('8899')
         assert reopened.app.state.settings.tts_config()['api_key']==KEY

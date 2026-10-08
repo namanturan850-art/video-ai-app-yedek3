@@ -1,5 +1,6 @@
 """Validated, atomic audio storage. No transcoding, rendering or scene changes."""
 from contextlib import closing
+from contextvars import ContextVar
 import hashlib
 import ipaddress
 import logging
@@ -25,13 +26,14 @@ TYPES={'audio/mpeg':('.mp3','mp3'),'audio/mp3':('.mp3','mp3'),
        'audio/mp4':('.m4a','m4a'),'audio/x-m4a':('.m4a','m4a')}
 LIMIT=500_000_000
 PRIVATE_AUDIO_HOSTS=set()
+AUDIO_REQUEST_ACTIVE=ContextVar('narration_audio_request',default=False)
 
 
 class PrivateAudioHTTPFilter(logging.Filter):
     def filter(self,record):
         # HTTP client debug logs include signed URLs. Only audio-host logs are
         # suppressed; this does not change other providers' diagnostic output.
-        return not any(host in record.getMessage().lower() for host in tuple(PRIVATE_AUDIO_HOSTS))
+        return not AUDIO_REQUEST_ACTIVE.get() and not any(host in record.getMessage().lower() for host in tuple(PRIVATE_AUDIO_HOSTS))
 
 
 for name in ('httpx','httpcore','httpcore.connection','httpcore.http11','httpcore.http2','httpcore.proxy'):
@@ -48,22 +50,35 @@ def directory(projects,project_id):
     return folder
 
 
-def safe_audio_url(value,allowed_hosts):
-    """Only documentation-verified output hosts; no private/loopback addresses."""
+def audio_url_host(value):
+    """Validate authenticated-task HTTPS URLs without inventing a CDN domain."""
     try:
+        if not isinstance(value,str) or not value or len(value)>4000:raise ValueError()
         url=urlsplit(value)
-        if (not isinstance(value,str) or len(value)>4000 or url.scheme!='https'
+        host=url.hostname or ''
+        if (url.scheme!='https'
             or url.username is not None or url.password is not None or url.port not in (None,443)
             or url.fragment or '\\' in value or any(ord(c)<33 for c in value)
-            or url.hostname not in allowed_hosts):raise ValueError()
+            or any(c.isspace() or ord(c)==127 for c in value)):raise ValueError()
         try:
-            address=ipaddress.ip_address(url.hostname)
-            if not address.is_global:raise ValueError()
+            address=ipaddress.ip_address(host)
         except ValueError:
-            if url.hostname in ('localhost','127.0.0.1','::1') or re.fullmatch(r'[\d.:]+',url.hostname):raise
-        return value
+            if (len(host)>253 or '.' not in host or not re.fullmatch(r'[a-z0-9.-]+',host)
+                or not re.fullmatch(r'[a-z][a-z0-9-]*',host.rsplit('.',1)[-1])
+                or any(not re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?',label) for label in host.split('.'))
+                or host.endswith(('.localhost','.local','.internal','.lan','.home','.invalid'))):raise ValueError()
+        else:
+            if not address.is_global or address.is_multicast or address.is_reserved:raise ValueError()
+        return host
     except (ValueError,TypeError,AttributeError):
         raise NarrationError('audio_download_failed','Ses indirme adresi doğrulanamadı. Görev kimliği korundu; destek isteyin.',502) from None
+
+
+def safe_audio_url(value,allowed_hosts):
+    # Initial download belongs to this task's exact authenticated output host.
+    if audio_url_host(value) not in allowed_hosts:
+        raise NarrationError('audio_download_failed','Ses indirme adresi doğrulanamadı. Görev kimliği korundu; destek isteyin.',502)
+    return value
 
 
 def valid_signature(head,format):
@@ -110,20 +125,26 @@ class AudioDownloader:
     def __init__(self,projects,*,transport=None):self.projects,self.transport=projects,transport
 
     def download(self,project_id,url,allowed_hosts):
+        url=safe_audio_url(url,allowed_hosts)
         PRIVATE_AUDIO_HOSTS.update(allowed_hosts)
         with self.projects.lock,closing(self.projects._connection()) as connection:
             self.projects._row(connection,project_id);folder=directory(self.projects,project_id)
         temporary=folder/('.audio-'+uuid4().hex)
+        logging_token=AUDIO_REQUEST_ACTIVE.set(True)
         try:
             with httpx.Client(timeout=httpx.Timeout(60,connect=10),transport=self.transport,follow_redirects=False) as client:
                 # Downloads are unauthenticated: never forward xi-api-key to a CDN.
                 for _ in range(4):
-                    url=safe_audio_url(url,allowed_hosts)
+                    # Clear response cookies even on redirects to the same host.
+                    client.cookies.clear()
                     with client.stream('GET',url,headers={'Accept-Encoding':'identity'}) as response:
                         if response.status_code in (301,302,303,307,308):
                             location=response.headers.get('location')
                             if not location:break
-                            url=urljoin(url,location);continue
+                            url=urljoin(url,location)
+                            host=audio_url_host(url)  # Same checks for each redirect.
+                            PRIVATE_AUDIO_HOSTS.add(host)
+                            continue
                         if response.status_code!=200:
                             raise NarrationError('audio_download_failed','Ses dosyası indirilemedi. Görev korunuyor; Devam Et ile aynı görevi deneyin.')
                         mime=response.headers.get('content-type','').split(';')[0].lower().strip()
@@ -157,4 +178,6 @@ class AudioDownloader:
             raise NarrationError('audio_download_failed','Ses indirilemedi. İnternet bağlantısını kontrol edip Devam Et deyin.') from None
         except OSError:
             raise NarrationError('local_storage','Ses kaydedilemedi. Veri klasörünün yazılabilir olduğunu ve boş alanı kontrol edin.') from None
-        finally:temporary.unlink(missing_ok=True)
+        finally:
+            AUDIO_REQUEST_ACTIVE.reset(logging_token)
+            temporary.unlink(missing_ok=True)

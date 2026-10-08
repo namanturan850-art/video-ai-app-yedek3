@@ -21,13 +21,36 @@ function createAI33VoiceBrowser(loadPage) {
     return result;
   }
   async function all(progress = () => {}) {
+    const version = contextVersion;
     let result;
     for (let number = 1; number <= 10; number++) {
+      if (version !== contextVersion) throw new Error('Ses sağlayıcısı veya arama değişti. Sesleri yeniden getirin.');
       result = await page(number, number > 1);
-      progress(result);
+      await progress(result);
       if (state.exhausted) break;
+      // Yield between sequential requests so input/paint can run on Windows.
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
     return result;
   }
   return {state, reset, page, all};
+}
+
+function updateAI33VoiceOptions(select, voices, selected, savedVoice) {
+  const labels = new Map([['', 'Sesleri Getir ile listeden bir ses seçin']]);
+  for (const voice of voices) labels.set(voice.voice_id, voice.display_name || voice.voice_id);
+  if (selected && !labels.has(selected)) labels.set(selected, savedVoice ? `${savedVoice.display_name} (seçili ses)` : 'Önceki kayıtlı ses (henüz doğrulanmadı)');
+  const existing = new Map();
+  for (const option of Array.from(select.options)) {
+    if (!labels.has(option.value) || existing.has(option.value)) option.remove();
+    else existing.set(option.value, option);
+  }
+  const batch = document.createDocumentFragment();
+  for (const [id, label] of labels) {
+    let option = existing.get(id);
+    if (!option) { option = document.createElement('option'); option.value = id; batch.append(option); }
+    if (option.textContent !== label) option.textContent = label;
+  }
+  select.append(batch);
+  select.value = selected || '';
 }

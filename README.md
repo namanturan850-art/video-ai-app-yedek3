@@ -2,7 +2,7 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
-**Part 7 seslendirme taslağı:** AI33 / OpenSpeaker ayarları, salt okunur bağlantı testi ve yerel seslendirme iş/sürüm altyapısı eklendi. Canlı doğrulanan ses listesi, ses seçimi ve sağlayıcının ücretsiz hazır önizlemesi kullanılabilir. Görev geçmişi yalnız alan/tür tanısı verir. Tamamlanan TTS çıktı şeması bekleniyor; ücretli üretim kapalı. [Basit Windows kontrolü](docs/NARRATION.md) ve [eksik API belgeleri](AI33_INTEGRATION_NOTES.md).
+**Part 7 seslendirme:** Sahibinin canlı doğruladığı AI33 TTS sözleşmesi etkin: done/tts/metadata.audio_url. Onaylı senaryo ve seçili sesle, açık kredi onayından sonra görev oluşturma/izleme, güvenli indirme, yerel oynatma ve sürümler kullanılabilir. Devam Et aynı görevi kullanır. ElevenLabs yeni ayarın varsayılanıdır. Ses adı araması ve hızlı sayfalama; ücretsiz hazır örnek ile ücretli Kısa TTS Testi ayrı gösterilir. [19 basit Windows adımı](docs/NARRATION.md) ve [doğrulanmış sözleşme](AI33_INTEGRATION_NOTES.md). Part 8 başlamadı.
 
 **Sağlayıcı sorunlarını ayırmak için:** Ayarlar → **AI Tanılama**. Şifreli kayıt, bağlantı, kısa üretim, JSON ve tek senaryo bölümü ayrı test edilir. [Çok basit Windows adımları](docs/AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; otomatik test başarısı canlı API başarısı değildir.
 
@@ -51,7 +51,7 @@ Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri k
 3. Pexels bölümünde yalnızca deneme için `deneme-anahtari-1234` yazıp **Kaydet** deyin. Alan boşalır, maskede yalnızca `1234` görünür. Uygulamayı kapatıp yeniden açın; maskeli kayıt korunmalıdır. Bu deneme anahtarı gerçek bir hizmet anahtarı değildir.
 4. İsterseniz **Temizle** ile o bölümdeki bilgileri silin. Diğer bölümler değişmez.
 
-Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. OpenAI için **Etkinleştir → anahtar/model → Kaydet → Bağlantıyı Test Et** resmi model erişimini kontrol eder. Üretim bakiyesi/kotası ayrıca değerlendirilir. FFmpeg otomatik algılanır. **AI33 API belgeleri gerekli** mesajı beklenen durumdur; AI33 testi kapalıdır. Pexels/Pixabay testleri yer tutucudur. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
+Ollama kuruluysa bilgilerini kaydedip **Bağlantıyı Test Et** düğmesine basabilirsiniz. OpenAI için **Etkinleştir → anahtar/model → Kaydet → Bağlantıyı Test Et** resmi model erişimini kontrol eder. Üretim bakiyesi/kotası ayrıca değerlendirilir. FFmpeg otomatik algılanır. **AI33 bağlantı testi** yalnız kredi erişimini kontrol eder; ses üretmez. Seslendirme ayrı kredi onayı ister. Stok ayarları için [Part 6 rehberine](docs/STOCK_MEDIA.md) bakın. Ayrıntılar: [Ayarlar rehberi](docs/SETTINGS.md).
 
 ## Gemini'yi Windows'ta deneme
 

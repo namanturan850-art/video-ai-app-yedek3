@@ -1,62 +1,61 @@
 # Seslendirme — Windows kontrolü
 
-## Bu taslakta ne kullanılabilir?
+## Part 7 artık ne yapar?
 
-Ayarlar → **AI33 / OpenSpeaker** ekranında anahtar kaydetme/maskeleme, sağlayıcı ve hız, salt okunur bağlantı testi çalıştırılabilir. Eski kayıtlar korunur. Projede **Seslendirmeyi Aç** bağlantısı ve Seslendirme ekranı vardır.
+Sahibinin canlı AI33 sonucu doğrulandı: **status=done, type=tts, metadata.audio_url**. Ücretli seslendirme adaptörü etkin (`contract_ready=true`). Güncel onaylı senaryo, kayıtlı API anahtarı, doğrulanmış ses ve geçerli hız varsa **Seslendirmeyi Oluştur** kullanılabilir. Her yeni ücretli görev için ayrıca kredi onayı gerekir.
 
-Sahibinin canlı Windows yanıtıyla ses listesi şeması doğrulandı. **Sesleri Getir → gerçek ses adı → Kaydet** kullanılabilir. İlk 30 sesle sınırlı kalmazsınız: sayfa düğmeleri, ekleyerek yükleme, ad arama ve en fazla 10 sayfa / 300 ses için **Tüm Sesleri Getir** vardır. **Önizlemeyi Dinle** sağlayıcının hazır örneğini açar, yeni görev veya kredi kullanımı oluşturmaz. **Mevcut Görevi İncele** ve **Görev Geçmişini İncele** de yalnız mevcut görevleri okur.
+Ayarlar'da **Önizlemeyi Dinle** hazır sağlayıcı örneğidir, ücretsizdir ve görev oluşturmaz. Projedeki **Kısa TTS Testi (kredi kullanır)** farklıdır: kısa dil örneği için yeni ücretli görev oluşturur; ayrı onay ister, tam anlatım yerine geçmez.
 
-**Tam ücretli seslendirme henüz açık değildir.** Tamamlanan TTS görevinin ses çıktı alanı ve durumları için doğrulanmış örnek hâlâ gereklidir. Bu yüzden projenin **Ses Önizle / Oluştur / Yeniden Oluştur** düğmeleri kapalıdır; `contract_ready=false` korunur. Ayarlar'daki hazır örnek düğmesi ayrı, ücretsiz yoldur. Ayrıntı: [güncel sözleşme](../AI33_INTEGRATION_NOTES.md).
+Yeni ayarlarda varsayılan sağlayıcı ElevenLabs. Kayıtlı diğer sağlayıcınız ve anahtar/ses/hız korunur. `.env`, kod veya terminal düzenlemeniz gerekmez. Güncellemede mevcut **data** klasörünü koruyun.
 
-## Şimdi yapılabilecek basit kontrol
+## Gerçek Windows testi — 19 basit adım
 
-1. Güncelleme sırasında mevcut **data** klasörünü koruyun. Programı kapatıp yeni uygulama dosyalarını aynı klasöre koyun.
-2. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın. Siyah pencere açık kalsın.
-3. **Ayarlar → AI33 / OpenSpeaker** bölümünü açın.
-4. API anahtarını yazın ve **Kaydet** deyin. Alan boşalmalı; kayıtlı anahtar yalnız maskeli görünmelidir.
-5. **Bağlantıyı Test Et** deyin. Bu işlem ses üretmez, kredi harcamaz. Başarılı HTTP/JSON okuması bağlantıyı gösterir; kredi sayısı bilinmiyorsa bunun mesajı görünür.
-6. Ses sağlayıcısını seçip **Kaydet → Sesleri Getir** deyin. Gerçek ses adları listelenmelidir. Bir ses seçip **Kaydet** deyin; dil/bölge/diğer bilgileri **Seçilen sesin bilgileri** bölümünde inceleyebilirsiniz. Bilgi eksikliği listeyi bozmaz. Varsa **Önizlemeyi Dinle** deyin; örnek yalnız tıklayınca yüklenir. Yeni TTS görevi oluşmamalıdır.
-7. Mevcut projenizi açıp **Seslendirmeyi Aç** deyin. Güncel onaylı senaryo/dil/karakter sayısı görünmeli; onay yoksa “Önce senaryo sürümünü onaylayın.” görünmelidir.
-8. Programı kapatıp yeniden açın. Ses seçimi, ek ses bilgileri ve hız; projeler, onaylı senaryolar, sahneler, stok dosyaları ve maskeli ayarlar durmalıdır. Hazır örnek tekrar kendiliğinden yüklenmemelidir.
+1. PR birleştirildikten sonra güncel sürümü alın. **data** klasörünü silmeyin.
+2. AI Video Studio'yu siyah uygulama penceresiyle birlikte tamamen kapatın.
+3. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın; yeni siyah pencere açık kalsın.
+4. **Ayarlar → AI33 / OpenSpeaker** bölümüne girin.
+5. **ElevenLabs** seçili olduğunu kontrol edin. Sağlayıcı değiştiyse **Kaydet** deyin.
+6. **Ses adına göre ara** alanına istediğiniz adın bir bölümünü yazın, **Sesleri Getir** deyin ve listeden sesi seçin.
+7. **Kaydet** deyin. Anahtar alanı boş; kayıtlı anahtar yalnız maskeli görünmelidir.
+8. Güncel senaryosu onaylı mevcut projenizi açın.
+9. **Seslendirmeyi Aç** deyin.
+10. **Seslendirmeyi Oluştur** düğmesinin etkin olduğunu kontrol edin. Etkin değilse anahtar, ses seçimi ve senaryo onayını Ayarlar/proje ekranından tamamlayın; hız 0,5–1,5 olmalı.
+11. **Seslendirmeyi Oluştur** düğmesine bir kez basın.
+12. Kredi uyarısını **bir kez** onaylayın.
+13. Bekleyin; yeniden Oluştur'a basmayın. Görev oluşturuluyor → AI33 seslendirme hazırlıyor → Ses dosyası indiriliyor → Tamamlandı görünür.
+14. Görev kimliğinin aynı kaldığını ve hesabınızda tek yeni görev oluştuğunu kontrol edin. Ağ/indirme hatasında **Devam Et** aynı görevi kullanır; yeni ücretli görev oluşturmaz.
+15. Ses dosyasının yerelde hazır olduğunu kontrol edin.
+16. Oynatıcıdan sesi dinleyin. **Ses Dosyasını Aç** yerel dosyayı açar. Varsa gerçek süre, ses adı/hız/kaynak senaryo/tarih görünür.
+17. Uygulamayı tamamen kapatıp `.bat` dosyasıyla tekrar açın.
+18. Projede tamamlanmış sesin ve sürümünün hâlâ durduğunu kontrol edin. Hata durumunda kayıtlı görev için **Devam Et** kullanın.
+19. Mevcut Pixabay videoları, sahneler ve medya seçimlerinin değişmediğini kontrol edin.
 
-Gerçek anahtarı, **data/secrets** klasörünü veya özel ses indirme URL'sini paylaşmayın. Belge eksikliği bağlantı anahtarınızın bozuk olduğu anlamına gelmez. Teknik bilgisi olmayan kullanıcının kod, .env veya terminal düzenlemesi gerekmez.
+**Bu test kredi kullanabilir.** Bulut doğrulamasında canlı ücretli API çağrısı yapılmadı. Otomatik testler ve gerçek FastAPI/Chromium denemeleri dış API yanıtlarını taklit eder. **Live provider test must be run by owner on Windows.**
 
-## Yeni ses sayfalama ve mevcut TTS görevini canlı kontrol
+## Ses listesini rahat kullanın
 
-1. PR birleştirildikten sonra güncel sürümü alın. Mevcut **data** klasörünü koruyun.
-2. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
-3. **Ayarlar → AI33 / OpenSpeaker** bölümünü açın.
-4. **ElevenLabs** veya **MiniMax** seçin. Sağlayıcı değiştiyse **Kaydet** deyin.
-5. **Sesleri Getir** düğmesine basın.
-6. **Sonraki Sayfa / Daha Fazla Ses Yükle** düğmelerini deneyin. İlki yeni sayfayı gösterir; ikincisi yeni sesleri mevcut listeye ekler. **Önceki Sayfa** geri gider.
-7. Daha çok ses görünmelidir. İsterseniz **Tüm Sesleri Getir** (en fazla 300 ses) veya ad araması kullanın. Arama yapınca **Sesleri Getir** ile sayfa 1'den başlayın. Seçtiğiniz sesi **Kaydet** deyin.
-8. **Mevcut Görevi İncele → Task ID** alanına AI33 sitesinde zaten oluşturduğunuz kısa TTS görevinin kimliğini yapıştırın. Yeni ücretli görev oluşturmayın.
-9. **Görevi İncele** düğmesine basın.
-10. Sonuç kutusundaki **yalnız güvenli tanı metnini** kopyalayın. `status_value`, `type_value`, kök alanlar ve `metadata_fields` görünür; ses indirme URL'sinin değeri ve anahtar görünmez. Geçmişi incelemek için **Görev Geçmişini İncele** de kullanılabilir; hangi alanın liste olduğu tahmin edilmez.
-11. Bu güvenli tanıyı paylaşın. Gerçek **tamamlanmış TTS durum/değer/tür ve metadata ses dosyası alanı** sonraki adaptör eşlemesi için beklenmektedir. `audio_url` veya `output_uri` henüz TTS çıktısı kabul edilmez. Ekran alan bulundu açıklaması verse bile ücretli kilit kendiliğinden açılmaz.
+Önce ad araması kullanın: örneğin **Bill → Sesleri Getir**. İlk 30 eşleşme gösterilir. **Daha Fazla Ses Yükle** sonraki 30'u ekler; yinelenen kimlik gösterilmez. **Önceki/Sonraki Sayfa** tek sayfayı gösterir. Sağlayıcı/arama değişince sayfa 1'den başlar; farklı sağlayıcılar karışmaz.
 
-Sağlayıcı değişince sayfa/arama/liste sıfırlanır; başka sağlayıcının sesleri gösterilmez. Boş sayfada ileri yükleme durur; önceki sayfaya dönebilir veya aramayı değiştirebilirsiniz. Task ID yanlışsa uzak API isteği yapılmadan düzeltme mesajı çıkar. Görev kimliği tanı ayarı olarak saklanmaz.
+**Tüm Sesleri Getir** isteğe bağlıdır; yavaşlatma uyarısından sonra sıralı en fazla 10 sayfa/300 ses yükler, boş sayfada durur. Kendiliğinden çalışmaz. Yükleme sırasında diğer Ayarlar bölümleri kullanılabilir; hata olursa düğmeler geri açılır. Önceki büyük liste yeniden açılışta tamamen çizilmez; kayıtlı sesiniz korunur.
 
-## Yanıt sözleşmeleri doğrulanıp kilit açıldıktan sonra canlı ses kontrolü
+**Önizlemeyi Dinle** varsa önce bu ücretsiz hazır örneği kullanabilirsiniz. Anahtar/Authorization/çerez/referrer örnek adresine gönderilmez. Ses bilgileri eksik olabilir; bu listeyi bozmaz.
 
-Aşağıdaki adımlar **bu taslakta henüz başlatılamaz**; bir sonraki belgeli düzeltmenin canlı kabul listesidir:
+## Hata ve devam etme
 
-1. Ayarlar → AI33 / OpenSpeaker → anahtarı **Kaydet → Bağlantıyı Test Et**.
-2. Sağlayıcıyı seçin → **Kaydet → Sesleri Getir**. İsterseniz arama/sayfa kullanın.
-3. Listeden sesi seçin; hızı **1,0** bırakın → **Kaydet**.
-4. Güncel senaryosu onaylı projenizde **Seslendirmeyi Aç** deyin.
-5. İsterseniz **Ses Önizle** ile kısa ücretli örneği onaylayıp dinleyin. Önizleme tam anlatım yerine geçmez.
-6. **Seslendirmeyi Oluştur** deyin; kredi kullanımı uyarısını kabul edin.
-7. Görev kimliği ve durum görünür. Hazırlanırken bekleyin; tekrar Oluştur'a basmayın.
-8. Tamamlandığında ses oynatıcısından dinleyin veya **Ses Dosyasını Aç** deyin. Biliniyorsa gerçek ses süresi gösterilir.
-9. Programı yeniden açın. Ses sürümü/dosyası korunmalıdır. Yarım görev varsa **Devam Et** yalnız aynı görev kimliğini izlemelidir; sağlayıcı hesabında ikinci görev açılmamalıdır.
-10. İsterseniz **Yeniden Oluştur** uyarısını onaylayın: ek kredi kullanır, yeni sürüm oluşturur ve eski dosyayı korur. Başarısız üretim eski aktif sesi kaldırmaz.
-11. Senaryoyu değiştirirseniz eski seste **Eski senaryo sürümüne ait** uyarısı beklenir; kendiliğinden yeni görev açılmaz.
+- **Anahtar reddedildi:** Ayarlar'dan doğru AI33 anahtarını kaydedin; sonra aynı görev için Devam Et kullanın.
+- **İstek sınırı/zaman aşımı/bağlantı veya indirme hatası:** görevin kimliği korunur. Bir süre bekleyip **Devam Et** deyin.
+- **Görev kimliği alınamadı:** uygulama otomatik ücretli tekrar yapmaz. Hesabınızın mevcut görevlerini inceleyin; tekrar ödeme onaylamadan destek isteyin.
+- **Yanıt biçimi farklı:** mevcut görev/yerel sesler korunur. **Mevcut Görevi İncele** veya **Görev Geçmişini İncele** ile yalnız güvenli sonucu paylaşın. Anahtar, özel URL ve ham yanıt paylaşmayın.
+- **Ses süresi daha sonra hesaplanacak:** dosya yine oynatılabilir; FFmpeg/ffprobe olmaması tamamlanmış sesi silmez.
 
-**Live provider test must be run by owner on Windows.** Bulut testlerindeki dış API ve ses dosyası yanıtları taklittir. Chromium kontrolünde gerçek FastAPI, şifreli kasa, SQLite, yerel WAV oynatma ve yeniden açılış sınandı; bu OpenSpeaker canlı entegrasyonunun çalıştığını kanıtlamaz.
+Tanılama salt okunur GET kullanır, yeni ücretli görev oluşturmaz. Alan adları/türleri ile güvenli durum/tür değerlerini gösterir. Canlı TTS sözleşmesi artık doğrulandı; bu ekran runtime'da adaptör veya ücretli kilit ayarı değiştirmez.
 
-## Kayıtlar ve sonraki aşama
+## Sürümler ve kaynak metin
 
-Ses dosyaları: **data/projects/&lt;proje-kimliği&gt;/voice/**. İsimler uygulama tarafından güvenli biçimde oluşturulur. Önizlemeler ve sürümler farklı dosyalardır; mevcut stok/sahne dosyaları değişmez. SQLite şema 8'de sürüm, iş, uzak görev kimliği, hız/ses seçimi, kaynak metin izi ve aktif seçim tutulur; API anahtarı tutulmaz.
+Tam anlatım yalnız güncel onaylı senaryoyu kullanır; sahne notu/overlay/stok sorgusu kullanılmaz. Senaryo değiştirilirse mevcut ses **Eski senaryo sürümüne ait** olarak işaretlenir; otomatik ücretli üretim yapılmaz.
 
-Hazırlanan handoff: yerel ses yolu, süre, kaynak senaryo/seslendirme kimlikleri, ses, hız, hedef dil, readiness ve zamanlama kaynağı. Doğrulanmış transcript olmadığı için `transcript=null`; sahne süreleri tahmini kalır. **Part 8 başlatılmadı:** altyazı, gerçek kelime/sahne zamanlaması, video render, müzik ve YouTube yükleme yoktur.
+**Yeniden Oluştur**, “Yeni AI33 görevi oluşturulacak ve ek kredi kullanabilir. Mevcut seslendirme korunacak.” uyarısıyla yeni görev/sürüm oluşturur. Önceki dosya silinmez. **Kısa TTS Testi (kredi kullanır)** ayrı kısa örnektir; aktif tam anlatımı değiştirmez. Tamamlanmış eski sürümler aktif seçilebilir.
+
+Ses dosyaları: **data/projects/<proje-kimliği>/voice/**. Oynatma yalnız uygulamanın yerel dosya yoludur; özel sağlayıcı indirme URL'si gösterilmez. Şifreli anahtar SQLite'a yazılmaz; mevcut şema 8/kasa/proje/senaryo/sahne/stok dosyaları korunur.
+
+Part 8 için yerel ses kimliği/yolu/gerçek süre (ölçülemediyse boş), kaynak senaryo, ses/hız/dil ve hazır durumu sunulur. Transcript yoktur, altyazı/sahne senkronu yapılmaz. **Part 8 başlatılmadı.** [Kesin API sözleşmesi](../AI33_INTEGRATION_NOTES.md).

@@ -221,7 +221,7 @@ class SettingsService:
                                   voices=guard.clean(config.get('available_voices',[])),
                                   voice_name=guard.clean(config.get('voice_name','')),
                                   contract_ready=OpenSpeakerProvider.contract_ready,
-                                  documentation_message='' if OpenSpeakerProvider.contract_ready else 'Ses listesi kullanılabilir. Tamamlanan TTS görevindeki ses çıktı alanı henüz doğrulanmadı; ücretli seslendirme ve üretim önizlemesi kapalıdır.')
+                                  documentation_message='Canlı AI33 TTS görev yapısı doğrulandı.' if OpenSpeakerProvider.contract_ready else 'Ses listesi kullanılabilir. Tamamlanan TTS görevindeki ses çıktı alanı henüz doğrulanmadı; ücretli seslendirme ve üretim önizlemesi kapalıdır.')
                     message = 'Anahtar kaydedildi. Bağlantı testi yalnız kredi erişimini kontrol eder; ses üretmez.' if key else message
                 test = config.get("last_test")
                 if name=='ai33' and test and test.get('status')=='API belgeleri gerekli':test=None

@@ -1,10 +1,14 @@
+# Part 9: Yerel Video Oluştur / Render
+
+Mevcut projenizi açıp **Video Oluştur / Render** seçin. İlk denemede Otomatik encoder, açık altyazı ve kapalı müzik kullanın. FFmpeg hazırsa **Videoyu Oluştur** düğmesine bir kez basın. İşlem yereldir; API kredisi kullanılmaz. Ses, altyazı ve stok dosyaları korunur. [Çok basit Windows kontrolü](docs/RENDERING.md). Part 10 başlamadı.
+
 # AI Video Studio
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
 **Part 7 seslendirme:** Sahibinin canlı doğruladığı AI33 TTS sözleşmesi etkin: done/tts/metadata.audio_url. Onaylı senaryo ve seçili sesle, açık kredi onayından sonra görev oluşturma/izleme, güvenli indirme, yerel oynatma ve sürümler kullanılabilir. Devam Et aynı görevi kullanır. ElevenLabs yeni ayarın varsayılanıdır. Ses adı araması ve hızlı sayfalama; ücretsiz hazır örnek ile ücretli Kısa TTS Testi ayrı gösterilir. [19 basit Windows adımı](docs/NARRATION.md) ve [doğrulanmış sözleşme](AI33_INTEGRATION_NOTES.md). Part 7 sahibi tarafından gerçek Windows'ta ses üretimi/oynatma/kalıcılık ve Pixabay korunumu ile doğrulandı.
 
-**Part 8 altyazı ve zamanlama:** Çalışan sesinizin projesinde **Altyazı ve Zamanlama → Altyazıları Oluştur**. Yerel sesin gerçek süresi ölçülüp kaydedilir; onaylı metin korunarak SRT/VTT, yerel sesle önizleme, zaman/metin editörü ve eski sürümler hazırlanır. İşlem kredi/API kullanmaz. **Ses süresine göre yaklaşık zamanlama**; kesin kelime hizalaması değildir. [15 çok basit Windows adımı](docs/SUBTITLES.md). Part 9 render başlamadı.
+**Part 8 altyazı ve zamanlama:** Çalışan sesinizin projesinde **Altyazı ve Zamanlama → Altyazıları Oluştur**. Yerel sesin gerçek süresi ölçülüp kaydedilir; onaylı metin korunarak SRT/VTT, yerel sesle önizleme, zaman/metin editörü ve eski sürümler hazırlanır. İşlem kredi/API kullanmaz. **Ses süresine göre yaklaşık zamanlama**; kesin kelime hizalaması değildir. [15 çok basit Windows adımı](docs/SUBTITLES.md). Part 9 bu mevcut zamanlamayı salt okunur kullanarak video oluşturur.
 
 **Sağlayıcı sorunlarını ayırmak için:** Ayarlar → **AI Tanılama**. Şifreli kayıt, bağlantı, kısa üretim, JSON ve tek senaryo bölümü ayrı test edilir. [Çok basit Windows adımları](docs/AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; otomatik test başarısı canlı API başarısı değildir.
 
@@ -12,9 +16,9 @@ Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alan
 
 **Sahne planını denemek için:** Proje → **Senaryoyu Aç → Onayla** → **Görsel / Kurgu Planı → Ollama → Görsel / Kurgu Planını Hazırla**. Sahneyi düzenleyebilir, tek sahneyi yeniden planlayabilir, bölebilir/birleştirebilir, kilitleyebilir ve eski plan sürümünü seçebilirsiniz. Yukarı/Aşağı taşı görsel tasarımı taşır; anlatım sırası korunur. [12 basit Windows deneme adımı](docs/SCENE_PLANNING.md). Süreler tahminidir; ses ve video üretilmez.
 
-**Stok medyayı denemek için:** **Ayarlar → Pexels / Pixabay → Kaydet → Bağlantıyı Test Et**. Ardından hazır sahne planında **Medyayı Otomatik Bul** deyin. Seçilen video/görseller yerel proje klasörüne indirilir; **Değiştir**, **Kilitle**, **Eksik Medyaları Tamamla** ve **Devam Et** kullanılabilir. [12 çok basit Windows adımı ve resmî API kaynakları](docs/STOCK_MEDIA.md). AI görsel üretimi ve render henüz çalıştırılmaz; seslendirme ayrı Part 7 ekranındadır.
+**Stok medyayı denemek için:** **Ayarlar → Pexels / Pixabay → Kaydet → Bağlantıyı Test Et**. Ardından hazır sahne planında **Medyayı Otomatik Bul** deyin. Seçilen video/görseller yerel proje klasörüne indirilir; **Değiştir**, **Kilitle**, **Eksik Medyaları Tamamla** ve **Devam Et** kullanılabilir. [12 çok basit Windows adımı ve resmî API kaynakları](docs/STOCK_MEDIA.md). AI görsel üretimi henüz çalıştırılmaz; seslendirme Part 7, yerel render Part 9 ekranındadır.
 
-**Kararlılık ve geliştirme paketi:** gerçek OpenAI erişim testi, güvenli kasa hata ayrımı, kota bekleme/devam, beş hedef dil, retention/hook/A-B/iddia araçları ve onaylı metinden görsel/kurgu planı eklendi. Görsel sağlayıcı ayarları ve kontrolleri çalışır; gerçek görsel, müzik işleme, render ve yükleme sonraki çalıştırma için hazırlanmıştır. Ücretli görsel fallback varsayılan **KAPALI**. Tek basit [Windows kontrol listesi](docs/STABILITY_AND_ENHANCEMENTS.md) tüm paketi anlatır.
+**Kararlılık ve geliştirme paketi:** gerçek OpenAI erişim testi, güvenli kasa hata ayrımı, kota bekleme/devam, beş hedef dil, retention/hook/A-B/iddia araçları ve onaylı metinden görsel/kurgu planı eklendi. Görsel sağlayıcı ayarları ve kontrolleri çalışır; gerçek görsel üretimi ve yükleme sonraki aşamalar içindir; yerel müzik/render Part 9’da uygulanmıştır. Ücretli görsel fallback varsayılan **KAPALI**. Tek basit [Windows kontrol listesi](docs/STABILITY_AND_ENHANCEMENTS.md) tüm paketi anlatır.
 
 ## Windows'ta nasıl açılır?
 

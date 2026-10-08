@@ -11,6 +11,7 @@ if (/^\/projects\/[^/]+\/script$/.test(path)) pages[path] = ['Senaryo', 'Konuya 
 if (/^\/projects\/[^/]+\/production$/.test(path)) pages[path] = ['Görsel ve Kurgu Hazırlığı', 'Planları ve eksikleri inceleyin. Medya arama, seslendirme ve render henüz çalıştırılmaz.'];
 if (/^\/projects\/[^/]+\/narration$/.test(path)) pages[path]=['Seslendirme','Onaylı senaryonuz için ses seçin, görev durumunu izleyin ve ses dosyanızı dinleyin.'];
 if (/^\/projects\/[^/]+\/subtitles$/.test(path)) pages[path]=['Altyazı ve Zamanlama','Yerel sesinizin süresine göre yaklaşık altyazı zamanlarını oluşturun, dinleyin ve düzenleyin.'];
+if (/^\/projects\/[^/]+\/render$/.test(path)) pages[path]=['Video Oluştur / Render','Mevcut yerel ses, altyazı ve medyayı tek videoda birleştirin. API kredisi kullanılmaz.'];
 if (pages[path]) {
   document.querySelector('#dashboard').hidden = true;
   document.querySelector('#detail').hidden = false;
@@ -33,7 +34,7 @@ async function refreshDiagnostics() {
       ['İşletim sistemi', data.operating_system],
       ['Veritabanı', data.database_ok ? 'Hazır' : 'Kullanılamıyor. Uygulamayı yazma izniniz olan bir klasörde yeniden açın.'],
       ['Veri klasörü', data.data_directory_writable ? 'Dosya yazılabiliyor' : 'Dosya yazılamıyor. Uygulama klasörünü Belgeler klasörünüze taşıyıp yeniden açın.'],
-      ['FFmpeg', data.ffmpeg_found ? 'Bulundu. Video düzenleme özelliği ileride eklenecek.' : 'Bulunamadı. Uygulama çalışabilir; video oluşturmak için daha sonra FFmpeg kurulması gerekecek.'],
+      ['FFmpeg', data.ffmpeg_found ? 'Bulundu. Projenizde Video Oluştur / Render ekranını kullanabilirsiniz.' : 'Bulunamadı. Uygulama çalışabilir; video oluşturmak için daha sonra FFmpeg kurulması gerekecek.'],
       ['Sağlayıcılar', data.providers]
     ];
     for (const [label, value] of rows) {

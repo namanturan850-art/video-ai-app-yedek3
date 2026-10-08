@@ -49,7 +49,7 @@
 
 ## Part 8 — Subtitles
 
-Uygulandı: yerel gerçek ses süresi, yaklaşık ağırlıklı zamanlama, SRT/VTT, sürüm/editör/önizleme, sahne ve stok zamanlama handoff'u. [Windows kontrolü ve sınırlar](docs/SUBTITLES.md). Part 7 sahibi tarafından canlı Windows'ta doğrulandı; Part 8 gerçek ses senkronu Windows kontrolü bekler. **Part 9 başlamadı.**
+Uygulandı: yerel gerçek ses süresi, yaklaşık ağırlıklı zamanlama, SRT/VTT, sürüm/editör/önizleme, sahne ve stok zamanlama handoff'u. [Windows kontrolü ve sınırlar](docs/SUBTITLES.md). Part 7 sahibi tarafından canlı Windows'ta doğrulandı; Part 8 gerçek ses süresi, altyazı ve korunmuş medya sahibi tarafından canlı Windows’ta doğrulandı.
 
 - create SRT/VTT
 - use exact TTS timestamps if available
@@ -57,6 +57,8 @@ Uygulandı: yerel gerçek ses süresi, yaklaşık ağırlıklı zamanlama, SRT/V
 - subtitle preview/edit
 
 ## Part 9 — FFmpeg Editing
+
+Uygulandı: gerçek yerel FFmpeg render, mevcut Part 8 handoff, CPU/NVENC seçimi ve kontrollü fallback, görsel/video/altyazı/müzik, kalıcı işler ve video sürümleri. [Basit Windows kontrolü ve sınırlar](docs/RENDERING.md). RTX 5070/NVENC ve gerçek proje senkronu sahibi tarafından Windows’ta doğrulanmalıdır. **Part 10 başlamadı.**
 - timeline model
 - 1920x1080 normalization
 - clips/images

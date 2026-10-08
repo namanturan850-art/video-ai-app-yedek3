@@ -48,6 +48,9 @@
 - timing metadata if supported
 
 ## Part 8 — Subtitles
+
+Uygulandı: yerel gerçek ses süresi, yaklaşık ağırlıklı zamanlama, SRT/VTT, sürüm/editör/önizleme, sahne ve stok zamanlama handoff'u. [Windows kontrolü ve sınırlar](docs/SUBTITLES.md). Part 7 sahibi tarafından canlı Windows'ta doğrulandı; Part 8 gerçek ses senkronu Windows kontrolü bekler. **Part 9 başlamadı.**
+
 - create SRT/VTT
 - use exact TTS timestamps if available
 - fallback timing strategy

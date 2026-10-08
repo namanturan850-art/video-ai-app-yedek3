@@ -23,3 +23,12 @@
 
 #narration-content audio{display:block;width:100%;max-width:500px;margin:16px 0}#narration-content p{overflow-wrap:anywhere}#settings-ai33 [data-role=tts-diagnostic],#narration-diagnostic{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem}
 #settings-ai33 audio{display:block;width:100%;max-width:500px;margin:12px 0}#settings-ai33 [hidden]{display:none}#settings-ai33 [data-role=voice-info-body]{overflow-wrap:anywhere}
+/* Local Part 8 preview/editor: readable on desktop and narrow screens. */
+.subtitle-preview { white-space:pre-wrap; font-size:1.35rem; text-align:center; min-height:4rem; padding:1rem; background:#eef5f3; border-radius:.5rem; overflow-wrap:anywhere; }
+.subtitle-cue { display:grid; grid-template-columns:1fr 1fr; gap:1rem; }
+.subtitle-cue h3,.subtitle-cue label:last-child { grid-column:1 / -1; }
+.subtitle-cue label { display:flex; flex-direction:column; gap:.4rem; min-width:0; }
+.subtitle-cue input,.subtitle-cue textarea { width:100%; box-sizing:border-box; }
+.subtitle-cue.current-cue { outline:3px solid #277b70; }
+#subtitles-content audio { width:min(100%,600px); }
+@media(max-width:600px) { .subtitle-cue { grid-template-columns:1fr; } }

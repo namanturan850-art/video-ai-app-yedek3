@@ -34,6 +34,9 @@ from app.provider_diagnostics import ProviderDiagnostics, DiagnosticInputError
 from app.stock.service import StockService
 from app.stock.routes import stock_router
 from app.stock.models import StockError
+from app.narration.service import NarrationService
+from app.narration.routes import narration_router
+from app.narration.models import NarrationError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -70,11 +73,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             application.state.database = initialize_database(storage)
             scripts.recover()
             stock.recover()
+            narration.recover()
         except (OSError, sqlite3.Error) as error:
             raise RuntimeError("Veri klasörü açılamadı. Uygulamayı yazma izniniz olan bir klasöre taşıyıp yeniden açın.") from error
         try:
             yield
         finally:
+            narration.close()
             stock.close()
             ai_diagnostics.close()
             scripts.close()
@@ -96,6 +101,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     stock = StockService(production,settings)
     application.state.stock = stock
     application.include_router(stock_router(stock))
+    narration=NarrationService(scripts,settings)
+    application.state.narration=narration
+    application.include_router(narration_router(narration))
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -110,7 +118,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
-            script_route = any(part in request.url.path for part in ('/script', '/production')) and request.url.path.startswith('/api/projects/')
+            script_route = any(part in request.url.path for part in ('/script', '/production','/narration')) and request.url.path.startswith('/api/projects/')
             stock_route = '/production/stock' in request.url.path
             settings_route = request.url.path.startswith('/api/settings')
             started = time.monotonic()
@@ -120,6 +128,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 if not settings_route and not script_route:
                     raise
                 if script_route:
+                    if '/narration' in request.url.path:
+                        return JSONResponse(status_code=500,content={'message':'Seslendirme işlemi tamamlanamadı. Görev ve dosyalar korundu; sayfayı yenileyin.','category':'unexpected_backend'},headers={'Cache-Control':'no-store'})
                     if stock_route:
                         return JSONResponse(status_code=500, content={'message':'Medya işlemi tamamlanamadı. Tamamlanan dosyalar korundu; yenileyip tekrar deneyin.',
                                                                      'category':'unexpected_backend'}, headers={'Cache-Control':'no-store'})
@@ -186,6 +196,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.exception_handler(StockError)
     async def stock_error(request: Request, error: StockError):
         return JSONResponse(status_code=error.status_code, content={'message': str(error),'category':error.category})
+
+    @application.exception_handler(NarrationError)
+    async def narration_error(request:Request,error:NarrationError):
+        from app.scripts.engine import SecretGuard
+        content={'message':str(error),'category':error.category}
+        if error.diagnostic:content['diagnostic']=error.diagnostic
+        return JSONResponse(status_code=error.status_code,content=SecretGuard(settings.secret_values()).clean(content))
 
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):
@@ -298,6 +315,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         if scene_plan:
             project['pipeline'][2].update(status='Plan hazır' if scene_plan['status']=='ready' else 'Eski plan / onay gerekli',
                                          message='Sahne planını açıp düzenleyebilirsiniz. Medya, ses ve render sonraki aşamalarda.')
+        voice=narration.view(project_id)
+        if voice['active'] or voice['job']:project['pipeline'][4].update(status='Eski senaryo sürümüne ait' if voice['active'] and voice['active']['stale'] else 'Hazır' if voice['active'] else voice['job']['status_label'] if voice['job'] else 'Bekliyor',
+                                     message='Seslendirme ekranından ses seçimini, görev durumunu ve ses sürümlerini inceleyin.')
         return project
 
     @application.patch("/api/projects/{project_id}")
@@ -390,9 +410,19 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test(section,config,outcome)}
         if section == "ai33":
-            prefix = "AI33 " if section == "ai33" else ""
-            return {"result": {"status": "API belgeleri gerekli", "message": prefix + "API belgeleri gerekli. Bu aşamada gerçek bağlantı testi kapalıdır."}, "settings": settings.safe_view()}
+            config=settings.tts_config()
+            try:outcome=narration.factory(settings).test_connection()
+            except NarrationError as error:outcome={'status':'Hata','message':str(error),'category':error.category}
+            return {'result':outcome,'settings':settings.record_tts_test(config,outcome)}
         raise SettingsInputError("Bu bağlantı testi kullanılamıyor.")
+
+    @application.post('/api/settings/ai33/voices')
+    def tts_voices(payload:dict):
+        if set(payload)-{'provider','search','page','page_size'}:
+            raise NarrationError('invalid_request','Ses arama alanlarını kontrol edin.',422)
+        tested=settings.tts_config()
+        result=narration.factory(settings).list_voices(payload.get('provider'),payload.get('search',''),payload.get('page',1),payload.get('page_size',30))
+        return {'voices':result,'settings':settings.record_tts_voices(tested,result)}
 
     @application.post("/api/settings/gemini/models")
     def gemini_models():
@@ -462,6 +492,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get("/projects/{project_id}")
     @application.get("/projects/{project_id}/script")
     @application.get('/projects/{project_id}/production')
+    @application.get('/projects/{project_id}/narration')
     @application.get("/settings")
     @application.get('/settings/ai-diagnostics')
     @application.get("/diagnostics")

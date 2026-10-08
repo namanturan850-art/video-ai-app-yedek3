@@ -12,7 +12,7 @@ if (window.location.pathname === '/settings') {
     {id: 'gemini', title: 'Gemini (isteğe bağlı)', description: 'Google Gemini Developer API anahtarınızı kaydedin. Gemini Plus / Google AI Pro web aboneliği API erişimi yerine geçmez. Kullanmak zorunda değilsiniz.', fields: [{name: 'model', label: 'Model (API listesinden seçin)', type: 'select'}], secret: true, test: true},
     {id: 'pexels', title: 'Pexels', description: 'Resmî Pexels API ile video ve fotoğraf arayın. Anahtarı önce Kaydet deyin, ardından Bağlantıyı Test Et düğmesine basın.', fields: [], secret: true, test: true},
     {id: 'pixabay', title: 'Pixabay', description: 'Resmî Pixabay API ile video ve görsel arayın. Anahtarı önce Kaydet deyin, ardından Bağlantıyı Test Et düğmesine basın.', fields: [], secret: true, test: true},
-    {id: 'ai33', title: 'AI33', description: 'Planlanan ana seslendirme sağlayıcısı. Bilgiler burada saklanabilir; gerçek bağlantı ve seslendirme kapalıdır.', fields: [{name: 'base_url', label: 'Base URL (belgelenmiş adres varsa)', type: 'url'}, {name: 'voice_id', label: 'Voice ID / Ses kimliği (isteğe bağlı)', type: 'text'}, {name: 'model', label: 'Model (isteğe bağlı)', type: 'text'}], secret: true, test: false}
+    {id:'ai33',title:'AI33 / OpenSpeaker',description:'Anahtarınızı Kaydet, ardından Bağlantıyı Test Et. Ses sağlayıcısını kaydedip Sesleri Getir deyin. Bağlantı testi ücretli ses üretmez.',fields:[{name:'voice_provider',label:'Ses sağlayıcısı',type:'select',choices:[['elevenlabs','ElevenLabs'],['minimax','MiniMax'],['clone','Mevcut klon sesler'],['edge','Microsoft Edge'],['vbee','Vbee'],['fishaudio','Fish Audio']]},{name:'voice_id',label:'Ses',type:'select',choices:[['','Önce Sesleri Getir düğmesine basın']]},{name:'speed',label:'Hız (0,5–1,5)',type:'number'},{name:'base_url',label:'Eski kayıtlı Base URL (uyumluluk için korunur)',type:'url',advanced:true},{name:'model',label:'Eski model alanı (kullanılmaz)',type:'text',advanced:true}],secret:true,test:true}
   ];
   const forms = new Map();
   let loaded = false;
@@ -33,7 +33,7 @@ if (window.location.pathname === '/settings') {
     input.name = field.name;
     if (field.type !== 'select') input.type = field.type;
     if (field.type === 'select') {
-      for (const [value, title] of (provider === 'gemini' ? [['', 'Önce Modelleri Getir düğmesine basın']] : [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']])) {
+      for (const [value, title] of (field.choices || (provider === 'gemini' ? [['', 'Önce Modelleri Getir düğmesine basın']] : [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']]))) {
         const option = element('option', title);
         option.value = value;
         input.append(option);
@@ -43,8 +43,10 @@ if (window.location.pathname === '/settings') {
       input.autocomplete = field.name === 'api_key' ? 'new-password' : 'off';
       input.spellcheck = false;
     }
+    if(provider==='ai33'&&field.type==='number'){input.min='.5';input.max='1.5';input.step='.05';}
+    if(field.advanced)input.readOnly=true;
     wrapper.append(label, input);
-    form.append(wrapper);
+    if(field.advanced){let advanced=form.querySelector('[data-role=advanced]');if(!advanced){advanced=element('details');advanced.dataset.role='advanced';advanced.append(element('summary','Gelişmiş / önceki kayıtlar'),element('p','Resmî API adresi https://api.openspeaker.ai kullanılır. Eski adres ve model silinmez; API anahtarı bu adreslere gönderilmez.','note'));form.append(advanced);}advanced.append(wrapper);}else form.append(wrapper);
   }
   for (const definition of definitions) {
     const form = element('form', '', 'settings-panel');
@@ -102,6 +104,21 @@ if (window.location.pathname === '/settings') {
       actions.append(models);
       form.append(element('p', 'Önce anahtarı Kaydet, sonra Modelleri Getir. Listeden model seçip tekrar Kaydet. Bağlantı testi senaryo üretmez; internet durumuna göre 60 saniyeye kadar sürebilir.', 'note'));
     }
+    if(definition.id==='ai33'){
+      const voiceSearch=element('input');voiceSearch.type='search';voiceSearch.placeholder='Ses adına göre ara';voiceSearch.setAttribute('aria-label','Ses araması');voiceSearch.maxLength=200;
+      const voicePage=element('input');voicePage.type='number';voicePage.min='1';voicePage.max='10000';voicePage.value='1';voicePage.setAttribute('aria-label','Ses listesi sayfası');
+      const voices=element('button','Sesleri Getir');voices.type='button';
+      voices.addEventListener('click',async()=>{
+        if(form.dataset.dirty==='true'){status.textContent='Önce Kaydet düğmesine basın; ses listesi kayıtlı anahtarı kullanır.';return;}
+        setBusy(form,true,definition);status.textContent='AI33 sesleri alınıyor…';
+        try{const result=await request('/api/settings/ai33/voices','POST',{provider:form.elements.namedItem('voice_provider').value,search:voiceSearch.value,page:Number(voicePage.value),page_size:30});showSettings(result.settings,'ai33');status.textContent='Sesleri Getir tamamlandı. Listeden ses seçip Kaydet deyin.';}
+        catch(error){status.textContent=`Hata · ${error.message}`;const diag=form.querySelector('[data-role=tts-diagnostic]');diag.textContent=error.diagnostic?JSON.stringify(error.diagnostic):'';}
+        finally{setBusy(form,false,definition);}
+      });actions.append(voiceSearch,voicePage,voices);
+      const docs=element('p','','note');docs.dataset.role='tts-documentation';form.append(docs);
+      const credit=element('p','','note');credit.dataset.role='tts-credits';form.append(credit);
+      const diag=element('pre');diag.dataset.role='tts-diagnostic';form.append(diag);
+    }
     form.append(actions);
     if (definition.test === false) form.append(element('p', definition.id === 'ai33' ? 'AI33 API belgeleri gerekli' : definition.id === 'openai' ? 'Bu ekranda ayrı bağlantı testi yoktur. Senaryo ekranında üretim deneyebilirsiniz.' : 'API belgeleri gerekli. Bağlantı testi bu aşamada kullanılamaz.', 'note'));
     form.addEventListener('input', () => { form.dataset.dirty = 'true'; });
@@ -145,6 +162,7 @@ if (window.location.pathname === '/settings') {
       const form = forms.get(definition.id);
       const data = settings[definition.id];
       const reset = !loaded || resetSection === definition.id;
+      if(definition.id==='ai33'){const choices=form.elements.namedItem('voice_id');choices.replaceChildren();const empty=element('option','Önce Sesleri Getir düğmesine basın');empty.value='';choices.append(empty);for(const voice of data.voices||[]){const opt=element('option',voice.display_name||voice.voice_id);opt.value=voice.voice_id;choices.append(opt);}if(data.voice_id&&!Array.from(choices.options).some(o=>o.value===data.voice_id)){const legacy=element('option','Önceki kayıtlı ses (henüz doğrulanmadı)');legacy.value=data.voice_id;choices.append(legacy);}choices.value=data.voice_id||'';form.querySelector('[data-role=tts-documentation]').textContent=data.documentation_message||'';}
       if (definition.id === 'gemini') showGeminiModels(data.models, reset ? data.model : form.elements.namedItem('model').value);
       if (reset) {
         for (const field of definition.fields) {
@@ -179,7 +197,7 @@ if (window.location.pathname === '/settings') {
       body = {};
       for (const field of definition.fields) {
         const input = form.elements.namedItem(field.name);
-        body[field.name] = field.type === 'checkbox' ? input.checked : input.value;
+        body[field.name] = field.type === 'checkbox' ? input.checked : field.type==='number'?Number(input.value):input.value;
       }
       if (definition.secret && form.elements.namedItem('api_key').value) body.api_key = form.elements.namedItem('api_key').value;
       if (definition.id === 'gemini' && body.api_key) body.model = ''; // Save a new key before discovering its models.
@@ -189,7 +207,7 @@ if (window.location.pathname === '/settings') {
     try {
       const result = await request(`/api/settings/${definition.id}${method === 'POST' ? '/test' : ''}`, method, body);
       showSettings(result.settings || result, method === 'POST' ? null : definition.id);
-      if (method === 'POST') status.textContent = `${result.result.status} · ${result.result.message}`;
+      if (method === 'POST') {status.textContent = `${result.result.status} · ${result.result.message}`;if(definition.id==='ai33')form.querySelector('[data-role=tts-credits]').textContent=result.result.credits_message||'';}
       pageStatus.textContent = method === 'POST' ? 'Bağlantı kontrolü tamamlandı.' : method === 'DELETE' ? 'Bu bölümdeki kayıtlı bilgiler temizlendi.' : 'Ayarlar kaydedildi. Anahtarlar yalnızca bu bilgisayarda saklanır.';
     } catch (error) { status.textContent = `Hata · ${error.message}`; }
     finally { setBusy(form, false, definition); }

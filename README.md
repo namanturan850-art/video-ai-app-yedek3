@@ -2,6 +2,8 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
+**Part 7 seslendirme taslağı:** AI33 / OpenSpeaker ayarları, salt okunur bağlantı testi ve yerel seslendirme iş/sürüm altyapısı eklendi. Resmî ses listesi ve görev çıktı alanları bekleniyor; ücretli üretim kapalı, henüz birleştirmeye hazır değil. [Basit Windows kontrolü](docs/NARRATION.md) ve [eksik API belgeleri](AI33_INTEGRATION_NOTES.md).
+
 **Sağlayıcı sorunlarını ayırmak için:** Ayarlar → **AI Tanılama**. Şifreli kayıt, bağlantı, kısa üretim, JSON ve tek senaryo bölümü ayrı test edilir. [Çok basit Windows adımları](docs/AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; otomatik test başarısı canlı API başarısı değildir.
 
 **Aşama 1–5 hazır; Aşama 6 stok medya eklendi:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler, genel amaçlı YouTube senaryo motoru, düzenlenebilir sahne planları ve Pexels/Pixabay medya yuvaları. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Gerçek video üretimi henüz yoktur. Yeni stok akışının canlı Windows kontrolü sahibi tarafından yapılmalıdır.

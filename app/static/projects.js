@@ -194,6 +194,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       for (const stage of project.pipeline) {
         const item = make('li'); item.append(make('h3', stage.name), make('span', stage.status, 'badge'), make('p', stage.message, 'note'));
         if (stage.name === 'Senaryo') item.append(link('Senaryoyu Aç', `/projects/${id}/script`, 'action-link'));
+        if(stage.name==='Seslendirme')item.append(link('Seslendirmeyi Aç',`/projects/${id}/narration`,'action-link'));
         pipeline.append(item);
       }
       detail.append(pipeline);

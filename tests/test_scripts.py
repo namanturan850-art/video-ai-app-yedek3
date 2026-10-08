@@ -9,7 +9,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import initialize_database, PROJECT_SCHEMA
+from app.database import initialize_database, PROJECT_SCHEMA, SCHEMA_VERSION
 from app.main import create_app
 from app.providers.base import ScriptProvider, ScriptProviderError
 from app.providers.gemini import GeminiScriptProvider
@@ -339,7 +339,7 @@ def test_schema3_upgrade_preserves_projects_and_creates_only_script_tables(tmp_p
     initialize_database(tmp_path)
     with closing(sqlite3.connect(tmp_path / 'app.db')) as connection:
         assert connection.execute('SELECT value FROM personal_data').fetchone()[0] == 'keep'
-        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == '7'
+        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
         assert connection.execute("SELECT name FROM sqlite_master WHERE name='script_versions'").fetchone()
 
 

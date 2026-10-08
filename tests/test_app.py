@@ -47,7 +47,7 @@ def test_pages_and_static_assets(client, route):
 
 
 def test_diagnostics_without_ffmpeg_or_secrets(client, monkeypatch):
-    monkeypatch.setattr("app.main.shutil.which", lambda name: None)
+    monkeypatch.setattr("app.rendering.tools.shutil.which", lambda name: None)
     monkeypatch.setenv("AI33_API_KEY", "TEST-SECRET-MUST-NOT-LEAK")
     response = client.get("/api/diagnostics")
     assert response.status_code == 200

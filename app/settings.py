@@ -1,7 +1,6 @@
 """Part 2 configuration only; no content or project generation."""
 from typing import Literal
 from urllib.parse import urlsplit
-import shutil
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
@@ -151,10 +150,14 @@ def mask_secret(value: str) -> str:
 
 
 def ffmpeg_status() -> dict:
-    executable = shutil.which("ffmpeg")
-    return {"status": "Hazır" if executable else "Yapılandırılmadı", "found": bool(executable),
-            "executable_path": executable or "",
-            "message": "Bulundu" if executable else "Bulunamadı. Ayarlar ekranını kullanmak için FFmpeg gerekmez."}
+    from app.rendering import tools
+    from app.rendering.models import RenderError
+    try:
+        detected=tools.discover()
+        return {'status':detected['status'],'found':detected['found'],
+                'executable_path':'','message':detected['message']}
+    except RenderError as error:
+        return {'status':'Hata','found':False,'executable_path':'','message':str(error)}
 
 
 class SettingsService:

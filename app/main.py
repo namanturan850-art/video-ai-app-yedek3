@@ -2,7 +2,6 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
 import platform
-import shutil
 import sqlite3
 import tempfile
 import logging
@@ -14,7 +13,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-import subprocess
 
 from app import __version__
 from app.database import database_healthy, initialize_database
@@ -423,16 +421,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             return {"result": outcome, "settings": view}
         if section == "ffmpeg":
             detected = ffmpeg_status()
-            try:
-                if not detected["found"]:
-                    raise OSError()
-                completed = subprocess.run([detected["executable_path"], "-version"], timeout=5,
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                if completed.returncode:
-                    raise OSError()
-                outcome = {"status": "Hazır", "message": "FFmpeg bulundu ve çalışıyor."}
-            except (OSError, subprocess.SubprocessError):
-                outcome = {"status": "Hata", "message": "FFmpeg çalıştırılamadı veya bulunamadı. Ayarlar ekranını yine kullanabilirsiniz."}
+            outcome = {'status':'Hazır' if detected['found'] else 'Hata','message':detected['message']}
             return {"result": outcome, "settings": settings.safe_view()}
         if section in ('pexels','pixabay'):
             from app.stock.providers import make_stock_provider
@@ -537,7 +526,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             "operating_system": platform.system(),
             "database_ok": database_healthy(storage / "app.db"),
             "data_directory_writable": directory_writable(storage),
-            "ffmpeg_found": shutil.which("ffmpeg") is not None,
+            "ffmpeg_found": ffmpeg_status()["found"],
             "providers": "Senaryo motorları: Gemini, Ollama ve OpenAI (isteğe bağlı). Anahtarlar yalnızca Ayarlar ekranında yönetilir.",
         }
 

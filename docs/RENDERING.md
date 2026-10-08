@@ -44,7 +44,7 @@ Ses süresi ana saattir. Yuvaların 0 → ses sonu kapsamı doğrulanır; yalnı
 
 ## FFmpeg davranışı
 
-- Mevcut PATH FFmpeg, ardından dahili onaylı konum varsa, ardından uygulama kökündeki mevcut `tools/ffmpeg/ffmpeg.exe` incelenir. HTTP ile executable yolu alınmaz, indirme yapılmaz. ffprobe PATH/FFmpeg yanı üzerinden bulunur.
+- Ayarlar, Tanılama ve Render tek `app/rendering/tools.py:discover` algılayıcısını kullanır. PATH FFmpeg, güncel kullanıcının `%LOCALAPPDATA%/Microsoft/WinGet/Links/ffmpeg.exe` bağlantısı (eski PATH için), dahili onaylı konum ve mevcut `tools/ffmpeg/ffmpeg.exe` kontrol edilir. WinGet symlink/reparse bağlantısı `Path.resolve(strict=True)` ile çözülür; yalnız gerçek, normal yerel dosya sürüm çıktısı doğrulanınca çalıştırılır. UNC/ağ sürücüsü/URL/dizin/bozuk bağlantı reddedilir. HTTP executable yolu, indirme veya tüm diski tarama yoktur. ffprobe aynı güvenlik/sürüm kontrolüyle PATH, çözülmüş FFmpeg yanında ve WinGet Links içinde aranır. UI mutlak executable yolunu göstermez. **Durumu Yenile** 30 saniyelik render önbelleğini atlayarak yeni algılama yapar; FFmpeg’i yeniden kurmanız gerekmez.
 - Otomatik, listelenen `h264_nvenc` encoder’ını tercih eder. Listelenmesi GPU sürücüsünün çalıştığını kanıtlamaz. Yalnız belirgin NVENC başlatma hatasında **aynı iş ve sürüm** bir kez libx264 ile denenir. Açık NVIDIA seçiminde veya farklı hatalarda otomatik tekrar yoktur.
 - Video ve JPG/PNG/WEBP, oran korunarak 1920×1080’e ölçeklenir/kırpılır; kare hızı 30, piksel biçimi yuv420p, renk metadata’sı tutarlı BT.709/limited olur. Uzun videolar merkezden alınır; kısa videolar döngülenir. Stok sesi hiç kullanılmaz.
 - Görsellerde mevcut `slow_zoom`, `ken_burns` ve `pan` için hafif hareket uygulanır. Destek yoksa durağan görsel ve uyarı kullanılır.

@@ -153,26 +153,36 @@ def test_masking(value, expected):
         assert value not in mask_secret(value)
 
 
-@pytest.mark.parametrize('path', ['/fake/ffmpeg', None])
-def test_ffmpeg_detection(settings_client, monkeypatch, path):
-    monkeypatch.setattr('app.settings.shutil.which', lambda name: path)
+@pytest.mark.parametrize('present', [True, False])
+def test_ffmpeg_detection(settings_client, monkeypatch, tmp_path, present):
+    from app.rendering import tools
+    path=tmp_path/'ffmpeg.exe';path.touch()
+    monkeypatch.delenv('LOCALAPPDATA',raising=False)
+    monkeypatch.setattr(tools.shutil,'which',lambda name:str(path) if name=='ffmpeg' and present else None)
+    def inspect(exe,args):
+        assert Path(exe)==path
+        return 'ffmpeg version fixture' if args==['-version'] else 'libx264 ass'
+    monkeypatch.setattr(tools,'inspect',inspect)
     data = settings_client.get('/api/settings').json()['ffmpeg']
-    assert data['found'] == bool(path)
-    assert data['executable_path'] == (path or '')
-    assert 'Bulundu' in data['message'] if path else 'Bulunamadı' in data['message']
+    assert data['found'] is present
+    assert data['executable_path']==''  # safe status, no absolute executable path
+    assert data['status']==('Hazır' if present else 'Bulunamadı')
     assert settings_client.get('/settings').status_code == 200
 
 
-def test_ffmpeg_test_success_and_failure(settings_client, monkeypatch):
-    import types
-    monkeypatch.setattr('app.settings.shutil.which', lambda name: '/fake/ffmpeg')
-    def run(args, **kwargs):
-        assert args == ['/fake/ffmpeg', '-version']
-        assert kwargs['timeout'] == 5
-        return types.SimpleNamespace(returncode=0)
-    monkeypatch.setattr('app.main.subprocess.run', run)
+def test_ffmpeg_test_success_and_failure(settings_client, monkeypatch, tmp_path):
+    from app.rendering import tools
+    path=tmp_path/'ffmpeg.exe';path.touch()
+    monkeypatch.delenv('LOCALAPPDATA',raising=False)
+    monkeypatch.setattr(tools.shutil,'which',lambda name:str(path) if name=='ffmpeg' else None)
+    calls=[]
+    def inspect(exe,args):
+        calls.append(args)
+        return 'ffmpeg version fixture' if args==['-version'] else 'libx264 ass'
+    monkeypatch.setattr(tools,'inspect',inspect)
     assert settings_client.post('/api/settings/ffmpeg/test').json()['result']['status'] == 'Hazır'
-    monkeypatch.setattr('app.settings.shutil.which', lambda name: None)
+    assert ['-version'] in calls and ['-hide_banner','-encoders'] in calls
+    monkeypatch.setattr(tools.shutil,'which',lambda name:None)
     assert settings_client.post('/api/settings/ffmpeg/test').json()['result']['status'] == 'Hata'
 
 

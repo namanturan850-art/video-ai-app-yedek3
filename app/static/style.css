@@ -22,3 +22,4 @@
 .stock-slot .settings-actions {flex-wrap:wrap}
 
 #narration-content audio{display:block;width:100%;max-width:500px;margin:16px 0}#narration-content p{overflow-wrap:anywhere}#settings-ai33 [data-role=tts-diagnostic],#narration-diagnostic{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.85rem}
+#settings-ai33 audio{display:block;width:100%;max-width:500px;margin:12px 0}#settings-ai33 [hidden]{display:none}#settings-ai33 [data-role=voice-info-body]{overflow-wrap:anywhere}

@@ -1,7 +1,7 @@
 """Official verified request routes; unknown response schemas fail closed.
 
-The 2026-10-08 public OpenAPI does NOT define voice records or task completion
-fields/states. Do not infer those from names commonly used by other TTS APIs.
+The owner verified v3 voice records. Task completion/output fields remain
+unverified; paid generation stays blocked until those are supplied.
 """
 import json
 import time
@@ -13,6 +13,7 @@ from app.narration.models import OFFICIAL_BASE,VOICE_PROVIDERS,VOICE_ID_PREFIXES
 from app.narration.read_client import OpenSpeakerReadClient,LOG,shape_diagnostic
 from app.scripts.engine import SecretGuard
 from app.scripts.models import ScriptError
+from app.narration.voices import normalize_voices
 
 
 @runtime_checkable
@@ -42,11 +43,12 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
                 with client.stream(method,OFFICIAL_BASE+path,params=params,headers={'xi-api-key':key},**multipart) as response:
                     status=response.status_code
                     if status!=200:
-                        category={401:'key_rejected',403:'key_rejected',422:'invalid_request',429:'rate_limit'}.get(status,
+                        category='task_history_unavailable' if operation=='tasks' and status in (404,405) else {401:'key_rejected',403:'key_rejected',422:'invalid_request',429:'rate_limit'}.get(status,
                                   'task_create_failed' if method=='POST' else 'task_poll_failed' if operation=='poll' else 'connection_error')
                         messages={'key_rejected':'API anahtarı reddedildi. Ayarlardaki anahtarı kontrol edin.',
                                   'invalid_request':'AI33 isteği kabul etmedi. Ses seçimini ve ayarları kontrol edin.',
-                                  'rate_limit':'AI33 istek sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.'}
+                                  'rate_limit':'AI33 istek sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
+                                  'task_history_unavailable':'Görev geçmişi bu API yanıtında kullanılamıyor. Ses ayarları korundu; bu uç noktanın hesap erişimini kontrol edin.'}
                         raise NarrationError(category,messages.get(category,'AI33 isteği tamamlanamadı. Daha sonra tekrar deneyin.'))
                     raw=bytearray()
                     for chunk in response.iter_bytes():
@@ -70,11 +72,14 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
             raise NarrationError('invalid_request','Ses sağlayıcısını, aramayı ve sayfa seçimini kontrol edin.',422)
         SecretGuard(self.secrets).validate((provider,search))
         data,status=self._request('voices','/v3/voices',params={'provider':provider,'search':search,'page':page,'page_size':page_size})
-        diagnostic=shape_diagnostic(data,'voices',status,self.secrets)
-        # Owner's live diagnostic verifies data[] but not its record ID/name
-        # meanings. Inspect only data[0] field names/types, never guess a mapping.
-        LOG.info('narration operation=voices result=unverified_schema fields=%s data_first_item_fields=%s',diagnostic['top_level_fields'],diagnostic['data_first_item_fields'])
-        raise NarrationError('unexpected_voice_schema','AI33 ses kayıtlarının kimlik/ad alanları henüz doğrulanmadı. Ücretli görev başlatılmadı; resmî ses yanıtı örneği gerekli.',502,diagnostic)
+        return normalize_voices(data,provider,status,self.secrets)
+
+    def task_history_diagnostic(self):
+        # Official GET /v1/tasks; no guessed type filter, no task creation.
+        data,status=self._request('tasks','/v1/tasks')
+        diagnostic=shape_diagnostic(data,'tasks',status,self.secrets)
+        LOG.info('narration operation=tasks result=read_only diagnostic=%s',diagnostic)
+        return diagnostic
 
     def synthesize(self,text,voice,options):
         # Success fields verified in the owner's authenticated documentation

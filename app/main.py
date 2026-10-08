@@ -424,6 +424,12 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         result=narration.factory(settings).list_voices(payload.get('provider'),payload.get('search',''),payload.get('page',1),payload.get('page_size',30))
         return {'voices':result,'settings':settings.record_tts_voices(tested,result)}
 
+    @application.post('/api/settings/ai33/tasks/diagnose')
+    def tts_task_history(payload:dict):
+        if payload:raise NarrationError('invalid_request','Görev geçmişi tanısı ek alan almaz.',422)
+        diagnostic=narration.factory(settings).task_history_diagnostic()
+        return {'diagnostic':diagnostic,'message':'Görev geçmişi yanıtı alındı. Yalnız alan adları ve türleri gösterilir; yeni görev oluşturulmadı.'}
+
     @application.post("/api/settings/gemini/models")
     def gemini_models():
         config = settings.gemini_config()

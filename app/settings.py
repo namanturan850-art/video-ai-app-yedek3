@@ -221,7 +221,7 @@ class SettingsService:
                                   voices=guard.clean(config.get('available_voices',[])),
                                   voice_name=guard.clean(config.get('voice_name','')),
                                   contract_ready=OpenSpeakerProvider.contract_ready,
-                                  documentation_message='' if OpenSpeakerProvider.contract_ready else 'Ses kayıtları ve tamamlanan görev çıktı alanları için giriş sonrası API belgesi gerekli. Ücretli görev başlatılmaz.')
+                                  documentation_message='' if OpenSpeakerProvider.contract_ready else 'Ses listesi kullanılabilir. Tamamlanan TTS görevindeki ses çıktı alanı henüz doğrulanmadı; ücretli seslendirme ve üretim önizlemesi kapalıdır.')
                     message = 'Anahtar kaydedildi. Bağlantı testi yalnız kredi erişimini kontrol eder; ses üretmez.' if key else message
                 test = config.get("last_test")
                 if name=='ai33' and test and test.get('status')=='API belgeleri gerekli':test=None
@@ -283,11 +283,11 @@ class SettingsService:
             updated = model.model_dump(exclude_unset=True, exclude={"api_key"})
             if section=='ai33':
                 config=values[section]
-                if 'voice_id' in updated and updated['voice_id'] and updated['voice_id']!=config['voice_id']:
+                if 'voice_id' in updated and updated['voice_id']:
                     voices=config.get('available_voices',[])
                     chosen=next((v for v in voices if v['voice_id']==updated['voice_id'] and v['provider']==updated.get('voice_provider',config['voice_provider'])),None)
-                    if not chosen:raise SettingsInputError('Önce Sesleri Getir düğmesiyle doğrulanmış listeden ses seçin. Ses yanıt belgesi henüz doğrulanmadı.')
-                    config['voice_name']=chosen['display_name']
+                    if chosen:config['voice_name']=chosen['display_name']
+                    elif updated['voice_id']!=config['voice_id']:raise SettingsInputError('Önce Sesleri Getir düğmesiyle doğrulanmış listeden ses seçin.')
                 if 'voice_provider' in updated and updated['voice_provider']!=config['voice_provider']:
                     if not updated.get('voice_id') or updated['voice_id']==config['voice_id']:updated['voice_id']=''
                     config['available_voices']=[];config['voice_name']=''

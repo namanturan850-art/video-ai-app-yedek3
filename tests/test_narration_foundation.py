@@ -21,7 +21,7 @@ from app.database import initialize_database
 from test_projects import client
 
 KEY='synthetic-tts-secret-334455'
-URL='https://api.openspeaker.ai/fixture-only.wav?token=private-fixture-token'
+URL='https://api.ai33.pro/fixture-only.wav?token=private-fixture-token'
 
 
 def wav_data():
@@ -114,7 +114,7 @@ def test_local_audio_download_atomic_no_secrets_no_token_log_and_real_duration(a
         calls.append(request)
         assert 'xi-api-key' not in request.headers and 'Authorization' not in request.headers
         return httpx.Response(200,headers={'Content-Type':'audio/wav','Content-Length':str(len(body))},content=body)
-    result=AudioDownloader(projects,transport=httpx.MockTransport(serve)).download(pid,URL,{'api.openspeaker.ai'})
+    result=AudioDownloader(projects,transport=httpx.MockTransport(serve)).download(pid,URL,{'api.ai33.pro'})
     path=audio_path(projects,pid,result)
     assert path.read_bytes()==body and result['duration']==1 and result['format']=='wav'
     assert result['local_path'].startswith('voice/') and not list(path.parent.glob('.audio-*'))
@@ -134,16 +134,16 @@ def test_bad_audio_download_cleanup_and_preserve_existing(audio_project,status,m
     headers={'Content-Type':mime}
     if declared:headers['Content-Length']=str(declared)
     downloader=AudioDownloader(projects,transport=httpx.MockTransport(lambda r:httpx.Response(status,headers=headers,content=body)))
-    with pytest.raises(NarrationError) as error:downloader.download(pid,URL,{'api.openspeaker.ai'})
+    with pytest.raises(NarrationError) as error:downloader.download(pid,URL,{'api.ai33.pro'})
     assert error.value.category==category and old.read_bytes()==wav_data()
     assert list(folder.iterdir())==[old]
 
 
-@pytest.mark.parametrize('url',['http://api.openspeaker.ai/a.wav','https://localhost/a.wav','https://127.0.0.1/a.wav',
-                              'https://api.openspeaker.ai.evil.test/a.wav','https://user:password@api.openspeaker.ai/a.wav',
-                              'https://api.openspeaker.ai:8443/a.wav','https://api.openspeaker.ai/a.wav#private'])
+@pytest.mark.parametrize('url',['http://api.ai33.pro/a.wav','https://localhost/a.wav','https://127.0.0.1/a.wav',
+                              'https://api.ai33.pro.evil.test/a.wav','https://user:password@api.ai33.pro/a.wav',
+                              'https://api.ai33.pro:8443/a.wav','https://api.ai33.pro/a.wav#private'])
 def test_audio_only_verified_output_hosts_allowed(url):
-    with pytest.raises(NarrationError):safe_audio_url(url,{'api.openspeaker.ai'})
+    with pytest.raises(NarrationError):safe_audio_url(url,{'api.ai33.pro'})
 
 
 def test_probe_missing_optional_tools_keeps_audio(audio_project,monkeypatch):
@@ -171,5 +171,23 @@ def test_additive_v7_upgrade_preserves_existing_data(audio_project):
 def test_truncated_wav_rejected_even_if_http_length_matches(audio_project):
     projects,pid=audio_project;body=wav_data()[:60]
     downloader=AudioDownloader(projects,transport=httpx.MockTransport(lambda r:httpx.Response(200,headers={'Content-Type':'audio/wav'},content=body)))
-    with pytest.raises(NarrationError) as error:downloader.download(pid,URL,{'api.openspeaker.ai'})
+    with pytest.raises(NarrationError) as error:downloader.download(pid,URL,{'api.ai33.pro'})
     assert error.value.category=='invalid_audio' and list(directory(projects,pid).iterdir())==[]
+
+
+@pytest.mark.parametrize('records',[None,[],['private-first-value'],[123],[None],{'unexpected':'private'},[{}]])
+def test_voice_diagnostic_missing_or_non_object_first_item_safe(records):
+    body={'data':records,'success':True}
+    result=shape_diagnostic(body,'voices',200,(KEY,))
+    assert result['data_first_item_fields']==[]
+    assert 'private-first-value' not in json.dumps(result) and 'private' not in json.dumps(result)
+
+
+def test_nested_diagnostics_bounded_and_not_recursive():
+    voice={f'field_{i}':KEY for i in range(100)}
+    metadata={f'field_{i}':URL for i in range(100)}
+    assert len(shape_diagnostic({'data':[voice]},'voices',200,(KEY,))['data_first_item_fields'])==40
+    assert len(shape_diagnostic({'metadata':metadata},'poll',200,(KEY,))['metadata_fields'])==40
+    unrelated=shape_diagnostic({'data':[voice],'metadata':metadata},'credits',200,(KEY,))
+    assert 'data_first_item_fields' not in unrelated and 'metadata_fields' not in unrelated
+    assert KEY not in json.dumps(unrelated) and URL not in json.dumps(unrelated)

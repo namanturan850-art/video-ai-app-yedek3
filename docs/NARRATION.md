@@ -4,7 +4,7 @@
 
 Ayarlar → **AI33 / OpenSpeaker** ekranında anahtar kaydetme/maskeleme, sağlayıcı ve hız, salt okunur bağlantı testi çalıştırılabilir. Eski kayıtlar korunur. Projede **Seslendirmeyi Aç** bağlantısı ve Seslendirme ekranı vardır.
 
-**Part 7 henüz birleştirmeye hazır değildir.** Herkese açık API belgesi ses kaydının ve tamamlanan görevin alanlarını tanımlamıyor. Görev oluşturma örneği alındı; ses listesi ve görev sonucu örnekleri hâlâ gerekli. Bu yüzden Sesleri Getir güvenli belge tanısı gösterir; **Ses Önizle / Oluştur / Yeniden Oluştur kapalıdır ve kredi harcanmaz**. Bilinmeyen alanlar tahmin edilmedi. Ayrıntı: [doğrulanan ve eksik API sözleşmeleri](../AI33_INTEGRATION_NOTES.md).
+**Part 7 henüz birleştirmeye hazır değildir.** Herkese açık API belgesi ses kaydının ve tamamlanan görevin alanlarını tanımlamıyor. Sahibinin belgesiyle hedef `https://api.ai33.pro` ve multipart TTS isteği doğrulandı; ses listesi kaydı ve tamamlanan görev sonucu örnekleri hâlâ gerekli. Bu yüzden Sesleri Getir güvenli belge tanısı gösterir; **Ses Önizle / Oluştur / Yeniden Oluştur kapalıdır ve kredi harcanmaz**. Bilinmeyen alanlar tahmin edilmedi. Ayrıntı: [doğrulanan ve eksik API sözleşmeleri](../AI33_INTEGRATION_NOTES.md).
 
 ## Şimdi yapılabilecek basit kontrol
 
@@ -13,7 +13,7 @@ Ayarlar → **AI33 / OpenSpeaker** ekranında anahtar kaydetme/maskeleme, sağla
 3. **Ayarlar → AI33 / OpenSpeaker** bölümünü açın.
 4. API anahtarını yazın ve **Kaydet** deyin. Alan boşalmalı; kayıtlı anahtar yalnız maskeli görünmelidir.
 5. **Bağlantıyı Test Et** deyin. Bu işlem ses üretmez, kredi harcamaz. Başarılı HTTP/JSON okuması bağlantıyı gösterir; kredi sayısı bilinmiyorsa bunun mesajı görünür.
-6. Ses sağlayıcısını seçip **Kaydet → Sesleri Getir** deyin. Bu taslakta resmî yanıt alanları eksik olduğundan güvenli tanı beklenir. Anahtar, başlık veya özel URL görünmemelidir.
+6. Ses sağlayıcısını seçip **Kaydet → Sesleri Getir** deyin. Ses kaydı alanları henüz doğrulanmadığından güvenli tanı beklenir. Tanıda kök alan adları/türleri ve yalnız ilk sesin `data_first_item_fields` alanları görünür; hiçbir alan değeri, anahtar, başlık veya özel URL görünmemelidir. Görev tanısı ayrıca yalnız `metadata_fields` adlarını/türlerini gösterebilir.
 7. Mevcut projenizi açıp **Seslendirmeyi Aç** deyin. Güncel onaylı senaryo/dil/karakter sayısı görünmeli; onay yoksa “Önce senaryo sürümünü onaylayın.” görünmelidir.
 8. Programı kapatıp yeniden açın. Projeler, onaylı senaryolar, sahneler, eski stok dosyaları ve maskeli ayarlar durmalıdır.
 

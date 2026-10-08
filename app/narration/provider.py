@@ -9,7 +9,7 @@ from typing import Protocol,runtime_checkable
 
 import httpx
 
-from app.narration.models import OFFICIAL_BASE,VOICE_PROVIDERS,SCHEMA_MESSAGE,NarrationError,safe_task_id
+from app.narration.models import OFFICIAL_BASE,VOICE_PROVIDERS,VOICE_ID_PREFIXES,SCHEMA_MESSAGE,NarrationError,safe_task_id
 from app.narration.read_client import OpenSpeakerReadClient,LOG,shape_diagnostic
 from app.scripts.engine import SecretGuard
 from app.scripts.models import ScriptError
@@ -28,15 +28,18 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
     contract_ready=False
     output_hosts=frozenset()
 
-    def _request(self,operation,path,*,method='GET',params=None,body=None):
+    def _request(self,operation,path,*,method='GET',params=None,form=None):
         key=self.key.get_secret_value()
         if not key:raise NarrationError('missing_key','Önce Ayarlar → AI33 / OpenSpeaker API anahtarını kaydedin.',422)
         if not key.isascii() or any(ord(c)<33 or ord(c)==127 for c in key):
             raise NarrationError('invalid_request','API anahtarını boşluksuz ve eksiksiz girin.',422)
         started=time.monotonic();status=None;category='success'
         try:
+            # No filenames: these are FormData text fields, not uploaded files.
+            # httpx owns Content-Type and the multipart boundary.
+            multipart={'files':[(name,(None,str(value))) for name,value in form.items()]} if form is not None else {}
             with httpx.Client(timeout=httpx.Timeout(60,connect=10),transport=self.transport,follow_redirects=False) as client:
-                with client.stream(method,OFFICIAL_BASE+path,params=params,json=body,headers={'xi-api-key':key}) as response:
+                with client.stream(method,OFFICIAL_BASE+path,params=params,headers={'xi-api-key':key},**multipart) as response:
                     status=response.status_code
                     if status!=200:
                         category={401:'key_rejected',403:'key_rejected',422:'invalid_request',429:'rate_limit'}.get(status,
@@ -68,10 +71,10 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
         SecretGuard(self.secrets).validate((provider,search))
         data,status=self._request('voices','/v3/voices',params={'provider':provider,'search':search,'page':page,'page_size':page_size})
         diagnostic=shape_diagnostic(data,'voices',status,self.secrets)
-        # Public OpenAPI has only additionalProperties:true, no voice schema.
-        # A list key called "voices"/"data"/"items" is not evidence to invent one.
-        LOG.info('narration operation=voices result=unverified_schema fields=%s',diagnostic['top_level_fields'])
-        raise NarrationError('unexpected_voice_schema','AI33 ses listesi alanları resmî belgede tanımlanmamış. Görev başlatılmadı; ses yanıtı belgesi gerekli.',502,diagnostic)
+        # Owner's live diagnostic verifies data[] but not its record ID/name
+        # meanings. Inspect only data[0] field names/types, never guess a mapping.
+        LOG.info('narration operation=voices result=unverified_schema fields=%s data_first_item_fields=%s',diagnostic['top_level_fields'],diagnostic['data_first_item_fields'])
+        raise NarrationError('unexpected_voice_schema','AI33 ses kayıtlarının kimlik/ad alanları henüz doğrulanmadı. Ücretli görev başlatılmadı; resmî ses yanıtı örneği gerekli.',502,diagnostic)
 
     def synthesize(self,text,voice,options):
         # Success fields verified in the owner's authenticated documentation
@@ -82,8 +85,10 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
             or not isinstance(voice,str) or not voice.strip() or len(voice)>150
             or type(speed) not in (int,float) or not .5<=speed<=1.5):
             raise NarrationError('invalid_request','Ses, metin ve 0,5–1,5 hız aralığını kontrol edin.',422)
+        if not any(voice.startswith(prefix) and len(voice)>len(prefix) for prefix in VOICE_ID_PREFIXES) or any(c.isspace() for c in voice):
+            raise NarrationError('invalid_voice','Ses kimliği belgelenmiş sağlayıcı önekiyle başlamalı. Ses yanıt belgesi doğrulanınca listeden bir ses seçin.',422)
         SecretGuard(self.secrets).validate((text,voice))
-        data,status=self._request('create','/v3/text-to-speech',method='POST',body={'text':text,'voice_id':voice,'speed':speed})
+        data,status=self._request('create','/v3/text-to-speech',method='POST',form={'text':text,'voice_id':voice,'speed':speed,'with_transcript':'false'})
         task_id=None
         if isinstance(data,dict) and 'task_id' in data:
             try:
@@ -103,7 +108,7 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
         SecretGuard(self.secrets).validate(task_id)
         data,status=self._request('poll','/v1/task/'+task_id)
         diagnostic=shape_diagnostic(data,'poll',status,self.secrets)
-        LOG.info('narration operation=poll result=unverified_schema fields=%s task_id_presence=%s',diagnostic['top_level_fields'],diagnostic['task_id_presence'])
+        LOG.info('narration operation=poll result=unverified_schema fields=%s metadata_fields=%s task_id_presence=%s',diagnostic['top_level_fields'],diagnostic['metadata_fields'],diagnostic['task_id_presence'])
         raise NarrationError('unexpected_task_schema',SCHEMA_MESSAGE,502,diagnostic)
 
 

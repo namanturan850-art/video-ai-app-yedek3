@@ -7,6 +7,7 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
   const back=node('a','← Projeye dön');back.href=`/projects/${pid}`;root.append(back);
   const intro=node('p','Bu aşama yalnız seslendirme oluşturur. Sahne planı ve stok dosyaları değişmez. Altyazı ve video render yapılmaz.');
   const status=node('p','Seslendirme bilgileri yükleniyor…');status.setAttribute('role','status');
+  const diagnostic=node('pre');diagnostic.id='narration-diagnostic';
   const source=node('p'),docs=node('p'),controls=node('div');controls.className='settings-actions';
   const form=node('div');form.className='settings-panel';
   function field(label,control){const wrapper=node('div');wrapper.className='setting-field';const title=node('label',label);title.append(control);wrapper.append(title);form.append(wrapper);return control;}
@@ -14,7 +15,7 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
   for(const [value,label] of [['elevenlabs','ElevenLabs'],['minimax','MiniMax'],['clone','Mevcut klon sesler'],['edge','Microsoft Edge'],['vbee','Vbee'],['fishaudio','Fish Audio']]){const o=node('option',label);o.value=value;provider.append(o);}
   const voice=field('Ses',node('select')),speed=field('Hız (0,5–1,5)',node('input'));speed.type='number';speed.min='.5';speed.max='1.5';speed.step='.05';speed.value='1';
   const settings=node('a','Ses seçmek için Ayarlar → AI33 / OpenSpeaker');settings.href='/settings';form.append(settings);
-  const versions=node('section');versions.id='narration-versions';root.append(intro,status,source,docs,form,controls,versions);
+  const versions=node('section');versions.id='narration-versions';root.append(intro,status,diagnostic,source,docs,form,controls,versions);
   let state=null,pending=false,timer=null,loading=false,initialized=false;
   function button(parent,text,fn){const b=node('button',text);b.type='button';b.addEventListener('click',fn);parent.append(b);return b;}
   const active=()=>pending||['queued','running'].includes(state?.job?.status);
@@ -74,6 +75,7 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
     if(loading)return;loading=true;
     try{state=await request(base);if(!initialized){provider.value=state.settings.voice_provider;speed.value=String(state.settings.speed);initialized=true;}voiceChoices();
       const job=state.job;status.textContent=job?job.status==='error'?`${job.error_message} · Tanı: ${job.progress.category}`:job.progress.message:'Seslendirme bilgileri hazır.';
+      diagnostic.textContent=job?.progress?.diagnostic?JSON.stringify(job.progress.diagnostic,null,2):'';
       render();
     }catch(error){status.textContent=error.message;}finally{loading=false;clearTimeout(timer);if(['queued','running'].includes(state?.job?.status))timer=setTimeout(load,1200);}
   }

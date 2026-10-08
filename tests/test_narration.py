@@ -5,6 +5,8 @@ Live provider test must be run by owner on Windows.
 """
 from contextlib import closing
 from copy import deepcopy
+from email.parser import BytesParser
+from email.policy import default as email_policy
 import json
 import logging
 from threading import Event
@@ -22,16 +24,16 @@ from test_scripts import studio,run,HEADERS,KEY as SCRIPT_KEY
 from test_narration_foundation import wav_data
 
 KEY='synthetic-tts-key-8899'
-VOICE={'provider':'edge','voice_id':'fixture-edge-voice','display_name':'Fixture Voice',
+VOICE={'provider':'edge','voice_id':'edge_fixture-voice','display_name':'Fixture Voice',
        'language':'de','gender':'','preview_url':''}
-AUDIO='https://api.openspeaker.ai/fixture-only.wav?token=private-token'
+AUDIO='https://api.ai33.pro/fixture-only.wav?token=private-token'
 SETTINGS_HEADERS={'X-AI-Video-Studio':'settings'}
 
 
 class FakeTTS:
     """Internal boundary only; no claim about undocumented remote task states."""
     contract_ready=True
-    output_hosts={'api.openspeaker.ai'}
+    output_hosts={'api.ai33.pro'}
     def __init__(self):self.creations=[];self.polls=[];self.fail=None;self.pending=1
     def synthesize(self,text,voice,options):
         self.creations.append((text,voice,options))
@@ -75,18 +77,31 @@ def finish(st,response):
 def start(st,**extra):return finish(st,st[0].post(base(st)+'/jobs',json=payload(st,**extra)))
 
 
-def test_official_create_contract_exact_fields_and_no_query_key(caplog):
+def multipart_fields(request):
+    assert request.headers['Content-Type'].startswith('multipart/form-data; boundary=')
+    message=BytesParser(policy=email_policy).parsebytes(b'Content-Type: '+request.headers['Content-Type'].encode()+b'\r\nMIME-Version: 1.0\r\n\r\n'+request.content)
+    assert message.is_multipart()
+    result={}
+    for part in message.iter_parts():
+        assert part.get_filename() is None
+        name=part.get_param('name',header='content-disposition')
+        assert name not in result
+        result[name]=part.get_payload(decode=True).decode('utf-8')
+    return result
+
+
+def test_official_create_contract_multipart_exact_fields_and_no_query_key(caplog):
     caplog.set_level(logging.DEBUG);calls=[]
     def serve(request):
         calls.append(request)
-        assert request.method=='POST' and str(request.url)=='https://api.openspeaker.ai/v3/text-to-speech'
-        assert request.headers['xi-api-key']==KEY and request.headers['Content-Type']=='application/json'
-        assert json.loads(request.content)=={'text':'Approved complete narration.','voice_id':'fixture-edge-voice','speed':1.0}
+        assert request.method=='POST' and str(request.url)=='https://api.ai33.pro/v3/text-to-speech'
+        assert request.headers['xi-api-key']==KEY
+        assert multipart_fields(request)=={'text':'Approved complete narration.','voice_id':'edge_fixture-voice','speed':'1.0','with_transcript':'false'}
         assert KEY not in str(request.url)
         return httpx.Response(200,json={'success':True,'task_id':'uuid_task_id'})
     provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(serve))
     assert isinstance(provider,TTSProvider)
-    assert provider.synthesize('Approved complete narration.','fixture-edge-voice',{'speed':1.0})=={'task_id':'uuid_task_id'}
+    assert provider.synthesize('Approved complete narration.','edge_fixture-voice',{'speed':1.0,'model':'never-send','receive_url':'never-send','with_transcript':True})=={'task_id':'uuid_task_id'}
     assert len(calls)==1 and KEY not in caplog.text
 
 
@@ -331,7 +346,7 @@ def test_actual_settings_routes_official_readonly_and_unknown_voice_shape(narrat
     settings.save('ai33',{'base_url':'https://legacy.example.invalid','model':'old-model'})
     def serve(request):
         calls.append(request)
-        assert request.method=='GET' and request.url.host=='api.openspeaker.ai'
+        assert request.method=='GET' and request.url.host=='api.ai33.pro'
         assert request.headers['xi-api-key']==KEY and KEY not in str(request.url)
         if request.url.path=='/v1/credits':return httpx.Response(200,json={'unverified_balance':123})
         assert request.url.path=='/v3/voices'
@@ -360,3 +375,78 @@ def test_voice_settings_persist_and_new_key_requires_new_discovery(narration_stu
         old=FakeTTS();reopened.app.state.narration.factory=lambda values:old
         failed=reopened.post(base(st)+'/jobs',json=payload(st))
         assert failed.status_code==422 and failed.json()['category']=='invalid_voice' and old.creations==[]
+
+
+@pytest.mark.parametrize('prefix',['elevenlabs_','minimax_','clone_','edge_','kokoro_','vbee_','fishaudio_'])
+def test_documented_voice_prefixes_and_unicode_narration_form(prefix):
+    text='Onaylı Türkçe metin.\nDeğişmez: Grüße, español, français. ✨'
+    calls=[]
+    def serve(request):
+        calls.append(request)
+        assert str(request.url)=='https://api.ai33.pro/v3/text-to-speech'
+        assert multipart_fields(request)=={'text':text,'voice_id':prefix+'fixture-id','speed':'0.85','with_transcript':'false'}
+        return httpx.Response(200,json={'success':True,'task_id':'verified-task'})
+    provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(serve))
+    assert provider.synthesize(text,prefix+'fixture-id',{'speed':.85})=={'task_id':'verified-task'}
+    assert len(calls)==1 and not provider.contract_ready
+
+
+@pytest.mark.parametrize('voice',['unprefixed','provider:voice-id','unknown_voice','edge','edge_',' edge_voice','edge_voice name'])
+def test_invalid_voice_prefix_never_posts(voice):
+    calls=[]
+    provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(lambda r:calls.append(r)))
+    with pytest.raises(NarrationError) as error:provider.synthesize('Approved text.',voice,{'speed':1})
+    assert error.value.category=='invalid_voice' and calls==[]
+
+
+def test_voice_nested_diagnostic_first_record_only_safe_api_and_logs(narration_studio,caplog):
+    st=narration_studio;caplog.set_level(logging.DEBUG)
+    body={'success':True,'format_version':'fixture-format','data':[
+        {'id':'PRIVATE_VOICE_ID','name':'PRIVATE_NAME','provider':'PRIVATE_PROVIDER','preview_url':AUDIO,'nested':{'NEVER_INSPECT':KEY},KEY:'private',AUDIO:'private'},
+        {'SECOND_ITEM_MUST_NOT_BE_INSPECTED':'private'}
+    ],'pagination':{'page':2}}
+    provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(lambda r:httpx.Response(200,json=body)))
+    st[0].app.state.narration.factory=lambda settings:provider
+    r=st[0].post('/api/settings/ai33/voices',headers=SETTINGS_HEADERS,json={'provider':'edge','page':2,'page_size':30})
+    assert r.status_code==502 and not provider.contract_ready
+    diagnostic=r.json()['diagnostic']
+    assert diagnostic['top_level_fields']==[{'name':'success','type':'boolean'},{'name':'format_version','type':'string'},{'name':'data','type':'array'},{'name':'pagination','type':'object'}]
+    assert diagnostic['data_first_item_type']=='object'
+    assert diagnostic['data_first_item_fields']==[{'name':'id','type':'string'},{'name':'name','type':'string'},{'name':'provider','type':'string'},{'name':'preview_url','type':'string'},{'name':'nested','type':'object'}]
+    for value in (KEY,AUDIO,'private-token','PRIVATE_VOICE_ID','PRIVATE_NAME','PRIVATE_PROVIDER','fixture-format','SECOND_ITEM_MUST_NOT_BE_INSPECTED','NEVER_INSPECT'):
+        assert value not in r.text and value not in caplog.text
+
+
+def test_task_metadata_diagnostic_only_names_types_preserves_task(narration_studio,caplog):
+    st=narration_studio;st[5].fail='schema';state=start(st);caplog.set_level(logging.DEBUG)
+    body={'success':True,'task_id':'fixture-task-1','metadata':{
+        'unknown_audio':AUDIO,'status':'UNVERIFIED_STATUS_VALUE','secret':KEY,'nested':{'NEVER_INSPECT':KEY},KEY:AUDIO,AUDIO:KEY
+    }}
+    provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(lambda r:httpx.Response(200,json=body)))
+    st[0].app.state.narration.factory=lambda settings:provider
+    after=finish(st,st[0].post(base(st)+f'/jobs/{state["job"]["id"]}/resume',json={}))
+    diagnostic=after['job']['progress']['diagnostic']
+    assert after['job']['status']=='error' and after['job']['progress']['task_id']=='fixture-task-1'
+    assert diagnostic['metadata_type']=='object'
+    assert diagnostic['metadata_fields']==[{'name':'unknown_audio','type':'string'},{'name':'status','type':'string'},{'name':'secret','type':'string'},{'name':'nested','type':'object'}]
+    assert after['versions'][0]['metadata']['task_id']=='fixture-task-1' and len(st[5].creations)==1
+    for value in (KEY,AUDIO,'private-token','UNVERIFIED_STATUS_VALUE','NEVER_INSPECT'):
+        assert value not in json.dumps(after) and value not in caplog.text
+
+
+def test_base_contract_change_preserves_existing_vault_and_project(narration_studio):
+    st=narration_studio;settings=st[0].app.state.settings
+    settings.save('ai33',{'base_url':'https://api.openspeaker.ai','model':'saved-legacy-model','speed':.9})
+    folder=st[3]/'projects'/st[1]['id'];stock=folder/'stock'/'owner-file.mp4';stock.write_bytes(b'existing-media')
+    vault=(st[3]/'secrets/settings.enc').read_bytes()
+    project=st[0].get(f'/api/projects/{st[1]["id"]}').json()
+    script=st[0].get(f'/api/projects/{st[1]["id"]}/script').json()
+    with TestClient(create_app(st[3]),headers=HEADERS) as reopened:
+        safe=reopened.get('/api/settings').json()['ai33']
+        assert safe['official_base_url']=='https://api.ai33.pro' and not safe['contract_ready']
+        assert safe['base_url']=='https://api.openspeaker.ai' and safe['model']=='saved-legacy-model'
+        assert safe['voice_id']==VOICE['voice_id'] and safe['speed']==.9 and safe['masked_api_key'].endswith('8899')
+        assert reopened.app.state.settings.tts_config()['api_key']==KEY
+        assert reopened.get(f'/api/projects/{st[1]["id"]}').json()==project
+        assert reopened.get(f'/api/projects/{st[1]["id"]}/script').json()==script
+    assert (st[3]/'secrets/settings.enc').read_bytes()==vault and stock.read_bytes()==b'existing-media'

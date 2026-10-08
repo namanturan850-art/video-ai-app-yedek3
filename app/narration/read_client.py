@@ -4,6 +4,7 @@ No undocumented credits/voice/task fields are interpreted. Paid task creation
 must wait for direct verification of the current official response contract.
 """
 import json
+from itertools import islice
 import logging
 import re
 import time
@@ -20,26 +21,43 @@ PRIVATE_READ_KEYS=set()
 class PrivateReadHTTPFilter(logging.Filter):
     def filter(self,record):
         message=record.getMessage().lower()
-        return 'openspeaker.ai' not in message and not any(key.lower() in message for key in tuple(PRIVATE_READ_KEYS))
+        return not any(host in message for host in ('openspeaker.ai','ai33.pro')) and not any(key.lower() in message for key in tuple(PRIVATE_READ_KEYS))
 
 
 for name in ('httpx','httpcore','httpcore.connection','httpcore.http11','httpcore.http2','httpcore.proxy'):
     logging.getLogger(name).addFilter(PrivateReadHTTPFilter())
 
 
-def shape_diagnostic(data,operation,http_status,secrets=()):
-    """Field names/types only; hostile names are discarded, values never saved."""
-    types={str:'string',int:'number',float:'number',bool:'boolean',list:'array',dict:'object',type(None):'null'}
+VALUE_TYPES={str:'string',int:'number',float:'number',bool:'boolean',list:'array',dict:'object',type(None):'null'}
+
+
+def field_shapes(data,secrets):
+    """Bounded shallow inspection: names/types only, never field values."""
     fields=[]
     if isinstance(data,dict):
-        for key,value in list(data.items())[:40]:
+        for key,value in islice(data.items(),40):
             if (not isinstance(key,str) or not re.fullmatch(r'[A-Za-z_][A-Za-z0-9_]{0,49}',key)
                     or any(secret and secret.casefold() in key.casefold() for secret in secrets)):
                 continue
-            fields.append({'name':key,'type':types.get(type(value),'unknown')})
-    return {'operation':operation,'http_status':http_status,'top_level_fields':fields,
-            'response_type':types.get(type(data),'unknown'),
+            fields.append({'name':key,'type':VALUE_TYPES.get(type(value),'unknown')})
+    return fields
+
+
+def shape_diagnostic(data,operation,http_status,secrets=()):
+    """Inspect only the documented diagnostic locations, without recursion."""
+    result={'operation':operation,'http_status':http_status,'top_level_fields':field_shapes(data,secrets),
+            'response_type':VALUE_TYPES.get(type(data),'unknown'),
             'task_id_presence':isinstance(data,dict) and 'task_id' in data}
+    if operation=='voices':
+        records=data.get('data') if isinstance(data,dict) else None
+        first=records[0] if isinstance(records,list) and records else None
+        result.update(data_first_item_type=VALUE_TYPES.get(type(first),'unknown'),
+                      data_first_item_fields=field_shapes(first,secrets))
+    if operation=='poll':
+        metadata=data.get('metadata') if isinstance(data,dict) else None
+        result.update(metadata_type=VALUE_TYPES.get(type(metadata),'unknown'),
+                      metadata_fields=field_shapes(metadata,secrets))
+    return result
 
 
 class OpenSpeakerReadClient:

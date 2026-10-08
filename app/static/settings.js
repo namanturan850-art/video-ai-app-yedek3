@@ -46,7 +46,7 @@ if (window.location.pathname === '/settings') {
     if(provider==='ai33'&&field.type==='number'){input.min='.5';input.max='1.5';input.step='.05';}
     if(field.advanced)input.readOnly=true;
     wrapper.append(label, input);
-    if(field.advanced){let advanced=form.querySelector('[data-role=advanced]');if(!advanced){advanced=element('details');advanced.dataset.role='advanced';advanced.append(element('summary','Gelişmiş / önceki kayıtlar'),element('p','Resmî API adresi https://api.openspeaker.ai kullanılır. Eski adres ve model silinmez; API anahtarı bu adreslere gönderilmez.','note'));form.append(advanced);}advanced.append(wrapper);}else form.append(wrapper);
+    if(field.advanced){let advanced=form.querySelector('[data-role=advanced]');if(!advanced){advanced=element('details');advanced.dataset.role='advanced';advanced.append(element('summary','Gelişmiş / önceki kayıtlar'),element('p','Doğrulanmış API adresi https://api.ai33.pro kullanılır. Önceki adres ve model kayıtları korunur; kayıtlı adres ağ hedefi olarak kullanılmaz.','note'));form.append(advanced);}advanced.append(wrapper);}else form.append(wrapper);
   }
   for (const definition of definitions) {
     const form = element('form', '', 'settings-panel');
@@ -112,7 +112,7 @@ if (window.location.pathname === '/settings') {
         if(form.dataset.dirty==='true'){status.textContent='Önce Kaydet düğmesine basın; ses listesi kayıtlı anahtarı kullanır.';return;}
         setBusy(form,true,definition);status.textContent='AI33 sesleri alınıyor…';
         try{const result=await request('/api/settings/ai33/voices','POST',{provider:form.elements.namedItem('voice_provider').value,search:voiceSearch.value,page:Number(voicePage.value),page_size:30});showSettings(result.settings,'ai33');status.textContent='Sesleri Getir tamamlandı. Listeden ses seçip Kaydet deyin.';}
-        catch(error){status.textContent=`Hata · ${error.message}`;const diag=form.querySelector('[data-role=tts-diagnostic]');diag.textContent=error.diagnostic?JSON.stringify(error.diagnostic):'';}
+        catch(error){status.textContent=`Hata · ${error.message}`;const diag=form.querySelector('[data-role=tts-diagnostic]');diag.textContent=error.diagnostic?JSON.stringify(error.diagnostic,null,2):'';}
         finally{setBusy(form,false,definition);}
       });actions.append(voiceSearch,voicePage,voices);
       const docs=element('p','','note');docs.dataset.role='tts-documentation';form.append(docs);

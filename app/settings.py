@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, f
 from app.secret_store import SettingsStore
 from app.providers.gemini import normalize_model, MODEL_UNAVAILABLE_MESSAGE
 from app.languages import validate_language
+from app.narration.models import OFFICIAL_BASE
 
 
 class SettingsInputError(Exception):
@@ -113,7 +114,7 @@ class GeminiSettings(KeySettings):
 
 
 class AI33Settings(KeySettings):
-    base_url: str = Field(default="https://api.openspeaker.ai", max_length=500)
+    base_url: str = Field(default=OFFICIAL_BASE, max_length=500)
     voice_id: str = Field(default="", max_length=150)
     model: str = Field(default="", max_length=150)
     voice_provider: Literal['elevenlabs','minimax','clone','edge','vbee','fishaudio'] = 'elevenlabs'
@@ -216,7 +217,7 @@ class SettingsService:
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
                 if name == "ai33":
                     from app.narration.provider import OpenSpeakerProvider
-                    public.update(official_base_url='https://api.openspeaker.ai',
+                    public.update(official_base_url=OFFICIAL_BASE,
                                   voices=guard.clean(config.get('available_voices',[])),
                                   voice_name=guard.clean(config.get('voice_name','')),
                                   contract_ready=OpenSpeakerProvider.contract_ready,

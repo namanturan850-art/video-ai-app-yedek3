@@ -6,8 +6,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.scripts.models import ScriptError
 
-OFFICIAL_BASE = 'https://api.openspeaker.ai'
+OFFICIAL_BASE = 'https://api.ai33.pro'
 VOICE_PROVIDERS = ('elevenlabs','minimax','clone','edge','vbee','fishaudio')
+VOICE_ID_PREFIXES = ('elevenlabs_', 'minimax_', 'clone_', 'edge_', 'kokoro_', 'vbee_', 'fishaudio_')
 SCHEMA_MESSAGE = 'AI33 görev yanıtı bu sürümün beklediği biçimden farklı.'
 
 

@@ -1,18 +1,18 @@
 <!doctype html>
 <html lang="tr">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Video Studio</title><link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script><script src="/static/settings-http.js" defer></script><script src="/static/settings-ai33-browser.js" defer></script><script src="/static/settings.js" defer></script><script src="/static/projects.js" defer></script><script src="/static/script-metrics.js" defer></script><script src="/static/script.js" defer></script><script src="/static/image-settings.js" defer></script><script src="/static/production.js" defer></script><script src="/static/stock.js" defer></script><script src="/static/narration.js" defer></script><script src="/static/subtitles-timing.js" defer></script><script src="/static/subtitles.js" defer></script><script src="/static/ai-diagnostics.js" defer></script></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Video Studio</title><link rel="stylesheet" href="/static/style.css"><script src="/static/app.js" defer></script><script src="/static/settings-http.js" defer></script><script src="/static/settings-ai33-browser.js" defer></script><script src="/static/settings.js" defer></script><script src="/static/projects.js" defer></script><script src="/static/script-metrics.js" defer></script><script src="/static/script.js" defer></script><script src="/static/image-settings.js" defer></script><script src="/static/production.js" defer></script><script src="/static/stock.js" defer></script><script src="/static/narration.js" defer></script><script src="/static/subtitles-timing.js" defer></script><script src="/static/subtitles.js" defer></script><script src="/static/render.js" defer></script><script src="/static/ai-diagnostics.js" defer></script></head>
 <body>
 <header><a class="brand" href="/">AI Video Studio</a><span>Yerel çalışma alanınız</span></header>
 <main>
 <section id="dashboard">
-<p class="eyebrow">YOUTUBE ÇALIŞMA ALANI • AŞAMA 4</p><h1>YouTube fikriniz burada şekillensin.</h1>
-<p class="intro">Video üretim yolculuğunuz için sade bir çalışma alanı. Projelerinizi oluşturun ve düzenleyin; üretim aşamaları daha sonra eklenecek.</p>
+<p class="eyebrow">YOUTUBE ÇALIŞMA ALANI • AŞAMA 9</p><h1>YouTube fikriniz burada şekillensin.</h1>
+<p class="intro">Video üretim yolculuğunuz için sade bir çalışma alanı. Projelerinizi oluşturun; senaryo, ses, altyazı ve yerel video adımlarını yönetin.</p>
 <div class="cards">
 <a class="card" href="/new-project"><span class="icon">＋</span><h2>Yeni Proje</h2><p>Yeni bir video fikriyle başlayın.</p><span class="badge ready">Kullanıma hazır</span></a>
 <a class="card" href="/projects"><span class="icon">▤</span><h2>Projeler</h2><p>Çalışmalarınızı bir arada görün.</p><span class="badge ready">Kullanıma hazır</span></a>
 <a class="card" href="/settings"><span class="icon">⚙</span><h2>Ayarlar</h2><p>Çalışma tercihlerinizi yönetin.</p><span class="badge ready">Kullanıma hazır</span></a>
 <a class="card" href="/diagnostics"><span class="icon">✓</span><h2>Tanılama</h2><p>Uygulamanın durumunu kontrol edin.</p><span class="badge ready">Kullanıma hazır</span></a>
-</div><p class="note">Dosyalarınız bilgisayarınızda kalır. Bu sürüm video üretmez. Bağlantı kontrolleri yalnızca düğmeye bastığınızda yapılır.</p>
+</div><p class="note">Dosyalarınız bilgisayarınızda kalır. Video oluşturma mevcut yerel dosyalarla çalışır. Bağlantı kontrolleri yalnızca düğmeye bastığınızda yapılır.</p>
 </section>
 <section id="detail" hidden><a class="back" href="/">← Ana sayfaya dön</a><h1 id="page-title"></h1><p id="page-description"></p>
 <div id="projects-content" hidden></div>
@@ -20,6 +20,7 @@
 <div id="production-content" hidden></div>
 <div id="narration-content" hidden></div>
 <div id="subtitles-content" hidden></div>
+<div id="render-content" hidden></div>
 <div id="settings-content" hidden><p class="note">Anahtarlar bu bilgisayarda şifrelenerek saklanır. Kaydedilen anahtarlar yalnızca maskeli gösterilir. Hiçbir sağlayıcı zorunlu değildir.</p><p><a class="action-link" href="/settings/ai-diagnostics">AI Tanılama →</a></p><p id="settings-status" role="status" aria-live="polite">Ayarlar yükleniyor…</p><button id="settings-reload" type="button">Ayarları tekrar yükle</button><div id="settings-sections"></div></div>
 <div id="ai-diagnostic-content" hidden></div>
 <div id="diagnostic-content" hidden><p id="diagnostic-status" role="status" aria-live="polite">Kontroller yapılıyor…</p><dl id="results"></dl><button id="refresh" type="button">Tekrar kontrol et</button></div>

@@ -40,6 +40,9 @@ from app.narration.models import NarrationError
 from app.subtitles.service import SubtitleService
 from app.subtitles.routes import subtitle_router
 from app.subtitles.models import SubtitleError
+from app.rendering.service import RenderService
+from app.rendering.routes import render_router
+from app.rendering.models import RenderError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -77,11 +80,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             scripts.recover()
             stock.recover()
             narration.recover()
+            rendering.recover()
         except (OSError, sqlite3.Error) as error:
             raise RuntimeError("Veri klasörü açılamadı. Uygulamayı yazma izniniz olan bir klasöre taşıyıp yeniden açın.") from error
         try:
             yield
         finally:
+            rendering.close()
             narration.close()
             stock.close()
             ai_diagnostics.close()
@@ -110,6 +115,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     subtitles=SubtitleService(narration,production,stock)
     application.state.subtitles=subtitles
     application.include_router(subtitle_router(subtitles))
+    rendering=RenderService(subtitles,production,settings)
+    application.state.rendering=rendering
+    application.include_router(render_router(rendering))
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -124,7 +132,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
-            script_route = any(part in request.url.path for part in ('/script', '/production','/narration','/subtitles')) and request.url.path.startswith('/api/projects/')
+            script_route = any(part in request.url.path for part in ('/script', '/production','/narration','/subtitles','/render')) and request.url.path.startswith('/api/projects/')
             stock_route = '/production/stock' in request.url.path
             settings_route = request.url.path.startswith('/api/settings')
             started = time.monotonic()
@@ -134,6 +142,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 if not settings_route and not script_route:
                     raise
                 if script_route:
+                    if "/render" in request.url.path:
+                        logging.getLogger("uvicorn.error.rendering").warning("render operation=request category=unexpected_backend")
+                        return JSONResponse(status_code=500,content={"message":"Video işlemi tamamlanamadı. Önceki videolar ve kaynak dosyalar korundu; tekrar deneyin.","category":"unexpected_backend"},headers={"Cache-Control":"no-store"})
                     if '/subtitles' in request.url.path:
                         logging.getLogger('uvicorn.error.subtitles').warning('subtitles operation=request category=unexpected_backend')
                         return JSONResponse(status_code=500,content={'message':'Altyazı işlemi tamamlanamadı. Önceki sürümler ve dosyalar korundu; sayfayı yenileyin.','category':'unexpected_backend'},headers={'Cache-Control':'no-store'})
@@ -217,6 +228,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     async def subtitle_error(request:Request,error:SubtitleError):
         from app.scripts.engine import SecretGuard
         logging.getLogger('uvicorn.error.subtitles').warning('subtitles operation=request result=failure category=%s',error.category)
+        return JSONResponse(status_code=error.status_code,content=SecretGuard(settings.secret_values()).clean({'message':str(error),'category':error.category}))
+
+    @application.exception_handler(RenderError)
+    async def render_error(request:Request,error:RenderError):
+        from app.scripts.engine import SecretGuard
         return JSONResponse(status_code=error.status_code,content=SecretGuard(settings.secret_values()).clean({'message':str(error),'category':error.category}))
 
     @application.get('/api/projects/{project_id}/script')
@@ -333,6 +349,12 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         voice=narration.view(project_id)
         if voice['active'] or voice['job']:project['pipeline'][4].update(status='Eski senaryo sürümüne ait' if voice['active'] and voice['active']['stale'] else 'Hazır' if voice['active'] else voice['job']['status_label'] if voice['job'] else 'Bekliyor',
                                      message='Seslendirme ekranından ses seçimini, görev durumunu ve ses sürümlerini inceleyin.')
+        rendered=rendering.view(project_id)
+        if rendered['job'] or rendered['active']:
+            video=rendered['active'];job=rendered['job']
+            state='Eski kaynaklara ait' if video and video['stale'] else 'Hazır' if video and not video['video_missing'] else job['status_label'] if job else 'Bekliyor'
+            if job and job['status'] in ('queued','preparing','rendering','validating'):state=job['status_label']
+            project['pipeline'][6].update(status=state,message='Video Oluştur / Render ekranında yerel videoyu inceleyin.')
         subtitle_status=subtitles.pipeline_status(project_id)
         if subtitle_status!='Bekliyor':
             project['pipeline'][5].update(status=subtitle_status,message='Altyazı ve Zamanlama ekranında yaklaşık ses zamanlarını inceleyin.')
@@ -527,6 +549,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/projects/{project_id}/production')
     @application.get('/projects/{project_id}/narration')
     @application.get('/projects/{project_id}/subtitles')
+    @application.get('/projects/{project_id}/render')
     @application.get("/settings")
     @application.get('/settings/ai-diagnostics')
     @application.get("/diagnostics")

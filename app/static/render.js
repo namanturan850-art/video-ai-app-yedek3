@@ -23,7 +23,7 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
     await action(async()=>{await request(base+'/music','POST',f,{'X-Music-Format':f.name.split('.').pop().toLowerCase(),'X-Music-License':'confirmed'});file.value='';});
   });
   const create=button(form,'Videoyu Oluştur',()=>action(async()=>{await request(base+'/jobs','POST',{encoder:encoder.value,subtitle_burned:subtitles.checked,music_enabled:music.checked,music_volume:Number(volume.value),music_fade_in:Number(fadeIn.value),music_fade_out:Number(fadeOut.value),music_ducking:duck.checked});}));create.id='render-create';
-  const refresh=button(form,'Durumu Yenile',()=>load());
+  const refresh=button(form,'Durumu Yenile',()=>load(true));
   async function request(url,method='GET',body=null,extra={}){
     const headers={'X-AI-Video-Studio':'projects',...extra},isFile=body instanceof File;
     if(body&&!isFile)headers['Content-Type']='application/json';
@@ -52,7 +52,7 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
         if(v.video_missing)card.append(el('p','Video dosyası eksik veya değişmiş. Kaynaklar ve kayıtlar korundu.'));versions.append(card);
       }}updateButtons();
   }
-  async function load(){try{state=await request(base);render();status.textContent=activeJob()?'Video yerel olarak oluşturuluyor. Bu sayfayı açık tutabilirsiniz.':state.job?.status==='completed'?'Tamamlandı. Videonun başlangıcını, ortasını ve sonunu kontrol edin.':'Yerel video ayarlarını kontrol edin.';}catch(e){status.textContent=e.message;}}
+  async function load(refreshTools=false){try{state=await request(base+(refreshTools?'?refresh_tools=true':''));render();status.textContent=activeJob()?'Video yerel olarak oluşturuluyor. Bu sayfayı açık tutabilirsiniz.':state.job?.status==='completed'?'Tamamlandı. Videonun başlangıcını, ortasını ve sonunu kontrol edin.':'Yerel video ayarlarını kontrol edin.';}catch(e){status.textContent=e.message;}}
   async function poll(){if(stopped)return;await load();if(!stopped)setTimeout(poll,2000);}
   window.addEventListener('pagehide',()=>{stopped=true;});poll();
 }

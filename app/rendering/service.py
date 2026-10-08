@@ -215,12 +215,12 @@ class RenderService:
         # Queued work runs only to observe cancellation and persist terminal status.
         self.executor.shutdown(wait=True)
 
-    def view(self,pid):
+    def view(self,pid,*,refresh_tools=False):
         self.projects.get(pid);source=None;source_error='';source_category='';opts=options({})
         try:source=self._inputs(pid,opts)
         except RenderError as e:source_error=str(e);source_category=e.category
-        try:tool=self._tools()
-        except RenderError as e:tool={'found':False,'status':'Bulunamadı','message':str(e),'encoders':[]};source_category=e.category
+        try:tool=self._tools(True) if refresh_tools else self._tools()
+        except RenderError as e:tool={'found':False,'status':'Hata','message':str(e),'encoders':[]};source_category=e.category
         summary=None
         if source:
             t=source['timeline'];summary={'duration':t['duration'],'scenes':len(t['scenes']),'slots':len(t['slots']),'videos':sum(m['type']=='video' for m in source['media'].values()),'images':sum(m['type']=='image' for m in source['media'].values()),'subtitles':len(source['handoff']['subtitles']),'overlays':sum(bool(s.get('overlay_text')) for s in t['editing_scenes'])}

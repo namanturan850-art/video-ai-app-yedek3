@@ -16,7 +16,7 @@ from app.scripts.engine import SecretGuard
 from app.scripts.models import ScriptError
 from app.narration.audio import AudioDownloader,audio_path
 from app.narration.models import (NarrationError,PREVIEW_TEXT,Voice,script_fingerprint,
-                                 validate_input,safe_task_id)
+                                 validate_input,safe_task_id,VOICE_ID_PREFIXES)
 from app.narration.provider import make_tts_provider
 
 LOG=logging.getLogger('uvicorn.error.narration')
@@ -105,6 +105,8 @@ class NarrationService:
             voice=next((v for v in config.get('available_voices',[]) if v['provider']==options.voice_provider and v['voice_id']==options.voice_id),None)
             if not voice:raise NarrationError('invalid_voice','Sesleri Getir ile doğrulanmış listeden bir ses seçip kaydedin.',422)
             voice=Voice.model_validate(voice).model_dump()
+            if not any(voice['voice_id'].startswith(p) and len(voice['voice_id'])>len(p) for p in VOICE_ID_PREFIXES) or any(c.isspace() for c in voice['voice_id']):
+                raise NarrationError('invalid_voice','Ses kimliği geçersiz. Ayarlar bölümünden doğrulanmış bir ses seçin.',422)
             old=c.execute("SELECT 1 FROM narration_versions WHERE project_id=? AND kind='narration'",(pid,)).fetchone()
             if old and options.kind=='narration' and not options.regenerate_confirmed:
                 raise NarrationError('regeneration_confirmation','Yeni bir AI33 görevi oluşturulacak ve ek kredi kullanabilir. Mevcut seslendirme korunacak; açık onay gerekli.',409)
@@ -187,6 +189,7 @@ class NarrationService:
                 progress.update(phase='waiting',message='AI33 seslendirme hazırlıyor. Görev bekleniyor.')
                 self._checkpoint(job,meta,progress)
                 result=provider.get_job_status(meta['task_id'])  # INTERNAL normalized contract.
+                if result.get('progress') is not None:progress['percent']=result['progress']
                 if result['state']=='failed':raise NarrationError('task_failed','AI33 görevi başarısız oldu. Mevcut seslendirmeler korundu; görev geçmişini kontrol edin.')
                 if result['state']=='complete':
                     progress.update(phase='downloading',message='Ses dosyası indiriliyor.')
@@ -224,5 +227,5 @@ class NarrationService:
                 'narration_version_id':active['id'] if active else None,'audio_local_path':audio.get('local_path'),
                 'audio_duration':audio.get('duration'),'voice_id':meta.get('voice_id'),'voice_provider':meta.get('voice_provider'),
                 'speed':meta.get('speed'),'target_language':meta.get('target_language',view['target_language']),
-                'transcript':None,'timing_source':'audio_duration' if audio.get('duration') else 'unknown',
+                'transcript':None,'timing_source':'audio_duration' if audio else 'unknown',
                 'scene_timing_source':'estimated','ready':bool(active and audio and not active['stale'] and not active.get('audio_missing'))}

@@ -115,28 +115,39 @@ if (window.location.pathname === '/settings') {
       const pages=element('div','','settings-actions');
       const indicator=element('p','Sayfa 1 · Henüz ses alınmadı.','note');indicator.dataset.role='voice-page';indicator.setAttribute('aria-live','polite');
       const voices=element('button','Sesleri Getir');voices.type='button';
+      voices.dataset.role='voice-load';
       const previous=element('button','Önceki Sayfa','secondary');previous.type='button';previous.dataset.role='voice-previous';
       const next=element('button','Sonraki Sayfa','secondary');next.type='button';next.dataset.role='voice-next';
       const more=element('button','Daha Fazla Ses Yükle','secondary');more.type='button';more.dataset.role='voice-more';
-      const all=element('button','Tüm Sesleri Getir','secondary');all.type='button';
+      const all=element('button','Tüm Sesleri Getir','secondary');all.type='button';all.dataset.role='voice-load';
       async function fetchVoices(mode){
+        if(form.dataset.voiceLoading==='true')return;
         if(form.dataset.dirty==='true'){status.textContent='Önce Kaydet düğmesine basın; ses listesi kayıtlı anahtarı kullanır.';return;}
+        if(mode==='all'&&!window.confirm('Çok sayıda ses yüklemek arayüzü yavaşlatabilir. Devam edilsin mi?'))return;
         const provider=form.elements.namedItem('voice_provider').value,search=voiceSearch.value.trim();
         if(ttsBrowser.state.provider!==provider||ttsBrowser.state.search!==search)ttsBrowser.reset(provider,search);
-        setBusy(form,true,definition);status.textContent='AI33 sesleri alınıyor…';
+        form.dataset.voiceLoading='true';refreshTTSBrowser();status.textContent='AI33 sesleri alınıyor…';
         try{
-          const display=result=>{showSettings(result.settings);refreshTTSBrowser();status.textContent=`Sayfa ${ttsBrowser.state.page} alındı · ${ttsBrowser.state.voices.length} ses listede.`;};
+          const display=result=>{
+            // Only the voice browser changes. Leave other providers and unsaved
+            // fields alone; append options in a batch and reuse existing nodes.
+            const cached=new Map(ttsVoices.map(v=>[v.voice_id,v]));
+            for(const v of result.voices)cached.set(v.voice_id,v);
+            ttsVoices=Array.from(cached.values());
+            populateTTSVoices(form.elements.namedItem('voice_id').value);showSelectedVoice();refreshTTSBrowser();
+            status.textContent=`Sayfa ${ttsBrowser.state.page} alındı · ${ttsBrowser.state.voices.length} ses listede.`;
+          };
           if(mode==='all')await ttsBrowser.all(display);
           else {const page=mode==='previous'?Math.max(1,ttsBrowser.state.page-1):mode==='next'||mode==='more'?ttsBrowser.state.page+1:1;display(await ttsBrowser.page(page,mode==='more'));}
           status.textContent=ttsBrowser.state.voices.length?'Ses listesi hazır. Listeden ses seçip Kaydet deyin.':'Bu sayfada ses bulunamadı. Önceki sayfaya dönün veya aramayı değiştirin.';
         }
         catch(error){status.textContent=`Hata · ${error.message}`;const diag=form.querySelector('[data-role=tts-diagnostic]');diag.textContent=error.diagnostic?JSON.stringify(error.diagnostic,null,2):'';}
-        finally{setBusy(form,false,definition);}
+        finally{form.dataset.voiceLoading='false';refreshTTSBrowser();}
       }
       voices.addEventListener('click',()=>fetchVoices('first'));previous.addEventListener('click',()=>fetchVoices('previous'));
       next.addEventListener('click',()=>fetchVoices('next'));more.addEventListener('click',()=>fetchVoices('more'));all.addEventListener('click',()=>fetchVoices('all'));
       voiceSearch.addEventListener('input',()=>{ttsBrowser.reset(form.elements.namedItem('voice_provider').value,voiceSearch.value.trim());refreshTTSBrowser();});
-      pages.append(previous,next,more,all);browserArea.append(searchLabel,voiceSearch,voices,indicator,pages,element('p','Her sayfada en fazla 30 ses. Tüm Sesleri Getir en fazla 10 sayfa / 300 ses yükler; boş sayfada durur. Sağlayıcı ve arama değişince sayfa 1’e dönülür.','note'));
+      pages.append(previous,next,more,all);browserArea.append(searchLabel,voiceSearch,voices,indicator,pages,element('p','Önce ses adını arayın; ilk 30 eşleşme gelir. Gerektikçe Daha Fazla Ses Yükle kullanın. Tüm Sesleri Getir en fazla 10 sayfa / 300 ses yükler; boş sayfada durur. Sağlayıcı ve arama değişince sayfa 1’e dönülür.','note'));
       form.insertBefore(browserArea,form.elements.namedItem('voice_id').closest('.setting-field'));
       const taskArea=element('section','','setting-field');taskArea.append(element('h3','Mevcut Görevi İncele'));
       const taskLabel=element('label','Task ID');taskLabel.htmlFor='ai33-task-id';
@@ -214,25 +225,24 @@ if (window.location.pathname === '/settings') {
   }
   function refreshTTSBrowser(){
     const form=forms.get('ai33');if(!form)return;
-    const state=ttsBrowser.state,busy=form.dataset.busy==='true';
+    const state=ttsBrowser.state,busy=form.dataset.busy==='true'||form.dataset.voiceLoading==='true';
     form.querySelector('[data-role=voice-page]').textContent=`Sayfa ${state.page} · ${state.initialized?`${state.voices.length} ses listede${state.exhausted?' · Liste sonu / 10 sayfa sınırı':''}`:'Sesleri Getir ile başlayın.'}`;
     form.querySelector('[data-role=voice-previous]').disabled=busy||state.page<=1;
     for(const role of ['voice-next','voice-more'])form.querySelector(`[data-role=${role}]`).disabled=busy||!state.initialized||state.exhausted;
+    for(const control of form.querySelectorAll('[data-role=voice-load]'))control.disabled=busy;
   }
   function selectedVoice(){const form=forms.get('ai33');return ttsVoices.find(v=>v.provider===form.elements.namedItem('voice_provider').value&&v.voice_id===form.elements.namedItem('voice_id').value);}
   function populateTTSVoices(selected){
-    const form=forms.get('ai33'),choices=form.elements.namedItem('voice_id');choices.replaceChildren();
-    const empty=element('option','Sesleri Getir ile listeden bir ses seçin');empty.value='';choices.append(empty);
-    const visible=ttsBrowser.state.initialized?ttsBrowser.state.voices:ttsVoices;
-    for(const voice of visible.filter(v=>v.provider===form.elements.namedItem('voice_provider').value)){const opt=element('option',voice.display_name||voice.voice_id);opt.value=voice.voice_id;choices.append(opt);}
-    if(selected&&!Array.from(choices.options).some(o=>o.value===selected)){const saved=ttsVoices.find(v=>v.provider===form.elements.namedItem('voice_provider').value&&v.voice_id===selected);const legacy=element('option',saved?`${saved.display_name} (seçili ses)`:'Önceki kayıtlı ses (henüz doğrulanmadı)');legacy.value=selected;choices.append(legacy);}
-    choices.value=selected||'';
+    const form=forms.get('ai33'),choices=form.elements.namedItem('voice_id');
+    const provider=form.elements.namedItem('voice_provider').value;
+    const visible=ttsBrowser.state.initialized?ttsBrowser.state.voices:ttsVoices.filter(v=>v.provider===provider).slice(0,30);
+    updateAI33VoiceOptions(choices,visible.filter(v=>v.provider===provider),selected,ttsVoices.find(v=>v.provider===provider&&v.voice_id===selected));
   }
   function showSelectedVoice(){
     const form=forms.get('ai33'),voice=selectedVoice(),audio=form.querySelector('[data-role=voice-audio]');
     if(audio.dataset.voice!==voice?.voice_id){audio.pause();audio.removeAttribute('src');audio.hidden=true;audio.dataset.voice=voice?.voice_id||'';form.querySelector('[data-role=voice-preview-status]').textContent='';}
     form.querySelector('[data-role=voice-preview]').hidden=!voice?.preview_url;
-    const info=form.querySelector('[data-role=voice-info-body]');info.replaceChildren();
+    const info=form.querySelector('[data-role=voice-info-body]');const infoKey=JSON.stringify(voice||null);if(info.dataset.voiceInfo===infoKey)return;info.dataset.voiceInfo=infoKey;info.replaceChildren();
     if(voice){for(const [field,label] of [['description','Açıklama'],['language','Dil'],['locale','Bölge'],['gender','Cinsiyet'],['age','Yaş'],['accent','Aksan'],['category','Kategori'],['use_cases','Kullanım alanları'],['descriptives','Tanımlamalar'],['tags','Etiketler'],['languages','Diller']]){
       const value=voice[field];if(value&&(!Array.isArray(value)||value.length))info.append(element('p',`${label}: ${Array.isArray(value)?value.map(v=>typeof v==='string'?v:JSON.stringify(v)).join(', '):value}`));
     }}form.querySelector('[data-role=voice-info]').hidden=!voice;

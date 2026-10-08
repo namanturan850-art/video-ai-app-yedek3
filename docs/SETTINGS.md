@@ -15,7 +15,7 @@ Anahtar alanı kayıttan sonra boşalır; altında yalnızca maskeli kayıt gör
 - **OpenAI:** Etkinleştir, model ve API anahtarı. Senaryo için etkinleştirip hesabınızda erişilebilir Chat Completions model adını kaydedin. Bağlantı testi resmi model erişimini kontrol eder; içerik üretmez. Bakiye/kota ve üretim uyumluluğu gerçek üretimde ayrıca kontrol edilir. Kullanmak zorunda değilsiniz.
 - **Gemini:** isteğe bağlı Google Gemini Developer API anahtarı ve model. Anahtarı **Kaydet**, **Modelleri Getir**, API listesinden bir model seçip tekrar **Kaydet**, ardından **Bağlantıyı Test Et**. Yalnızca keşfedilen modeller seçilebilir; eski geçersiz değerler Hazır sayılmaz. Sorgular için 60 saniye beklenebilir. Test yalnızca resmi API model listesini okur; senaryo üretmez. Gemini Plus / Google AI Pro web aboneliği API anahtarının yerine geçmez. Ayrıntılar: [Gemini rehberi](GEMINI.md).
 - **Pexels / Pixabay:** API anahtarını kaydetme. Medya araması ve gerçek bağlantı testleri henüz eklenmedi.
-- **AI33:** API anahtarı, belgelenmiş Base URL varsa adresi, isteğe bağlı Voice ID ve Model. **AI33 API belgeleri gerekli**; bağlantı testi kapalı, seslendirme yapılmaz. Belgelenmiş adres/kimlikler yoksa bu alanları boş bırakın.
+- **AI33 / OpenSpeaker:** API anahtarını Kaydet; varsayılan ElevenLabs veya kayıtlı sağlayıcınızla ad araması → Sesleri Getir → ses seç → Kaydet. Kayıtlı diğer sağlayıcılar korunur. Daha Fazla Ses Yükle yeni 30 sesi ekler; Tüm Sesleri Getir onaylı ve en fazla 300 sestir. Bağlantı testi yalnız kredi erişimini kontrol eder. Önizlemeyi Dinle ücretsiz hazır örnektir. Onaylı projede gerçek TTS ayrı kredi onayıyla çalışır; Kısa TTS Testi de kredi kullanır. Eski Base URL/model gelişmiş bölümde korunur, gerçek hedef api.ai33.pro ve model gönderilmez. [Basit Windows rehberi](NARRATION.md).
 - **FFmpeg:** otomatik algılanan durum ve dosya yolu. Test düğmesi yalnızca sürüm komutunun çalışmasını kontrol eder. Bulunmasa da uygulama ve Ayarlar açılır.
 - **YouTube:** Daha sonra.
 - **Görsel Üretimi:** otomatik/yerel GPU/Gemini/OpenAI/kapalı; yerel ComfyUI, model/workflow/lisans ve 16:9 çözünürlük; mevcut şifreli Gemini/OpenAI anahtarlarının kullanımı. Bağlantı/model kontrolleri çalışır, gerçek görsel çalıştırma daha sonra. Ücretli fallback varsayılan KAPALI. Ayrıntılar: [paket rehberi](STABILITY_AND_ENHANCEMENTS.md).
@@ -53,6 +53,6 @@ Gemini kontrolü resmi Google Gemini Developer API `GET /v1beta/models` işlemin
 - `GET /api/settings`: güvenli tercihler, maskeler, durumlar ve FFmpeg bilgisi.
 - `PUT /api/settings/{section}`: yalnızca gönderilen alanları günceller. `api_key` boş/null veya yoksa eski anahtarı korur.
 - `DELETE /api/settings/{section}`: o bölümü varsayılan değerlere döndürür; diğer bölümlere dokunmaz.
-- `POST /api/settings/{section}/test`: Ollama, Gemini, OpenAI ve FFmpeg kontrolü; stok/AI33 için açıklamalı yer tutucu.
+- `POST /api/settings/{section}/test`: Ollama, Gemini, OpenAI ve FFmpeg kontrolü; AI33 salt okunur kredi erişimi kontrolü. Stok ayrıntıları için Part 6 rehberine bakın.
 - `POST /api/settings/gemini/models`: kayıtlı anahtarla resmi API'nin desteklediği metin üretim modellerini listeler; anahtarı döndürmez.
 - Değiştirme/test istekleri `X-AI-Video-Studio: settings` başlığı gerektirir. API, gizli alanları hiçbir yanıtta geri döndürmez.

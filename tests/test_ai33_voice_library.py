@@ -61,7 +61,7 @@ def test_verified_schema_normalizes_identity_all_metadata_and_hides_raw_fields(s
     for field,value in RECORD.items():
         if field!='name':assert voice[field]==value
     assert voice['avatar_url'] is None and voice['languages']==['en','de',{'locale':'fr-FR'}]
-    assert not result.json()['settings']['ai33']['contract_ready']
+    assert result.json()['settings']['ai33']['contract_ready']
     assert len(calls)==1 and dict(calls[0].url.params)=={'provider':'edge','search':'English','page':'2','page_size':'30'}
     for secret in (KEY,RAW_PRIVATE,'PRIVATE_TASK_TOKEN'):
         assert secret not in result.text and secret not in caplog.text
@@ -97,7 +97,7 @@ def test_multiple_pages_voice_selection_and_metadata_survive_restart(settings_cl
         data=reopened.get('/api/settings').json()['ai33']
         assert data['voice_id']==RECORD['voice_id'] and data['voice_name']==RECORD['name'] and data['speed']==.85
         assert len(data['voices'])==2 and data['voices'][0]['languages']==RECORD['languages']
-        assert data['voices'][0]['preview_url']==PREVIEW and not data['contract_ready']
+        assert data['voices'][0]['preview_url']==PREVIEW and data['contract_ready']
         assert KEY not in reopened.get('/api/settings').text
 
 
@@ -137,10 +137,10 @@ def test_unsafe_preview_url_not_used(url,settings_client):
     assert result.status_code==200 and result.json()['voices'][0]['preview_url']==''
 
 
-def test_successful_voice_discovery_does_not_unlock_paid_generation(narration_studio):
+def test_successful_voice_discovery_still_requires_explicit_credit_confirmation(narration_studio):
     st=narration_studio;install(st[0],response([RECORD]));assert discover(st[0]).status_code==200
-    r=st[0].post(base(st)+'/jobs',json=payload(st,voice_id=RECORD['voice_id']))
-    assert r.status_code==409 and r.json()['category']=='documentation_required'
+    r=st[0].post(base(st)+'/jobs',json=payload(st,voice_id=RECORD['voice_id'],cost_confirmed=False))
+    assert r.status_code==422 and r.json()['category']=='cost_confirmation'
     assert st[0].get(base(st)).json()['versions']==[]
 
 
@@ -159,7 +159,7 @@ def test_history_read_only_safe_first_item_metadata_no_task_schema_guess(setting
     assert sample['metadata_fields']==[{'name':'unknown_audio','type':'string'},{'name':'unknown_state','type':'string'},{'name':'secret','type':'string'},{'name':'nested','type':'object'}]
     for private in (KEY,RAW_PRIVATE,'PRIVATE_TASK_TOKEN','PRIVATE_TASK_ID','PRIVATE_TTS_VALUE','PRIVATE_COMPLETED_VALUE','SECOND_ITEM_NEVER_INSPECTED','NEVER_INSPECT'):
         assert private not in r.text and private not in caplog.text
-    assert not settings_client.get('/api/settings').json()['ai33']['contract_ready']
+    assert settings_client.get('/api/settings').json()['ai33']['contract_ready']
 
 
 @pytest.mark.parametrize('body',[[],{}, {'undocumented_container':{'nested_records':[{'secret':KEY}]}},
@@ -168,7 +168,7 @@ def test_unknown_or_empty_history_shape_safe_without_inventing_fields(body):
     provider=OpenSpeakerProvider(KEY,transport=httpx.MockTransport(lambda r:httpx.Response(200,json=body)))
     diagnostic=provider.task_history_diagnostic()
     assert KEY not in json.dumps(diagnostic) and 'PRIVATE_FIRST_VALUE' not in json.dumps(diagnostic)
-    assert diagnostic['operation']=='tasks' and not provider.contract_ready
+    assert diagnostic['operation']=='tasks' and provider.contract_ready
 
 
 def test_history_rejects_request_parameters_before_network(settings_client):

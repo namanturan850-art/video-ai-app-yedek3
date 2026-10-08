@@ -1,9 +1,10 @@
 """Official verified request routes; unknown response schemas fail closed.
 
-The owner verified v3 voice records. Task completion/output fields remain
-unverified; paid generation stays blocked until those are supplied.
+Owner-live verification: completed TTS has status=done, type=tts and
+metadata.audio_url. Creation remains the exact verified multipart contract.
 """
 import json
+import math
 import time
 from typing import Protocol,runtime_checkable
 
@@ -14,6 +15,7 @@ from app.narration.read_client import OpenSpeakerReadClient,LOG,shape_diagnostic
 from app.scripts.engine import SecretGuard
 from app.scripts.models import ScriptError
 from app.narration.voices import normalize_voices
+from app.narration.audio import audio_url_host
 
 
 @runtime_checkable
@@ -25,8 +27,8 @@ class TTSProvider(Protocol):
 
 
 class OpenSpeakerProvider(OpenSpeakerReadClient):
-    # Enable ONLY after voice IDs and task state/output fields are documented.
-    contract_ready=False
+    # Fixed adapter contract verified by the owner; never changed by diagnostics.
+    contract_ready=True
     output_hosts=frozenset()
 
     def _request(self,operation,path,*,method='GET',params=None,form=None):
@@ -124,8 +126,36 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
         SecretGuard(self.secrets).validate(task_id)
         data,status=self._request('poll','/v1/task/'+task_id)
         diagnostic=shape_diagnostic(data,'poll',status,self.secrets)
-        LOG.info('narration operation=poll result=unverified_schema fields=%s metadata_fields=%s task_id_presence=%s',diagnostic['top_level_fields'],diagnostic['metadata_fields'],diagnostic['task_id_presence'])
-        raise NarrationError('unexpected_task_schema',SCHEMA_MESSAGE,502,diagnostic)
+        try:
+            if not isinstance(data,dict):raise ValueError()
+            if 'id' in data:
+                if safe_task_id(data['id'])!=task_id:raise ValueError()
+                SecretGuard(self.secrets).validate(data['id'])
+            if 'type' in data and data['type']!='tts':raise ValueError()
+            progress=data.get('progress')
+            progress=progress if type(progress) in (int,float) and 0<=progress<=100 and math.isfinite(progress) else None
+            # error_message is the explicitly requested optional error field.
+            # Unknown status names are never interpreted as failure/completion.
+            error=data.get('error_message')
+            if data.get('success') is False or isinstance(error,str) and error.strip():
+                LOG.info('narration operation=poll result=failed category=task_failed')
+                return {'state':'failed','progress':progress}
+            status=data.get('status')
+            if not isinstance(status,str) or not status.strip():raise ValueError()
+            if status!='done':
+                LOG.info('narration operation=poll result=pending')
+                return {'state':'pending','progress':progress}
+            metadata=data.get('metadata')
+            if not isinstance(metadata,dict):raise ValueError()
+            audio=metadata.get('audio_url')
+            SecretGuard(self.secrets).validate(audio)
+            host=audio_url_host(audio)
+            self.output_hosts=frozenset({host})  # This task only, not a global CDN list.
+            LOG.info('narration operation=poll result=complete')
+            return {'state':'complete','audio_url':audio,'progress':progress}
+        except (ValueError,TypeError,ScriptError):
+            LOG.info('narration operation=poll result=error category=unexpected_task_schema')
+            raise NarrationError('unexpected_task_schema',SCHEMA_MESSAGE,502,diagnostic) from None
 
 
 def make_tts_provider(settings):

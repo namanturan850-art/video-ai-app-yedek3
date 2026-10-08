@@ -38,7 +38,7 @@ def test_next_page_append_deduplicates_cache_and_selected_voice_persists(setting
     with TestClient(create_app(tmp_path/'data'),headers=HEADERS) as reopened:
         config=reopened.get('/api/settings').json()['ai33']
         assert config['voice_id']==RECORD['voice_id'] and config['voice_name']==RECORD['name'] and config['speed']==.9
-        assert len(config['voices'])==2 and not config['contract_ready']
+        assert len(config['voices'])==2 and config['contract_ready']
 
 
 def test_provider_change_clears_cache_search_uses_exact_documented_params(settings_client):
@@ -66,11 +66,11 @@ def test_existing_task_read_only_exact_route_safe_values_and_no_raw_response(set
     assert diagnostic['status_value']=='done' and diagnostic['type_value']=='text_to_speech'
     assert {'name':'status','type':'string'} in diagnostic['top_level_fields']
     assert diagnostic['metadata_fields']==[{'name':'audio_url','type':'string'},{'name':'with_transcript','type':'boolean'},{'name':'private','type':'string'},{'name':'nested','type':'object'}]
-    assert 'Canlı TTS görev yapısı doğrulandı: audio_url alanı bulundu.' in r.json()['message']
+    assert 'Canlı AI33 TTS görev yapısı doğrulandı.' in r.json()['message']
     for private in (TASK_ID,'PRIVATE_DATE',RAW_PRIVATE,KEY,'PRIVATE_TASK_TOKEN','DO_NOT_INSPECT'):
         assert private not in r.text and private not in caplog.text
     assert settings_client.app.state.settings.tts_config()==before
-    assert not settings_client.get('/api/settings').json()['ai33']['contract_ready']
+    assert settings_client.get('/api/settings').json()['ai33']['contract_ready']
 
 
 @pytest.mark.parametrize('task_id',['','../private','a/b','https://private.example.org/task','a?key=value','a#b','a b','a\nsecret','x'*151,None,{},42])
@@ -95,11 +95,11 @@ def test_status_and_type_never_echo_urls_secrets_or_unbounded_free_text(value):
 
 
 @pytest.mark.parametrize('status,kind,metadata',[('pending','text_to_speech',{'audio_url':RAW_PRIVATE}),('done','other_task',{'audio_url':RAW_PRIVATE}),('done','text_to_speech',{'output_uri':RAW_PRIVATE}),('done','text_to_speech',{'audio_url':None})])
-def test_diagnostic_does_not_guess_tts_output_or_unlock_contract(settings_client,status,kind,metadata):
+def test_diagnostic_never_changes_fixed_contract_or_starts_tts(settings_client,status,kind,metadata):
     calls=install(settings_client,{'status':status,'type':kind,'metadata':metadata})
     r=inspect(settings_client);assert r.status_code==200
-    assert 'Canlı TTS görev yapısı doğrulandı' not in r.json()['message']
-    assert not settings_client.get('/api/settings').json()['ai33']['contract_ready'] and len(calls)==1
+    assert 'yeni ücretli görev oluşturulmadı' in r.json()['message']
+    assert settings_client.get('/api/settings').json()['ai33']['contract_ready'] and len(calls)==1
 
 
 def test_history_first_item_safe_state_type_no_guess_or_paid_calls(settings_client,caplog):

@@ -32,6 +32,12 @@ Her `data[]` kaydında **voice_id → iç voice_id**, **name → display_name**.
 
 İç sağlayıcı, belgelenmiş aramada kullanıcının seçtiği sağlayıcıdır; yanıt kaydında doğrulanmamış bir `provider` alanı okunmaz. Ham kök yanıt/pagination/ek bilinmeyen alanlar tarayıcıya veya kasaya kopyalanmaz. Yalnız normalize sesler şifreli ayar kasasında saklanır, seçim/hız yeniden açılışta korunur.
 
+### Ses tarayıcısı: sayfalama ve arama
+
+Sahibinin canlı sonucunda yalnız ilk 30 ses görünüyordu: eski ekran `page=1`, `page_size=30` istiyor, devam düğmesi sunmuyordu. **Önceki Sayfa / Sonraki Sayfa** tek sayfayı gösterir. **Daha Fazla Ses Yükle** sonraki sayfayı mevcut listeye ekler; `voice_id` tekrarları birleştirilir. **Tüm Sesleri Getir** yalnız kullanıcı tıklayınca, sıralı olarak 1–10. sayfaları ister; en fazla 300 ses, boş `data` dizisinde erken durur. Sayfa boyutu daima 30; `pagination` içindeki henüz doğrulanmamış alanlar okunmaz. Kısa ama boş olmayan sayfa tek başına son sayfa sayılmaz.
+
+Sağlayıcı değişince görünür liste, arama ve sayfa sıfırlanır; eski sağlayıcı sesleri karıştırılmaz. **Ses adına göre ara → Sesleri Getir** yalnız belgelenmiş `provider`, `search`, `page=1`, `page_size=30` parametrelerini gönderir. Arama metni ayar kaydı değildir. Sayfalama kayıtlı ses/hız seçimini silmez; farklı sayfadaki seçili ses adı korunur. Şifreli doğrulanmış ses önbelleği kimlikleri tekilleştirerek seçim kaydına izin verir.
+
 **Önizlemeyi Dinle**, doğrulanan `preview_url` için sağlayıcının hazır örneğini açar. HTTPS, kullanıcı/parola içermeyen, standart portlu ve yerel/özel adres olmayan URL kabul edilir; uygunsuz URL boş bırakılır ve liste başarısız sayılmaz. Örnek yalnız kullanıcı tıklayınca tarayıcıda yüklenir (`preload=none`, anonim crossorigin, referrer yok); anahtar/Authorization/cookie eklenmez, backend URL proxy'si veya TTS POST'u kullanılmaz. Avatar URL'si metadata olarak korunur; otomatik dış avatar yüklemesi yapılmaz. Gerçek CDN'nin tarayıcı/CORS davranışı sahibinin Windows kontrolünde doğrulanmalıdır.
 
 ## Uygulanan ağ sözleşmesi
@@ -41,7 +47,8 @@ Her `data[]` kaydında **voice_id → iç voice_id**, **name → display_name**.
 | Salt okunur bağlantı | `GET /v1/credits` | `xi-api-key`; geçerli HTTP/JSON yanıtı. Bakiye alanı bilinmediği için sayı gösterilmez. |
 | Ses arama | `GET /v3/voices` | `provider`, `search`, `page`, `page_size`. Sahibinin canlı doğruladığı data[] voice_id/name ve ek alanlar normalize edilir; ham yanıt döndürülmez. |
 | Görev oluşturma | `POST /v3/text-to-speech` | FormData: `text`, `voice_id`, `speed`, `with_transcript=false`; yanıt `success: true`, kök `task_id`. Ücretli yol eksik çıktı sözleşmesi yüzünden kapalıdır. |
-| Görev geçmişi tanısı | `GET /v1/tasks` | Resmî salt okunur yol; filtre değeri/kayıt şeması tahmin edilmez. Yalnız alan adları/türleri. |
+| Görev geçmişi tanısı | `GET /v1/tasks` | Resmî salt okunur yol; filtre değeri/kayıt şeması tahmin edilmez. Alan adları/türleri ve ilk kaydın varsa güvenli status/type değerleri. |
+| Mevcut görevi inceleme | `GET /v1/task/{task_id}` | Kullanıcının girdiği güvenli kimlik; kök/metadata adları-türleri ve varsa güvenli kök status/type değerleri. Ücretli POST yok. |
 | Aynı görevi izleme | `GET /v1/task/{task_id}` | Belgelenmiş görev kimliği; yanıt alanları/durumları eksik, kimlik korunarak güvenli hata döner. |
 
 `GET /v1/tasks` resmî genel rehber ve OpenAPI ile doğrulanmıştır. Bu sürüm **Görev Geçmişini İncele** ile salt okunur tanı yapar; belgelenmiş type filtresinin TTS değeri bilinmediğinden filtre gönderilmez. `GET /v1/health-check` için ek çağrı yapılmaz. Bağlantı için kredi endpoint'i yeterlidir. Uzak görev silme/iade, webhook, yeni ses klonlama veya metin dışı toplu giriş uygulanmadı.
@@ -50,7 +57,7 @@ Ses sağlayıcısı seçenekleri: `elevenlabs`, `minimax`, `clone`, `edge`, `vbe
 
 ## Tamamlamak için gereken resmî örnekler
 
-1. `GET /v1/task/{task_id}`: bekleyen, tamamlanan ve başarısız görev örnekleri; **durum alanı ve gerçek değerleri**, **ses dosyası çıktı alanı**.
+1. Sahibinin AI33 sitesinde oluşturduğu kısa görev **Done** görünmektedir. Site metadata'sındaki provider/raw_voice_id/model_id/multi_turn/with_loudnorm/with_transcript/voice_id/task_id bilgileri, GET Task API'sindeki **durum alanı/değeri, TTS türü ve ses çıktı alanını** henüz doğrulamaz. **Mevcut Görevi İncele** tanısında tamamlanan TTS için bu alanlar görülmelidir. `metadata.audio_url`, `metadata.output_uri` veya diğer görev türlerinde bulunan alanlardan biri TTS çıktısı olarak tahmin edilmez. Sahibinin gerçek görev/ses kimliği kaynak koda yazılmaz.
 2. Çıktı indirme adresinin resmî host/CDN bilgisi ve yönlendirme davranışı. Örnekleri gerçek imzalı URL/token olmadan paylaşın.
 3. İsteğe bağlı: kredi bakiye alanı, belgelenmiş kota/kredi hata kodları ve transcript/timing yanıtı. Bunlar bilinmeden sayı, kredi yetersizliği kodu veya transcript uydurulmaz.
 
@@ -65,7 +72,9 @@ Ses sağlayıcısı seçenekleri: `elevenlabs`, `minimax`, `clone`, `edge`, `vbe
 - İzleme 3 saniye aralıklı, 30 dakika sınırında; görev kimliğiyle Devam Et. Tarayıcıdaki kısa yerel istekler bu işlemi beklemez. Yeniden açılışta yarım işler güvenli hata durumuna geçer; aynı uzak görev sürdürülebilir.
 - Ses listesi doğrulanan şemadan ayrıştırılır. Bozuk yanıt tanısı yalnız data[0] alan adları/türleriyle sınırlıdır; ham değerler döndürülmez. Normal ses adları ve doğrulanan ek metadata, kullanıcı seçimi için normalize sonuçta bulunur.
 - Görev geçmişi (`GET /v1/tasks`) şeması hâlâ bilinmiyor. Gözlenen kök dizi alanlarının her birinde yalnız ilk kayıt ve onun metadata adları/türleri incelenir (`task_array_samples`); kök doğrudan dizi ise aynı işlem uygulanır. Dizi kapsayıcısına data/tasks adı veya TTS türü tahmin edilmez. En fazla dört dizi ve konum başına 40 alan; sonraki kayıtlar/derin metadata incelenmez. Dizi konumu görülmezse boş tanı listesi döner, kayıt uydurulmaz. 404/405 geçmişe erişilememe hatası ses ayarlarını değiştirmez.
-- Görev tanısı kök alan adları/türleri ve `metadata` nesnesinin ilk düzey alan adları/türlerini ekler (`metadata_fields`). Çıktı alanının hangisi olduğu veya durumların anlamı tahmin edilmez. HTTP durumu, işlem ve görev kimliği varlığı korunur. Alan sayısı her konumda en fazla 40; sır içeren veya geçersiz alan adları atılır. Ham gövde, alan değerleri, başlık, imzalı URL, tam metin veya sır kaydedilmez. Tanı Ayarlar ve Seslendirme ekranında güvenli metin olarak gösterilir.
+- **Mevcut Görevi İncele**, kullanıcı Task ID'sini ağdan önce doğrular (1–150 harf/rakam/tire/alt çizgi; yol/URL/sorgu kabul edilmez), kaydetmeden yalnız resmî `GET /v1/task/{task_id}` gönderir. Yerel `POST /api/settings/ai33/task/diagnose` sadece bu okuma komutudur; sağlayıcıya POST değildir. API anahtarı yalnız resmî API başlığına gider.
+- Tanı kök alan adları/türleri ve `metadata` nesnesinin ilk düzey alan adları/türlerini ekler (`metadata_fields`). Sahibinin açık isteğiyle, yalnız **status/type** alanlarındaki 80 karakteri aşmayan güvenli metin token'ları **status_value/type_value** olarak gösterilir; bilinen sır içeriyorsa veya URL/serbest metin görünümündeyse değer verilmez. Geçmişte aynı kural yalnız ilk kayda uygulanır. Metadata değerleri, görev kimliği, başlıklar, özel çıktı URL'leri, ham gövde, tam metin veya sır döndürülmez/günlüğe yazılmaz. Alan sayısı konum başına en fazla 40; sır içeren/geçersiz alan adları atılır. Önceki üretim/poll tanısı hâlâ yalnız ad/türdür; üretim adaptörü değişmedi.
+- Kullanıcının tanımladığı örnek desen **status=done**, **type=text_to_speech**, **metadata.audio_url:string** gözlenirse ekranda “Canlı TTS görev yapısı doğrulandı: audio_url alanı bulundu.” açıklaması çıkar. Bu yalnız alan gözlemidir: audio_url indirilmez, başka çıktı alanı tahmin edilmez, çalışma anında adaptör eşlemesi/`contract_ready`/ücretli kilit değişmez. Gerçek tamamlanmış TTS örneğiyle sonraki küçük eşleme ayrı yapılacaktır.
 - Ses dosyası güvenli `voice/<uuid>.<format>` adıyla geçici dosya, imza/tür/boyut kontrolü ve atomik rename kullanır. Windows klasör bağlantıları/junction'lar reddedilir; indirilen dosyaya API başlığı gönderilmez. İzinli çıktı host'ları henüz belgelendirilmediği için üretim adaptörünün listesi boştur.
 - WAV süresi yerel ölçülür; diğer dosyalarda varsa ffprobe kullanılır. Araç eksikliği sesi başarısız saymaz. Render veya altyazı yapılmaz.
 

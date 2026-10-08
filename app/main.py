@@ -428,7 +428,19 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def tts_task_history(payload:dict):
         if payload:raise NarrationError('invalid_request','Görev geçmişi tanısı ek alan almaz.',422)
         diagnostic=narration.factory(settings).task_history_diagnostic()
-        return {'diagnostic':diagnostic,'message':'Görev geçmişi yanıtı alındı. Yalnız alan adları ve türleri gösterilir; yeni görev oluşturulmadı.'}
+        return {'diagnostic':diagnostic,'message':'Görev geçmişi alındı. Alan adları/türleri ve varsa güvenli durum/tür değerleri gösterilir; yeni görev oluşturulmadı.'}
+
+    @application.post('/api/settings/ai33/task/diagnose')
+    def tts_existing_task(payload:dict):
+        if set(payload)!={'task_id'}:raise NarrationError('invalid_task_id','İncelemek istediğiniz mevcut görevin Task ID bilgisini girin.',422)
+        diagnostic=narration.factory(settings).task_diagnostic(payload['task_id'])
+        message='Mevcut görev salt okunur incelendi. Ses çıktı eşlemesi henüz doğrulanmadı; ücretli üretim kapalıdır.'
+        # Owner-requested evidence label only. This never configures the adapter,
+        # changes contract_ready, or treats any arbitrary string as an audio URL.
+        if (diagnostic.get('status_value')=='done' and diagnostic.get('type_value')=='text_to_speech'
+                and {'name':'audio_url','type':'string'} in diagnostic.get('metadata_fields',[])):
+            message='Canlı TTS görev yapısı doğrulandı: audio_url alanı bulundu. Ücretli üretim kilidi korundu; adaptör eşlemesi ayrıca doğrulanmalıdır.'
+        return {'diagnostic':diagnostic,'message':message}
 
     @application.post("/api/settings/gemini/models")
     def gemini_models():

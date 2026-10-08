@@ -81,6 +81,17 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
         LOG.info('narration operation=tasks result=read_only diagnostic=%s',diagnostic)
         return diagnostic
 
+    def task_diagnostic(self,task_id):
+        # Input is supplied locally, never hardcoded or persisted. No paid call.
+        try:task_id=safe_task_id(task_id)
+        except NarrationError:
+            raise NarrationError('invalid_task_id','Geçerli bir Task ID girin. Yalnız harf, rakam, tire ve alt çizgi kullanılabilir (en fazla 150 karakter).',422) from None
+        SecretGuard(self.secrets).validate(task_id)
+        data,status=self._request('inspect_task','/v1/task/'+task_id)
+        diagnostic=shape_diagnostic(data,'inspect_task',status,self.secrets)
+        LOG.info('narration operation=inspect_task result=read_only diagnostic=%s',diagnostic)
+        return diagnostic
+
     def synthesize(self,text,voice,options):
         # Success fields verified in the owner's authenticated documentation
         # excerpt: {"success":true,"task_id":"uuid_task_id"}. The service blocks

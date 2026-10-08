@@ -43,6 +43,18 @@ def field_shapes(data,secrets):
     return fields
 
 
+def safe_task_values(data,secrets):
+    """Only owner-authorized status/type tokens; URLs/free text are withheld."""
+    result={}
+    if isinstance(data,dict):
+        for field in ('status','type'):
+            value=data.get(field)
+            if (isinstance(value,str) and re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,79}',value)
+                    and not any(secret and secret.casefold() in value.casefold() for secret in secrets)):
+                result[field+'_value']=value
+    return result
+
+
 def shape_diagnostic(data,operation,http_status,secrets=()):
     """Inspect only the documented diagnostic locations, without recursion."""
     result={'operation':operation,'http_status':http_status,'top_level_fields':field_shapes(data,secrets),
@@ -53,10 +65,11 @@ def shape_diagnostic(data,operation,http_status,secrets=()):
         first=records[0] if isinstance(records,list) and records else None
         result.update(data_first_item_type=VALUE_TYPES.get(type(first),'unknown'),
                       data_first_item_fields=field_shapes(first,secrets))
-    if operation=='poll':
+    if operation in ('poll','inspect_task'):
         metadata=data.get('metadata') if isinstance(data,dict) else None
         result.update(metadata_type=VALUE_TYPES.get(type(metadata),'unknown'),
                       metadata_fields=field_shapes(metadata,secrets))
+        if operation=='inspect_task':result.update(safe_task_values(data,secrets))
     if operation=='tasks':
         # The history list's container name is unverified. Inspect first items
         # of observed top-level arrays, without assuming "data" or "tasks".
@@ -71,7 +84,7 @@ def shape_diagnostic(data,operation,http_status,secrets=()):
             samples.append({'container':name,'first_item_type':VALUE_TYPES.get(type(first),'unknown'),
                             'first_item_fields':field_shapes(first,secrets),
                             'metadata_type':VALUE_TYPES.get(type(metadata),'unknown'),
-                            'metadata_fields':field_shapes(metadata,secrets)})
+                            'metadata_fields':field_shapes(metadata,secrets),**safe_task_values(first,secrets)})
         result['task_array_samples']=samples
     return result
 

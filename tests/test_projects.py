@@ -10,7 +10,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from app.database import database_healthy, initialize_database
+from app.database import database_healthy, initialize_database, SCHEMA_VERSION
 from app.main import create_app
 from app.projects import FOLDERS, STAGES
 from app.secret_store import SettingsStore
@@ -366,7 +366,7 @@ def test_legacy_upgrade_preserves_data_and_encrypted_settings(tmp_path):
     initialize_database(storage)
     initialize_database(storage)
     with closing(sqlite3.connect(database)) as connection:
-        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone() == ('8',)
+        assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone() == (SCHEMA_VERSION,)
         assert connection.execute("SELECT value FROM app_metadata WHERE key='keep'").fetchone() == ('existing',)
         assert connection.execute('SELECT value FROM legacy_user_data').fetchone() == ('do not lose',)
     assert before_key == store.key_path.read_bytes()

@@ -4,7 +4,9 @@
 
 Ayarlar → **AI33 / OpenSpeaker** ekranında anahtar kaydetme/maskeleme, sağlayıcı ve hız, salt okunur bağlantı testi çalıştırılabilir. Eski kayıtlar korunur. Projede **Seslendirmeyi Aç** bağlantısı ve Seslendirme ekranı vardır.
 
-**Part 7 henüz birleştirmeye hazır değildir.** Herkese açık API belgesi ses kaydının ve tamamlanan görevin alanlarını tanımlamıyor. Sahibinin belgesiyle hedef `https://api.ai33.pro` ve multipart TTS isteği doğrulandı; ses listesi kaydı ve tamamlanan görev sonucu örnekleri hâlâ gerekli. Bu yüzden Sesleri Getir güvenli belge tanısı gösterir; **Ses Önizle / Oluştur / Yeniden Oluştur kapalıdır ve kredi harcanmaz**. Bilinmeyen alanlar tahmin edilmedi. Ayrıntı: [doğrulanan ve eksik API sözleşmeleri](../AI33_INTEGRATION_NOTES.md).
+Sahibinin canlı Windows yanıtıyla ses listesi şeması doğrulandı. **Sesleri Getir → gerçek ses adı → Kaydet** kullanılabilir. **Önizlemeyi Dinle** sağlayıcının hazır örneğini açar, yeni görev veya kredi kullanımı oluşturmaz.
+
+**Tam ücretli seslendirme henüz açık değildir.** Tamamlanan TTS görevinin ses çıktı alanı ve durumları için doğrulanmış örnek hâlâ gereklidir. Bu yüzden projenin **Ses Önizle / Oluştur / Yeniden Oluştur** düğmeleri kapalıdır; `contract_ready=false` korunur. Ayarlar'daki hazır örnek düğmesi ayrı, ücretsiz yoldur. Ayrıntı: [güncel sözleşme](../AI33_INTEGRATION_NOTES.md).
 
 ## Şimdi yapılabilecek basit kontrol
 
@@ -13,9 +15,9 @@ Ayarlar → **AI33 / OpenSpeaker** ekranında anahtar kaydetme/maskeleme, sağla
 3. **Ayarlar → AI33 / OpenSpeaker** bölümünü açın.
 4. API anahtarını yazın ve **Kaydet** deyin. Alan boşalmalı; kayıtlı anahtar yalnız maskeli görünmelidir.
 5. **Bağlantıyı Test Et** deyin. Bu işlem ses üretmez, kredi harcamaz. Başarılı HTTP/JSON okuması bağlantıyı gösterir; kredi sayısı bilinmiyorsa bunun mesajı görünür.
-6. Ses sağlayıcısını seçip **Kaydet → Sesleri Getir** deyin. Ses kaydı alanları henüz doğrulanmadığından güvenli tanı beklenir. Tanıda kök alan adları/türleri ve yalnız ilk sesin `data_first_item_fields` alanları görünür; hiçbir alan değeri, anahtar, başlık veya özel URL görünmemelidir. Görev tanısı ayrıca yalnız `metadata_fields` adlarını/türlerini gösterebilir.
+6. Ses sağlayıcısını seçip **Kaydet → Sesleri Getir** deyin. Gerçek ses adları listelenmelidir. Bir ses seçip **Kaydet** deyin; dil/bölge/diğer bilgileri **Seçilen sesin bilgileri** bölümünde inceleyebilirsiniz. Bilgi eksikliği listeyi bozmaz. Varsa **Önizlemeyi Dinle** deyin; örnek yalnız tıklayınca yüklenir. Yeni TTS görevi oluşmamalıdır. **Görev Geçmişini İncele** mevcut hesap kayıtlarını salt okunur okur; yalnız alan adları/türleri ve ilk kayıt metadata alanları görünür. Görev değeri, anahtar veya özel çıktı URL’si görünmemelidir.
 7. Mevcut projenizi açıp **Seslendirmeyi Aç** deyin. Güncel onaylı senaryo/dil/karakter sayısı görünmeli; onay yoksa “Önce senaryo sürümünü onaylayın.” görünmelidir.
-8. Programı kapatıp yeniden açın. Projeler, onaylı senaryolar, sahneler, eski stok dosyaları ve maskeli ayarlar durmalıdır.
+8. Programı kapatıp yeniden açın. Ses seçimi, ek ses bilgileri ve hız; projeler, onaylı senaryolar, sahneler, stok dosyaları ve maskeli ayarlar durmalıdır. Hazır örnek tekrar kendiliğinden yüklenmemelidir.
 
 Gerçek anahtarı, **data/secrets** klasörünü veya özel ses indirme URL'sini paylaşmayın. Belge eksikliği bağlantı anahtarınızın bozuk olduğu anlamına gelmez. Teknik bilgisi olmayan kullanıcının kod, .env veya terminal düzenlemesi gerekmez.
 

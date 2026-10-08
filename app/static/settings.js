@@ -16,6 +16,9 @@ if (window.location.pathname === '/settings') {
   ];
   const forms = new Map();
   let loaded = false;
+  let ttsVoices=[];
+  // Provider preview requests must not send the local Settings page as referrer.
+  const previewReferrer=document.createElement('meta');previewReferrer.name='referrer';previewReferrer.content='no-referrer';document.head.append(previewReferrer);
 
   function element(tag, text, className) {
     const node = document.createElement(tag);
@@ -115,6 +118,29 @@ if (window.location.pathname === '/settings') {
         catch(error){status.textContent=`Hata · ${error.message}`;const diag=form.querySelector('[data-role=tts-diagnostic]');diag.textContent=error.diagnostic?JSON.stringify(error.diagnostic,null,2):'';}
         finally{setBusy(form,false,definition);}
       });actions.append(voiceSearch,voicePage,voices);
+      const history=element('button','Görev Geçmişini İncele');history.type='button';
+      history.addEventListener('click',async()=>{
+        if(form.dataset.dirty==='true'){status.textContent='Önce Kaydet deyin; görev geçmişi kayıtlı anahtarı kullanır.';return;}
+        setBusy(form,true,definition);status.textContent='Mevcut görevler salt okunur inceleniyor…';
+        try{const result=await request('/api/settings/ai33/tasks/diagnose','POST',{});form.querySelector('[data-role=tts-diagnostic]').textContent=JSON.stringify(result.diagnostic,null,2);status.textContent=result.message;}
+        catch(error){status.textContent=`Hata · ${error.message}`;form.querySelector('[data-role=tts-diagnostic]').textContent=error.diagnostic?JSON.stringify(error.diagnostic,null,2):'';}
+        finally{setBusy(form,false,definition);}
+      });actions.append(history);
+      form.append(element('p','Görev geçmişi yalnız mevcut kayıtların alan adlarını/türlerini inceler; yeni ücretli görev başlatmaz.','note'));
+      const listen=element('button','Önizlemeyi Dinle');listen.type='button';listen.dataset.role='voice-preview';listen.hidden=true;
+      const audio=element('audio');audio.controls=true;audio.preload='none';audio.crossOrigin='anonymous';audio.hidden=true;audio.dataset.role='voice-audio';
+      const previewStatus=element('p','','note');previewStatus.dataset.role='voice-preview-status';
+      listen.addEventListener('click',async()=>{
+        const selected=selectedVoice();if(!selected?.preview_url)return;
+        audio.src=selected.preview_url;audio.hidden=false;
+        previewStatus.textContent='Sağlayıcının hazır örnek sesi. Yeni TTS görevi oluşturulmaz.';
+        try{await audio.play();}catch{previewStatus.textContent='Örnek ses açılamadı. Sağlayıcının önizleme adresi erişilebilir olmayabilir; tekrar deneyin.';}
+      });
+      audio.addEventListener('error',()=>{previewStatus.textContent='Örnek ses açılamadı. Sağlayıcının önizleme adresi erişilebilir olmayabilir; tekrar deneyin.';});
+      const info=element('details');info.dataset.role='voice-info';info.append(element('summary','Seçilen sesin bilgileri'));const infoBody=element('div');infoBody.dataset.role='voice-info-body';info.append(infoBody);
+      form.append(listen,audio,previewStatus,info);
+      form.elements.namedItem('voice_id').addEventListener('change',showSelectedVoice);
+      form.elements.namedItem('voice_provider').addEventListener('change',()=>{populateTTSVoices('');showSelectedVoice();});
       const docs=element('p','','note');docs.dataset.role='tts-documentation';form.append(docs);
       const credit=element('p','','note');credit.dataset.role='tts-credits';form.append(credit);
       const diag=element('pre');diag.dataset.role='tts-diagnostic';form.append(diag);
@@ -157,12 +183,29 @@ if (window.location.pathname === '/settings') {
         (definition.id === 'gemini' && control.name === 'model' && control.options.length === 1);
     }
   }
+  function selectedVoice(){const form=forms.get('ai33');return ttsVoices.find(v=>v.provider===form.elements.namedItem('voice_provider').value&&v.voice_id===form.elements.namedItem('voice_id').value);}
+  function populateTTSVoices(selected){
+    const form=forms.get('ai33'),choices=form.elements.namedItem('voice_id');choices.replaceChildren();
+    const empty=element('option','Sesleri Getir ile listeden bir ses seçin');empty.value='';choices.append(empty);
+    for(const voice of ttsVoices.filter(v=>v.provider===form.elements.namedItem('voice_provider').value)){const opt=element('option',voice.display_name||voice.voice_id);opt.value=voice.voice_id;choices.append(opt);}
+    if(selected&&!Array.from(choices.options).some(o=>o.value===selected)){const legacy=element('option','Önceki kayıtlı ses (henüz doğrulanmadı)');legacy.value=selected;choices.append(legacy);}
+    choices.value=selected||'';
+  }
+  function showSelectedVoice(){
+    const form=forms.get('ai33'),voice=selectedVoice(),audio=form.querySelector('[data-role=voice-audio]');
+    if(audio.dataset.voice!==voice?.voice_id){audio.pause();audio.removeAttribute('src');audio.hidden=true;audio.dataset.voice=voice?.voice_id||'';form.querySelector('[data-role=voice-preview-status]').textContent='';}
+    form.querySelector('[data-role=voice-preview]').hidden=!voice?.preview_url;
+    const info=form.querySelector('[data-role=voice-info-body]');info.replaceChildren();
+    if(voice){for(const [field,label] of [['description','Açıklama'],['language','Dil'],['locale','Bölge'],['gender','Cinsiyet'],['age','Yaş'],['accent','Aksan'],['category','Kategori'],['use_cases','Kullanım alanları'],['descriptives','Tanımlamalar'],['tags','Etiketler'],['languages','Diller']]){
+      const value=voice[field];if(value&&(!Array.isArray(value)||value.length))info.append(element('p',`${label}: ${Array.isArray(value)?value.map(v=>typeof v==='string'?v:JSON.stringify(v)).join(', '):value}`));
+    }}form.querySelector('[data-role=voice-info]').hidden=!voice;
+  }
   function showSettings(settings, resetSection = null) {
     for (const definition of definitions) {
       const form = forms.get(definition.id);
       const data = settings[definition.id];
       const reset = !loaded || resetSection === definition.id;
-      if(definition.id==='ai33'){const choices=form.elements.namedItem('voice_id');choices.replaceChildren();const empty=element('option','Önce Sesleri Getir düğmesine basın');empty.value='';choices.append(empty);for(const voice of data.voices||[]){const opt=element('option',voice.display_name||voice.voice_id);opt.value=voice.voice_id;choices.append(opt);}if(data.voice_id&&!Array.from(choices.options).some(o=>o.value===data.voice_id)){const legacy=element('option','Önceki kayıtlı ses (henüz doğrulanmadı)');legacy.value=data.voice_id;choices.append(legacy);}choices.value=data.voice_id||'';form.querySelector('[data-role=tts-documentation]').textContent=data.documentation_message||'';}
+      const previousVoice=definition.id==='ai33'?form.elements.namedItem('voice_id').value:'';
       if (definition.id === 'gemini') showGeminiModels(data.models, reset ? data.model : form.elements.namedItem('model').value);
       if (reset) {
         for (const field of definition.fields) {
@@ -173,6 +216,7 @@ if (window.location.pathname === '/settings') {
         if (definition.secret) form.elements.namedItem('api_key').value = '';
         form.dataset.dirty = 'false';
       }
+      if(definition.id==='ai33'){ttsVoices=data.voices||[];populateTTSVoices(reset?data.voice_id:previousVoice);showSelectedVoice();form.querySelector('[data-role=tts-documentation]').textContent=data.documentation_message||'';if(reset)form.querySelector('[data-role=tts-diagnostic]').textContent='';}
       form.querySelector('[data-role="provider-status"]').textContent = definition.id === 'general' ? 'Tercihler hazır.' : `${data.status} · ${data.message}`;
       if (definition.secret) form.querySelector('[data-role="key-info"]').textContent = data.has_api_key ? `Kayıtlı anahtar: ${data.masked_api_key}` : 'Henüz anahtar kaydedilmedi.';
     }

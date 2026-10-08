@@ -2,7 +2,7 @@
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
-**Part 7 seslendirme taslağı:** AI33 / OpenSpeaker ayarları, salt okunur bağlantı testi ve yerel seslendirme iş/sürüm altyapısı eklendi. Resmî ses listesi ve görev çıktı alanları bekleniyor; ücretli üretim kapalı, henüz birleştirmeye hazır değil. [Basit Windows kontrolü](docs/NARRATION.md) ve [eksik API belgeleri](AI33_INTEGRATION_NOTES.md).
+**Part 7 seslendirme taslağı:** AI33 / OpenSpeaker ayarları, salt okunur bağlantı testi ve yerel seslendirme iş/sürüm altyapısı eklendi. Canlı doğrulanan ses listesi, ses seçimi ve sağlayıcının ücretsiz hazır önizlemesi kullanılabilir. Görev geçmişi yalnız alan/tür tanısı verir. Tamamlanan TTS çıktı şeması bekleniyor; ücretli üretim kapalı. [Basit Windows kontrolü](docs/NARRATION.md) ve [eksik API belgeleri](AI33_INTEGRATION_NOTES.md).
 
 **Sağlayıcı sorunlarını ayırmak için:** Ayarlar → **AI Tanılama**. Şifreli kayıt, bağlantı, kısa üretim, JSON ve tek senaryo bölümü ayrı test edilir. [Çok basit Windows adımları](docs/AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; otomatik test başarısı canlı API başarısı değildir.
 

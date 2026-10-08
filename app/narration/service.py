@@ -101,7 +101,7 @@ class NarrationService:
             if not config.get('api_key'):raise NarrationError('missing_key','Ayarlar → AI33 / OpenSpeaker API anahtarını kaydedin.',422)
             provider=self.factory(self.settings)
             if not provider.contract_ready:
-                raise NarrationError('documentation_required','AI33 ses listesi ve görev çıktı yanıt belgesi gerekli. Ücretli görev başlatılmadı.',409)
+                raise NarrationError('documentation_required','Tamamlanan AI33 TTS görevinin ses çıktı belgesi gerekli. Ücretli görev başlatılmadı.',409)
             voice=next((v for v in config.get('available_voices',[]) if v['provider']==options.voice_provider and v['voice_id']==options.voice_id),None)
             if not voice:raise NarrationError('invalid_voice','Sesleri Getir ile doğrulanmış listeden bir ses seçip kaydedin.',422)
             voice=Voice.model_validate(voice).model_dump()

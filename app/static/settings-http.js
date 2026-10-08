@@ -2,7 +2,7 @@
 async function settingsRequest(url, method = 'GET', body) {
   const gemini = /^\/api\/settings\/(gemini|images\/gemini)\/(models|test)$/.test(url);
   const openai = ['/api/settings/openai/test', '/api/settings/images/openai/test'].includes(url);
-  const ai33=['/api/settings/ai33/test','/api/settings/ai33/voices'].includes(url);
+  const ai33=['/api/settings/ai33/test','/api/settings/ai33/voices','/api/settings/ai33/tasks/diagnose'].includes(url);
   const stock = ['/api/settings/pexels/test','/api/settings/pixabay/test'].includes(url);
   const diagnostics = url.startsWith('/api/settings/ai-diagnostics');
   const timeoutMessage = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';
@@ -93,8 +93,9 @@ async function settingsRequest(url, method = 'GET', body) {
       const messages={missing_key:'Önce AI33 / OpenSpeaker API anahtarını kaydedin.',key_rejected:'API anahtarı reddedildi. Kaydettiğiniz AI33 anahtarını kontrol edin.',
         connection_error:'API bağlantısı kurulamadı. İnternet bağlantısını kontrol edip tekrar deneyin.',timeout:'AI33 API zaman aşımına uğradı. İnternet bağlantısını kontrol edip tekrar deneyin.',
         credits_unavailable:'Kullanım/kredi bilgisi alınamadı. Daha sonra tekrar deneyin.',rate_limit:'AI33 istek sınırına ulaşıldı. Bir süre bekleyip tekrar deneyin.',
-        invalid_request:'Ses sağlayıcısını, arama metnini ve sayfa seçimini kontrol edin.',unexpected_voice_schema:'AI33 ses listesi alanları resmî belgede tanımlanmamış. Ses yanıt belgesi gerekli; ücretli görev başlatılmadı.',
-        unexpected_task_schema:'AI33 görev yanıtı bu sürümün beklediği biçimden farklı.',documentation_required:'AI33 ses listesi ve görev çıktı yanıt belgesi gerekli. Ücretli görev başlatılmadı.'};
+        task_history_unavailable:'Görev geçmişi bu API yanıtında kullanılamıyor. Ses ayarları korundu; bu uç noktanın hesap erişimini kontrol edin.',
+        invalid_request:'Ses sağlayıcısını, arama metnini ve sayfa seçimini kontrol edin.',unexpected_voice_schema:'AI33 ses yanıtı beklenen biçimde değil. Önceki ses seçimi korundu; tekrar deneyin.',
+        unexpected_task_schema:'AI33 görev yanıtı bu sürümün beklediği biçimden farklı.',documentation_required:'Tamamlanan TTS görevinin ses çıktı alanı doğrulanmadı. Ücretli görev başlatılmadı.'};
       const known=Object.hasOwn(messages,result.category),error=failure(known?messages[result.category]:'AI33 ayarları işlenirken beklenmeyen hata oluştu. Dosyaları silmeden tekrar deneyin.',known?result.category:'unexpected_backend');
       if(known)error.diagnostic=result.diagnostic;throw error;
     }

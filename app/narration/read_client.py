@@ -57,6 +57,22 @@ def shape_diagnostic(data,operation,http_status,secrets=()):
         metadata=data.get('metadata') if isinstance(data,dict) else None
         result.update(metadata_type=VALUE_TYPES.get(type(metadata),'unknown'),
                       metadata_fields=field_shapes(metadata,secrets))
+    if operation=='tasks':
+        # The history list's container name is unverified. Inspect first items
+        # of observed top-level arrays, without assuming "data" or "tasks".
+        safe_names={f['name'] for f in result['top_level_fields']}
+        arrays=[('$',data)] if isinstance(data,list) else (
+            [(name,value) for name,value in islice(data.items(),40) if name in safe_names and isinstance(value,list)]
+            if isinstance(data,dict) else [])
+        samples=[]
+        for name,records in arrays[:4]:
+            first=records[0] if records else None
+            metadata=first.get('metadata') if isinstance(first,dict) else None
+            samples.append({'container':name,'first_item_type':VALUE_TYPES.get(type(first),'unknown'),
+                            'first_item_fields':field_shapes(first,secrets),
+                            'metadata_type':VALUE_TYPES.get(type(metadata),'unknown'),
+                            'metadata_fields':field_shapes(metadata,secrets)})
+        result['task_array_samples']=samples
     return result
 
 

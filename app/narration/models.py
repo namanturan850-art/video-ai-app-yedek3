@@ -1,7 +1,7 @@
 """Internal records: these names do not imply a remote API response schema."""
 import hashlib
 import re
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from app.scripts.models import ScriptError
@@ -25,9 +25,19 @@ class Voice(BaseModel):
     provider: Literal['elevenlabs','minimax','clone','edge','vbee','fishaudio']
     voice_id: str = Field(min_length=1,max_length=150)
     display_name: str = Field(default='',max_length=300)
+    description: str = Field(default='',max_length=10000)
     language: str = Field(default='',max_length=100)
+    locale: str = Field(default='',max_length=100)
     gender: str = Field(default='',max_length=100)
+    age: str = Field(default='',max_length=100)
+    accent: str = Field(default='',max_length=200)
+    category: str = Field(default='',max_length=200)
+    use_cases: list[Any] = Field(default_factory=list)
+    descriptives: list[Any] = Field(default_factory=list)
+    tags: list[Any] = Field(default_factory=list)
+    languages: list[Any] = Field(default_factory=list)
     preview_url: str = Field(default='',max_length=2000)
+    avatar_url: str | None = Field(default=None,max_length=2000)
 
 
 class NarrationInput(BaseModel):

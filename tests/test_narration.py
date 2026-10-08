@@ -17,15 +17,14 @@ from fastapi.testclient import TestClient
 
 from app.main import create_app
 from app.narration.audio import AudioDownloader
-from app.narration.models import NarrationError,PREVIEW_TEXT,script_fingerprint
+from app.narration.models import NarrationError,PREVIEW_TEXT,Voice,script_fingerprint
 from app.narration.provider import OpenSpeakerProvider,TTSProvider
 from app.settings import SettingsInputError
 from test_scripts import studio,run,HEADERS,KEY as SCRIPT_KEY
 from test_narration_foundation import wav_data
 
 KEY='synthetic-tts-key-8899'
-VOICE={'provider':'edge','voice_id':'edge_fixture-voice','display_name':'Fixture Voice',
-       'language':'de','gender':'','preview_url':''}
+VOICE=Voice(provider='edge',voice_id='edge_fixture-voice',display_name='Fixture Voice',language='de').model_dump()
 AUDIO='https://api.ai33.pro/fixture-only.wav?token=private-token'
 SETTINGS_HEADERS={'X-AI-Video-Studio':'settings'}
 

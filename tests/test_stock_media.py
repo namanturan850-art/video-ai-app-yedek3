@@ -173,14 +173,14 @@ def test_full_auto_downloads_multiple_unique_video_slots_preserves_part5(stock_s
     assert all(call[1]=='video' for call in client.app.state.stock.test_calls)
     assert state['slots'][0]['selected_media']['creator_name']=='Fixture Creator'
     mirror=json.loads((data/'projects'/project['id']/'stock/media_slots.json').read_text())
-    assert mirror['slots']==[{k:v for k,v in slot.items() if k!='status_label'} for slot in state['slots']]
+    assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('status_label','coverage_warning','trim_needed')} for slot in state['slots']]
     for secret in (KEY,OTHER_KEY,STOCK_KEY): assert secret not in json.dumps(state)
 
 
 def test_provider_fallback_and_relevant_image_beats_unrelated_video(stock_studio):
     st=stock_studio;stock=st[0].app.state.stock
     def results(name,query,kind):
-        if kind=='video': return [media('bad',name,kind,query,description='ocean dolphins sunset')]
+        if kind=='video': return [media('bad',name,kind,query,description='ocean dolphins sunset',duration=.01)]
         if name=='pexels': return [media(str(i),name,kind,query) for i in range(12)]
         return []
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,results)

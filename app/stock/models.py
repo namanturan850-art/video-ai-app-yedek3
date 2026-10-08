@@ -82,20 +82,45 @@ def make_slots(scene):
 
 
 def identity(media):
-    return media['provider'], media['media_id']
+    return media['provider'], media['media_type'], media['media_id']
 
 
-def score(media, slot):
-    """Conservative metadata match, never a claim of semantic image recognition."""
+DEFAULT_VIDEO_TOLERANCE = 1.25
+
+
+def rejection_reason(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE):
+    """Technical gates remain strict; Pixabay video tags are a ranking hint."""
     if media['width'] < 960 or media['height'] < 540:
-        return -1
-    if media['media_type'] == 'video' and media['duration']+0.25 < slot['duration']:
+        return 'resolution'
+    if media['media_type'] == 'video':
+        # Absolute tolerance also has a proportional cap: tiny clips cannot fill
+        # a short slot just because their deficit is less than 1.25 seconds.
+        allowed = min(tolerance, slot['duration'] * .2)
+        if media['duration'] + allowed + .001 < slot['duration']:
+            return 'duration'
+    keywords = set(re.findall(r'[a-z]{3,}', media['query_used'].casefold())) - {'the','with','and','for'}
+    description = media['description'].casefold()
+    if (description and keywords and not any(word in description for word in keywords)
+            and not (media['provider']=='pixabay' and media['media_type']=='video')):
+        return 'relevance'
+    return None
+
+
+def coverage_warning(media, slot):
+    if media and media['media_type']=='video' and media['duration'] < slot['duration']-.05:
+        return 'Video yuva süresinden biraz kısa'
+    return ''
+
+
+def score(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE):
+    """Conservative metadata match, never a claim of semantic image recognition."""
+    if rejection_reason(media,slot,tolerance):
         return -1
     keywords = set(re.findall(r'[a-z]{3,}', media['query_used'].casefold()))
     keywords -= {'the', 'with', 'and', 'for'}
     description = media['description'].casefold()
-    # Providers without descriptive tags rely on search ranking + owner review.
-    if description and keywords and not any(word in description for word in keywords):
-        return -1
+    # Search ranking is baseline relevance; matching Pixabay video tags BOOST,
+    # rather than acting as a compulsory exact-token intersection.
     relevance = 5 if description and keywords and any(word in description for word in keywords) else 3
-    return relevance + (2 if media['width'] >= media['height'] else 0) + (1 if media['height'] >= 1000 else 0)
+    return (relevance + (2 if media['width'] >= media['height'] else 0)
+            + (1 if media['height'] >= 1000 else 0) + (2 if media['media_type']=='video' else 0))

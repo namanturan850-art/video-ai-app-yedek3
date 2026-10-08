@@ -10,6 +10,8 @@ from pydantic import SecretStr
 from app.scripts.engine import SecretGuard
 from app.stock.models import StockError, normalized_media
 from app.stock.download import safe_url
+from app.stock.diagnostics import safe_query
+from app.scripts.models import ScriptError
 
 LOG = logging.getLogger('uvicorn.error.stock')
 PRIVATE_KEYS = set()
@@ -24,7 +26,7 @@ class PrivateHTTPFilter(logging.Filter):
     """
     def filter(self, record):
         text = record.getMessage().lower()
-        return not (any(key.lower() in text for key in PRIVATE_KEYS if key)
+        return not (any(key.lower() in text for key in tuple(PRIVATE_KEYS) if key)
                     or any(domain in text for domain in ('pixabay.com', 'pexels.com', 'vimeo.com', 'vimeocdn.com')))
 
 
@@ -50,6 +52,7 @@ class APIStockProvider:
         if key:
             PRIVATE_KEYS.update((key,quote(key,safe='')))
         self.transport = transport
+        self.last_diagnostic = None
 
     def search(self, query, media_type):
         return self.search_videos(query) if media_type == 'video' else self.search_images(query)
@@ -65,6 +68,8 @@ class APIStockProvider:
             raise StockError('invalid_query', 'Stok arama sorgusunu kontrol edin.', 422)
         SecretGuard((key,)).validate(query)
         started, category = time.monotonic(), 'success'
+        self.last_diagnostic = {'raw_count':None,'normalized_count':0,
+                                'rejected':{'malformed_result':0,'unsafe_url':0}}
         try:
             url, headers, params, field = self.request(query, media_type, key)
             with httpx.Client(timeout=httpx.Timeout(30, connect=10), transport=self.transport,
@@ -85,6 +90,7 @@ class APIStockProvider:
             data = json.loads(raw)
             results = data[field]
             if not isinstance(results, list) or len(results) > 80: raise ValueError()
+            self.last_diagnostic['raw_count'] = len(results)
             normalized = []
             for item in results:
                 try:
@@ -93,8 +99,11 @@ class APIStockProvider:
                     for field in ('source_url','page_url','preview_url','download_url','creator_url'):
                         if media[field]: safe_url(media[field], self.name, page=field in ('source_url','page_url','creator_url'))
                     normalized.append(media)
-                except (ValueError, TypeError, KeyError, AttributeError, StockError):
+                except (ValueError, TypeError, KeyError, AttributeError, ScriptError) as error:
+                    reason = 'unsafe_url' if isinstance(error,StockError) and error.category=='unsafe_url' else 'malformed_result'
+                    self.last_diagnostic['rejected'][reason] += 1
                     continue  # A malformed/unsafe item cannot become a download.
+            self.last_diagnostic['normalized_count'] = len(normalized)
             if results and not normalized:
                 raise ValueError()
             return normalized
@@ -113,6 +122,11 @@ class APIStockProvider:
         finally:
             LOG.info('stock provider=%s operation=search_%s category=%s elapsed_ms=%.0f',
                      self.name, media_type, category, (time.monotonic()-started)*1000)
+            LOG.info('stock stage=normalization provider=%s media_type=%s query=%s raw_count=%s normalized_count=%s '
+                     'rejected_malformed_result=%s rejected_unsafe_url=%s',
+                     self.name,media_type,safe_query(query,tuple(PRIVATE_KEYS)),self.last_diagnostic['raw_count'],
+                     self.last_diagnostic['normalized_count'],self.last_diagnostic['rejected']['malformed_result'],
+                     self.last_diagnostic['rejected']['unsafe_url'])
 
 
 class PexelsStockProvider(APIStockProvider):
@@ -155,8 +169,10 @@ class PixabayStockProvider(APIStockProvider):
 
     def normalize_result(self, item, media_type, query):
         if media_type == 'video':
-            chosen = rendition(item['videos'].values())
-            preview, duration = chosen['thumbnail'], item['duration']
+            files = [f for f in item['videos'].values() if isinstance(f,dict) and isinstance(f.get('url'),str)
+                     and urlsplit(f['url']).path.lower().endswith('.mp4')]
+            chosen = rendition(files)
+            preview, duration = chosen.get('thumbnail') or '', item['duration']
         else:
             max_side = 1920 if item.get('fullHDURL') else 1280
             factor = min(1, max_side/max(item['imageWidth'],item['imageHeight']))
@@ -175,4 +191,5 @@ class PixabayStockProvider(APIStockProvider):
 def make_stock_provider(name, settings):
     providers = {'pexels':PexelsStockProvider,'pixabay':PixabayStockProvider}
     if name not in providers: raise StockError('invalid_provider','Bu stok sağlayıcısı kullanılamıyor.',422)
+    for key in settings.secret_values(): PRIVATE_KEYS.update((key,quote(key,safe='')))
     return providers[name](settings.stock_config(name).get('api_key',''))

@@ -6,6 +6,7 @@ PHASES={
     'subtitle_preflight':'Altyazı ön kontrolü', 'slot_render':'Medya işleme',
     'crossfade':'Sahne geçişi', 'final_assembly':'Son birleştirme',
     'output_decode_validation':'Video dekod doğrulaması', 'output_validation':'Video doğrulaması',
+    'smart_motion':'Akıllı kamera hareketi', 'smart_transition':'Akıllı sahne geçişi', 'emphasis_render':'Vurgu yazısı',
 }
 SUMMARIES={
     'input_decode_failed':'Stok medya dosyalarından biri FFmpeg tarafından okunamadı.',
@@ -20,6 +21,9 @@ SUMMARIES={
     'output_mux_failed':'Son video dosyasının yazılması başarısız oldu. Boş alanı kontrol edin.',
     'output_validation_failed':'Oluşan videonun biçimi veya süresi doğrulanamadı; önceki video korundu.',
     'unknown_ffmpeg_error':'FFmpeg işlemi başarısız oldu; hata türü belirlenemedi.',
+    'smart_motion_failed':'Akıllı hareket uygulanamadı; normal kadraj kullanıldı.',
+    'smart_transition_failed':'Akıllı geçiş uygulanamadı; temiz kesme kullanıldı.',
+    'emphasis_render_failed':'Vurgu yazısı uygulanamadı; altyazı ve video korunarak atlandı.',
 }
 
 

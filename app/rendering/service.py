@@ -22,6 +22,7 @@ from app.rendering.models import ACTIVE, LABELS, SOURCE_MESSAGE, RenderError, op
 from app.rendering.runner import ProcessRunner
 from app.rendering.engine import FFmpegRenderProvider
 from app.rendering.diagnostics import safe_diagnostic
+from app.rendering import smart_edit
 
 LOG=logging.getLogger('uvicorn.error.rendering')
 
@@ -87,7 +88,12 @@ class RenderService:
             # All contract values are local identities and safe scene/subtitle text, not URLs or secrets.
             self._guard(fingerprint_data)
             fingerprint=hashlib.sha256(json.dumps(fingerprint_data,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
-            return {'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals}
+            plan=None
+            # Pre-9.5 versions have no style key: retain their EXACT old fingerprint.
+            if 'editing_style' in opts:
+                plan=smart_edit.build(t,h,opts['editing_style'],fingerprint);self._guard(plan)
+                fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
+            return {'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan}
         except RenderError:raise
         except ScriptError:raise RenderError('source_stale',SOURCE_MESSAGE) from None
         except (OSError,ValueError,KeyError,TypeError):raise RenderError('input_invalid','Yerel video kaynakları okunamadı. Ses, altyazı ve stok medya dosyalarını kontrol edin.') from None
@@ -115,6 +121,8 @@ class RenderService:
                     c.execute('BEGIN IMMEDIATE');self._idle(c,pid)
                     version=c.execute('SELECT COALESCE(MAX(version),0)+1 FROM render_versions WHERE project_id=?',(pid,)).fetchone()[0]
                     h=inputs['handoff'];meta={'options':opts,'encoder_requested':opts['encoder'],'target_language':h['target_language'],'warnings':h.get('warnings',[])}
+                    if inputs['smart_edit_plan']:
+                        meta.update(editing_style=opts['editing_style'],smart_edit_plan=inputs['smart_edit_plan'],smart_edit_summary=inputs['smart_edit_plan']['summary'])
                     c.execute('INSERT INTO render_versions VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',(vid,pid,version,h['source_script_version_id'],h['narration_version_id'],h['subtitle_version_id'],h['scene_plan_id'],inputs['fingerprint'],json.dumps(meta,ensure_ascii=False),'queued',stamp,stamp))
                     c.execute('INSERT INTO render_jobs VALUES (?,?,?,?,?,?,?,?,?)',(jid,pid,vid,'queued',json.dumps({'percent':0,'encoder_used':'','elapsed_seconds':0}),'','',stamp,stamp))
                 runner=ProcessRunner();self.runners[jid]=runner
@@ -227,8 +235,8 @@ class RenderService:
         # Queued work runs only to observe cancellation and persist terminal status.
         self.executor.shutdown(wait=True)
 
-    def view(self,pid,*,refresh_tools=False):
-        self.projects.get(pid);source=None;source_error='';source_category='';opts=options({})
+    def view(self,pid,*,refresh_tools=False,editing_style='balanced'):
+        self.projects.get(pid);source=None;source_error='';source_category='';opts=options({'editing_style':editing_style})
         try:source=self._inputs(pid,opts)
         except RenderError as e:source_error=str(e);source_category=e.category
         try:tool=self._tools(True) if refresh_tools else self._tools()
@@ -259,7 +267,7 @@ class RenderService:
                     from datetime import datetime,timezone
                     job['progress']['elapsed_seconds']=round((datetime.now(timezone.utc)-datetime.fromisoformat(job['created_at'])).total_seconds(),1)
             music=self._music(c,pid)
-        result={'ready':bool(source and tool['found']),'source_ready':bool(source),'source_message':source_error,'safe_error_category':source_category,'ffmpeg':{k:tool[k] for k in ('found','status','message','encoders')},'summary':summary,'versions':versions,'active':next((v for v in versions if v['id']==active_id),None),'job':job,'music':music}
+        result={'ready':bool(source and tool['found']),'source_ready':bool(source),'source_message':source_error,'safe_error_category':source_category,'ffmpeg':{k:tool[k] for k in ('found','status','message','encoders')},'summary':summary,'versions':versions,'active':next((v for v in versions if v['id']==active_id),None),'job':job,'music':music,'smart_edit_plan':source['smart_edit_plan'] if source else None}
         return SecretGuard(self.settings.secret_values()).clean(result)
 
     def _output(self,pid,item):

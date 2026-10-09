@@ -58,7 +58,7 @@ Uygulandı: yerel gerçek ses süresi, yaklaşık ağırlıklı zamanlama, SRT/V
 
 ## Part 9 — FFmpeg Editing
 
-Uygulandı: gerçek yerel FFmpeg render, mevcut Part 8 handoff, CPU/NVENC seçimi ve kontrollü fallback, görsel/video/altyazı/müzik, kalıcı işler ve video sürümleri. [Basit Windows kontrolü ve sınırlar](docs/RENDERING.md). RTX 5070/NVENC ve gerçek proje senkronu sahibi tarafından Windows’ta doğrulanmalıdır. **Part 10 başlamadı.**
+Uygulandı: gerçek yerel FFmpeg render, mevcut Part 8 handoff, CPU/NVENC seçimi ve kontrollü fallback, görsel/video/altyazı/müzik, kalıcı işler ve video sürümleri. Sahibi Windows/Gyan FFmpeg 9.0.2 + RTX 5070/NVENC ile yaklaşık 193 saniyelik 1920×1080 çıktıyı, ses ve altyazıları canlı doğruladı. [Basit Windows kontrolü ve sınırlar](docs/RENDERING.md). **Part 10 başlamadı.**
 - timeline model
 - 1920x1080 normalization
 - clips/images
@@ -69,6 +69,10 @@ Uygulandı: gerçek yerel FFmpeg render, mevcut Part 8 handoff, CPU/NVENC seçim
 - subtitles
 - render progress
 - retry/logging
+
+## Part 9.5 — Smart YouTube Editing
+
+Uygulandı: Temel / Dengeli YouTube / Dinamik YouTube stilleri, render öncesi deterministik yerel Smart Edit Plan, mevcut stok **videolarda da** kamera hareketi, sahne geçişleri, uzun klip içinde aynı medyayla farklı kadrajlar, onaylı metinden aynen alınmış vurgu yazıları ve cue düzeyinde altyazı stili. Planlanan ve uygulanan sayımlar ayrı saklanır/gösterilir. Kaynak varlıklar/zamanlar ve eski videolar değişmez; yeni API kredisi veya stok indirmesi yoktur. SQLite şema 10 korunur; eski fingerprint hesabı değiştirilmez. Gerçek FFmpeg piksel testleri ve FFmpeg 9.0.2 doğrulaması var. [Part 9.5 Windows kontrolü](docs/RENDERING.md#part-95-windows-kontrolü). Yeni görünür kurgu sahibi tarafından Windows'ta denenmelidir; Part 10 başlamadı.
 
 ## Part 10 — Metadata + Thumbnail Planning
 - German title suggestions

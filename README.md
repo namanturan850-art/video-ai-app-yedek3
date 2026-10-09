@@ -1,6 +1,6 @@
-# Part 9: Yerel Video Oluştur / Render
+# Part 9.5: Smart YouTube Editing
 
-Mevcut projenizi açıp **Video Oluştur / Render** seçin. İlk denemede Otomatik encoder, açık altyazı ve kapalı müzik kullanın. FFmpeg hazırsa **Videoyu Oluştur** düğmesine bir kez basın. İşlem yereldir; API kredisi kullanılmaz. Ses, altyazı ve stok dosyaları korunur. [Çok basit Windows kontrolü](docs/RENDERING.md). Part 10 başlamadı.
+Mevcut projenizi açıp **Video Oluştur / Render → Kurgu Stili: Dengeli YouTube** seçin. Render öncesinde hareket, geçiş, vurgu yazısı ve klip içi değişim sayıları görünür. İlk denemede **Otomatik — NVIDIA tercih et**, açık altyazı ve kapalı müzik kullanın; **Videoyu Oluştur** düğmesine bir kez basın. **Temel** önceki davranışı korur; **Dinamik YouTube** daha hareketli bir seçenek sunar. Kurgu tamamen yerel ve deterministiktir; API kredisi veya yeni stok indirmesi gerekmez. Ses, altyazı, stok dosyaları ve önceki Video Sürümü 3 korunur. [21 çok basit Windows kontrol adımı](docs/RENDERING.md#part-95-windows-kontrolü). Part 9 Windows/NVENC render sahibi tarafından doğrulandı; yeni Part 9.5 görsel kontrolü aşağıdaki adımlarla yapılmalıdır. Part 10 başlamadı.
 
 # AI Video Studio
 
@@ -12,7 +12,7 @@ Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alan
 
 **Sağlayıcı sorunlarını ayırmak için:** Ayarlar → **AI Tanılama**. Şifreli kayıt, bağlantı, kısa üretim, JSON ve tek senaryo bölümü ayrı test edilir. [Çok basit Windows adımları](docs/AI_DIAGNOSTICS.md). Canlı testleri sahibi Windows'ta çalıştırmalıdır; otomatik test başarısı canlı API başarısı değildir.
 
-**Aşama 1–5 hazır; Aşama 6 stok medya eklendi:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler, genel amaçlı YouTube senaryo motoru, düzenlenebilir sahne planları ve Pexels/Pixabay medya yuvaları. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Gerçek video üretimi henüz yoktur. Yeni stok akışının canlı Windows kontrolü sahibi tarafından yapılmalıdır.
+**Aşama 1–5 hazır; Aşama 6 stok medya eklendi:** ana sayfa, Tanılama, güvenli yerel Ayarlar, projeler, genel amaçlı YouTube senaryo motoru, düzenlenebilir sahne planları ve Pexels/Pixabay medya yuvaları. Gemini / Ollama / OpenAI ile içerik analizi, dinamik bölüm planı, özgün senaryo, düzenleme, sürümler ve onay kullanılabilir. Sistem yalnızca hikâyeler için değildir. Uygulamayı açmak için hiçbir API anahtarı zorunlu değildir. Part 9 yerel video üretimi sahibi tarafından Windows’ta doğrulandı; Part 9.5 görünür kurgu kontrolü için Render rehberini izleyin.
 
 **Sahne planını denemek için:** Proje → **Senaryoyu Aç → Onayla** → **Görsel / Kurgu Planı → Ollama → Görsel / Kurgu Planını Hazırla**. Sahneyi düzenleyebilir, tek sahneyi yeniden planlayabilir, bölebilir/birleştirebilir, kilitleyebilir ve eski plan sürümünü seçebilirsiniz. Yukarı/Aşağı taşı görsel tasarımı taşır; anlatım sırası korunur. [12 basit Windows deneme adımı](docs/SCENE_PLANNING.md). Süreler tahminidir; ses ve video üretilmez.
 
@@ -37,7 +37,7 @@ Uygulamayı kapatmak için siyah pencereyi kapatın veya pencerenin içinde **Ct
 - **Adres kullanımda:** Önceden açtığınız uygulamanın siyah penceresini kapatıp tekrar deneyin.
 - **Tarayıcı açılmadı:** Tarayıcının adres çubuğuna `http://127.0.0.1:8000` yazın.
 - **Veri klasörüne yazılamıyor:** Çıkarılan uygulama klasörünü Belgeler klasörünüze taşıyıp tekrar açın.
-- **FFmpeg bulunamadı:** Bu aşamada sorun değildir; uygulama yine açılır. Video oluşturma özelliği geldiğinde FFmpeg gerekecektir.
+- **FFmpeg bulunamadı:** Uygulama açılır; video oluşturmak için FFmpeg gerekir. [Render rehberini](docs/RENDERING.md) açın.
 
 Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri klasörü ve FFmpeg durumunu gösterir. Gizli anahtarları göstermez.
 
@@ -48,7 +48,7 @@ Ana sayfadaki **Tanılama** kartı Python, işletim sistemi, veritabanı, veri k
 3. **Projeler** ekranına gidin. Uygulamayı kapatıp yeniden açın; projeniz listede kalmalıdır.
 4. İkinci bir deneme projesi oluşturun. İlk projede **Projeyi Sil** deyin. Önce **İptal** ile projenin kaldığını, sonra onay vererek yalnızca ilk projenin silindiğini kontrol edin.
 
-**Senaryo → Senaryoyu Aç** ve **Görsel / Kurgu Planı** çalışır. Stok medya, Seslendirme ve Altyazı ve Zamanlama ekranları kullanılabilir. Render hâlâ **Bekliyor** durumundadır. Ayrıntılar: [Projeler rehberi](docs/PROJECTS.md).
+**Senaryo → Senaryoyu Aç**, **Görsel / Kurgu Planı**, Stok medya, Seslendirme, Altyazı ve Zamanlama ve **Video Oluştur / Render** ekranları kullanılabilir. Ayrıntılar: [Projeler rehberi](docs/PROJECTS.md) ve [Render rehberi](docs/RENDERING.md).
 
 ## Ayarları Windows'ta deneme
 

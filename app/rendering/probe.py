@@ -2,6 +2,7 @@ import json
 import math
 import subprocess
 from app.rendering.models import RenderError
+from app.rendering.diagnostics import diagnostic
 
 
 def metadata(probe,path):
@@ -15,6 +16,24 @@ def metadata(probe,path):
         return value
     except (OSError,ValueError,subprocess.SubprocessError):
         raise RenderError('input_invalid','Yerel medya dosyası okunamadı veya geçersiz. Dosyayı değiştirmeden kontrol edin.') from None
+
+
+def stock(probe,path,media_type,**context):
+    """Validate actual local streams rather than trusting stock API metadata."""
+    if not probe:return None
+    try:
+        data=metadata(probe,path)
+        video=next(s for s in data['streams'] if isinstance(s,dict) and s.get('codec_type')=='video')
+        if type(video.get('width')) is not int or type(video.get('height')) is not int or min(video['width'],video['height'])<=0:raise ValueError()
+        if media_type=='video':
+            if not isinstance(data.get('format',{}),dict):raise ValueError()
+            duration=float(data.get('format',{}).get('duration',video.get('duration')))
+            if not math.isfinite(duration) or duration<=0:raise ValueError()
+            data['stock_duration']=duration
+        return data
+    except (RenderError,KeyError,ValueError,TypeError,StopIteration):
+        safe=diagnostic('input_decode_failed',phase='input_preflight',media_type=media_type,**context)
+        raise RenderError('input_invalid',safe['safe_error_summary'],diagnostic=safe) from None
 
 
 def validate(probe,path,duration):

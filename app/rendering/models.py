@@ -9,8 +9,10 @@ SOURCE_MESSAGE='Video kaynakları birbiriyle eşleşmiyor. Güncel seslendirme, 
 
 
 class RenderError(ScriptError):
-    def __init__(self,category,message,status_code=409):
+    def __init__(self,category,message,status_code=409,*,diagnostic=None):
+        from app.rendering.diagnostics import safe_diagnostic
         super().__init__(message,status_code);self.category=category
+        self.diagnostic=safe_diagnostic(diagnostic)
 
 
 class RenderOptions(BaseModel):

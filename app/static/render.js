@@ -43,6 +43,12 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
     jobs.replaceChildren();const j=state.job;
     if(j){jobs.append(el('h2',j.status_label));const p=el('progress');p.max=100;p.value=j.progress.percent;jobs.append(p,el('p',`%${j.progress.percent} · Geçen süre: ${clock(j.progress.elapsed_seconds)} · Kullanılan encoder: ${j.encoder_label}`));
       if(j.error_message)jobs.append(el('p',j.error_message));for(const w of j.progress.warnings||[])jobs.append(el('p',w));
+      const d=j.progress.diagnostic;if(j.status==='error'&&d){const panel=el('section');panel.id='render-safe-diagnostic';panel.setAttribute('aria-live','polite');
+        panel.append(el('h3','Güvenli render tanısı'),el('p',`Render aşaması: ${d.phase_label}`),el('p',`Hata türü: ${d.safe_error_summary}`),el('p',`Tanı kodu: ${d.safe_error_code}`));
+        if(d.media_type)panel.append(el('p',`Medya türü: ${d.media_type==='video'?'Video':'Görsel'}`));
+        if(d.encoder)panel.append(el('p',`Encoder: ${d.encoder==='h264_nvenc'?'NVIDIA NVENC':'CPU / libx264'}`));
+        panel.append(el('p','Hata devam ederse yalnız bu güvenli tanıyı paylaşın. Önceki video ve kaynaklar korundu.'));jobs.append(panel);
+      }
       if(activeJob())button(jobs,'Renderı İptal Et',()=>action(()=>request(`${base}/jobs/${j.id}/cancel`,'POST')));
     }
     // Poll progress without resetting the current video player or its seek/play state.

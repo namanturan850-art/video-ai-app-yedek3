@@ -5,12 +5,13 @@ import subprocess
 from threading import Event,RLock
 import time
 from app.rendering.models import RenderError
-from app.rendering.tools import nvenc_initialization_failure
+from app.rendering.diagnostics import classify,diagnostic
 
 
 class ProcessRunner:
-    def __init__(self,event=None):
+    def __init__(self,event=None,*,diagnostic_callback=lambda value:None):
         self.event=event or Event();self.lock=RLock();self.process=None;self.commands=[]
+        self.diagnostic_callback=diagnostic_callback
 
     def cancel(self):
         self.event.set()
@@ -25,7 +26,7 @@ class ProcessRunner:
                 try:child.kill();child.wait(timeout=3)
                 except (OSError,subprocess.TimeoutExpired):pass
 
-    def run(self,arguments,cwd,callback=lambda seconds:None,*,encoder=''):
+    def run(self,arguments,cwd,callback=lambda seconds:None,*,encoder='',phase='ffmpeg',slot_index=None,slot_id=None,media_type=None,slot_count=None):
         if self.event.is_set():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
         # Stderr stays in a job-owned temp file and is NEVER copied to safe logs/API.
         error_path=Path(cwd)/'stderr.tmp'
@@ -56,10 +57,12 @@ class ProcessRunner:
                 if self.event.is_set():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
                 if child.returncode:
                     errors.seek(0);details=errors.read(65536).decode('utf-8','replace')
-                    if encoder=='h264_nvenc' and nvenc_initialization_failure(details):
-                        raise RenderError('nvenc_failed','NVIDIA NVENC başlatılamadı. GPU sürücüsünü kontrol edin veya CPU seçin.')
-                    raise RenderError('render_failed','FFmpeg video oluşturamadı. Yerel medya dosyalarını, boş alanı ve render günlüğündeki güvenli tanıyı kontrol edin.')
+                    code=classify(details,encoder=encoder,phase=phase)
+                    safe=diagnostic(code,phase=phase,encoder=encoder,slot_index=slot_index,slot_id=slot_id,media_type=media_type,slot_count=slot_count,return_code=child.returncode)
+                    self.diagnostic_callback(safe)
+                    raise RenderError('nvenc_failed' if code=='nvenc_failed' else 'render_failed',safe['safe_error_summary'],diagnostic=safe)
                 return seconds
         except OSError:
-            raise RenderError('local_storage','FFmpeg veya geçici render dosyası açılamadı. Yazma iznini ve boş alanı kontrol edin.',503) from None
+            safe=diagnostic('unknown_ffmpeg_error',phase=phase,encoder=encoder,slot_index=slot_index,slot_id=slot_id,media_type=media_type,slot_count=slot_count)
+            raise RenderError('local_storage','FFmpeg veya geçici render dosyası açılamadı. Yazma iznini ve boş alanı kontrol edin.',503,diagnostic=safe) from None
         finally:error_path.unlink(missing_ok=True)

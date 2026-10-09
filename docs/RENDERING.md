@@ -34,7 +34,34 @@ Mevcut proje → **Video Oluştur / Render**. Bu işlem tamamen yereldir; AI33, 
 
 Çıktı `data/projects/<proje-id>/renders/video-v1.mp4`, sonraki çıktılar `video-v2.mp4` şeklindedir. Geçerli önceki videolar silinmez; **Aktif Video Yap** ile seçilebilir. Kaynak değişince eski video korunur, “Eski kaynaklara ait” olur ve sonraki aşamaya hazır sayılmaz. Videoyu Aç ve Dosyayı İndir yalnız bu projenin doğrulanmış dosyasını sunar; oynatıcı ileri/geri sarabilir.
 
-Her işte kısa FFmpeg komutları, UTF-8 filtre/ASS dosyaları ve küçük ara parçalar `renders/.job-<id>/` içinde tutulur. Başarı, hata, iptal ve yeniden açılma sonrası yalnız bu işe ait geçiciler temizlenir. `renders/render-vN.log` sadece güvenli olay kategorisi, encoder ve süre içerir; ham stderr, anahtarlar, imzalı adresler ve ortam değişkenleri kaydedilmez.
+Her işte kısa FFmpeg komutları, UTF-8 filtre/ASS dosyaları ve küçük ara parçalar `renders/.job-<id>/` içinde tutulur. Başarı, hata, iptal ve yeniden açılma sonrası yalnız bu işe ait geçiciler temizlenir. `stderr.tmp` okununca silinir. `renders/render-vN.log` yalnız kontrollü olay, encoder, süre ve aşağıdaki güvenli tanıyı içerir; ham stderr, komut, dosya adı/yolu, anahtar, imzalı adres veya ortam değişkeni kaydedilmez.
+
+## Windows render hatasını güvenli kontrol etme
+
+1. Düzeltme PR’ını birleştirin.
+2. GitHub Desktop → Fetch / Pull.
+3. AI Video Studio’yu kapatın.
+4. START_AI_VIDEO_STUDIO.bat dosyasını açın.
+5. Proje → Video Oluştur / Render.
+6. Encoder: **Otomatik**.
+7. Altyazı: **açık**.
+8. Müzik: **kapalı**.
+9. **Videoyu Oluştur**’a bir kez basın.
+10. Başarılıysa başarıyı bildirin. Hata varsa yalnız **Güvenli render tanısı** kutusundaki yazıyı kopyalayın.
+
+Terminalde FFmpeg komutu çalıştırmanız gerekmez. Örnek: “Render aşaması: Medya işleme: Medya 5/37”, “Hata türü: FFmpeg filtre işlemi başarısız oldu.”, “Tanı kodu: filter_graph_failed”. Tanı yenileme/uygulamayı yeniden açma sonrası korunur. Eski videolar ve senaryo/ses/altyazı/stok dosyaları korunur.
+
+Tanı alanları `phase`, `operation`, sıfırdan başlayan `slot_index`, `slot_count`, yalnız dahili 32 haneli hex `slot_id`, `media_type`, `encoder`, varsa sayısal `return_code`, `safe_error_code`, sabit Türkçe `safe_error_summary` ve `phase_label` olur. Ekrandaki medya sırası 1’den başlar. Yalnız izin verilen değerler saklanır; serbest FFmpeg metni kopyalanmaz. Kalıcılık mevcut `render_jobs.progress_json.diagnostic` alanındadır; SQLite şema 10 değişmez. NVENC veya dekoratif geçiş hatası başarıyla telafi edilirse güvenli tanı günlükte kalır, tamamlanmış işte hata kutusu gösterilmez.
+
+Yerel hata sınıfları: `input_decode_failed`, `filter_graph_failed`, `filter_option_unsupported`, `scale_filter_failed`, `subtitle_filter_failed`, `concat_failed`, `audio_mix_failed`, `encoder_failed`, `nvenc_failed`, `output_mux_failed`, `output_validation_failed`, `unknown_ffmpeg_error`. Bunlar bir hata metninin güvenli sınıflandırmasıdır; bilinmeyen hatada neden uydurulmaz. Aşamalar medya ön kontrolü, altyazı ön kontrolü, yuva render, crossfade, son birleştirme ve çıktı doğrulaması olarak ayrılır.
+
+Her stok dosyası işlenmeden önce ffprobe ile video/görsel akışı ve pozitif boyutları; videoda sonlu pozitif gerçek süre kontrol edilir. Bozuk dosya “Stok medya dosyalarından biri FFmpeg tarafından okunamadı.” tanısıyla durur. ffprobe yoksa tek kare yerel dekod kontrolü yapılır ve boyut/süre ön kontrolünün sınırlılığı açıklanır. Altyazı açıkken `ass` filtresi zorunludur; gerçek geçici ASS üzerinde tek yerel kare testi pahalı renderdan önce çalışır. Part 8 SRT/VTT değişmez; dış servis veya ücretli çağrı yoktur.
+
+## FFmpeg 9 uyumluluk bulgusu
+
+Resmî [FFmpeg n9.0.2 kaynak kodu](https://github.com/FFmpeg/FFmpeg/tree/n9.0.2) ayrı test klasöründe derlenerek sınandı. `-filter_complex_script` bu sürümde kaldırılmıştır: gerçek çağrı çıkış kodu **8**, “Unrecognized option” verir. Uygulama aynı UTF-8 filtre dosyasını artık **`-/filter_complex <dosya>`** ile okur; komut uzunluğu ve güvenli göreli dosya adları korunur. Resmî [CLI dosyadan seçenek okuma açıklaması](https://ffmpeg.org/ffmpeg.html#Options): seçenek adındaki başlangıç `/` dosya içeriğini okutur. Bu seçenek mevcut 7.1.5 sürümünde de gerçek komutla başarılıdır.
+
+Scale/crop, setparams, split/trim, fade/xfade, concat demuxer, ASS, AAC ses karışımı ve H.264 çıktı sözdizimi değiştirilmedi. Linux üzerinde derlenmiş 9.0.2 ile gerçek CPU render testleri ayrıca çalıştırılır. Bu doğrulama sahibin Windows/Gyan build’i veya NVIDIA sürücüsündeki başka bir sorunu dışlamaz; kalan hata yeni güvenli tanıyla anlaşılır.
 
 ## Kaynak ve zamanlama sözleşmesi
 

@@ -79,6 +79,9 @@ class VisualBlock(BaseModel):
     action: str = Field(default='', max_length=300)
     shot_suggestion: str = Field(default='', max_length=500)
     notes: str = Field(default='', max_length=1500)
+    search_anchor: str = Field(default='',max_length=150)
+    search_context: str = Field(default='',max_length=300)
+    search_alternatives: list[str] = Field(default_factory=list,max_length=5)
 
     @model_validator(mode='after')
     def semantic_queries(self):
@@ -149,6 +152,25 @@ def scene_metadata(scene, narration):
                  'alternative_stock_queries':'invalid_stock_queries','media_type':'invalid_media_type'}.get(field,'invalid_scene_schema')
         raise scene_error(category,field,missing=detail['type']=='missing') from None
     warnings=[]
+    # Search hints are optional and never justify another paid repair request.
+    # Only existing scene/source names may become a subject anchor.
+    from app.stock.relevance import phrase,normalized,canonical,WORDS
+    source_entities=scene.get('entities',[])
+    safe_entities=[e for e in source_entities if isinstance(e,str)] if isinstance(source_entities,list) else []
+    trusted=' '.join([narration,query,*valid,str(scene.get('visual_intent','')),*safe_entities])
+    if isinstance(scene.get('location'),str):trusted+=' '+scene['location']
+    for field in ('search_anchor','search_context'):
+        if field not in scene:continue
+        value=phrase(scene[field]);usable=bool(value) and len(value)<=(150 if field=='search_anchor' else 300)
+        if field=='search_anchor':usable=usable and normalized(value) in normalized(trusted)
+        else:usable=usable and not (canonical(value)-canonical(trusted)-set(WORDS))
+        if usable:block[field]=value
+        elif scene[field]:warnings.append('İsteğe bağlı arama bilgisi kaynakla doğrulanamadı; mevcut sorgular korundu.')
+    if 'search_alternatives' in scene:
+        values=scene['search_alternatives']
+        if isinstance(values,list):
+            block['search_alternatives']=list(dict.fromkeys(value for raw in values[:5] if (value:=normalized_query(raw)) and not (canonical(value)-canonical(trusted)-set(WORDS))))
+        if not isinstance(values,list) or len(block['search_alternatives'])!=len(values):warnings.append('Kullanılamayan isteğe bağlı arama alternatifleri atlandı.')
     if len(valid)!=len(alternatives) or len(valid)>5:
         warnings.append('Kullanılamayan veya fazla alternatif sorgular çıkarıldı; geçerli sorgular korundu.')
     text_limits={'overlay_text':150,'location':300,'action':300,'shot_suggestion':500,'notes':1500}
@@ -594,7 +616,7 @@ class ProductionService:
             plan=deepcopy(inputs['base_plan']);target=self._scene(plan,inputs['scene_id'])
             if target['locked']: raise ScriptError('Önce sahnenin kilidini açın.',409)
             if normalize(block['narration'])!=normalize(target['narration']): raise ScriptError('Tek sahne planlaması anlatımı değiştiremez.',422)
-            fields=('visual_intent','stock_query','alternative_stock_queries','media_type','overlay_text',
+            fields=('visual_intent','stock_query','alternative_stock_queries','media_type','overlay_text','search_anchor','search_context','search_alternatives',
                     'transition','motion','composition','shot_suggestion','notes')
             target.update({key:block[key] for key in fields})
             target['metadata_warnings']=block.get('metadata_warnings',[])
@@ -689,7 +711,7 @@ class ProductionService:
             else:
                 # Owner choice: move VISUAL designs; approved narration order stays fixed.
                 keys=(set(VisualBlock.model_fields)-{'narration'})|{'media','image_status'}
-                first={key:deepcopy(block[key]) for key in keys};second={key:deepcopy(other[key]) for key in keys}
+                first={key:deepcopy(block.get(key,[] if key=='search_alternatives' else '')) for key in keys};second={key:deepcopy(other.get(key,[] if key=='search_alternatives' else '')) for key in keys}
                 block.update(second);other.update(first)
         if not coverage(plan['blocks'],current['text']): raise ScriptError('İşlem anlatım kapsamını değiştiremez; mevcut plan korundu.',409)
         self._save(project_id,plan,new_version=True)
@@ -721,7 +743,8 @@ class ProductionService:
                 'transition','motion','overlay_text','overlay_language','notes','locked','media')
         return {'contract_version':1,'project_id':project_id,'plan_id':plan['plan_id'],'plan_version':plan['plan_version'],
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
-                'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,'scenes':[{key:b[key] for key in fields} for b in plan['blocks']]}
+                'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
+                'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

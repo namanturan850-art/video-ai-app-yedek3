@@ -4,29 +4,24 @@ Mevcut proje → **Video Oluştur / Render**. Bu işlem tamamen yereldir; AI33, 
 
 ## Part 9.5 Windows kontrolü
 
-Part 9 sahibi tarafından gerçek Windows/Gyan FFmpeg 9.0.2 + RTX 5070 ile doğrulandı: yaklaşık 193 saniye, 1920×1080, gerçek NVIDIA NVENC, ses ve altyazılar başarılı. Part 9.5'in görünür kurgu kontrolü için:
+Part 9 ve 9.5 render sahibi tarafından gerçek Windows'ta doğrulandı. Part 9: Gyan FFmpeg 9.0.2 + RTX 5070, yaklaşık 193 saniye, 1920×1080, gerçek NVIDIA NVENC, ses ve altyazılar başarılı. Yeni Part 6.5 + 9.5 kalite düzeltmesi için:
 
 1. PR’ı birleştirin.
 2. GitHub Desktop → Fetch / Pull.
 3. AI Video Studio’yu tamamen kapatın.
 4. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
 5. Aynı projeyi açın.
-6. **Video Oluştur / Render**’a tıklayın.
-7. **Kurgu Stili: Dengeli YouTube** seçin.
-8. **Encoder: Otomatik — NVIDIA tercih et** seçin.
-9. **Altyazıları Videoya Yaz** açık kalsın.
-10. Bu testte müzik kapalı kalsın.
-11. Render öncesinde **Hareket efektleri**, **Sahne geçişleri** ve **Vurgu yazıları** sayılarının sıfırdan büyük olduğunu kontrol edin.
-12. **Videoyu Oluştur**’a bir kez basın.
-13. Tamamlanmasını bekleyin; bilgisayarı ve uygulama penceresini açık tutun.
-14. Yeni videoyu oynatın.
-15. İlk 30 saniyeyi kontrol edin.
-16. Ortasını kontrol edin.
-17. Son dakikasını kontrol edin.
-18. Yakınlaşma/kayma/kadraj değişimi, sahne geçişi ve üstte vurgu yazılarının göründüğünü kontrol edin.
-19. Ses ve altyazı zamanlarının değişmediğini kontrol edin.
-20. Kullanılan encoder'ın **NVIDIA NVENC** olduğunu kontrol edin.
-21. Önceki **Video Sürümü 3**’ün hâlâ bulunduğunu kontrol edin.
+6. Normal altyazı görünümünü eski başarılı Part 9 videosuyla karşılaştırın.
+7. Stok medya bölümünü açın.
+8. **Alakaya Göre Medyayı Yeniden Ara** düğmesine basın.
+9. Birkaç Bermuda Triangle sahnesini kontrol edin.
+10. İlgisiz şehir görüntülerinin tercih edilmediğini kontrol edin.
+11. İlgili okyanus/harita/gemi/uçak/bağlam medyasının daha üstte olduğunu kontrol edin.
+12. **Dengeli YouTube**, **Otomatik**, **altyazı açık**, **müzik kapalı** ile render oluşturun.
+13. Normal altyazıların eski yazı tipi/stili koruduğunu kontrol edin.
+14. Vurgu yazısının ayrı kaldığını kontrol edin.
+15. Hareket/geçişlerin görünür ama aşırı olmadığını kontrol edin.
+16. Önceki videoların hâlâ bulunduğunu kontrol edin.
 
 **Kurgu Planını Gör** açılarak zaman, sahne, efekt, geçiş ve vurgu metni incelenebilir. Kurgu stilini değiştirince plan bu bilgisayarda yeniden hesaplanır; kredi harcanmaz. Tamamlanan videoda **Planlanan kurgu** ve **Uygulanan kurgu** ayrı gösterilir. Bir dekoratif efekt atlanırsa uyarı ve gerçek uygulanan sayı görünür.
 
@@ -39,23 +34,23 @@ Yeni plan, mevcut Part 8 zamanlaması ve Part 5 düzenleme ipuçlarını salt ok
 | Stil | Hareket ve tempo | Geçiş ve metin |
 | --- | --- | --- |
 | Temel | Önceki Part 9; videoda ek kamera yok, mevcut görsel hareketleri korunur | Mevcut geçiş ve vurgu metni |
-| Dengeli YouTube (varsayılan) | Uygun kadrajlarda yaklaşık %3–4; ilk 15 saniye daha canlı | Yaklaşık her üçüncü sahne sınırı; vurgu yaklaşık 28 saniyede bir |
-| Dinamik YouTube | Uygun kadrajlarda yaklaşık %5–7; daha sık kadraj değişimi | Yaklaşık her ikinci sahne sınırı; vurgu yaklaşık 18 saniyede bir |
+| Dengeli YouTube (varsayılan) | Uygun kadrajlarda yaklaşık %4,5–5; ilk 15 saniye daha canlı | Yaklaşık her üçüncü sahne sınırı; vurgu yaklaşık 28 saniyede bir |
+| Dinamik YouTube | Uygun kadrajlarda yaklaşık %7–8; daha sık kadraj değişimi | Yaklaşık her ikinci sahne sınırı; vurgu yaklaşık 18 saniyede bir |
 
 Yakın/kişi/detay kadrajları en fazla yaklaşık %1,2 hareketle korunur; zaten hareketli sahneler sakin bırakılır. Önem düzeyi ve mevcut `motion / composition / transition` ipuçları hesaba katılır; kişi/yer/bilgi uydurulmaz. Yüzde/sıklıklar kalite hedefidir, katı rastgele kurallar değildir.
 
-- **Video hareketi:** aynı hareketli video kareleri işlenir; `zoompan d=1` her giriş karesine bir çıktı karesi üretir. Yakınlaşma/uzaklaşma, dört yönde kayma ve hafif kadraj değişimi yüksek çözünürlükte ve sınırlandırılmış güvenli crop ile uygulanır. Slotun tam kare sayısı korunur; siyah kenar/aspect bozulması eklenmez. Önemli bazı vurgularda en fazla %7 sınırında hafif ek yakınlaşma olabilir.
+- **Video hareketi:** aynı hareketli video kareleri işlenir; `zoompan d=1` her giriş karesine bir çıktı karesi üretir. Yakınlaşma/uzaklaşma, dört yönde kayma ve hafif kadraj değişimi yüksek çözünürlükte ve sınırlandırılmış güvenli crop ile uygulanır. Slotun tam kare sayısı korunur; siyah kenar/aspect bozulması eklenmez. Ek vurgu yakınlaşması da Dengeli %5 / Dinamik %8 sınırını aşmaz; yakın/yüz kadrajı korunur.
 - **Uzun klip:** yaklaşık 7 saniyeden sonra iki, 11 saniyeden sonra üç görsel işlem; açılışta daha erken değişim. Bunlar aynı dosyanın render içindeki parçalarıdır; yeni stok yuvası/indirme yaratmaz, anlatımı çoğaltmaz. Tek stok girişi ve tek core ara video kullanılır; parçalar frame sınırlarında birleşir.
-- **Geçiş:** aynı sahne içindeki medya değişimleri genellikle temiz kesme. Sahne sınırlarında yaklaşık 0,33 saniye dengeli / 0,43 saniye dinamik crossfade veya kısa koyu geçiş; çok kısa yuvalarda kısaltılır/atlanır. Önceki klibin ek kuyruğu ve sonraki klibin başı kullanılır; master süre ve cue zamanları kaymaz.
+- **Geçiş:** aynı sahne içindeki medya değişimleri genellikle temiz kesme. Seçilmiş sahne sınırlarında yaklaşık 0,43 saniye Dengeli / 0,53 saniye Dinamik crossfade veya kısa koyu geçiş; çok kısa yuvalarda kısaltılır/atlanır. Önceki klibin ek kuyruğu ve sonraki klibin başı kullanılır; master süre ve cue zamanları kaymaz.
 - **Vurgu:** mevcut `overlay_text` önceliklidir ve aynen korunur. Yoksa onaylı anlatımda da bulunan tam kısa cue veya cue başındaki kısa cümlecik aynen seçilir. Genellikle 2–8, en fazla 10 kelime; uygun sayı/tarih tercih edilir. Yeni başlık/çeviri/özet/bilgi üretilmez. Uygun metin yoksa atlanır. Tam cue sınırları kullanılır; kelime zamanı tahmin edilmez. Yaklaşık 1,5–3 saniye üst-sol/üst-ortada kalın, kenarlı yazı ve 180 ms hafif fade/scale animasyonu; alt altyazıyla çakışmaz.
-- **Altyazı:** Temel 48 px önceki stil; Dengeli 50 px, Dinamik 52 px kalın kenarlı stil ve kısa cue fade. SRT/VTT metni ve zamanları değişmez; karaoke/kelime kelime hizalama yoktur. Kurulu Arial/font fallback kullanılır; özel font dosyası eklenmez.
-- **Sürüm uyumluluğu:** yeni stiller/planlar fingerprint'e dahildir. Stili olmayan eski sürümler için eski fingerprint formülü aynen kullanılır; geçerli Video Sürümü 3 hâlâ oynatılabilir/aktifleştirilebilir, sonraki render Sürüm 4 olur.
+- **Altyazı:** üç profilde de başarılı Part 9 stili aynen: Arial/güvenli kurulu fallback, 48 px, normal ağırlık, outline 3, shadow 1, alt orta, 90/90/60 marj. Normal cue'ya animasyon eklenmez. Önceki regresyon profilin 50/52 px ve kalın yazı seçmesinden geliyordu. Üstteki büyük vurgu kendi ayrı stilini kullanır; geçiş seçilmesi vurgu üretmez. SRT/VTT metni ve Part 8 zamanları değişmez; karaoke/kelime zamanı tahmini yoktur.
+- **Sürüm uyumluluğu:** yeni plan `smart_edit_v2`; eski tamamlanmış `v1` planı kaynakları aynıyken kendi fingerprint'iyle güncel/oynatılabilir/aktifleştirilebilir kalır. Stilsiz eski Part 9 fingerprint formülü aynen korunur. Yeni render yeni sürümdür; önceki video dosyası yeniden yazılmaz.
 - **Güvenli geri dönüş:** hareket hatası → normal kadraj; geçiş hatası → temiz kesme; vurgu hatası → vurgusuz çıktı. Mevcut altyazı/ses ve ana video işlemi korunur; çekirdek işlem de başarısızsa eski aktif video korunarak hata gösterilir. Güvenli kodlar: `smart_motion_failed`, `smart_transition_failed`, `emphasis_render_failed`. Tam kaynak metni/raw stderr/sırlar günlükte yoktur.
 - **NVENC ve FFmpeg 9:** filtreler yerel CPU'da çalışabilir; tüm ara ve son video encode seçilen encoder ile yapılır. Otomatik NVIDIA tercihi ve yalnız NVENC başlatma hatasında mevcut tek CPU tekrar denemesi korunur. `-/filter_complex` kullanımı sürer; kaldırılmış `-filter_complex_script` kullanılmaz. Sesin hızı/perdesi, stok sesinin dışlanması ve mevcut isteğe bağlı müzik davranışı değişmez.
 
 193 saniye / 24 sahne / 37 VIDEO / 49 cue / 0 mevcut vurgu regresyon örneği Dengeli planda **33 hareket, 8 geçiş, 6 vurgu, 11 klip içi değişim** üretir. Bu sentetik kaynak biçimi testidir; sahibinin gerçek projesinde seçimler mevcut metin/kompozisyona göre değişir.
 
-Gerçek FFmpeg testleri aynı VIDEO'nun Temel/Dengeli karelerini birden fazla zamanda karşılaştırır; kırmızı-mavi geçişte gerçek ara renkleri, vurgu piksellerinin görünmesini/kaybolmasını, uzun klibin farklı işlemlerini, yedi kamera hareketini ve güvenli geri dönüşleri sınar. FFmpeg 9.0.2 ayrı gerçek koşuda sınanır. Yeni Part 9.5'in gerçek Windows/NVENC görünümü için **Live render test must be run by owner on Windows.**
+Gerçek FFmpeg testleri aynı VIDEO'nun Temel/Dengeli/Dinamik karelerini birden fazla zamanda karşılaştırır; kırmızı-mavi geçişte gerçek ara renkleri, vurgu piksellerinin görünmesini/kaybolmasını, uzun klibin farklı işlemlerini, yedi kamera hareketini ve güvenli geri dönüşleri sınar. Karma başarılı/başarısız slotta yalnız çıktı yolunda uygulanan hareket sayılır. FFmpeg 9.0.2 ayrı gerçek koşuda sınanır. Bu kalite düzeltmesinin Windows/NVENC görünümü için **Live render test must be run by owner on Windows.**
 
 ## İlk Part 9 Windows kontrolü
 

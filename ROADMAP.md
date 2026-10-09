@@ -72,7 +72,11 @@ Uygulandı: gerçek yerel FFmpeg render, mevcut Part 8 handoff, CPU/NVENC seçim
 
 ## Part 9.5 — Smart YouTube Editing
 
-Uygulandı: Temel / Dengeli YouTube / Dinamik YouTube stilleri, render öncesi deterministik yerel Smart Edit Plan, mevcut stok **videolarda da** kamera hareketi, sahne geçişleri, uzun klip içinde aynı medyayla farklı kadrajlar, onaylı metinden aynen alınmış vurgu yazıları ve cue düzeyinde altyazı stili. Planlanan ve uygulanan sayımlar ayrı saklanır/gösterilir. Kaynak varlıklar/zamanlar ve eski videolar değişmez; yeni API kredisi veya stok indirmesi yoktur. SQLite şema 10 korunur; eski fingerprint hesabı değiştirilmez. Gerçek FFmpeg piksel testleri ve FFmpeg 9.0.2 doğrulaması var. [Part 9.5 Windows kontrolü](docs/RENDERING.md#part-95-windows-kontrolü). Yeni görünür kurgu sahibi tarafından Windows'ta denenmelidir; Part 10 başlamadı.
+Uygulandı ve render sahibi tarafından Windows'ta doğrulandı: Temel / Dengeli / Dinamik, yerel Smart Edit Plan, stok videolarda da hareket, sahne geçişleri, uzun klipte farklı kadrajlar, exact vurgu ve planlanan/uygulanan sayımlar. Kalite düzeltmesinde normal Part 9 altyazı stili üç profilde aynen geri geldi; vurgu ayrı ve geçişten bağımsız. Dengeli %4,5–5 / Dinamik %7–8 hareket; yaklaşık 0,43/0,53sn seçilmiş geçişler, yakın kadraj korunur. Eski v1/stilsiz renderlar ve kaynak zamanları/dosyaları korunur; yeni plan v2. SQLite 10 değişmedi. Gerçek FFmpeg piksel ve fallback testleri var. Yeni kalite görünümü [16 basit Windows adımıyla](docs/RENDERING.md#part-95-windows-kontrolü) kontrol edilmelidir. **Part 10 başlamadı.**
+
+### Part 6.5 — Smart Media Relevance (Part 10 öncesi kalite geçişi)
+
+Mevcut sahneden yerel konu çapası, dört sorgu kademesi, çok dilli ağırlıklı metadata alakası, Pixabay video etiket kapısı ve ilgili görsel fallback. Zayıf sonuç otomatik seçilmez. Yeni ücretli sağlayıcı/LLM çağrısı yok; gelecek sahne ipuçları aynı mevcut isteğe dahil. **Alakaya Göre Medyayı Yeniden Ara** açık onayla yeni seçim sürümü/arşiv oluşturur; eski dosyalar, kilitler, senaryo/TTS/altyazı korunur. [Alaka kuralları](docs/STOCK_MEDIA.md#part-65--konuya-uygun-medya). Canlı stok kalite kontrolünü sahibi Windows'ta yapmalıdır.
 
 ## Part 10 — Metadata + Thumbnail Planning
 - German title suggestions

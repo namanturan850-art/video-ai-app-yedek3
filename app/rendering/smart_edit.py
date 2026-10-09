@@ -65,8 +65,8 @@ def emphasis(t,h,style):
 def motion(scene,index,style,opening):
     explicit=scene.get('motion','none');composition=scene.get('composition','medium');importance=scene.get('importance',50)
     high=composition=='movement' or bool(re.search(r'\b(?:running|driving|flying|racing|laufen|fahren|koşu|hareket)\b',str(scene.get('action','')).casefold()))
-    strength=.035 if style=='balanced' else .06
-    if opening:strength=min(.07,strength+.005)
+    strength=.045 if style=='balanced' else .07
+    if opening or composition in ('wide','environment'):strength=min(.05 if style=='balanced' else .08,strength+.005)
     if importance<40:strength*=.65
     if high:
         return ('subtle_reframe',.008,'Hareketli sahnede sakin kadraj') if explicit in ('pan','slow_zoom','ken_burns') else ('none',0.,'Hareketli sahne korunur')
@@ -112,7 +112,7 @@ def build(t,h,style,source_fingerprint):
             if style=='basic':transition=original if original in ('crossfade','fade') else 'hard_cut';seconds=1/3 if transition=='crossfade' else .3 if transition=='fade' else 0.
             elif original in ('crossfade','fade') or boundary%(3 if style=='balanced' else 2)==1 or (opening and boundary==1):
                 transition='fade_dark' if original=='fade' else 'crossfade' if original=='crossfade' or boundary%3 else 'dip_black'
-                seconds=(10 if style=='balanced' else 13)/30
+                seconds=(13 if style=='balanced' else 16)/30
             if seconds:
                 seconds=min(seconds,slot['frames']/120,t['slots'][i+1]['frames']/120)
                 if seconds<2/30:transition='hard_cut';seconds=0.
@@ -121,7 +121,7 @@ def build(t,h,style,source_fingerprint):
                       'transition_duration':round(seconds,6),'visual_variant':scene.get('composition','medium'),'reason':reason})
     for previous,current in zip(items,items[1:]):current['transition_in']=previous['transition_out'] if previous['scene_id']!=current['scene_id'] else 'hard_cut'
     texts=emphasis(t,h,style)
-    plan={'contract_version':1,'algorithm_version':'smart_edit_v1','editing_style':style,'style_label':STYLES[style],
+    plan={'contract_version':1,'algorithm_version':'smart_edit_v2','editing_style':style,'style_label':STYLES[style],
           'source_fingerprint':source_fingerprint,'slots':items,'emphasis':texts}
     plan['summary']={'slots':len(items),'scenes':len(t['scenes']),
                      'motion_effects':sum(any(s['motion_effect']!='none' for s in item['segments']) for item in items) if style!='basic' else sum(s['editing'].get('motion') in ('slow_zoom','pan','ken_burns') and s['selected_media_local_identity']['media_type']=='image' for s in t['slots']),
@@ -142,7 +142,7 @@ def camera(segment,extra_frames=0,punches=()):
         for start,end in punches:bonus.append(f'max(0,min(min((on-{start})/6,({end}-on)/6),1))')
         envelope=bonus[0]
         for value in bonus[1:]:envelope=f'max({envelope},{value})'
-        zoom=f'min(1.07,({zoom})+0.01*({envelope}))'
+        zoom=f'min({max(1.05,1+strength):.4f},({zoom})+0.01*({envelope}))'
     x='(iw-iw/zoom)/2';y='(ih-ih/zoom)/2'
     if effect in ('pan_left','pan_right'):x=f'(iw-iw/zoom)*({p})' if effect=='pan_right' else f'(iw-iw/zoom)*(1-({p}))'
     elif effect in ('pan_up','pan_down'):y=f'(ih-ih/zoom)*({p})' if effect=='pan_down' else f'(ih-ih/zoom)*(1-({p}))'

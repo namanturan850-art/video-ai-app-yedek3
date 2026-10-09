@@ -13,7 +13,8 @@ from uuid import uuid4
 from app.projects import now
 from app.scripts.engine import SecretGuard
 from app.scripts.models import ScriptError
-from app.stock.download import Downloader, asset_path, mirror
+from app.stock.download import Downloader, asset_path, mirror, archive_selection
+from app.stock import relevance
 from app.stock.models import (StockError, identity, make_slots, normalized_media, score,
                               DEFAULT_VIDEO_TOLERANCE, rejection_reason, coverage_warning)
 from app.stock.diagnostics import REASONS, CATEGORIES, normalization_counts, safe_query, search_summary, log_search
@@ -219,7 +220,7 @@ class StockService:
             if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds'}:
                 raise StockError('invalid_input','Medya işlemini kontrol edin.',422)
             action = payload.get('action')
-            if action not in ('auto','missing','search','select','search_videos','replace_images'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
+            if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
             if (action in ('search','select','search_videos')) != bool(slot_id): raise StockError('invalid_input','Geçerli medya yuvasını seçin.',422)
             tolerance = payload.get('video_duration_tolerance_seconds',state.get('search_options',{}).get('video_duration_tolerance_seconds',DEFAULT_VIDEO_TOLERANCE))
             if type(tolerance) not in (int,float) or not math.isfinite(tolerance) or not 0<=tolerance<=1.5:
@@ -246,6 +247,13 @@ class StockService:
                 raise StockError('missing_key','Ayarlar → Pexels veya Pixabay bölümünde API anahtarını kaydedin.',422)
             if 'video_duration_tolerance_seconds' in payload:
                 state['search_options']={'video_duration_tolerance_seconds':tolerance}
+                self._save(connection,state);self._mirror(state)
+            if action=='relevance_research':
+                self._guard(state)
+                try:history=archive_selection(self.projects,project_id,state)
+                except OSError:raise StockError('local_storage','Önceki medya seçimleri kaydedilemedi. Boş alanı kontrol edip tekrar deneyin.',409) from None
+                state.setdefault('selection_history',[]).append(history)
+                state['selection_version']=history['version']+1
                 self._save(connection,state);self._mirror(state)
             job_id = uuid4().hex;created = now()
             connection.execute('INSERT INTO stock_jobs VALUES (?,?,?,?,?,?,?,?,?,?)',
@@ -323,45 +331,55 @@ class StockService:
         log_search(diagnostic)
 
     def _search(self, project_id, slot, used, progress, job, *, video_only=False):
-        candidates, seen, failures, unavailable = [], set(), [], set()
-        queries = list(dict.fromkeys([slot['search_query'],*slot['fallback_queries']]))[:6]
+        candidates, failures, unavailable = {}, [], set()
+        scene=next(s for s in self._handoff(project_id)['scenes'] if s['scene_id']==slot['scene_id'])
+        profile=relevance.profile(scene,slot)
+        slot.update(subject_anchor=profile['subject_anchor'],relevance_profile=profile)
+        queries=relevance.queries_for(profile)
         tolerance = progress.get('video_duration_tolerance_seconds',DEFAULT_VIDEO_TOLERANCE)
         slot['search_diagnostics'] = []
-        # Provider search relevance is the baseline for Pixabay video. All video
-        # queries/providers are tried before falling back to still images.
-        for kind in (('video',) if video_only else ('video','image')):
-            for query in queries:
-                for name in ('pexels','pixabay'):
-                    if name in unavailable or not self.settings.stock_config(name).get('api_key'): continue
-                    progress['message']=f"Sahne medyası aranıyor · {name.title()} {'video' if kind=='video' else 'görsel'}"
-                    self._checkpoint(job,progress)
-                    rejected = {reason:0 for reason in REASONS[:3]}
-                    try: results,counts,cached = self._cache_search(project_id,name,kind,query)
-                    except StockError as error:
-                        counts = getattr(error,'search_diagnostic',normalization_counts(None,0))
-                        self._record_diagnostic(name,kind,query,counts,[],used,rejected,False,error.category,slot,progress)
+        # Exhaust direct subject/context tiers (including relevant images) before
+        # broad footage. Metadata relevance outranks resolution/type/variety.
+        for tier in range(1,5):
+            tier_queries=[q for t,q in queries if t==tier]
+            for kind in (('video',) if video_only else ('video','image')):
+                for query in tier_queries:
+                    for name in ('pexels','pixabay'):
+                        if name in unavailable or not self.settings.stock_config(name).get('api_key'): continue
+                        progress['message']=f"Sahne medyası aranıyor · {name.title()} {'video' if kind=='video' else 'görsel'}"
+                        self._checkpoint(job,progress)
+                        rejected = {reason:0 for reason in REASONS[:3]}
+                        try: results,counts,cached = self._cache_search(project_id,name,kind,query)
+                        except StockError as error:
+                            counts = getattr(error,'search_diagnostic',normalization_counts(None,0))
+                            self._record_diagnostic(name,kind,query,counts,[],used,rejected,False,error.category,slot,progress)
+                            self._checkpoint(job,progress,slot=slot)
+                            failures.append(error);unavailable.add(name)
+                            continue
+                        eligible = []
+                        for media in results:
+                            reason = rejection_reason(media,slot,tolerance,technical_only=True)
+                            if reason: rejected[reason] += 1
+                            else:
+                                rated=relevance.annotate(media,profile,tier,query)
+                                if not relevance.acceptable(rated):rejected['relevance']+=1
+                                else:eligible.append(rated)
+                                previous=candidates.get(identity(rated))
+                                if previous is None or relevance.rank(rated,slot)>relevance.rank(previous,slot):candidates[identity(rated)]=rated
+                        ranked = sorted(eligible,key=lambda m:relevance.rank(m,slot),reverse=True)
+                        self._record_diagnostic(name,kind,query,counts,ranked,used,rejected,cached,'none',slot,progress)
                         self._checkpoint(job,progress,slot=slot)
-                        failures.append(error);unavailable.add(name)
-                        continue
-                    eligible = []
-                    for media in results:
-                        reason = rejection_reason(media,slot,tolerance)
-                        if reason: rejected[reason] += 1
-                        else: eligible.append(media)
-                    ranked = sorted(eligible,key=lambda m:score(m,slot,tolerance),reverse=True)
-                    self._record_diagnostic(name,kind,query,counts,ranked,used,rejected,cached,'none',slot,progress)
-                    self._checkpoint(job,progress,slot=slot)
-                    for media in ranked:
-                        if identity(media) not in seen:
-                            candidates.append(media);seen.add(identity(media))
-                    if any(identity(m) not in used for m in candidates):
-                        fresh = [m for m in candidates if identity(m) not in used]
-                        repeated = [m for m in candidates if identity(m) in used]
-                        return (fresh+repeated)[:12],failures
-            # Eligible video still wins over images when only reused clips exist;
-            # duplicate warnings/manual confirmation continue to apply.
-            if candidates: return candidates[:12],failures
-        return candidates[:12],failures
+                        # A genuinely direct match is enough; don't spend extra
+                        # requests for a weak-video preference or forced variety.
+                        best=relevance.choose(list(candidates.values()),used,slot)
+                        if best and best['relevance_score']>=relevance.STRONG and identity(best) not in used:
+                            return relevance.ordered(list(candidates.values()),used,slot),failures
+                best=relevance.choose(list(candidates.values()),used,slot)
+                if best and best['relevance_score']>=relevance.STRONG:
+                    return relevance.ordered(list(candidates.values()),used,slot),failures
+            best=relevance.choose(list(candidates.values()),used,slot)
+            if best and best['relevance_score']>=(25 if tier<3 else relevance.MINIMUM):break
+        return relevance.ordered(list(candidates.values()),used,slot),failures
 
     def _run(self, job_id):
         started = time.monotonic();category = 'success';job = None
@@ -374,12 +392,13 @@ class StockService:
             progress = job['progress'];self._checkpoint(job,progress)
             slots = [deepcopy(s) for s in state['slots'] if not job['slot_id'] or s['slot_id']==job['slot_id']]
             if job['action']=='replace_images': slots = [s for s in slots if self._replaceable(s)]
-            used = {identity(s['selected_media']) for s in state['slots'] if s['selected_media'] and s['slot_id']!=job['slot_id']}
+            selections={s['slot_id']:identity(s['selected_media']) for s in state['slots'] if s['selected_media']}
             for index,slot in enumerate(slots):
                 if self.closed: raise StockError('interrupted','İşlem durdu. Tamamlanan medya korundu; Devam Et deyin.')
                 progress['percent'] = int(index/max(1,len(slots))*100)
                 if slot['locked']: continue
                 if slot['slot_id'] in progress['completed']: continue
+                used={value for key,value in selections.items() if key!=slot['slot_id']}
                 if job['action'] in ('auto','missing') and slot['selected_media'] and slot['status']=='complete':
                     try:
                         asset_path(self.projects,job['project_id'],slot['selected_media'])
@@ -401,11 +420,13 @@ class StockService:
                     slot['message']='Adayları önizleyip birini seçin.' if candidates else ('Uygun video bulunamadı. Mevcut görsel korundu.' if job['action']=='search_videos' else 'Uygun stok medya bulunamadı.')
                     self._checkpoint(job,progress,slot=slot)
                 else:
-                    available = [m for m in candidates if identity(m) not in used] if job['action']!='select' else candidates
-                    duplicate = not available and bool(candidates)
-                    if duplicate: available = candidates
-                    if not available:
+                    chosen_candidate=candidates[0] if job['action']=='select' else relevance.choose(candidates,used,slot)
+                    duplicate=bool(chosen_candidate and identity(chosen_candidate) in used)
+                    if chosen_candidate is None:
                         if failures: raise failures[-1]
+                        if job['action']=='relevance_research' and slot['selected_media'] and not relevance.acceptable(relevance.evaluate(slot['selected_media'],slot['relevance_profile'])):
+                            slot['selected_media']=None;selections.pop(slot['slot_id'],None)
+                            for key in ('search_tier','query_used','relevance_score','relevance_label'):slot.pop(key,None)
                         if not slot['selected_media']: slot['status']='ai_needed'
                         slot['message']=('Uygun video bulunamadı. Mevcut görsel korundu.' if job['action']=='replace_images' else 'Uygun stok medya bulunamadı. AI görsel gerekebilir; AI üretimi bu aşamada kapalı.')
                         self._checkpoint(job,progress,slot=slot)
@@ -413,12 +434,15 @@ class StockService:
                         progress['message']=f"Medya {index+1}/{len(slots)} indiriliyor"
                         if not slot['selected_media']: slot['status']='downloading'
                         self._checkpoint(job,progress,slot=slot)
-                        chosen = self.downloader.download(job['project_id'],available[0])
+                        chosen = self.downloader.download(job['project_id'],chosen_candidate)
                         self._guard(chosen)
                         slot.update(selected_media=chosen,status='complete',message='İndirildi. Anlatıma uygunluğu Önizle ile kontrol edin.',warnings=[])
+                        slot.update({key:chosen.get(key) for key in ('search_tier','query_used','relevance_score','relevance_label')})
+                        if job['action']!='select' and slot['preferred_type']=='stock_video' and chosen['media_type']=='image':
+                            slot['warnings'].append('Daha ilgili görsel seçildi. Render sırasında yerel kamera hareketi kullanılabilir.')
                         if duplicate or progress.get('duplicate'): slot['warnings'].append('Bu medya projede tekrar kullanılıyor. Değiştir ile başka aday seçebilirsiniz.')
                         if chosen['width']<1800 or chosen['height']<1000: slot['warnings'].append('Kaynak çözünürlüğü 1080p sınıfından düşük. Uygun daha yüksek çözünürlüklü aday varsa değiştirin.')
-                        used.add(identity(chosen));self._checkpoint(job,progress,slot=slot)
+                        selections[slot['slot_id']]=identity(chosen);self._checkpoint(job,progress,slot=slot)
                 progress['completed'].append(slot['slot_id'])
                 self._checkpoint(job,progress)
             progress.update(percent=100,message='Medya işlemi tamamlandı. Önizlemeleri kontrol edin.',category='none')

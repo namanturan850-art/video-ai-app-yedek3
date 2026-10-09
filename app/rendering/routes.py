@@ -6,7 +6,7 @@ from app.rendering.models import RenderError
 def render_router(service):
     router=APIRouter(prefix='/api/projects/{project_id}/render')
     @router.get('')
-    def view(project_id:str,refresh_tools:bool=False,editing_style:str='balanced'):return service.view(project_id,refresh_tools=refresh_tools,editing_style=editing_style)
+    def view(project_id:str,refresh_tools:bool=False,editing_style:str='adaptive',edit_variation_seed:str|None=None,subtitle_display:str|None=None):return service.view(project_id,refresh_tools=refresh_tools,editing_style=editing_style,edit_variation_seed=edit_variation_seed,subtitle_display=subtitle_display)
     @router.post('/jobs',status_code=202)
     def start(project_id:str,payload:dict):return service.start(project_id,payload)
     @router.post('/jobs/{job_id}/cancel')

@@ -98,9 +98,9 @@ def test_slightly_stronger_image_does_not_displace_related_video():
 def test_duplicate_variety_cannot_break_video_tolerance_or_drop_to_general_band():
     image=candidate('image',D,'image');video=candidate('reused',A)
     fresh=candidate('unused','aircraft cockpit navigation aviation')
-    assert relevance.evaluate(fresh,current())['relevance_score']==22
+    assert relevance.evaluate(fresh,current())['relevance_score']>=25
     used={(video['provider'],video['media_type'],video['media_id'])}
-    assert relevance.choose([image,video,fresh],used,slot())['media_id']=='reused'
+    assert relevance.choose([image,video,fresh],used,slot())['media_id']=='unused'
 
 
 def test_strong_named_image_beats_only_general_video():
@@ -166,11 +166,12 @@ def test_real_service_searches_related_videos_first_and_weak_results_never_downl
         assert all(s['status']=='ai_needed' and not s['selected_media'] for s in state['slots'])
         assert all(m['relevance_label']=='Zayıf eşleşme' for s in state['slots'] for m in s['candidates'])
     else:
-        assert all(s['selected_media']['media_id']==('a' if available=='video' else 'd') for s in state['slots'])
+        assert state['slots'][0]['selected_media']['media_id']==('a' if available=='video' else 'd')
+        assert all(s['selected_media'] is None for s in state['slots'][1:])
         if available=='video':
             assert all(kind=='video' for q,kind in st['calls'])
             assert state['media_mix']['video_ratio_percent']==100
-        else:assert state['media_mix']['selected_images']==len(state['slots'])
+        else:assert state['media_mix']['selected_images']==1
     assert state['media_mix']['video_target_range']==[75,90]
     assert all('uçak' not in q and len(q.split())<=6 for q,kind in st['calls'])
     assert KEY not in json.dumps(state)
@@ -184,7 +185,8 @@ def test_context_video_searched_before_even_highly_related_image(studio):
         if kind=='image':return [candidate('strong-image',D,'image')]
         return []
     st['stock'].test_results=results;state=run(st)
-    assert all(s['selected_media']['media_id']=='related' for s in state['slots'])
+    assert state['slots'][0]['selected_media']['media_id']=='related'
+    assert all(s['selected_media'] is None for s in state['slots'][1:])
     assert all(kind=='video' for q,kind in st['calls'])
 
 

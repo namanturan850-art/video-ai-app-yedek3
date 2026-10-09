@@ -2,7 +2,7 @@
 from app.rendering.smart_edit import camera
 
 
-def slot_graph(normalize,parts,index,incoming,outgoing,fades,smart=None,emphasis=(),*,decorate=True):
+def slot_graph(normalize,parts,index,incoming,outgoing,fades,smart=None,emphasis=(),*,decorate=True,layout_graph=None):
     graph=''
     if smart and decorate:
         segments=smart['segments'];labels=''.join(f'[q{j}]' for j in range(len(segments)))
@@ -18,7 +18,8 @@ def slot_graph(normalize,parts,index,incoming,outgoing,fades,smart=None,emphasis
             target='treated' if len(segments)==1 else f'seg{j}'
             graph+=f'[q{j}]trim=start_frame={start}:end_frame={end},setpts=PTS-STARTPTS{camera(segment,punches=punches,head_hold=head,tail_hold=tail)},format=yuv420p,settb=1/30,setpts=N/(30*TB)[{target}];\n'
         if len(segments)>1:graph+=''.join(f'[seg{j}]' for j in range(len(segments)))+f'concat=n={len(segments)}:v=1:a=0,fps=30,settb=1/30,setpts=PTS-STARTPTS[treated];\n'
-        source='[treated]'
+        if layout_graph:graph+=layout_graph+'\n'
+        source='[layouttreated]' if layout_graph else '[treated]'
     else:source=f'[0:v]{normalize},'
     labels=''.join(f'[p{j}]' for j in range(len(parts)))
     graph+=f'{source}split={len(parts)}{labels};\n'

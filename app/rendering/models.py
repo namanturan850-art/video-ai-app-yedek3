@@ -18,7 +18,9 @@ class RenderError(ScriptError):
 class RenderOptions(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True,allow_inf_nan=False)
     encoder: Literal['auto','nvenc','cpu']='auto'
-    editing_style: Literal['basic','balanced','dynamic']='balanced'
+    editing_style: Literal['basic','balanced','dynamic','adaptive']='adaptive'
+    edit_variation_seed: str | None=Field(default=None,min_length=1,max_length=64,pattern=r'^[a-zA-Z0-9_-]+$')
+    subtitle_display: Literal['full','emphasis','none'] | None=None
     subtitle_burned: bool=True
     music_enabled: bool=False
     music_volume: float=Field(default=.12,ge=0,le=.3)
@@ -28,7 +30,11 @@ class RenderOptions(BaseModel):
 
 
 def options(payload):
-    try:return RenderOptions.model_validate(payload).model_dump()
+    try:
+        result=RenderOptions.model_validate(payload).model_dump()
+        if 'subtitle_burned' in payload and 'subtitle_display' not in payload:result['subtitle_display']='full' if payload['subtitle_burned'] else 'emphasis'
+        if result['subtitle_display'] is not None:result['subtitle_burned']=result['subtitle_display']=='full'
+        return result
     except ValidationError:
         raise RenderError('input_invalid','Render ayarlarını kontrol edin. Encoder ve kurgu stili listeden seçilmeli; müzik seviyesi 0–0,30 arasında olmalı.',422) from None
 

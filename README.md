@@ -1,8 +1,10 @@
-# Part 6.5 + 9.5: Video önceliği ve son kalite düzeltmesi
+# Part 9.6 — Uyarlanabilir Kurgu + Media Relevance V3
 
-**Görsel / Kurgu Planı → Alakaya Göre Medyayı Yeniden Ara**: gerçek sağlayıcı etiket/açıklaması yeniden değerlendirilir; eski alaka puanı, arama kademesi veya sorgu uygunluk kanıtı sayılmaz. Kokpit/navigasyon için köpek ve tren yolcusu reddedilir. Önce ilgili videolar, sonra ilgili görseller; yeterli uygun video varsa yaklaşık %75–90 video hedeflenir. Bu bir kota değildir: gereksiz görsel veya ilgisiz video zorla seçilmez. Sayfa Video/Görsel sayısını ve gerçek video oranını gösterir. Eski dosya/arşiv/kilitler korunur; açılış seçimleri değiştirmez.
+**Görsel / Kurgu Planı → Alakaya Göre Medyayı Yeniden Ara**: belgesel/röportaj/eski gibi stil sözcükleri konu değildir. Kokpit/mürettebat sahnesine ilgisiz kişi veya manzara otomatik seçilmez. Projede kullanılan medya yeniden otomatik atanmaz; uygun benzersiz aday yoksa yuva boş kalır. Kilitli seçimler ve eski dosyalar korunur.
 
-**Video Oluştur / Render → Dengeli YouTube** varsayılandır; normal altyazı tekrar kalın 50px YouTube görünümündedir. Dinamik 52px kalın; Temel eski 48px normal stilini korur. Metin ve zamanlar değişmez. Kamera iç parça sınırına yumuşakça nötr kadrajla ulaşır, geçişte tutar; çakışan punch-in bastırılır. Render tamamen yereldir. [15 basit Windows kontrol adımı](docs/RENDERING.md#part-95-windows-kontrolü) ve [alaka/video kuralları](docs/STOCK_MEDIA.md#part-65--konuya-uygun-medya). Yeni bağımlılık/ücretli LLM/vision çağrısı yok. Yeni düzeltmenin gerçek stok/Windows/NVENC görünümünü sahibi kontrol etmelidir. **Part 10 başlamadı.**
+**Video Oluştur / Render → Uyarlanabilir YouTube** yeni renderların önerilen varsayılanıdır. İçeriğe göre B-roll, medya/metin, bilgi, büyük sayı, tarih, konum ve kısa vurgu düzenleri seçilir. **Yeni Kurgu Varyasyonu** yalnız yerel planı değiştirir; API/TTS/stok çağrısı yapmaz. **Altyazı Gösterimi**: Tam altyazı / Sadece önemli vurgular / Altyazı yok. Temel/Dengeli/Dinamik seçenekleri ve önceki videolar korunur.
+
+[Basit Windows kontrolü](docs/RENDERING.md#part-96-windows-kontrolü) · [Medya V3 kuralları](docs/STOCK_MEDIA.md#media-relevance-v3). Yeni bağımlılık, ücretli API veya veritabanı sıfırlama yok. **Part 10 başlamadı.** Canlı Windows/sağlayıcı/NVENC doğrulamasını sahibi yapmalıdır.
 
 # AI Video Studio
 

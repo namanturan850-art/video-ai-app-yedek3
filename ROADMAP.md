@@ -78,6 +78,14 @@ Uygulandı; önceki render Windows'ta doğrulandı. Son kalite düzeltmesi: Deng
 
 Güncel sahne + gerçek metadata ile taze alaka; eski puan/etiket ve query_used/kademe/çözünürlük kanıt değildir. Küçük konu/bağlam kapısı aviation/rail/animal/food/urban/marine/mountain/forest/beach/vehicle/technology uyumsuzluklarını engeller. Eski çok dilli sorgular yerel İngilizce 2–6 kavrama sadeleşir; özel isimler korunur. İsteğe bağlı provider_query gelecek Part 5 planında aynı mevcut çağrıdan gelir; ekstra ücretli çağrı yok. İlgili video → ilgili görsel → uyumlu genel video → uyumlu genel görsel; iki kabul edilebilir aday arasında en fazla 16 puan farkta video tercih edilir. Yaklaşık %75–90 video yumuşak hedef, kota değildir. Açık onaylı yeniden arama/arşivler/kilitler/eski dosyalar korunur. [Alaka kuralları](docs/STOCK_MEDIA.md#part-65--konuya-uygun-medya). Canlı stok/Windows kalite kontrolünü sahibi yapmalıdır.
 
+## Part 9.6 — Adaptive Edit Engine + Media Relevance V3
+
+- Yeni render varsayılanı **Uyarlanabilir YouTube**; içerik işaretlerinden yerel deterministik düzenler, tema ve yön seçimi.
+- B-roll çoğunlukta; yalnız exact-source kısa cue/önceden onaylı vurgu metni, doğrulanmış sayı/tarih/konum. Aynı semantik sahnenin zaten indirilen ikinci medyası kullanılabilir.
+- Varyasyon seed'i ve altyazı modu render metadata JSON'unda; **Yeni Kurgu Varyasyonu** yerel önizlemeyi değiştirir. Part 8 ana saat, eski sürümler ve Smart Edit v3 geçiş güvenliği korunur.
+- Stil/format yerine gerçek özne; özgül sahnelerde İlgili/Çok ilgili kapısı; proje çapında kimlik/adres/byte-hash tekrar engeli. Benzersiz ilgili video önce; yoksa ilgili görsel veya boş yuva.
+- [Windows kontrolü](docs/RENDERING.md#part-96-windows-kontrolü) ve [V3 medya](docs/STOCK_MEDIA.md#media-relevance-v3). Canlı Windows/sağlayıcı/NVENC doğrulaması sahibi tarafından yapılmalı. **Part 10 başlamadı.**
+
 ## Part 10 — Metadata + Thumbnail Planning
 - German title suggestions
 - description

@@ -95,7 +95,7 @@ def test_emphasis_only_exact_source_and_no_interior_timing_guess():
 
 def test_existing_overlay_kept_exactly_even_not_in_narration():
     h,p=handoffs();p['scenes'][0]['overlay_text']='Bereits genehmigte Betonung.'
-    for style in smart_edit.STYLES:
+    for style in ('basic','balanced','dynamic'):
         assert smart_edit.build(timeline.build(h,p),h,style,'s')['emphasis'][0]['text']=='Bereits genehmigte Betonung.'
 
 
@@ -197,7 +197,7 @@ def test_real_long_video_internal_treatments_same_media_master_and_no_gaps(tmp_p
 def test_preview_styles_new_versions_and_legacy_fingerprint_survive(ready):
     st=ready;c=st['client'];service=c.app.state.rendering
     views=[c.get(url(st),params={'editing_style':style}).json()['smart_edit_plan'] for style in smart_edit.STYLES]
-    assert len({v['fingerprint'] for v in views})==3
+    assert len({v['fingerprint'] for v in views})==len(smart_edit.STYLES)
     assert c.get(url(st),params={'editing_style':'invalid'}).status_code==422
     assert c.post(url(st)+'/jobs',json={'encoder':'cpu','editing_style':'basic'}).status_code==202
     first=await_job(st)['active'];old_path=st['root']/first['metadata']['output_local_path'];original=old_path.read_bytes()

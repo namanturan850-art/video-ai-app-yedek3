@@ -1,6 +1,49 @@
-# Video Oluştur / Render — Part 9 + 9.5 Smart YouTube Editing
+# Video Oluştur / Render — Part 9, 9.5 ve 9.6 Uyarlanabilir Kurgu
 
 Mevcut proje → **Video Oluştur / Render**. Bu işlem tamamen yereldir; AI33, Gemini, OpenAI, Ollama, Pexels veya Pixabay çağrısı yapmaz ve API kredisi kullanmaz. Part 10 başlamadı.
+
+
+## Part 9.6 — Uyarlanabilir Kurgu
+
+Yeni render varsayılanı **Uyarlanabilir YouTube** (`adaptive`). Temel, Dengeli YouTube ve Dinamik YouTube korunur; eski tamamlanmış/stilsiz/v1/v2/v3 planları kendi fingerprint ve metadata'sıyla kullanılmaya devam eder. Kaynakları açmak yeniden üretim yapmaz.
+
+`app/rendering/adaptive.py` sadece mevcut Part 8 timeline/cue'ları, Part 5 metni/önemi ve yerel seçilmiş medya kanıtını tüketir. AI, cloud editor, yeni medya veya TTS çağrısı yoktur. Plan render metadata JSON'una eklenir; SQLite şema **10** değişmez.
+
+| Düzen | İçerik şartı |
+| --- | --- |
+| Tam B-roll | Betimleme veya güvenilir kısa vurgu yok |
+| Medya ve metin | Önemli, kısa, aynen kaynak cue; yön seed ve sıraya göre değişir |
+| Bilgi kartı | 2–3 kısa kaynak cümlesi; paragraf/bilgi uydurma yok |
+| Büyük sayı | Cue'da birebir sayı/değer ve aynı kaynak destek cümlesi |
+| Zaman çizelgesi | Aynı kısa kaynaktaki en az iki farklı, sıralı yıl/tarih parçası |
+| İki medya | Aynı semantik sahnenin zaten indirilen, farklı byte kimlikli ikinci medyası |
+| Kısa başlık / vurgu | Kısa önemli cue veya önceden onaylı overlay |
+| Konum kartı | Aynen kaynak konumu ve uyumlu map/konum medya metadata'sı; harita üretmez |
+
+Her görünen metin bir kaynak cue'ya veya onaylı overlay'e bağlanır; sayı ve tarih parçaları aynen kopyalanır. Yeni bilgi, özetleyici cümle veya madde icat edilmez. Metin gösterimi cue aralığında kalır; kelime zamanları tahmin edilmez. B-roll dışında düzenler yalnız kısa pencerelerde gösterilir, toplam grafik süresi en fazla yaklaşık %30; uygun içerik yoksa daha az olur. Aralıklar ve tekrar kapısı slayt gösterisini engeller. Tema (`minimal_dark`, `clean_light`, `soft_documentary`, `grid_dark`) özgün yerel renk/panel/çizgilerden oluşur; herhangi bir referans kare/şablon kopyalanmaz. Kart yazıları hafif fade ile girer; kart üstüne kamera/punch/geçiş yığılmaz. B-roll çoğunlukta kalır.
+
+**Yeni Kurgu Varyasyonu** sadece yerel seed'i değiştirir. Varsayılan seed değişmez kaynak içeriklerinden hesaplanır; encoder veya müzik ayarını değiştirmek kurgu tercihlerini değiştirmez. Aynı kaynak + stil + seed aynı planı verir. Açık altyazı modu eski checkbox değerini de belirler; önizleme ve render aynı sunum ayarını kullanır. Uygun alternatiflerde düzen/yön/tema değişir; gerçek bilgi/metin ve Part 8 zamanı değişmez. Son seçilen seed bu tarayıcıda saklanır; render edildiğinde `options.edit_variation_seed` ve plan metadata'sında kalıcıdır. Önceki videolar/senaryo/ses/medya/altyazı sürümleri korunur. Kaynak aynı olsa da farklı seed yeni render sürümü oluşturabilir.
+
+**Altyazı Gösterimi:** Tam altyazı alt cue'ları yazar; Sadece önemli vurgular alt sürekli altyazıyı kapatır, içerik kartlarını/vurguları korur; Altyazı yok metin vurgularını da kapatır. Dosyalar/timing silinmez. Adaptive varsayılanı Sadece önemli vurgular. Temel/Dengeli/Dinamik geçişte önceki tam altyazı davranışı korunur; açık kullanıcı seçimi stili değiştirirken kaybolmaz. Tam altyazıda Adaptive/Dengeli 50px kalın, Dinamik 52px kalın, Temel 48px normal.
+
+Önizlemede varyasyon, planlanan düzen/efekt sayıları, grafik/B-roll süreleri ve Zaman/Sahne/Düzen/Medya/Efekt/Geçiş/Metin gösterilir. Her tamamlanmış videoda **Planlanan kurgu / Uygulanan kurgu** ayrılır; gerçek düzen hata sayısı vardır. Ham FFmpeg metni veya sırlar gösterilmez.
+
+Her yuva bir sınırlı 1080p FFmpeg graph'ıyla işlenir; düzenler frame timestamp veya toplam frame sayısını değiştirmez. Text yalnız escaped Unicode ASS dosyasıdır. İkinci medya sadece yerel dosyadan gelir, sesi kapalıdır. Dekoratif düzen başarısız olursa aynı medya/süre B-roll olarak render edilir ve uygulanan sayaç bunu bildirir. Smart Edit v3 nötr kamera uçları, tutulmuş geçiş kolları, punch çakışma engeli ve `(N-1)/30` crossfade uç düzeltmesi korunur. FFmpeg 9 `-/filter_complex` kullanılır. Auto→NVENC ve yalnız NVENC başlatma hatasında CPU tekrar davranışı değişmez.
+
+### Part 9.6 Windows kontrolü
+
+1. PR'ı birleştirin. GitHub Desktop'ta **Fetch → Pull** yapın.
+2. Uygulamayı kapatın; **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın. Siyah pencere açık kalsın.
+3. Aynı projede **Görsel / Kurgu Planı → Alakaya Göre Medyayı Yeniden Ara** deyip onaylayın.
+4. Eski havacılık sahnelerinde ilgisiz kişi/manzara ve otomatik tekrar olmadığını kontrol edin. Uygun benzersiz aday yoksa boş yuva beklenir; uygun medyayı elle seçin. Video çoğunlukta olmalı, oran için ilgisiz aday seçilmemeli.
+5. **Render → Uyarlanabilir YouTube → Sadece önemli vurgular → Otomatik** seçin. Müzik kapalı kalsın.
+6. **Kurgu Planını Gör** deyin; içeriğe uygun farklı düzenleri ve metinleri kontrol edin.
+7. **Videoyu Oluştur** deyin. Başını, ortasını ve sonunu izleyin: B-roll çoğunlukta, kısa anlamlı kartlar, sürekli alt yazı yok, titreme/medya tekrarı yok.
+8. **Yeni Kurgu Varyasyonu** deyin; plan/yön/tema değişebilmeli, API/TTS/stok işlemi başlamamalı.
+9. Önceki videoların hâlâ açıldığını kontrol edin.
+
+Bulut doğrulaması gerçek kısa CPU FFmpeg çıktısını ve taklit edilmiş sağlayıcı metadata'sını kapsar. Sahibin Gyan FFmpeg 9.0.2 + RTX 5070/NVENC ortamı burada mevcut değildir. **Live provider test must be run by owner on Windows. Live render test must be run by owner on Windows.**
+
 
 ## Part 9.5 Windows kontrolü
 
@@ -33,7 +76,7 @@ Yeni plan, mevcut Part 8 zamanlaması ve Part 5 düzenleme ipuçlarını salt ok
 | Stil | Hareket ve tempo | Geçiş ve metin |
 | --- | --- | --- |
 | Temel | Önceki Part 9; videoda ek kamera yok, mevcut görsel hareketleri korunur | Mevcut geçiş ve vurgu metni |
-| Dengeli YouTube (varsayılan) | Uygun kadrajlarda yaklaşık %4,5–5; ilk 15 saniye daha canlı | Yaklaşık her üçüncü sahne sınırı; vurgu yaklaşık 28 saniyede bir |
+| Dengeli YouTube (Part 9.5 varsayılanı) | Uygun kadrajlarda yaklaşık %4,5–5; ilk 15 saniye daha canlı | Yaklaşık her üçüncü sahne sınırı; vurgu yaklaşık 28 saniyede bir |
 | Dinamik YouTube | Uygun kadrajlarda yaklaşık %7–8; daha sık kadraj değişimi | Yaklaşık her ikinci sahne sınırı; vurgu yaklaşık 18 saniyede bir |
 
 Yakın/kişi/detay kadrajları en fazla yaklaşık %1,2 hareketle korunur; zaten hareketli sahneler sakin bırakılır. Önem düzeyi ve mevcut `motion / composition / transition` ipuçları hesaba katılır; kişi/yer/bilgi uydurulmaz. Yüzde/sıklıklar kalite hedefidir, katı rastgele kurallar değildir.

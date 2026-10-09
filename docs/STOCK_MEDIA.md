@@ -2,7 +2,21 @@
 
 Güncel ve **Hazır** sahne planını açın: **Proje → Görsel / Kurgu Planı**. Her sahnenin altında **Medya Yuvaları** görünür. Bir sahne birden fazla video veya görsel taşıyabilir. Onaylı anlatım ve plan sürümleri değiştirilmez.
 
-## Part 6.5 — Konuya uygun medya
+## Media Relevance V3
+
+Güncel davranış: **özne → görsel bağlam → stil** ayrı değerlendirilir. Belgesel, röportaj, vintage, eski, siyah/beyaz, sinematik, arşiv, yakın/geniş çekim gibi beş dildeki format terimleri tek başına özne olamaz. Kayıtlı `search_anchor` körü körüne kullanılmaz: gerçek entity/konum, ana sorgunun güçlü kavramları ve görsel amaç önceliklidir; çelişen veya boş stil çapası reddedilir. Mürettebat/kokpit gibi yerel kavramlar İngilizce 2–5 kelimelik aramaya dönüşür. Bilinmeyen özel isimler çevrilmez.
+
+Yerel özgüllük: `named_specific`, `domain_specific`, `generic_visual`. İsimli/alanı özgül sahnelerde otomatik seçim **İlgili/Çok ilgili** gerekir. Aircraft/cockpit/crew yerine gün batımı/okyanus veya modern ilgisiz kişi seçilmez. Gerçek genel okyanus/orman görselinde uyumlu metadata için Genel bağlantılı hâlâ kabul edilebilir. Metadata değerlendirmesi görsel tanıma/AI güven yüzdesi değildir.
+
+**Otomatik tekrar kesin engellenir:** `(provider, media_type, media_id)`, sorgu/fragment taşıyan takip bilgileri olmadan normalize edilmiş kaynak/sayfa/CDN yolu ve mevcut SHA-256 byte özeti. İş başlamadan diğer yuvalar rezerve edilir, her seçim hemen rezervasyona girer; proje başına tek aktif iş yarışı önler. İndirme sonrası aynı byte içeriği fark edilirse başka aday denenir. Kullanılmış en iyi adaya geri dönülmez. Benzersiz ilgili aday yoksa **Uygun ve kullanılmamış stok medya bulunamadı.** Dosya/arşiv silinmez. Algılayıcı perceptual benzerlik iddiasında bulunmaz.
+
+Açık yeniden aramada eski kilitsiz tekrarların ilk uygun ataması korunabilir; sonraki atamalar benzersiz aday bulur veya boş kalır. Kilitler korunur; iki kilitli tekrar için **Aynı medya birden fazla kilitli alanda kullanılıyor.** görünür. Elle tekrar ancak açık onayla yapılabilir. Her yuvada **Tekrar durumu: Benzersiz / Daha önce kullanılmış / Manuel tekrar kullanım** gösterilir.
+
+Benzersiz ilgili video → benzersiz ilgili görsel → gerçekten genel sahnede uygun genel medya. 16 puanlık video toleransı ve yaklaşık %75–90 yumuşak hedef korunur; ilgisiz veya tekrarlanan video oran uğruna seçilmez. %100 uygun video geçerlidir. Eski seçimleri görüntülemek dosyaları değiştirmez; açık **Alakaya Göre Medyayı Yeniden Ara** V3 politikasını uygular.
+
+Canlı sağlayıcı sonuçları bulutta taklit edilir. **Live provider test must be run by owner on Windows.**
+
+## Part 6.5 — Önceki kalite geçişinin temeli
 
 Eski projeyi açmak mevcut stok seçimlerini değiştirmez. **Alakaya Göre Medyayı Yeniden Ara** açık onayla yeni aramayı başlatır. Kilitler korunur. Önceki seçimler `stock/selection-<kimlik>.json` olarak saklanır; seçim sürümü artar. Önceki indirilen dosyalar, senaryo, seslendirme, altyazılar ve videolar silinmez. HTTP/indirme hatasında eski seçim korunur. Başarılı arama yalnız zayıf sonuç bulursa zayıf eski atama boşaltılabilir; dosyası ve arşivdeki kaydı kalır. Planı/senaryoyu yeniden oluşturmak gerekmez.
 
@@ -15,7 +29,7 @@ Her sahnenin **Ana konu** çapası mevcut özne → konum → sorgu → görsel 
 | 3 | Yakın, verilmiş veya uyumlu bağlam |
 | 4 | Son çare olarak konuyla uyumlu genel B-roll |
 
-**Arama sırası:** doğrudan/yakın bağlamda **İlgili/Çok ilgili VIDEO** (kademe 1–3) → ilgili IMAGE (1–3) → genel ama uyumlu VIDEO → genel uyumlu IMAGE. İlgili video bulunduğunda puanı birkaç fazla görsel için arama sürdürülmez. Birlikte değerlendirilen kabul edilebilir video/görsel için deterministik video toleransı **16 puan**; genel video güçlü konu görselini bastıramaz. Benzer alakadaki kullanılmamış aday yalnız aynı medya türünden ve tolerans/İlgili eşiği korunarak seçilir; video sırf çeşitlilik için görselle yer değiştirmez. Uygun video varken gereksiz arka arkaya görsel birikmesi böyle önlenir. Yaklaşık %75–90 video hedefi yumuşaktır: yeterli ilgili video varsa %100 de kabul edilir; ilgisiz video veya zorunlu görsel kotası yok. UI gerçek Video/Görsel sayısını ve seçilmiş yuvaların video oranını gösterir. Uygun video yoksa görsel ve dürüst uyarı korunur.
+**Arama sırası:** doğrudan/yakın bağlamda **İlgili/Çok ilgili VIDEO** (kademe 1–3) → ilgili IMAGE (1–3) → genel ama uyumlu VIDEO → genel uyumlu IMAGE. İlgili video bulunduğunda puanı birkaç fazla görsel için arama sürdürülmez. Birlikte değerlendirilen kabul edilebilir video/görsel için deterministik video toleransı **16 puan**; genel video güçlü konu görselini bastıramaz. V3 önce kullanılan adayları çıkarır; kalan ilgili adaylar arasında video toleransı uygulanır. Kullanılmış video yerine benzersiz ilgili görsel seçilebilir. Uygun video varken gereksiz arka arkaya görsel birikmesi böyle önlenir. Yaklaşık %75–90 video hedefi yumuşaktır: yeterli ilgili video varsa %100 de kabul edilir; ilgisiz video veya zorunlu görsel kotası yok. UI gerçek Video/Görsel sayısını ve seçilmiş yuvaların video oranını gösterir. Uygun video yoksa görsel ve dürüst uyarı korunur.
 
 **Taze metadata kapısı:** her seçim/sıralama ve salt okunur durum görüntülemesi güncel sahne profili + gerçek sağlayıcı açıklamasından yeniden hesaplanır. Pixabay `tags`, Pexels image `alt`, Pexels video mevcut slug/açıklama metadata'sı kullanılır. Eski `relevance_score`/`relevance_label`, query_used, kademe ve çözünürlük uygunluk kanıtı değildir. Teknik boyut/süre/CDN kapıları ayrıca aynen korunur. Açılış etiketi günceller, kayıtlı seçimi veya tarihçeyi yeniden yazmaz. Küçük broad-domain kapısı aviation/rail/animal/food/urban/marine/mountain/forest/beach/vehicle/technology uyumsuzluklarına bakar; büyük ontoloji yok. Kokpit için gerçek aircraft/cockpit/aviation veya başka alanla çelişmeyen navigation+instrument kanıtı gerekir. Sıradan narration/yanlış alternatif sözleri köpek veya tren etiketlerini İlgili yapamaz. Ortak electric gibi betimleyici veya kısmi yer adı, eksik aircraft/car/subway öznesi olmadan konu kapısını aşamaz.
 

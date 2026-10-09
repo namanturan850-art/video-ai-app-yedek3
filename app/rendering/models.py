@@ -18,6 +18,7 @@ class RenderError(ScriptError):
 class RenderOptions(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True,allow_inf_nan=False)
     encoder: Literal['auto','nvenc','cpu']='auto'
+    editing_style: Literal['basic','balanced','dynamic']='balanced'
     subtitle_burned: bool=True
     music_enabled: bool=False
     music_volume: float=Field(default=.12,ge=0,le=.3)
@@ -29,7 +30,7 @@ class RenderOptions(BaseModel):
 def options(payload):
     try:return RenderOptions.model_validate(payload).model_dump()
     except ValidationError:
-        raise RenderError('input_invalid','Render ayarlarını kontrol edin. Encoder listeden seçilmeli; müzik seviyesi 0–0,30 arasında olmalı.',422) from None
+        raise RenderError('input_invalid','Render ayarlarını kontrol edin. Encoder ve kurgu stili listeden seçilmeli; müzik seviyesi 0–0,30 arasında olmalı.',422) from None
 
 
 def encoder_label(value):return 'NVIDIA NVENC' if value=='h264_nvenc' else 'CPU / libx264' if value=='libx264' else 'Henüz seçilmedi'

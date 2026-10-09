@@ -298,6 +298,9 @@ def test_real_media_normalization_loop_trim_transitions(tmp_path,kind,motion,tra
     result=engine.render({'temporary':folder_job,'timeline':timeline.build(h,p),'handoff':h,'options':options({'encoder':'cpu','subtitle_burned':False}),'media':{'1':{'path':clip,'type':'video','duration':clip_duration},'2':{'path':image,'type':'image'}},'audio':voice,'music':None})
     metadata=probe.validate(shutil.which('ffprobe'),result['path'],3.14)
     assert metadata['width']==1920 and abs(metadata['duration']-3.14)<=.04
+    if with_probe:
+        output_data=probe.metadata(tool['ffprobe'],result['path'])
+        assert int(next(s for s in output_data['streams'] if s['codec_type']=='video')['nb_frames'])==round(3.14*30)
     assert [f.read_bytes() for f in (clip,image,voice)]==before
     assert len(runner.commands)>=3 and max(sum(len(a) for a in cmd) for cmd in runner.commands)<4000
     assert progress and progress[-1][0]=='validating'

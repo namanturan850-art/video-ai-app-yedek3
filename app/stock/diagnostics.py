@@ -6,8 +6,8 @@ from urllib.parse import unquote
 from app.scripts.engine import SecretGuard
 
 LOG = logging.getLogger('uvicorn.error.stock')
-REASONS = ('resolution','duration','relevance','malformed_result','unsafe_url')
-LABELS = {'resolution':'çözünürlük','duration':'süre','relevance':'uygunluk',
+REASONS = ('resolution','duration','relevance','orientation','malformed_result','unsafe_url')
+LABELS = {'resolution':'çözünürlük','duration':'süre','relevance':'uygunluk','orientation':'dikey/kare video',
           'malformed_result':'geçersiz medya bilgisi','unsafe_url':'güvensiz adres'}
 CATEGORIES = {'none','success','missing_key','invalid_query','timeout','connection_error',
               'invalid_response','key_rejected','rate_limit','invalid_request','upstream_error'}
@@ -55,7 +55,7 @@ def search_summary(diagnostic):
 def log_search(diagnostic):
     LOG.info('stock stage=selection provider=%s media_type=%s query=%s raw_count=%s normalized_count=%s accepted_count=%s '
              'available_count=%s rejected_resolution=%s rejected_duration=%s rejected_relevance=%s '
-             'rejected_malformed_result=%s rejected_unsafe_url=%s cached=%s category=%s',
+             'rejected_orientation=%s rejected_malformed_result=%s rejected_unsafe_url=%s cached=%s category=%s',
              diagnostic['provider'],diagnostic['media_type'],diagnostic['query'],diagnostic['raw_count'],
              diagnostic['normalized_count'],diagnostic['accepted_count'],diagnostic['available_count'],
              *(diagnostic['rejected'][r] for r in REASONS),diagnostic['cached'],diagnostic['category'])

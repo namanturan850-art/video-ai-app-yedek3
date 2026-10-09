@@ -1,4 +1,4 @@
-# Video Oluştur / Render — Part 9, 9.5 ve 9.6 Uyarlanabilir Kurgu
+# Video Oluştur / Render — Part 9–9.7
 
 Mevcut proje → **Video Oluştur / Render**. Bu işlem tamamen yereldir; AI33, Gemini, OpenAI, Ollama, Pexels veya Pixabay çağrısı yapmaz ve API kredisi kullanmaz. Part 10 başlamadı.
 
@@ -195,3 +195,40 @@ Sonuç önce geçici MP4’te üretilir. ffprobe ile akışlar, 1920×1080, 30 f
 ## Doğrulama sınırı
 
 Bulut ortamında gerçek kısa CPU/libx264 videoları, MP4/JPG/PNG/WEBP, portre/yatay kaynaklar, kısa döngü/uzun kırpma, Unicode altyazı, geçiş, müzik, ses ayrımı, süre, sürümler, iptal, kalıcılık ve tarayıcı oynatma test edilir. Bunlar sahibin gerçek konuşmasında Windows senkronunu veya RTX 5070/NVENC sürücüsünü kanıtlamaz. **Live render test must be run by owner on Windows.**
+
+## Part 9.7 — Hazırlık ve kısa kaynak kesitleri
+
+Düğmenin pasif kalma nedeni, `_inputs()` kaynağının tüm medya alanları ve dosyaların hazır olmasını istemesi; Part 9.6 alaka kapısının uygun olmayan alanları bilinçli olarak boş bırakabilmesiydi. Eski ekran yalnız `ready=false` ile düğmeyi kapatıyordu. Şimdi **Video henüz oluşturulamıyor.** altında gerçek güvenli neden, eksik alan sayısı ve ilgili ekran bağlantısı görünür. Sahibin veritabanı burada yok; herhangi bir özel canlı projenin engelini yeni ekran göstermelidir. Eksikliği atlayarak render başlatılmaz.
+
+Salt okunur model: `ready`, `narration_ready`, `subtitles_ready`, `stock_ready`, `ffmpeg_ready`, `unresolved_stock_slots`, `stale_stock_slots`, `missing_files`, `blockers`. Her blocker kontrollü kod/Türkçe mesaj/ekran içerir: narration_missing, subtitle_missing/stale, stock_unresolved/stale, media_file_missing, ffmpeg_missing; seçilmiş dış motor veya aktif iş ayrıca engel olabilir. Mutlak dosya yolu ve secret içermez. `ready`, tüm kaynak doğrulamaları ve seçilmiş motor hazır olduğunda true olur.
+
+Bazı alanlar eksikken mümkün olan mevcut timeline ve cue'lar üzerinden **Tahmini plan** gösterilir. Bu önizleme render yetkisi vermez; kaynak çözülmezse POST reddedilir. **Yeni Kurgu Varyasyonu** yerel planı değiştirir ve örneğin **Kurgu varyasyonu hazırlandı ancak 3 medya alanı tamamlanmadan render başlatılamaz.** gösterir. Stil/varyasyon/altyazı modu değişimi kaynakları kendiliğinden eski yapmaz. Varsayılan adaptive + emphasis + auto + müzik kapalı korunur.
+
+`source_duration`, `source_in/out`, `source_trim_start/end`, `used_duration` yeni render planında saklanır. Pencere medya byte kimliği + slot kimliğine göre deterministik, mümkün olduğunda kaynağın orta kısmındadır. Native transition tutamaçları için yer ayrılır; gerçek ffprobe süresine göre sınırlandırılır. Kaynak 22sn olabilir, çıktı yalnız 3,7sn kullanabilir. `playbackRate=1`, hızlandırma yok; yeni normal stok kaynağı yuvayı gerçekten karşılar. Eski kısa kaynakların oynatılması korunur; eski plan metadata/fingerprint yeniden yazılmaz.
+
+25fps kaynağın sonuna yakın kesitte 30fps çıktı bir kare eksilebilmesin diye küçük çözümleme payı ve sınırlı son-kare hizalaması kullanılır. Bu, kısa kaynakla uzun yeni alanı doldurma veya döngüleme değildir; çıktı tam kare sayısı/master süre kontrolünden geçer.
+
+**Montaj Motoru**: varsayılan **Yerel Adaptif — FFmpeg**; isteğe bağlı **OpenMontage — Deneysel**. OpenMontage eksikse Yerel Adaptif etkilenmez. Açık OpenMontage seçimi başarısızsa kendiliğinden motor değiştirilmez; önceki video aktif kalır. [Ayrı kurulum, doğrulanmış adaptör sözleşmeleri ve AGPL ayrımı](OPENMONTAGE_INTEGRATION.md). Her ikisi mevcut ana sesi ve Part 8 zamanlamasını kullanır. Native FFmpeg/NVENC yolu korunur.
+
+### Part 9.7 Windows kontrolü
+
+1. PR'yi birleştirin.
+2. GitHub Desktop'ta **Fetch / Pull** yapın.
+3. Uygulamayı kapatıp **START_AI_VIDEO_STUDIO.bat** ile açın.
+4. Aynı projeyi açın.
+5. **Görsel / Kurgu Planı → Eksik Kısa Videoları Bul** deyip onaylayın. Kilitli uzun bir seçimi değiştirmek isterseniz önce yalnız onun kilidini açın.
+6. Video/görsel/benzersiz sayılarını, daha kısa ortalama kullanımını, kaynak/kullanılan süre ayrımını kontrol edin. Otomatik dikey/kare video ve tekrar olmamalı. Eksik ilgili medya kalması mümkün; alaka kapısı korunur.
+7. **Video Oluştur / Render** ekranını açın.
+8. Düğme pasifse üstündeki açık nedeni okuyun.
+9. İstenen eksik medyayı **Eksik Kısa Videoları Bul** bağlantısıyla tamamlayın veya uygun adayı elle seçin.
+10. **Montaj Motoru: Yerel Adaptif; Kurgu Stili: Uyarlanabilir YouTube; Altyazı: Sadece önemli vurgular; Encoder: Otomatik** bırakın.
+11. **Videoyu Oluştur** deyin; başlangıç/orta/son ses, tempo, kartlar ve süreyi kontrol edin.
+12. İsteğe bağlı dış motor için **INSTALL_OPENMONTAGE.bat** dosyasına çift tıklayın; açıklamayı okuyup **E** seçin. İlk denemede CLIP için **H** seçebilirsiniz.
+13. Uygulamayı yeniden açın.
+14. **Ayarlar → OpenMontage → Durumu Yenile**: **Hazır** görünmeli. Eksik bileşen yazarsa kurulum ekranındaki basit adresleri izleyin.
+15. Kısa bir test projesinde **Montaj Motoru: OpenMontage** seçin.
+16. **Videoyu Oluştur** deyin ve pencereyi açık bırakın.
+17. Yerel Adaptif ve OpenMontage sonuçlarının ses/süre/altyazı modu ve görsel düzenlerini karşılaştırın; görünüm birebir aynı olmak zorunda değildir.
+18. Önceki video sürümlerinin açıldığını ve mevcut projeler/anahtarların korunduğunu kontrol edin.
+
+**Live provider test must be run by owner on Windows. Live render test must be run by owner on Windows. Live OpenMontage test must be run by owner on Windows.** Buluttaki gerçek CPU/Remotion testleri canlı Windows/RTX 5070 veya gerçek stok hesaplarını doğrulamaz.

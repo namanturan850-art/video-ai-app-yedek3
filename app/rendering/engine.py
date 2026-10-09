@@ -101,10 +101,22 @@ class FFmpegRenderProvider:
                 self.warnings.append('ffprobe bulunamadı; stok medya dekodu kontrol edildi ancak kaynak boyutu ve süresi ön kontrolde ölçülemedi.')
             if media['type']=='video':
                 source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
-                seek=max(0,(source_duration-length)/2) if source_duration>length else 0
-                args+=['-stream_loop','-1','-ss',f'{seek:.6f}','-t',f'{length:.6f}','-i',str(media['path'])]
+                planned=edits.get(slot['slot_id'],{})
+                seek=min(max(0,planned.get('source_in',max(0,(source_duration-length)/2))),max(0,source_duration-length))
+                # Legacy short assets remain playable; newly acquired normal
+                # B-roll has strict coverage and is never sped up or looped.
+                loop=['-stream_loop','-1'] if source_duration<count/30-.04 else []
+                decode_length=length+.1 if not loop else length
+                args+=loop+['-ss',f'{seek:.6f}','-t',f'{decode_length:.6f}','-i',str(media['path'])]
             else:args+=['-loop','1','-framerate','30','-t',f'{length:.6f}','-i',str(media['path'])]
             normalize='scale=1920:1080:force_original_aspect_ratio=increase:out_range=tv,crop=1920:1080,setsar=1,fps=30,format=yuv420p'
+            # A 25fps seek near EOF can otherwise yield one fewer 30fps frame.
+            # Prefetch where possible; this bounded EOF pad supplies only frame
+            # alignment/transition handles, never fills an undersized new clip.
+            if media['type']=='video' and not loop:normalize+=f',tpad=stop_mode=clone:stop_duration={outgoing[i]/30+.1:.6f}'
+            portrait=bool(actual and next((s['width']<=s['height'] for s in actual.get('streams',[]) if s.get('codec_type')=='video'),False))
+            if media['type']=='image' and (portrait or edits.get(slot['slot_id'],{}).get('fit')=='contain'):
+                normalize='scale=1920:1080:force_original_aspect_ratio=decrease:out_range=tv,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x101823,setsar=1,fps=30,format=yuv420p'
             motion=slot['editing']['motion']
             if not smart and media['type']=='image' and motion in ('slow_zoom','ken_burns','pan'):
                 if 'zoompan' not in self.tools['filters']:self.warnings.append('Görsel hareketi desteklenmiyor; durağan görsel kullanıldı.')

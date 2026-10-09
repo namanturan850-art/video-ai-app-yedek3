@@ -43,4 +43,7 @@ htmlcov/
 
 # Encrypted settings vault, local encryption keys and temporary writes
 data/secrets/
+data/external-tools/
+data/openmontage.json
+data/.openmontage-*
 *.enc

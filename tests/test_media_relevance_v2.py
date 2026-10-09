@@ -169,10 +169,10 @@ def test_real_service_searches_related_videos_first_and_weak_results_never_downl
         assert state['slots'][0]['selected_media']['media_id']==('a' if available=='video' else 'd')
         assert all(s['selected_media'] is None for s in state['slots'][1:])
         if available=='video':
-            assert all(kind=='video' for q,kind in st['calls'])
+            assert st['calls'][0][1]=='video'  # Later short slots may search images after the sole unique video is reserved.
             assert state['media_mix']['video_ratio_percent']==100
         else:assert state['media_mix']['selected_images']==1
-    assert state['media_mix']['video_target_range']==[75,90]
+    assert state['media_mix']['video_target_range']==[80,95]
     assert all('uçak' not in q and len(q.split())<=6 for q,kind in st['calls'])
     assert KEY not in json.dumps(state)
 
@@ -186,8 +186,10 @@ def test_context_video_searched_before_even_highly_related_image(studio):
         return []
     st['stock'].test_results=results;state=run(st)
     assert state['slots'][0]['selected_media']['media_id']=='related'
-    assert all(s['selected_media'] is None for s in state['slots'][1:])
-    assert all(kind=='video' for q,kind in st['calls'])
+    assert state['slots'][1]['selected_media']['media_id']=='strong-image'  # New short slot uses the distinct relevant fallback.
+    assert all(s['selected_media'] is None for s in state['slots'][2:])
+    assert st['calls'][0][1]=='video'
+    assert len({s['selected_media']['media_id'] for s in state['slots'] if s['selected_media']})==2
 
 
 @pytest.mark.parametrize('studio',[SEED],indirect=True)

@@ -152,6 +152,8 @@ class StockService:
             handoff = self._handoff(project_id)
             state = self._ensure(connection,handoff)
             public = deepcopy(state)
+            timing=getattr(self,'timing_handoff',lambda pid:None)(project_id) or {}
+            used={s['slot_id']:s['duration'] for s in timing.get('stock_slots',[])}
             for slot in public['slots']:
                 repeated=media_duplicate(slot['selected_media'],[x['selected_media'] for x in public['slots'] if x['slot_id']!=slot['slot_id']])
                 slot['repeat_status']='Manuel tekrar kullanım' if repeated and slot.get('manual_reuse') else 'Daha önce kullanılmış' if repeated else 'Benzersiz'
@@ -172,17 +174,28 @@ class StockService:
                 slot['coverage_warning'] = coverage_warning(slot['selected_media'],slot)
                 slot['trim_needed'] = bool(slot['selected_media'] and slot['selected_media']['media_type']=='video'
                                            and slot['selected_media']['duration']>slot['duration']+.05)
+                slot['used_duration']=used.get(slot['slot_id'],slot.get('actual_duration_hint',slot['duration']))
+                slot['trim_needed']=bool(slot['selected_media'] and slot['selected_media']['media_type']=='video' and slot['selected_media']['duration']>slot['used_duration']+.05)
+                slot['source_duration']=slot['selected_media'].get('duration') if slot['selected_media'] else None
+                slot['portrait_warning']=bool(slot['selected_media'] and slot['selected_media']['width']<=slot['selected_media']['height'])
             rows = connection.execute('SELECT * FROM stock_jobs WHERE project_id=? AND plan_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1',
                                       (project_id,handoff['plan_id'])).fetchone()
             public['job'] = self._job(rows)
             public['providers'] = {name:bool(self.settings.stock_config(name).get('api_key')) for name in ('pexels','pixabay')}
+            bridge=getattr(self,'openmontage',None)
+            public['providers']['openmontage']=bool(bridge and bridge.config().get('media_search') and bridge.status()['ready'])
             media = [s['selected_media'] for s in public['slots'] if s['status']=='complete' and s['selected_media']]
             public['media_mix'] = {'total_slots':len(public['slots']),
                                    'selected_videos':sum(m['media_type']=='video' for m in media),
                                    'selected_images':sum(m['media_type']=='image' for m in media),
                                    'unresolved_slots':len(public['slots'])-len(media)}
             public['media_mix']['video_ratio_percent']=round(100*public['media_mix']['selected_videos']/len(media)) if media else 0
-            public['media_mix']['video_target_range']=[75,90]
+            public['media_mix']['video_target_range']=[80,95]
+            public['media_mix'].update(average_used_duration=round(sum(s['used_duration'] for s in public['slots'])/max(1,len(public['slots'])),2),
+                maximum_used_duration=round(max((s['used_duration'] for s in public['slots']),default=0),2),
+                portrait_videos=sum(m['media_type']=='video' and m.get('width',1)<=m.get('height',0) for m in media),
+                unique_media_count=len({m.get('sha256') or identity(m) for m in media}),
+                short_pacing_version=state.get('short_pacing_version',0))
             if len(media)>=3 and not public['media_mix']['selected_videos'] and any(s['preferred_type']=='stock_video' for s in public['slots']):
                 public['warnings'].append('Hiç stok video seçilmedi. Yalnız uygun görsel bulunduysa bu korunur; ilgisiz video oranı artırmak için seçilmez. Arama Tanısı bölümünü kontrol edin.')
             duplicates = sum(media_duplicate(m,media[:i]) for i,m in enumerate(media))
@@ -262,8 +275,9 @@ class StockService:
                     progress['allow_duplicate'] = payload.get('allow_duplicate') is True
             if action=='replace_images' and not any(self._replaceable(s) for s in state['slots']):
                 raise StockError('no_selection','Video tercihli, kilitsiz görsel yuvası bulunamadı.',422)
-            if not any(self.settings.stock_config(name).get('api_key') for name in ('pexels','pixabay')) and action!='select':
-                raise StockError('missing_key','Ayarlar → Pexels veya Pixabay bölümünde API anahtarını kaydedin.',422)
+            bridge=getattr(self,'openmontage',None)
+            if not any(self.settings.stock_config(name).get('api_key') for name in ('pexels','pixabay')) and action!='select' and not (bridge and bridge.config().get('media_search')):
+                raise StockError('missing_key','Ayarlar → Pexels veya Pixabay bölümünde API anahtarını kaydedin ya da OpenMontage medya aramasını açın.',422)
             if 'video_duration_tolerance_seconds' in payload:
                 state['search_options']={'video_duration_tolerance_seconds':tolerance}
                 self._save(connection,state);self._mirror(state)
@@ -273,6 +287,9 @@ class StockService:
                 except OSError:raise StockError('local_storage','Önceki medya seçimleri kaydedilemedi. Boş alanı kontrol edip tekrar deneyin.',409) from None
                 state.setdefault('selection_history',[]).append(history)
                 state['selection_version']=history['version']+1
+                from app.stock.pacing import rebuild
+                timing=getattr(self,'timing_handoff',lambda pid:None)(project_id)
+                rebuild(state,self._handoff(project_id),timing)
                 self._save(connection,state);self._mirror(state)
             job_id = uuid4().hex;created = now()
             connection.execute('INSERT INTO stock_jobs VALUES (?,?,?,?,?,?,?,?,?,?)',
@@ -322,13 +339,21 @@ class StockService:
                 saved = json.loads(row['result_json'])
                 results = saved if isinstance(saved,list) else saved['results']
                 counts = normalization_counts(saved.get('normalization') if isinstance(saved,dict) else None,len(results))
-                return results,counts,True
-        provider = self.factory(name,self.settings)
-        try: results = provider.search(canonical,kind)
+                if name=='openmontage':
+                    from app.integrations.openmontage.media import cached_assets_valid
+                    intact=cached_assets_valid(self.projects,project_id,connection,results)
+                else:intact=True
+                if intact:return results,counts,True
+        provider = self.factory(name,self.settings) if name!='openmontage' else None
+        try:
+            if name=='openmontage':
+                from app.integrations.openmontage.media import search
+                results=search(self.openmontage,project_id,canonical)
+            else:results = provider.search(canonical,kind)
         except StockError as error:
             error.search_diagnostic = normalization_counts(getattr(provider,'last_diagnostic',None),0)
             raise
-        results = [normalized_media(m) for m in results]
+        results = [{**normalized_media({k:v for k,v in m.items() if k!='sha256'}),**({'sha256':m['sha256']} if m.get('sha256') else {})} for m in results]
         self._guard(results)
         counts = normalization_counts(getattr(provider,'last_diagnostic',None),len(results))
         saved = {'cache_version':2,'results':results,'normalization':counts}
@@ -341,7 +366,7 @@ class StockService:
         diagnostic = {'provider':name,'media_type':kind,
                       'query':safe_query(query,self.settings.secret_values()),
                       'raw_count':counts['raw_count'],'normalized_count':counts['normalized_count'],
-                      'accepted_count':len(ranked),'available_count':sum(identity(m) not in used for m in ranked),
+                      'accepted_count':len(ranked),'available_count':sum(not identity_keys(m)&used for m in ranked),
                       'rejected':{**rejected,**counts['rejected']},'cached':cached,
                       'category':category if category in CATEGORIES else 'invalid_response'}
         diagnostic['summary'] = search_summary(diagnostic)
@@ -367,11 +392,14 @@ class StockService:
         for kind,tiers,threshold in phases:
             for tier,query in queries:
                 if tier not in tiers:continue
-                for name in ('pexels','pixabay'):
-                    if name in unavailable or not self.settings.stock_config(name).get('api_key'): continue
+                names=['pexels','pixabay']
+                bridge=getattr(self,'openmontage',None)
+                if kind=='video' and bridge and bridge.config().get('media_search'):names.append('openmontage')
+                for name in names:
+                    if name in unavailable or (name!='openmontage' and not self.settings.stock_config(name).get('api_key')): continue
                     progress['message']=f"Sahne medyası aranıyor · {name.title()} {'video' if kind=='video' else 'görsel'}"
                     self._checkpoint(job,progress)
-                    rejected = {reason:0 for reason in REASONS[:3]}
+                    rejected = {reason:0 for reason in REASONS[:4]}
                     try: results,counts,cached = self._cache_search(project_id,name,kind,query)
                     except StockError as error:
                         counts = getattr(error,'search_diagnostic',normalization_counts(None,0))

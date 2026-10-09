@@ -1,12 +1,16 @@
-# Part 9.6 — Uyarlanabilir Kurgu + Media Relevance V3
+# Part 9.7 — Kısa Klipler + İsteğe Bağlı OpenMontage
 
 **Görsel / Kurgu Planı → Alakaya Göre Medyayı Yeniden Ara**: belgesel/röportaj/eski gibi stil sözcükleri konu değildir. Kokpit/mürettebat sahnesine ilgisiz kişi veya manzara otomatik seçilmez. Projede kullanılan medya yeniden otomatik atanmaz; uygun benzersiz aday yoksa yuva boş kalır. Kilitli seçimler ve eski dosyalar korunur.
 
 **Video Oluştur / Render → Uyarlanabilir YouTube** yeni renderların önerilen varsayılanıdır. İçeriğe göre B-roll, medya/metin, bilgi, büyük sayı, tarih, konum ve kısa vurgu düzenleri seçilir. **Yeni Kurgu Varyasyonu** yalnız yerel planı değiştirir; API/TTS/stok çağrısı yapmaz. **Altyazı Gösterimi**: Tam altyazı / Sadece önemli vurgular / Altyazı yok. Temel/Dengeli/Dinamik seçenekleri ve önceki videolar korunur.
 
-[Basit Windows kontrolü](docs/RENDERING.md#part-96-windows-kontrolü) · [Medya V3 kuralları](docs/STOCK_MEDIA.md#media-relevance-v3). Yeni bağımlılık, ücretli API veya veritabanı sıfırlama yok. **Part 10 başlamadı.** Canlı Windows/sağlayıcı/NVENC doğrulamasını sahibi yapmalıdır.
+[Basit Windows kontrolü](docs/RENDERING.md#part-96-windows-kontrolü) · [Medya V3 kuralları](docs/STOCK_MEDIA.md#media-relevance-v3). Yerel motor için yeni bağımlılık yok; OpenMontage ayrı ve isteğe bağlı kurulur. Ücretli API veya veritabanı sıfırlama yok. **Part 10 başlamadı.** Canlı Windows/sağlayıcı/NVENC doğrulamasını sahibi yapmalıdır.
 
 # AI Video Studio
+
+**Part 9.7 — Kısa klipler + isteğe bağlı OpenMontage:** render düğmesi eksik kaynakları açıklar; “Eksik Kısa Videoları Bul” uzun, kilitsiz görsel alanları yaklaşık 3–4 saniyelik farklı yatay medya alanlarına böler. İlgili uzun kaynaklar yerel kesilir; anlatım ve altyazılar değişmez. Varsayılan **Yerel Adaptif** motoru Node/Git/OpenMontage gerektirmez.
+
+OpenMontage denemek isterseniz `INSTALL_OPENMONTAGE.bat` dosyasına çift tıklayın, ardından **Ayarlar → OpenMontage → Durumu Yenile**. İlk denemeyi kısa projede yapın. [Kurulum ve lisans](docs/OPENMONTAGE_INTEGRATION.md), [18 basit Windows kontrol adımı](docs/RENDERING.md#part-97-windows-kontrolü). **Part 10 başlamadı.**
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 

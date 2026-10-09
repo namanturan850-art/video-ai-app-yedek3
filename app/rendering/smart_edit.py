@@ -139,9 +139,16 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
     plan['fingerprint']=digest(plan)
     if style=='adaptive':
         from app.rendering.adaptive import apply
-        return apply(plan,t,h,seed,subtitle_mode or 'emphasis',media_details)
+        plan=apply(plan,t,h,seed,subtitle_mode or 'emphasis',media_details)
     if subtitle_mode=='none':
         plan['emphasis']=[];plan['summary']['emphasis_texts']=0
+        plan['fingerprint']=digest({k:v for k,v in plan.items() if k!='fingerprint'})
+    if media_details:
+        from app.rendering.windows import source_window
+        for item in plan['slots']:
+            media=media_details.get(item['slot_id'],{})
+            if media.get('type')=='video':item.update(source_window(media.get('duration'),item['end']-item['start'],media.get('sha256',item['slot_id'])+item['slot_id']))
+            if media.get('type')=='image' and 0<media.get('width',0)<=media.get('height',0):item['fit']='contain'
         plan['fingerprint']=digest({k:v for k,v in plan.items() if k!='fingerprint'})
     return plan
 

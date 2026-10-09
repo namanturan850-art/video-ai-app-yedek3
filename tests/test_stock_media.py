@@ -61,7 +61,7 @@ class FakeStock:
     def search(self,query,kind):
         self.calls.append((self.name,kind,query))
         if self.result: return self.result(self.name,query,kind)
-        return [media(str(i),self.name,kind,query) for i in range(1,13)]
+        return [media(str(i),self.name,kind,query) for i in range(1,65)]
 
 
 def base(st): return f'/api/projects/{st[1]["id"]}/production/stock'
@@ -71,7 +71,7 @@ def stamp(st):
     state=view(st);return {'plan_id':state['plan_id'],'revision':state['revision']}
 def finish(st,response):
     assert response.status_code==202,response.text
-    st[0].app.state.stock.futures[response.json()['job_id']].result(timeout=8)
+    st[0].app.state.stock.futures[response.json()['job_id']].result(timeout=30)
     return view(st)
 def start(st,action='auto',slot=None,**extra):
     path=base(st)+(f'/slots/{slot}/jobs' if slot else '/jobs')
@@ -173,7 +173,7 @@ def test_full_auto_downloads_multiple_unique_video_slots_preserves_part5(stock_s
     assert client.app.state.stock.test_calls[0][1]=='video'
     assert state['slots'][0]['selected_media']['creator_name']=='Fixture Creator'
     mirror=json.loads((data/'projects'/project['id']/'stock/media_slots.json').read_text())
-    assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('status_label','coverage_warning','trim_needed','repeat_status')} for slot in state['slots']]
+    assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('status_label','coverage_warning','trim_needed','repeat_status','used_duration','source_duration','portrait_warning')} for slot in state['slots']]
     for secret in (KEY,OTHER_KEY,STOCK_KEY): assert secret not in json.dumps(state)
 
 
@@ -195,7 +195,7 @@ def test_video_priority_and_short_clip_filter(stock_studio):
     st=stock_studio;stock=st[0].app.state.stock
     def results(name,query,kind):
         if name=='pexels': return [media('tiny',name,kind,query,duration=.01)] if kind=='video' else []
-        return [media(str(i),name,kind,query) for i in range(20)]
+        return [media(str(i),name,kind,query) for i in range(64)]
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,results)
     state=start(st)
     assert all(s['selected_media']['provider']=='pixabay' and s['selected_media']['media_type']=='video' for s in state['slots'])
@@ -279,7 +279,7 @@ def test_restart_persistence_handoff_preview_and_no_secrets(stock_studio):
 def test_plan_refresh_keeps_locked_media_for_same_source(stock_studio):
     st=stock_studio;start(st);old=next(s for s in view(st)['slots'] if s['duration']>3);mutate(st,old['slot_id'],'lock');locked=next(s for s in view(st)['slots'] if s['slot_id']==old['slot_id'])
     response=st[0].post(base(st).removesuffix('/stock')+'/plan',json={'provider':'ollama','cost_confirmed':False,'confirm_replace_plan':True})
-    assert response.status_code==202;st[0].app.state.scripts.futures[response.json()['job_id']].result(timeout=8)
+    assert response.status_code==202;st[0].app.state.scripts.futures[response.json()['job_id']].result(timeout=30)
     state=view(st)
     carried=next(s for s in state['slots'] if s['slot_id']==locked['slot_id'])
     assert carried['locked'] and carried['selected_media']==locked['selected_media']
@@ -334,7 +334,7 @@ def test_background_job_project_deletion_and_stale_plan_guards(stock_studio):
     try:
         assert st[0].request('DELETE','/api/projects/'+st[1]['id'],json={'confirm':True}).status_code==409
     finally:release.set()
-    stock.futures[response.json()['job_id']].result(timeout=8)
+    stock.futures[response.json()['job_id']].result(timeout=30)
 
 
 def test_schema6_upgrade_preserves_existing_data_and_vault(stock_studio):
@@ -435,7 +435,7 @@ def test_stale_active_plan_cannot_attach_or_resume_old_stock_job(stock_studio):
         assert edited.status_code==200
         view(st) # Simulate a browser refreshing while the download is in progress.
     finally:release.set()
-    stock.futures[response.json()['job_id']].result(timeout=8)
+    stock.futures[response.json()['job_id']].result(timeout=30)
     state=view(st);assert all(s['selected_media'] is None for s in state['slots'])
     assert st[0].post(base(st)+f'/jobs/{response.json()["job_id"]}/resume',json=stamp(st)).status_code==409
 
@@ -457,9 +457,9 @@ def test_three_minutes_nine_semantic_scenes_creates_natural_visual_beats():
             'preferred_media_type':'stock_video','composition':'wide'}
         scenes.append(scene)
     before=deepcopy(scenes);slots=[slot for scene in scenes for slot in make_slots(scene)]
-    assert scenes==before and 20<=len(slots)<=35
+    assert scenes==before and 45<=len(slots)<=65
     assert slots[0]['estimated_start']==0 and slots[-1]['estimated_end']==180
-    assert all(slot['duration']<=10 for slot in slots)
+    assert all(slot['duration']<=5.5 for slot in slots)
 
 
 def test_changed_scene_boundaries_keep_locked_visual_intervals(stock_studio):

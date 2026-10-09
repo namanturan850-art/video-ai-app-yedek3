@@ -18,6 +18,7 @@ class RenderError(ScriptError):
 class RenderOptions(BaseModel):
     model_config=ConfigDict(extra='forbid',strict=True,allow_inf_nan=False)
     encoder: Literal['auto','nvenc','cpu']='auto'
+    montage_engine: Literal['native','openmontage']='native'
     editing_style: Literal['basic','balanced','dynamic','adaptive']='adaptive'
     edit_variation_seed: str | None=Field(default=None,min_length=1,max_length=64,pattern=r'^[a-zA-Z0-9_-]+$')
     subtitle_display: Literal['full','emphasis','none'] | None=None

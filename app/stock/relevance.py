@@ -241,7 +241,9 @@ def acceptable(media,current=None):
 
 
 def rank(media,slot):
-    quality=(int(media['width']>=media['height']),min(media['height'],2160),min(media['width']*media['height'],3840*2160))
+    ratio=media['width']/media['height']
+    duration=media.get('duration') or 0
+    quality=(int(1.5<=ratio<=2),int(media['width']>media['height']),int(4<=duration<=12) if media['media_type']=='video' else 0,min(media['height'],2160),min(media['width']*media['height'],3840*2160))
     preferred='image' if slot.get('preferred_type')=='stock_image' else 'video'
     return media['relevance_score'],quality,int(media['media_type']==preferred)
 
@@ -251,7 +253,11 @@ def choose(candidates,used,slot):
     # Saved scores are history/display only. Never infer the current scene from
     # candidate query_used; search provenance is not evidence about its content.
     refreshed=[{**m,**evaluate(m,current)} for m in candidates]
-    valid=sorted((m for m in refreshed if acceptable(m,current) and not identity_keys(m)&used),key=lambda m:rank(m,slot),reverse=True)
+    valid=sorted((m for m in refreshed if acceptable(m,current) and not identity_keys(m)&used
+                  and (m['media_type']!='video' or m['width']>m['height'] and m['width']>=1280 and m['height']>=720)
+                  and (m['media_type']!='video' or not slot.get('pacing_version') or (m.get('duration') or 0)>=slot.get('actual_duration_hint',slot['duration'])-.001)),key=lambda m:rank(m,slot),reverse=True)
+    landscape=[m for m in valid if m['width']>m['height']]
+    valid=[m for m in valid if m['width']>m['height'] or m['media_type']=='image' and m['relevance_score']>=STRONG and not landscape]
     if not valid:return None
     best=valid[0]
     videos=[m for m in valid if m['media_type']=='video' and (m['relevance_score']>=RELATED or best['relevance_score']<RELATED)]

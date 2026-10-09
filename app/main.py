@@ -111,10 +111,14 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application.state.narration=narration
     application.include_router(narration_router(narration))
     subtitles=SubtitleService(narration,production,stock)
+    stock.timing_handoff=subtitles.handoff
     application.state.subtitles=subtitles
     application.include_router(subtitle_router(subtitles))
     rendering=RenderService(subtitles,production,settings)
     application.state.rendering=rendering
+    stock.openmontage=rendering.openmontage
+    from app.integrations.openmontage.routes import router as openmontage_router
+    application.include_router(openmontage_router(rendering.openmontage))
     application.include_router(render_router(rendering))
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")

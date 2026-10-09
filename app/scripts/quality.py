@@ -314,6 +314,7 @@ class QualityService:
                     'Only the seven example fields are required. Optional: overlay_text (project language, max 12 words), entities, location, action, shot_suggestion. '
                     'Optional search_anchor (exact existing subject/name), search_context (grounded English visual context), search_alternatives '
                     '(up to 5 English subject/context queries before broad B-roll). Preserve multi-word names; omit uncertain hints. '
+                    'Optional provider_query: concise ENGLISH 2–6 concepts, same subject; preserve proper names. '
                     +QualityService._visual_example('first supplied unit_id')+' Return JSON only. Do not explain.')
         common = 'Use the selected target language for generated narration/titles/CTA; explanations to the user in Turkish. No invented facts, false promises or verification claims. '
         return common + {

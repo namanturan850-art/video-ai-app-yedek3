@@ -15,14 +15,17 @@ from test_subtitles import wav
 
 
 @pytest.mark.parametrize('style',['basic','balanced','dynamic'])
-def test_normal_captions_exactly_original_part9_in_every_profile(style):
+def test_caption_words_times_and_explicit_owner_style_in_every_profile(style):
     h,p=handoffs();before=deepcopy(h)
     original,_,_=ass.create(h['subtitles'],h['scenes'],4,overlays=False)
     plan=smart_edit.build(timeline.build(h,p),h,style,'source')
     output,_,_=ass.create(h['subtitles'],h['scenes'],4,editing_style=style,emphasis=plan['emphasis'])
     captions=lambda text:[line for line in text.splitlines() if line.startswith('Style: Subtitle,') or line.startswith('Dialogue: 0,')]
-    assert captions(output)==captions(original)
-    assert 'Style: Subtitle,Arial,48,&H00FFFFFF,&H00FFFFFF,&H00101010,&H80000000,0,0,0,0,100,100,0,0,1,3,1,2,90,90,60,1' in output
+    assert [line for line in captions(output) if line.startswith('Dialogue:')]==[line for line in captions(original) if line.startswith('Dialogue:')]
+    if style=='basic':assert captions(output)==captions(original)
+    else:
+        assert f'Style: Subtitle,Arial,{50 if style=="balanced" else 52},' in output
+        assert '&H80000000,-1,0,0,0,100,100,0,0,1,3.5,1,2,100,100,72,1' in output
     assert all(r'\fad' not in line and r'\t(' not in line for line in captions(output))
     assert h==before
     if style!='basic':
@@ -49,12 +52,12 @@ def test_emphasis_source_and_timing_independent_of_transition_decisions(style):
 def test_balanced_dynamic_visible_strengths_and_tight_shot_limit(style,lower,upper):
     h,p=handoffs();plan=smart_edit.build(timeline.build(h,p),h,style,'s')
     strength=plan['slots'][0]['segments'][0]['motion_strength']
-    assert lower<=strength<=upper and plan['algorithm_version']=='smart_edit_v2'
+    assert lower<=strength<=upper and plan['algorithm_version']=='smart_edit_v3'
     p['scenes'][0]['composition']='person'
     assert smart_edit.build(timeline.build(h,p),h,style,'s')['slots'][0]['segments'][0]['motion_strength']<=.012
 
 
-@pytest.mark.parametrize('style,minimum,maximum',[('balanced',.35,.50),('dynamic',.40,.60)])
+@pytest.mark.parametrize('style,minimum,maximum',[('balanced',.30,.45),('dynamic',.35,.50)])
 def test_transition_visible_duration_stays_inside_existing_master_timeline(style,minimum,maximum):
     h,p=contract(6)
     h['scenes'][0]['end']=h['scenes'][1]['start']=3
@@ -115,13 +118,15 @@ def test_mixed_actual_motion_failure_reports_only_successful_output_slots(tmp_pa
     assert result['metadata']['warnings'] and abs(result['metadata']['duration']-4)<=.04
 
 
-def test_saved_v1_edit_plan_stays_current_and_new_v2_render_preserves_old_video(ready):
+@pytest.mark.parametrize('saved_algorithm',['smart_edit_v1','smart_edit_v2'])
+def test_saved_prior_edit_plan_stays_current_and_new_v3_render_preserves_old_video(ready,saved_algorithm):
     st=ready;c=st['client'];service=c.app.state.rendering
     assert c.post(url(st)+'/jobs',json={'encoder':'cpu','editing_style':'balanced'}).status_code==202
     first=await_job(st)['active'];meta=deepcopy(first['metadata']);old=deepcopy(meta['smart_edit_plan'])
-    old['algorithm_version']='smart_edit_v1'
+    old['algorithm_version']=saved_algorithm
     for slot in old['slots']:
         for segment in slot['segments']:
+            segment.pop('camera_curve',None)
             if segment['motion_strength']>.012:segment['motion_strength']=.035
         if slot['transition_duration']:slot['transition_duration']=10/30
     old.pop('fingerprint');old['fingerprint']=smart_edit.digest(old);meta['smart_edit_plan']=old
@@ -135,7 +140,7 @@ def test_saved_v1_edit_plan_stays_current_and_new_v2_render_preserves_old_video(
     assert c.post(url(st)+f'/versions/{first["id"]}/activate').status_code==200
     assert c.post(url(st)+'/jobs',json={'encoder':'cpu','editing_style':'balanced'}).status_code==202
     state=await_job(st);assert state['job']['status']=='completed',state
-    assert state['active']['version']==2 and state['active']['metadata']['smart_edit_plan']['algorithm_version']=='smart_edit_v2'
+    assert state['active']['version']==2 and state['active']['metadata']['smart_edit_plan']['algorithm_version']=='smart_edit_v3'
     assert not next(v for v in state['versions'] if v['id']==first['id'])['stale']
     assert (st['root']/meta['output_local_path']).read_bytes()==original
     for name,data in st['originals'].items():assert (st['root']/name).read_bytes()==data

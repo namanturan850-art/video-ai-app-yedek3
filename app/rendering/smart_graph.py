@@ -9,9 +9,14 @@ def slot_graph(normalize,parts,index,incoming,outgoing,fades,smart=None,emphasis
         graph=f'[0:v]{normalize},split={len(segments)}{labels};\n'
         for j,segment in enumerate(segments):
             start=segment['start_frame'];end=segment['end_frame']+(outgoing[index] if j==len(segments)-1 else 0)
-            punches=[(round((e['start']-segment['start'])*30),round((e['end']-segment['start'])*30)) for e in emphasis if e.get('punch_in') and e['end']>segment['start'] and e['start']<segment['end']]
+            head=max(incoming[index],round(fades[index-1]*30) if index else 0) if j==0 else 0
+            tail=max(outgoing[index],round(fades[index]*30)) if j==len(segments)-1 else 0
+            windows=[]
+            if head:windows.append((smart['start'],smart['start']+head/30))
+            if tail:windows.append((smart['end']-tail/30,smart['end']+tail/30))
+            punches=[(round((e['start']-segment['start'])*30),round((e['end']-segment['start'])*30)) for e in emphasis if e.get('punch_in') and e['end']>segment['start'] and e['start']<segment['end'] and not any(e['start']<b and e['end']>a for a,b in windows)]
             target='treated' if len(segments)==1 else f'seg{j}'
-            graph+=f'[q{j}]trim=start_frame={start}:end_frame={end},setpts=PTS-STARTPTS{camera(segment,punches=punches)},format=yuv420p,settb=1/30,setpts=PTS-STARTPTS[{target}];\n'
+            graph+=f'[q{j}]trim=start_frame={start}:end_frame={end},setpts=PTS-STARTPTS{camera(segment,punches=punches,head_hold=head,tail_hold=tail)},format=yuv420p,settb=1/30,setpts=N/(30*TB)[{target}];\n'
         if len(segments)>1:graph+=''.join(f'[seg{j}]' for j in range(len(segments)))+f'concat=n={len(segments)}:v=1:a=0,fps=30,settb=1/30,setpts=PTS-STARTPTS[treated];\n'
         source='[treated]'
     else:source=f'[0:v]{normalize},'

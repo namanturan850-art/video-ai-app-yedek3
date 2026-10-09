@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.stock import relevance
 from app.stock.diagnostics import safe_query
 from app.stock.models import score, rejection_reason, coverage_warning, identity, StockError
 from app.stock.providers import PixabayStockProvider, PexelsStockProvider
@@ -137,8 +138,8 @@ def test_no_usable_video_falls_back_to_images_and_all_image_warning(stock_studio
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,
         lambda name,q,kind:[media(str(i),name,kind,q,duration=.01 if kind=='video' else None) for i in range(1,50)])
     state=start(st)
-    assert state['media_mix']=={'total_slots':len(state['slots']),'selected_videos':0,'selected_images':len(state['slots']),'unresolved_slots':0}
-    assert 'Hiç stok video seçilmedi. Video arama sonuçlarını ve filtreleri kontrol edin.' in state['warnings']
+    assert state['media_mix']=={'total_slots':len(state['slots']),'selected_videos':0,'selected_images':len(state['slots']),'unresolved_slots':0,'video_ratio_percent':0,'video_target_range':[75,90]}
+    assert any(w.startswith('Hiç stok video seçilmedi.') for w in state['warnings'])
     assert any(kind=='video' for name,kind,q in stock.test_calls) and any(kind=='image' for name,kind,q in stock.test_calls)
 
 
@@ -260,10 +261,12 @@ def test_reused_eligible_video_not_displaced_by_unused_image(stock_studio):
 def test_specific_tier_precedes_broader_video_fallback(stock_studio):
     st=stock_studio;stock=only_pixabay(st);slot=view(st)['slots'][0]
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,
-        lambda name,q,kind:[] if q==slot['search_query'] else [media('alternate',name,kind,q,description='transport')])
+        lambda name,q,kind:[] if q==relevance.provider_query(slot['subject_anchor'],slot['subject_anchor']) else [media('alternate',name,kind,q,description='electric cars Germany dealership EV charging station Europe modern electric vehicle showroom')])
     state=start(st,'search',slot['slot_id'])
+    assert state['slots'][0]['candidates'],(slot,stock.test_calls,state['job'])
     assert state['slots'][0]['candidates'][0]['media_type']=='video'
-    assert any(q in state['slots'][0]['candidates'][0]['query_used'] for q in slot['fallback_queries'])
+    assert state['slots'][0]['candidates'][0]['query_used']!=stock.test_calls[0][2]
+    assert state['slots'][0]['candidates'][0]['relevance_score']>=relevance.MINIMUM
     assert stock.test_calls[0][1]=='video'
 
 
@@ -290,8 +293,8 @@ def test_37_existing_images_visible_preserved_and_missing_counted(stock_studio):
         saved['slots']=[{**deepcopy(saved['slots'][i%len(saved['slots'])]),'slot_id':f'existing-{i}'} for i in range(37)]
         stock._save(connection,saved)
     state=view(st)
-    assert state['media_mix']=={'total_slots':37,'selected_images':37,'selected_videos':0,'unresolved_slots':0}
-    assert 'Hiç stok video seçilmedi. Video arama sonuçlarını ve filtreleri kontrol edin.' in state['warnings']
+    assert state['media_mix']=={'total_slots':37,'selected_images':37,'selected_videos':0,'unresolved_slots':0,'video_ratio_percent':0,'video_target_range':[75,90]}
+    assert any(w.startswith('Hiç stok video seçilmedi.') for w in state['warnings'])
     with TestClient(create_app(st[3]),headers=HEADERS) as restarted:
         assert restarted.get(base(st)).json()['slots']==state['slots']
     path=st[3]/'projects'/st[1]['id']/state['slots'][0]['selected_media']['local_path'];path.unlink()

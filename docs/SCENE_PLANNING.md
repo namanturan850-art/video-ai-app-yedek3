@@ -128,6 +128,7 @@ JSON yazımı mevcut atomik ve proje klasör sınırlarını kontrol eden yardı
 | `purpose`, `mood`, `importance`, `visual_intent` | Görsel anlam ve öncelik |
 | `preferred_media_type` | `stock_video`, `stock_image`, `ai_image`, `motion_graphic`, `user_media` |
 | `primary_stock_query`, `alternative_stock_queries`, `stock_query_language` | Birincil/alternatif sorgular; İngilizce hedefi |
+| `provider_query` (isteğe bağlı) | Aynı mevcut planlama çağrısından kısa 2–6 İngilizce sağlayıcı kavramı; özel isimler aynen |
 | `entities`, `location`, `action`, `composition`, `shot_suggestion` | Bağlama uygun arama/seçim bilgisi |
 | `transition`, `motion` | Kurgu önerileri |
 | `overlay_text`, `overlay_language`, `notes`, `locked` | Kısa hedef dil yazısı, kullanıcı notları ve kilit |
@@ -138,3 +139,5 @@ Eski `id`, `narration`, `media_type`, `stock_query` alanları mevcut blok sözle
 **Part 6 başlatılmadı:** Pexels/Pixabay arama, önizleme, seçim, indirme, tekrar önleme ve izinli AI görsel fallback çalıştırması sonraki aşamadır. AI33 seslendirme, altyazı ve FFmpeg render da bu aşamada çalıştırılmaz.
 
 Otomatik testler ve gerçek FastAPI/Chromium arayüz kontrollerinde dış AI yanıtları taklit edildi. Sahibi önceki Gemini/Ollama entegrasyonunu gerçek Windows'ta doğruladı. **Yeni Part 5 planlarının canlı sağlayıcıyla içerik kalitesi ve Windows denemesi yukarıdaki adımlarla sahibi tarafından yapılmalıdır.**
+
+Son kalite düzeltmesinde provider_query isteğe bağlıdır; tek mevcut sahne çağrısında istenir, kaynak öznesi/yerel görsel terimlerle doğrulanır. Eksik/uygunsuz ipucu kritik planı düşürmez ve ek ücretli çağrı oluşturmaz. Eski boş alana sahip plan handoff'una boş provider_query eklenmez; kaynak fingerprint'i/önceki renderlar korunur. Part 6.5 eski sorguları ayrıca yerel sadeleştirir; anlatım/görsel niyet değiştirilmez.

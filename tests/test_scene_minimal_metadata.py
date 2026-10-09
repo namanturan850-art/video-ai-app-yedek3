@@ -163,7 +163,7 @@ def test_minimal_qwen_or_gemini_native_response_creates_complete_persistent_plan
         scenes=[minimal([u['unit_id']]) for u in payload['narration_units']]
         for s in scenes:s.update(stock_query='  electric   car charging station. ',media_type='video')
         if search_hints:
-            for s in scenes:s.update(search_anchor='electric car charging station',search_context='electric vehicle charging',search_alternatives=['electric car charging map'])
+            for s in scenes:s.update(provider_query='electric car charging',search_anchor='electric car charging station',search_context='electric vehicle charging',search_alternatives=['electric car charging map'])
         result=json.dumps({'scenes':scenes})
         if provider=='ollama':return httpx.Response(200,json={'done':True,'response':result,'thinking':'PRIVATE_THINKING '+OTHER_KEY})
         return httpx.Response(200,json={'candidates':[{'finishReason':'STOP','content':{'parts':[{'text':result}]}}]})
@@ -174,6 +174,7 @@ def test_minimal_qwen_or_gemini_native_response_creates_complete_persistent_plan
     current=view(production_studio)
     assert current['coverage_complete'] and ''.join(b['narration'] for b in current['plan']['blocks'])==exact
     if search_hints:
+        assert all(b['provider_query']=='electric car charging' for b in current['plan']['blocks'])
         assert all(b['search_anchor']=='electric car charging station' and b['search_context']=='electric vehicle charging' and b['search_alternatives']==['electric car charging map'] for b in current['plan']['blocks'])
     for b in current['plan']['blocks']:
         assert all(b[field]==value for field,value in DEFAULTS.items() if field!='composition')

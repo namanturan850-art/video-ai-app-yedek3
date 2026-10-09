@@ -16,10 +16,10 @@ const settle=()=>new Promise(resolve=>setImmediate(resolve));
 async function harness({confirm=true,busy=false,selected=true,locked=false}={}){
  const root=new Element('main'),blocks=new Element('div'),card=new Element('article');card.dataset.sceneId='scene';blocks.append(card);root.append(blocks);
  const calls=[],confirmations=[];
- const media={provider:'pixabay',media_type:'image',media_id:'map',width:1920,height:1080,page_url:'https://pixabay.com/photos/map/',description:'Bermuda Triangle map',query_used:'Bermuda Triangle map',search_tier:1,relevance_score:90,relevance_label:'Çok ilgili',local_path:'stock/map.jpg'};
+ const media={provider:'pixabay',media_type:'image',media_id:'map',width:1920,height:1080,page_url:'https://pixabay.com/photos/map/',description:'Bermuda Triangle map',provider_query:'Bermuda Triangle map',query_used:'Bermuda Triangle map',search_tier:1,relevance_score:90,relevance_label:'Çok ilgili',local_path:'stock/map.jpg'};
  const state={plan_id:'plan',revision:7,selection_version:2,providers:{pexels:false,pixabay:true},warnings:[],search_options:{video_duration_tolerance_seconds:1.25},
   job:busy?{id:'job',status:'running',progress:{percent:20,message:'Aranıyor',search_diagnostics:[]}}:null,
-  media_mix:{total_slots:1,selected_videos:0,selected_images:selected?1:0,unresolved_slots:selected?0:1},
+  media_mix:{total_slots:1,selected_videos:0,selected_images:selected?1:0,unresolved_slots:selected?0:1,video_ratio_percent:selected?0:null},
   slots:[{slot_id:'slot',scene_id:'scene',order:1,estimated_start:0,estimated_end:5,duration:5,status:selected?'complete':'ai_needed',status_label:selected?'Tamamlandı':'Uygun stok medya bulunamadı',subject_anchor:'Bermuda Triangle',visual_goal:'ocean map',search_query:'Bermuda Triangle',preferred_type:'stock_video',locked,selected_media:selected?media:null,candidates:[media],warnings:[]}]};
  const fetch=async(url,opts)=>{calls.push({url,method:opts.method,body:opts.body});return {ok:true,json:async()=>state};};
  vm.runInContext(source,vm.createContext({document:{querySelector:s=>s==='#production-content'?root:blocks,createElement:tag=>new Element(tag)},window:{location:{pathname:'/projects/abc/production'},addEventListener(){},confirm:text=>{confirmations.push(text);return confirm;}},AbortSignal:{timeout(){}},fetch,setTimeout(){},clearTimeout(){}}));
@@ -38,7 +38,7 @@ test('confirmed relevance rescan posts action and current revision only',async()
  assert.deepEqual(JSON.parse(post.body),{plan_id:'plan',revision:7,action:'relevance_research',video_duration_tolerance_seconds:1.25});
 });
 test('subject, tier, query and deterministic label visible without confidence percentage',async()=>{
- const {root}=await harness();assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Arama kademesi: 1/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Medya seçim sürümü 2/);assert.doesNotMatch(root.textContent,/%|güven oranı/i);
+ const {root}=await harness();assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Arama kademesi: 1/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Medya seçim sürümü 2/);assert.doesNotMatch(root.textContent,/güven oranı|görsel olarak doğrulandı/i);assert.match(root.textContent,/Sağlayıcı sorgusu: Bermuda Triangle map/);assert.match(root.textContent,/Video: 0 · Görsel: 1/);assert.match(root.textContent,/Video oranı: 0%/);
 });
 test('active search disables new rescan and controls',async()=>{
  const {find}=await harness({busy:true});assert.equal(find('stock-relevance-research').disabled,true);

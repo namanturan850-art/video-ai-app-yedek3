@@ -119,7 +119,7 @@ def test_smart_ass_exact_words_timing_safe_area_and_no_karaoke(style):
     assert h['subtitles'][0]['text'] in text
     assert '0:00:00.50,0:00:03.50,Subtitle' in text
     assert 'EmphasisCenter' in text and r'\fad(180,100)' in text and r'\t(0,180' in text
-    assert r'\k' not in text and ',2,90,90,60,1' in text
+    assert r'\k' not in text and ',2,100,100,72,1' in text
 
 
 def pixels(path,when,crop=None):
@@ -190,7 +190,8 @@ def test_real_long_video_internal_treatments_same_media_master_and_no_gaps(tmp_p
     assert clip.read_bytes()==before and len(list((tmp_path/'smart').glob('core-*.mp4')))==1
     assert len([cmd for cmd in runner.commands if '-i' in cmd and str(clip) in cmd])==1
     for when in (.1,3.9,4.1,7.9,8.1,11.8):assert min(pixels(result['path'],when))>15
-    assert difference(pixels(result['path'],3.9),pixels(result['path'],4.1))>.3
+    assert difference(pixels(result['path'],3.9),pixels(result['path'],4.1))<.3
+    assert difference(pixels(result['path'],.1),pixels(result['path'],2.4))>.3
 
 
 def test_preview_styles_new_versions_and_legacy_fingerprint_survive(ready):

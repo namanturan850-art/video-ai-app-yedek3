@@ -82,6 +82,7 @@ class VisualBlock(BaseModel):
     search_anchor: str = Field(default='',max_length=150)
     search_context: str = Field(default='',max_length=300)
     search_alternatives: list[str] = Field(default_factory=list,max_length=5)
+    provider_query: str = Field(default='',max_length=300)
 
     @model_validator(mode='after')
     def semantic_queries(self):
@@ -159,7 +160,7 @@ def scene_metadata(scene, narration):
     safe_entities=[e for e in source_entities if isinstance(e,str)] if isinstance(source_entities,list) else []
     trusted=' '.join([narration,query,*valid,str(scene.get('visual_intent','')),*safe_entities])
     if isinstance(scene.get('location'),str):trusted+=' '+scene['location']
-    for field in ('search_anchor','search_context'):
+    for field in ('search_anchor','search_context','provider_query'):
         if field not in scene:continue
         value=phrase(scene[field]);usable=bool(value) and len(value)<=(150 if field=='search_anchor' else 300)
         if field=='search_anchor':usable=usable and normalized(value) in normalized(trusted)
@@ -616,7 +617,7 @@ class ProductionService:
             plan=deepcopy(inputs['base_plan']);target=self._scene(plan,inputs['scene_id'])
             if target['locked']: raise ScriptError('Önce sahnenin kilidini açın.',409)
             if normalize(block['narration'])!=normalize(target['narration']): raise ScriptError('Tek sahne planlaması anlatımı değiştiremez.',422)
-            fields=('visual_intent','stock_query','alternative_stock_queries','media_type','overlay_text','search_anchor','search_context','search_alternatives',
+            fields=('visual_intent','stock_query','alternative_stock_queries','media_type','overlay_text','search_anchor','search_context','search_alternatives','provider_query',
                     'transition','motion','composition','shot_suggestion','notes')
             target.update({key:block[key] for key in fields})
             target['metadata_warnings']=block.get('metadata_warnings',[])
@@ -744,7 +745,7 @@ class ProductionService:
         return {'contract_version':1,'project_id':project_id,'plan_id':plan['plan_id'],'plan_version':plan['plan_version'],
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
                 'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
-                'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives') if b.get(key)}} for b in plan['blocks']]}
+                'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

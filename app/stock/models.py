@@ -32,6 +32,7 @@ class Media(BaseModel):
     preview_url: str = Field(max_length=2000)
     download_url: str = Field(max_length=2000)
     query_used: str = Field(max_length=300)
+    provider_query: str | None = Field(default=None,max_length=300)
     description: str = Field(default='', max_length=1000)
     source_metadata: dict = Field(default_factory=dict)
     search_tier: int | None = Field(default=None,ge=1,le=4)

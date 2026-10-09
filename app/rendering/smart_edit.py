@@ -105,14 +105,15 @@ def build(t,h,style,source_fingerprint):
             elif j and style!='basic' and scene.get('composition') not in ('movement','close','detail','graphic','person'):
                 current='subtle_reframe';strength=max(strength,.012)
             segments.append({'start_frame':a,'end_frame':b,'frames':b-a,'start':(slot['start_frame']+a)/30,'end':(slot['start_frame']+b)/30,
-                             'motion_effect':current,'motion_strength':round(strength if current!='none' else 0,4)})
+                             'motion_effect':current,'motion_strength':round(strength if current!='none' else 0,4),
+                             'camera_curve':'neutral_cycle' if style!='basic' else 'legacy'})
         transition='hard_cut';seconds=0.
         if i<len(t['slots'])-1 and slot['scene_id']!=t['slots'][i+1]['scene_id']:
             original=scene.get('transition','none');boundary+=1
             if style=='basic':transition=original if original in ('crossfade','fade') else 'hard_cut';seconds=1/3 if transition=='crossfade' else .3 if transition=='fade' else 0.
             elif original in ('crossfade','fade') or boundary%(3 if style=='balanced' else 2)==1 or (opening and boundary==1):
                 transition='fade_dark' if original=='fade' else 'crossfade' if original=='crossfade' or boundary%3 else 'dip_black'
-                seconds=(13 if style=='balanced' else 16)/30
+                seconds=(12 if style=='balanced' else 14)/30
             if seconds:
                 seconds=min(seconds,slot['frames']/120,t['slots'][i+1]['frames']/120)
                 if seconds<2/30:transition='hard_cut';seconds=0.
@@ -121,7 +122,13 @@ def build(t,h,style,source_fingerprint):
                       'transition_duration':round(seconds,6),'visual_variant':scene.get('composition','medium'),'reason':reason})
     for previous,current in zip(items,items[1:]):current['transition_in']=previous['transition_out'] if previous['scene_id']!=current['scene_id'] else 'hard_cut'
     texts=emphasis(t,h,style)
-    plan={'contract_version':1,'algorithm_version':'smart_edit_v2','editing_style':style,'style_label':STYLES[style],
+    for previous in items[:-1]:
+        if previous['transition_out'] in ('none','hard_cut'):continue
+        a=previous['end']-previous['transition_duration'];b=previous['end']+previous['transition_duration']
+        for item in texts:
+            if item['punch_in'] and item['start']<b and item['end']>a:
+                item['punch_in']=False;item['punch_suppressed']='transition'
+    plan={'contract_version':1,'algorithm_version':'smart_edit_v3','editing_style':style,'style_label':STYLES[style],
           'source_fingerprint':source_fingerprint,'slots':items,'emphasis':texts}
     plan['summary']={'slots':len(items),'scenes':len(t['scenes']),
                      'motion_effects':sum(any(s['motion_effect']!='none' for s in item['segments']) for item in items) if style!='basic' else sum(s['editing'].get('motion') in ('slow_zoom','pan','ken_burns') and s['selected_media_local_identity']['media_type']=='image' for s in t['slots']),
@@ -131,10 +138,36 @@ def build(t,h,style,source_fingerprint):
     return plan
 
 
-def camera(segment,extra_frames=0,punches=()):
+def camera(segment,extra_frames=0,punches=(),*,head_hold=0,tail_hold=0):
     """One output frame per moving input frame: video never becomes a still."""
     effect=segment['motion_effect'];strength=segment['motion_strength']
     if effect=='none':return ''
+    if segment.get('camera_curve')=='neutral_cycle':
+        # Shared neutral framing at every treatment boundary. Both sides of a
+        # transition hold this state; the input video itself keeps moving (d=1).
+        start=max(0,head_hold);end=max(start+1,segment['frames']-1-max(0,tail_hold))
+        p=f'max(0,min((on-{start})/{max(1,end-start)},1))'
+        peak=.35 if effect=='push_out' else .65 if effect=='push_in' else .5
+        up=f'min(({p})/{peak},1)';down=f'max(0,min((({p})-{peak})/{1-peak},1))'
+        smooth=lambda t:f'(({t})*({t})*(3-2*({t})))'
+        envelope=f'if(lt(({p}),{peak}),{smooth(up)},1-{smooth(down)})'
+        zoom=f'1+{strength}*({envelope})'
+        if punches and strength>=.02:
+            # No punch may escape the neutral endpoint/hold envelope.
+            bonus=[]
+            for a,b in punches:bonus.append(f'max(0,min(min((on-{a})/6,({b}-on)/6),1))')
+            punch=bonus[0]
+            for value in bonus[1:]:punch=f'max({punch},{value})'
+            zoom=f'min({max(1.05,1+strength):.4f},({zoom})+0.01*({punch})*({envelope}))'
+        x='(iw-iw/zoom)/2'
+        y='(ih-ih/zoom)/2'
+        if effect in ('pan_left','pan_right','subtle_reframe'):
+            sign=-1 if effect=='pan_left' else 1;amount=.1 if effect=='subtle_reframe' else .35
+            x=f'(iw-iw/zoom)*(0.5+({sign*amount})*({envelope}))'
+        elif effect in ('pan_up','pan_down'):
+            sign=-1 if effect=='pan_up' else 1;y=f'(ih-ih/zoom)*(0.5+({sign*.35})*({envelope}))'
+        x=f'2*floor(({x})/2)';y=f'2*floor(({y})/2)'
+        return f",scale=3840:2160,zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s=1920x1080:fps=30,setsar=1"
     p=f'min(on/{max(segment["frames"]-1,1)},1)'
     zoom=f'1+{strength}*({p})' if effect=='push_in' else f'1+{strength}*(1-({p}))' if effect=='push_out' else str(1+strength)
     if punches and strength>=.02:

@@ -144,7 +144,10 @@ class FFmpegRenderProvider:
             if incoming[i]:
                 d=incoming[i]/30;transition=f'transition-{i}.mp4'
                 args=self.command()+['-i',f'tail-{i-1}.mp4','-i',f'head-{i}.mp4']
-                graph=f'[0:v]settb=1/30,setpts=PTS-STARTPTS,fps=30[a];[1:v]settb=1/30,setpts=PTS-STARTPTS,fps=30[b];[a][b]xfade=transition=fade:duration={d:.6f}:offset=0,format=yuv420p[v]'
+                # N frames occur at 0 .. (N-1)/30. Reach the second clip on the
+                # final handle frame, not one frame after the handle ends.
+                blend=(incoming[i]-1)/30 if smart else d
+                graph=f'[0:v]settb=1/30,setpts=N/(30*TB),fps=30[a];[1:v]settb=1/30,setpts=N/(30*TB),fps=30[b];[a][b]xfade=transition=fade:duration={blend:.6f}:offset=0,format=yuv420p,settb=1/30,setpts=N/(30*TB),fps=30[v]'
                 args+=self.graph(folder,graph)+['-map','[v]','-an',*self.codec(encoder),'-frames:v',str(incoming[i]),transition]
                 try:
                     self.runner.run(args,folder,encoder=encoder,phase='crossfade',slot_index=i,slot_id=slot['slot_id'],slot_count=len(slots),media_type=plan['media'][slot['slot_id']]['type']);assembly.append(transition);transitions.add(i-1)

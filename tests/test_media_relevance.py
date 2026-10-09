@@ -68,9 +68,10 @@ def test_bermuda_a_b_c_weighted_ranking_and_wrong_city_never_wins():
     a=rated('Bermuda Triangle ocean mystery');b=rated('Atlantic ocean ship waves');c=rated('city skyline buildings downtown')
     assert a['relevance_score']>b['relevance_score']>c['relevance_score']
     assert a['relevance_label']=='Çok ilgili' and b['relevance_label']=='Genel bağlantılı' and c['relevance_label']=='Zayıf eşleşme'
-    assert relevance.choose([c,b,a],set(),{})==a
-    assert relevance.choose([b,c],set(),{})==b
-    assert relevance.choose([c],set(),{}) is None
+    slot={'relevance_profile':relevance.profile(scene())}
+    assert relevance.choose([c,b,a],set(),slot)==a
+    assert relevance.choose([b,c],set(),slot)==b
+    assert relevance.choose([c],set(),slot) is None
 
 
 @pytest.mark.parametrize('anchor,query,good,bad',[
@@ -104,15 +105,16 @@ def test_exact_entity_bonus_requires_whole_phrase_boundaries():
 def test_relevant_image_beats_unrelated_higher_quality_video():
     image=rated('Bermuda Triangle map ocean',kind='image',width=1280,height=720)
     video=rated('city skyline buildings',width=3840,height=2160)
-    assert relevance.choose([video,image],set(),{'preferred_type':'stock_video'})==image
+    assert relevance.choose([video,image],set(),{'preferred_type':'stock_video','relevance_profile':relevance.profile(scene())})==image
 
 
 def test_duplicate_avoidance_cannot_trade_relevance_for_variety():
     direct=rated('Bermuda Triangle ocean');other=rated('ocean ship waves',mid='2');city=rated('city skyline',mid='3')
     used={(direct['provider'],direct['media_type'],direct['media_id'])}
-    assert relevance.choose([direct,other,city],used,{})==direct
+    slot={'relevance_profile':relevance.profile(scene())}
+    assert relevance.choose([direct,other,city],used,slot)==direct
     equal={**direct,'media_id':'4'}
-    assert relevance.choose([direct,equal,city],used,{})==equal
+    assert relevance.choose([direct,equal,city],used,slot)==equal
 
 
 def test_weak_old_alternative_does_not_certify_wrong_context():
@@ -152,13 +154,16 @@ def test_future_search_hints_optional_grounded_and_same_existing_prompt():
 
 
 @pytest.fixture
-def studio(tmp_path):
+def studio(tmp_path,request):
     with TestClient(create_app(tmp_path/'data'),headers=HEADERS) as client:
-        app=client.app;st=seed(app,text=TEXT,seconds=12);units=narration_units(TEXT)
+        settings=getattr(request,'param',{})
+        source=settings.get('text',TEXT)
+        app=client.app;st=seed(app,text=source,seconds=settings.get('seconds',12));units=narration_units(source)
         raw={**scene(),'stock_query':'Bermuda Triangle Atlantic Ocean','unit_ids':[u['unit_id'] for u in units],
              'purpose':'Meer und Gebiet zeigen','mood':'neutral','media_type':'stock_video','overlay_text':'','composition':'wide'}
         for key in ('primary_stock_query','narration_text'):raw.pop(key)
-        blocks=visual_blocks({'scenes':[raw]},TEXT,'de',135,units=units)
+        raw.update(settings.get('scene',{}))
+        blocks=visual_blocks({'scenes':[raw]},source,'de',135,units=units)
         app.state.production.save_generated(st['pid'],st['sid'],'de',blocks)
         app.state.subtitles.create(st['pid'],{'regenerate_confirmed':False})
         app.state.settings.save('pixabay',{'api_key':KEY})

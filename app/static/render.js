@@ -11,7 +11,10 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   const encLabel=el('label','Encoder'),encoder=el('select');encoder.id='render-encoder';for(const [v,t] of [['auto','Otomatik — NVIDIA tercih et'],['nvenc','NVIDIA NVENC'],['cpu','CPU']]){const o=el('option',t);o.value=v;encoder.append(o);}encLabel.append(encoder);form.append(encLabel);
   const styleLabel=el('label','Kurgu Stili'),editingStyle=el('select');editingStyle.id='render-editing-style';
   for(const [value,text] of [['basic','Temel'],['balanced','Dengeli YouTube'],['dynamic','Dinamik YouTube']]){const option=el('option',text);option.value=value;editingStyle.append(option);}
-  editingStyle.value='balanced';styleLabel.append(editingStyle);form.append(styleLabel);editingStyle.addEventListener('change',()=>load());
+  const subtitleProfiles={basic:'Klasik altyazı',balanced:'Kalın YouTube altyazısı',dynamic:'Kalın büyük YouTube altyazısı'};
+  const subtitleProfile=el('p',subtitleProfiles.balanced);subtitleProfile.id='render-subtitle-profile';
+  editingStyle.value='balanced';styleLabel.append(editingStyle);form.append(styleLabel,subtitleProfile);
+  editingStyle.addEventListener('change',()=>{subtitleProfile.textContent=subtitleProfiles[editingStyle.value];return load();});
   const subtitles=field('Altyazıları Videoya Yaz','checkbox',true);subtitles.id='render-subtitles';
   const music=field('Arka plan müziği açık','checkbox',false),file=field('Arka plan müziği ekle (en fazla 100 MB)','file','');file.accept='.mp3,.wav,.m4a,.ogg,.flac';
   const license=field('Bu müziği kullanma hakkına sahibim.','checkbox',false);

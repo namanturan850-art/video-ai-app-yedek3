@@ -4,24 +4,23 @@ Mevcut proje → **Video Oluştur / Render**. Bu işlem tamamen yereldir; AI33, 
 
 ## Part 9.5 Windows kontrolü
 
-Part 9 ve 9.5 render sahibi tarafından gerçek Windows'ta doğrulandı. Part 9: Gyan FFmpeg 9.0.2 + RTX 5070, yaklaşık 193 saniye, 1920×1080, gerçek NVIDIA NVENC, ses ve altyazılar başarılı. Yeni Part 6.5 + 9.5 kalite düzeltmesi için:
+Önceki Part 9/9.5 render sahibi tarafından Windows/Gyan FFmpeg 9.0.2 + RTX 5070/NVENC ile doğrulandı. Bu son kalite düzeltmesini şu adımlarla kontrol edin:
 
 1. PR’ı birleştirin.
 2. GitHub Desktop → Fetch / Pull.
-3. AI Video Studio’yu tamamen kapatın.
-4. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
-5. Aynı projeyi açın.
-6. Normal altyazı görünümünü eski başarılı Part 9 videosuyla karşılaştırın.
-7. Stok medya bölümünü açın.
-8. **Alakaya Göre Medyayı Yeniden Ara** düğmesine basın.
-9. Birkaç Bermuda Triangle sahnesini kontrol edin.
-10. İlgisiz şehir görüntülerinin tercih edilmediğini kontrol edin.
-11. İlgili okyanus/harita/gemi/uçak/bağlam medyasının daha üstte olduğunu kontrol edin.
-12. **Dengeli YouTube**, **Otomatik**, **altyazı açık**, **müzik kapalı** ile render oluşturun.
-13. Normal altyazıların eski yazı tipi/stili koruduğunu kontrol edin.
-14. Vurgu yazısının ayrı kaldığını kontrol edin.
-15. Hareket/geçişlerin görünür ama aşırı olmadığını kontrol edin.
-16. Önceki videoların hâlâ bulunduğunu kontrol edin.
+3. AI Video Studio’yu kapatıp **START_AI_VIDEO_STUDIO.bat** ile tekrar açın.
+4. Aynı projeyi açın.
+5. **Alakaya Göre Medyayı Yeniden Ara** düğmesine basın.
+6. Sorunlu kokpit/navigasyon sahnesini kontrol edin.
+7. Köpek ve tren yolcusu seçilmediğini doğrulayın.
+8. Medya toplamlarına bakın.
+9. Uygun video bulunduğunda videoların çoğunlukta olduğunu doğrulayın.
+10. **Dengeli YouTube**, **Otomatik**, **altyazı açık**, **müzik kapalı** ile render oluşturun.
+11. Altyazının istediğiniz kalın stile döndüğünü kontrol edin.
+12. Birkaç geçişi izleyin.
+13. Görünür titreme olmadığını kontrol edin.
+14. Ses/altyazı zamanlamasının doğru kaldığını kontrol edin.
+15. Önceki videoların hâlâ bulunduğunu kontrol edin.
 
 **Kurgu Planını Gör** açılarak zaman, sahne, efekt, geçiş ve vurgu metni incelenebilir. Kurgu stilini değiştirince plan bu bilgisayarda yeniden hesaplanır; kredi harcanmaz. Tamamlanan videoda **Planlanan kurgu** ve **Uygulanan kurgu** ayrı gösterilir. Bir dekoratif efekt atlanırsa uyarı ve gerçek uygulanan sayı görünür.
 
@@ -43,14 +42,24 @@ Yakın/kişi/detay kadrajları en fazla yaklaşık %1,2 hareketle korunur; zaten
 - **Uzun klip:** yaklaşık 7 saniyeden sonra iki, 11 saniyeden sonra üç görsel işlem; açılışta daha erken değişim. Bunlar aynı dosyanın render içindeki parçalarıdır; yeni stok yuvası/indirme yaratmaz, anlatımı çoğaltmaz. Tek stok girişi ve tek core ara video kullanılır; parçalar frame sınırlarında birleşir.
 - **Geçiş:** aynı sahne içindeki medya değişimleri genellikle temiz kesme. Seçilmiş sahne sınırlarında yaklaşık 0,43 saniye Dengeli / 0,53 saniye Dinamik crossfade veya kısa koyu geçiş; çok kısa yuvalarda kısaltılır/atlanır. Önceki klibin ek kuyruğu ve sonraki klibin başı kullanılır; master süre ve cue zamanları kaymaz.
 - **Vurgu:** mevcut `overlay_text` önceliklidir ve aynen korunur. Yoksa onaylı anlatımda da bulunan tam kısa cue veya cue başındaki kısa cümlecik aynen seçilir. Genellikle 2–8, en fazla 10 kelime; uygun sayı/tarih tercih edilir. Yeni başlık/çeviri/özet/bilgi üretilmez. Uygun metin yoksa atlanır. Tam cue sınırları kullanılır; kelime zamanı tahmin edilmez. Yaklaşık 1,5–3 saniye üst-sol/üst-ortada kalın, kenarlı yazı ve 180 ms hafif fade/scale animasyonu; alt altyazıyla çakışmaz.
-- **Altyazı:** üç profilde de başarılı Part 9 stili aynen: Arial/güvenli kurulu fallback, 48 px, normal ağırlık, outline 3, shadow 1, alt orta, 90/90/60 marj. Normal cue'ya animasyon eklenmez. Önceki regresyon profilin 50/52 px ve kalın yazı seçmesinden geliyordu. Üstteki büyük vurgu kendi ayrı stilini kullanır; geçiş seçilmesi vurgu üretmez. SRT/VTT metni ve Part 8 zamanları değişmez; karaoke/kelime zamanı tahmini yoktur.
-- **Sürüm uyumluluğu:** yeni plan `smart_edit_v2`; eski tamamlanmış `v1` planı kaynakları aynıyken kendi fingerprint'iyle güncel/oynatılabilir/aktifleştirilebilir kalır. Stilsiz eski Part 9 fingerprint formülü aynen korunur. Yeni render yeni sürümdür; önceki video dosyası yeniden yazılmaz.
+- **Altyazı:** sahibin son tercihiyle Dengeli Arial/fallback 50px, Bold=-1, outline=3,5, shadow=1, alt orta 100/100/72 marj; Dinamik 52px kalın. Temel başarılı Part 9 48px, normal, outline=3, shadow=1, 90/90/60 marjı aynen korur. Kurgu Stili altında Klasik / Kalın YouTube / Kalın büyük YouTube özeti gösterilir. Normal cue animasyonu yok; metin ve Part 8 zamanları/SRT/VTT değişmez. Üst vurgu kendi ayrı stilindedir, geçiş vurgu yaratmaz.
+- **Sürüm uyumluluğu:** yeni plan `smart_edit_v3`; eski tamamlanmış `v1`/`v2` planı kaynakları aynıyken kendi fingerprint'iyle güncel/oynatılabilir/aktifleştirilebilir kalır. Stilsiz eski Part 9 fingerprint formülü aynen korunur. Yeni render yeni sürümdür; önceki video dosyası yeniden yazılmaz.
 - **Güvenli geri dönüş:** hareket hatası → normal kadraj; geçiş hatası → temiz kesme; vurgu hatası → vurgusuz çıktı. Mevcut altyazı/ses ve ana video işlemi korunur; çekirdek işlem de başarısızsa eski aktif video korunarak hata gösterilir. Güvenli kodlar: `smart_motion_failed`, `smart_transition_failed`, `emphasis_render_failed`. Tam kaynak metni/raw stderr/sırlar günlükte yoktur.
 - **NVENC ve FFmpeg 9:** filtreler yerel CPU'da çalışabilir; tüm ara ve son video encode seçilen encoder ile yapılır. Otomatik NVIDIA tercihi ve yalnız NVENC başlatma hatasında mevcut tek CPU tekrar denemesi korunur. `-/filter_complex` kullanımı sürer; kaldırılmış `-filter_complex_script` kullanılmaz. Sesin hızı/perdesi, stok sesinin dışlanması ve mevcut isteğe bağlı müzik davranışı değişmez.
 
 193 saniye / 24 sahne / 37 VIDEO / 49 cue / 0 mevcut vurgu regresyon örneği Dengeli planda **33 hareket, 8 geçiş, 6 vurgu, 11 klip içi değişim** üretir. Bu sentetik kaynak biçimi testidir; sahibinin gerçek projesinde seçimler mevcut metin/kompozisyona göre değişir.
 
 Gerçek FFmpeg testleri aynı VIDEO'nun Temel/Dengeli/Dinamik karelerini birden fazla zamanda karşılaştırır; kırmızı-mavi geçişte gerçek ara renkleri, vurgu piksellerinin görünmesini/kaybolmasını, uzun klibin farklı işlemlerini, yedi kamera hareketini ve güvenli geri dönüşleri sınar. Karma başarılı/başarısız slotta yalnız çıktı yolunda uygulanan hareket sayılır. FFmpeg 9.0.2 ayrı gerçek koşuda sınanır. Bu kalite düzeltmesinin Windows/NVENC görünümü için **Live render test must be run by owner on Windows.**
+
+## Titreme nedeni ve düzeltmesi
+
+Eski v2 kamera yolu gerçek hareketli sentetik videoda tekrarlandı: push-in bitişinden pan-right başlangıcına geçince aynı kaynağın crop konumu sıfırlanıyordu. 192px küçültülmüş karede işaret merkezi tek karede 4,99px (1920px çıktıda yaklaşık 50px) sıçradı. Aynı kaynakla v3 ölçümü 0,45px; kalan hareket kaynak videodaki hareket ve ölçek/kodlama yuvarlamasıdır. Sahibin gerçek kareleri/ham medya olmadan her Windows geçişinin tek nedenini kesinleştiremeyiz.
+
+Yeni `neutral_cycle` smoothstep yolu her iç parça başında/sonunda nötr kadraja yumuşakça ulaşır; aynı kaynakta kamera yönünün sıfırlanması görünür sıçrama yaratmaz. 3840×2160 çalışma ölçeği ve çift piksele yuvarlanan crop adımlarını küçültür. `d=1` hareketli girdiyi dondurmaz. Giriş/çıkış crossfade ve fade tutamaçlarında kamera kadrajı sabittir; gerçek video hareketi devam eder. Çakışan punch bastırılır; vurgu kelimeleri/sıklığı/zamanları değişmez.
+
+Kare sayısı/PTS 30fps ve 1/30 zaman tabanıyla normalize edilir. N karelik crossfade son karesini `(N−1)/30` zamanda ikinci kaynağa tamamen ulaştırır; eski N/30 rampası son karenin ardından core'a küçük artık karışım sıçraması bırakabiliyordu. Master süre kısaltılmaz. Dengeli 12 kare (0,40sn), Dinamik 14 kare (0,47sn); kısa slotlarda eski güvenli sınır devam eder. Desteksiz/başarısız efekt temiz kesmeye döner, uygulanan sayım atlanan efekti saymaz.
+
+`tests/test_transition_stability.py` gerçek iki hareketli kaynak/crossfade ve 12sn iç parça renderlarını dekod eder: monotonik tam 30fps, tam kare sayısı/boyut/süre, siyah veya beklenmeyen yinelenen kare yok, ölçülen marker/crop sürekliliği ve tam crossfade uçları. Ardışık 16 geçiş karesi ayrıca görsel olarak incelendi. FFmpeg 7.1.5 ve kaynak derlemesi 9.0.2 CPU yolları kontrol edilir; Windows GPU sürücü görünümü için sahibin canlı denemesi gerekir.
 
 ## İlk Part 9 Windows kontrolü
 

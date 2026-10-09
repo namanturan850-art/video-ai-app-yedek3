@@ -41,3 +41,10 @@ test('finished version distinguishes planned and actually applied effects',async
 test('busy job disables editing style and existing diagnostic remains visible',async()=>{
  const {find}=await harness({job:{status:'rendering',status_label:'Render ediliyor',encoder_label:'NVIDIA NVENC',progress:{percent:30,elapsed_seconds:10}}});assert.equal(find('render-editing-style').disabled,true);
 });
+
+test('subtitle profile follows each style without exposing ASS internals',async()=>{
+ const {find}=await harness();assert.equal(find('render-subtitle-profile').textContent,'Kalın YouTube altyazısı');
+ for(const [style,label] of [['basic','Klasik altyazı'],['dynamic','Kalın büyük YouTube altyazısı'],['balanced','Kalın YouTube altyazısı']]){
+  const select=find('render-editing-style');select.value=style;await select.listeners.change();assert.equal(find('render-subtitle-profile').textContent,label);
+ }
+});

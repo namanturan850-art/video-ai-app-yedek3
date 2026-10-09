@@ -152,6 +152,15 @@ class StockService:
             state = self._ensure(connection,handoff)
             public = deepcopy(state)
             for slot in public['slots']:
+                scene=next(s for s in handoff['scenes'] if s['scene_id']==slot['scene_id'])
+                current_profile=relevance.profile(scene,slot)
+                slot['subject_anchor']=current_profile['subject_anchor']
+                # Read-only display refresh: never replace an existing asset or
+                # overwrite archived history merely because the page is opened.
+                if slot['selected_media']:
+                    slot['selected_media'].update(relevance.evaluate(slot['selected_media'],current_profile))
+                    slot.update({k:slot['selected_media'][k] for k in ('relevance_score','relevance_label')})
+                slot['candidates']=[{**m,**relevance.evaluate(m,current_profile)} for m in slot['candidates']]
                 if slot['selected_media']:
                     try: asset_path(self.projects,project_id,slot['selected_media'])
                     except (StockError,OSError):
@@ -169,8 +178,10 @@ class StockService:
                                    'selected_videos':sum(m['media_type']=='video' for m in media),
                                    'selected_images':sum(m['media_type']=='image' for m in media),
                                    'unresolved_slots':len(public['slots'])-len(media)}
+            public['media_mix']['video_ratio_percent']=round(100*public['media_mix']['selected_videos']/len(media)) if media else 0
+            public['media_mix']['video_target_range']=[75,90]
             if len(media)>=3 and not public['media_mix']['selected_videos'] and any(s['preferred_type']=='stock_video' for s in public['slots']):
-                public['warnings'].append('Hiç stok video seçilmedi. Video arama sonuçlarını ve filtreleri kontrol edin.')
+                public['warnings'].append('Hiç stok video seçilmedi. Yalnız uygun görsel bulunduysa bu korunur; ilgisiz video oranı artırmak için seçilmez. Arama Tanısı bölümünü kontrol edin.')
             duplicates = len(media)-len({identity(m) for m in media})
             if duplicates: public['warnings'].append('Aynı stok medya birden fazla yuvada kullanılıyor. İsterseniz Değiştir ile çeşitlendirin.')
             if len(media)>=3 and any(all(m['media_type']=='image' for m in media[i:i+3]) for i in range(len(media)-2)):
@@ -338,47 +349,47 @@ class StockService:
         queries=relevance.queries_for(profile)
         tolerance = progress.get('video_duration_tolerance_seconds',DEFAULT_VIDEO_TOLERANCE)
         slot['search_diagnostics'] = []
-        # Exhaust direct subject/context tiers (including relevant images) before
-        # broad footage. Metadata relevance outranks resolution/type/variety.
-        for tier in range(1,5):
-            tier_queries=[q for t,q in queries if t==tier]
-            for kind in (('video',) if video_only else ('video','image')):
-                for query in tier_queries:
-                    for name in ('pexels','pixabay'):
-                        if name in unavailable or not self.settings.stock_config(name).get('api_key'): continue
-                        progress['message']=f"Sahne medyası aranıyor · {name.title()} {'video' if kind=='video' else 'görsel'}"
-                        self._checkpoint(job,progress)
-                        rejected = {reason:0 for reason in REASONS[:3]}
-                        try: results,counts,cached = self._cache_search(project_id,name,kind,query)
-                        except StockError as error:
-                            counts = getattr(error,'search_diagnostic',normalization_counts(None,0))
-                            self._record_diagnostic(name,kind,query,counts,[],used,rejected,False,error.category,slot,progress)
-                            self._checkpoint(job,progress,slot=slot)
-                            failures.append(error);unavailable.add(name)
-                            continue
-                        eligible = []
-                        for media in results:
-                            reason = rejection_reason(media,slot,tolerance,technical_only=True)
-                            if reason: rejected[reason] += 1
-                            else:
-                                rated=relevance.annotate(media,profile,tier,query)
-                                if not relevance.acceptable(rated):rejected['relevance']+=1
-                                else:eligible.append(rated)
-                                previous=candidates.get(identity(rated))
-                                if previous is None or relevance.rank(rated,slot)>relevance.rank(previous,slot):candidates[identity(rated)]=rated
-                        ranked = sorted(eligible,key=lambda m:relevance.rank(m,slot),reverse=True)
-                        self._record_diagnostic(name,kind,query,counts,ranked,used,rejected,cached,'none',slot,progress)
+        # Search related videos first, then related images, before general but
+        # compatible footage. Type never certifies content relevance.
+        phases=[('video',(1,2,3),relevance.RELATED)]
+        if video_only:phases.append(('video',(4,),relevance.MINIMUM))
+        else:
+            phases.extend([('image',(1,2,3),relevance.RELATED),
+                           ('video',(4,),relevance.MINIMUM),('image',(4,),relevance.MINIMUM)])
+        for kind,tiers,threshold in phases:
+            for tier,query in queries:
+                if tier not in tiers:continue
+                for name in ('pexels','pixabay'):
+                    if name in unavailable or not self.settings.stock_config(name).get('api_key'): continue
+                    progress['message']=f"Sahne medyası aranıyor · {name.title()} {'video' if kind=='video' else 'görsel'}"
+                    self._checkpoint(job,progress)
+                    rejected = {reason:0 for reason in REASONS[:3]}
+                    try: results,counts,cached = self._cache_search(project_id,name,kind,query)
+                    except StockError as error:
+                        counts = getattr(error,'search_diagnostic',normalization_counts(None,0))
+                        self._record_diagnostic(name,kind,query,counts,[],used,rejected,False,error.category,slot,progress)
                         self._checkpoint(job,progress,slot=slot)
-                        # A genuinely direct match is enough; don't spend extra
-                        # requests for a weak-video preference or forced variety.
-                        best=relevance.choose(list(candidates.values()),used,slot)
-                        if best and best['relevance_score']>=relevance.STRONG and identity(best) not in used:
-                            return relevance.ordered(list(candidates.values()),used,slot),failures
+                        failures.append(error);unavailable.add(name)
+                        continue
+                    eligible = []
+                    for media in results:
+                        reason = rejection_reason(media,slot,tolerance,technical_only=True)
+                        if reason: rejected[reason] += 1
+                        else:
+                            rated=relevance.annotate(media,profile,tier,query)
+                            if not relevance.acceptable(rated):rejected['relevance']+=1
+                            else:eligible.append(rated)
+                            previous=candidates.get(identity(rated))
+                            if previous is None or relevance.rank(rated,slot)>relevance.rank(previous,slot):candidates[identity(rated)]=rated
+                    ranked = sorted(eligible,key=lambda m:relevance.rank(m,slot),reverse=True)
+                    self._record_diagnostic(name,kind,query,counts,ranked,used,rejected,cached,'none',slot,progress)
+                    self._checkpoint(job,progress,slot=slot)
+                # Exhaust specific/context VIDEO before IMAGE. A related video
+                # already satisfies the soft video-first goal; never chase images
+                # merely for a few extra points. Weak video cannot pass this gate.
                 best=relevance.choose(list(candidates.values()),used,slot)
-                if best and best['relevance_score']>=relevance.STRONG:
+                if best and best['relevance_score']>=threshold and best['media_type']==kind:
                     return relevance.ordered(list(candidates.values()),used,slot),failures
-            best=relevance.choose(list(candidates.values()),used,slot)
-            if best and best['relevance_score']>=(25 if tier<3 else relevance.MINIMUM):break
         return relevance.ordered(list(candidates.values()),used,slot),failures
 
     def _run(self, job_id):
@@ -420,7 +431,12 @@ class StockService:
                     slot['message']='Adayları önizleyip birini seçin.' if candidates else ('Uygun video bulunamadı. Mevcut görsel korundu.' if job['action']=='search_videos' else 'Uygun stok medya bulunamadı.')
                     self._checkpoint(job,progress,slot=slot)
                 else:
-                    chosen_candidate=candidates[0] if job['action']=='select' else relevance.choose(candidates,used,slot)
+                    if job['action']=='select':
+                        scene=next(s for s in self._handoff(job['project_id'])['scenes'] if s['scene_id']==slot['scene_id'])
+                        slot['relevance_profile']=relevance.profile(scene,slot)
+                        m=candidates[0]
+                        chosen_candidate=relevance.annotate(m,slot['relevance_profile'],m.get('search_tier') or 1,m['query_used'])
+                    else:chosen_candidate=relevance.choose(candidates,used,slot)
                     duplicate=bool(chosen_candidate and identity(chosen_candidate) in used)
                     if chosen_candidate is None:
                         if failures: raise failures[-1]
@@ -437,7 +453,7 @@ class StockService:
                         chosen = self.downloader.download(job['project_id'],chosen_candidate)
                         self._guard(chosen)
                         slot.update(selected_media=chosen,status='complete',message='İndirildi. Anlatıma uygunluğu Önizle ile kontrol edin.',warnings=[])
-                        slot.update({key:chosen.get(key) for key in ('search_tier','query_used','relevance_score','relevance_label')})
+                        slot.update({key:chosen.get(key) for key in ('search_tier','query_used','provider_query','relevance_score','relevance_label')})
                         if job['action']!='select' and slot['preferred_type']=='stock_video' and chosen['media_type']=='image':
                             slot['warnings'].append('Daha ilgili görsel seçildi. Render sırasında yerel kamera hareketi kullanılabilir.')
                         if duplicate or progress.get('duplicate'): slot['warnings'].append('Bu medya projede tekrar kullanılıyor. Değiştir ile başka aday seçebilirsiniz.')

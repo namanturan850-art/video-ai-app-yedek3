@@ -85,7 +85,7 @@ def stock_studio(production_studio):
     settings=client.app.state.settings;settings.save('pexels',{'api_key':STOCK_KEY});settings.save('pixabay',{'api_key':'synthetic-pixabay-key-8899'})
     calls=[];stock=client.app.state.stock
     stock.factory=lambda name,settings:FakeStock(name,calls)
-    stock.downloader=Downloader(client.app.state.projects,transport=httpx.MockTransport(lambda request:httpx.Response(200,headers={'Content-Type':'video/mp4' if request.url.path.endswith('.mp4') else 'image/jpeg'},content=MP4 if request.url.path.endswith('.mp4') else JPEG)))
+    stock.downloader=Downloader(client.app.state.projects,transport=httpx.MockTransport(lambda request:httpx.Response(200,headers={'Content-Type':'video/mp4' if request.url.path.endswith('.mp4') else 'image/jpeg'},content=(MP4 if request.url.path.endswith('.mp4') else JPEG)+str(request.url).encode())))
     stock.test_calls=calls
     return production_studio
 
@@ -173,7 +173,7 @@ def test_full_auto_downloads_multiple_unique_video_slots_preserves_part5(stock_s
     assert client.app.state.stock.test_calls[0][1]=='video'
     assert state['slots'][0]['selected_media']['creator_name']=='Fixture Creator'
     mirror=json.loads((data/'projects'/project['id']/'stock/media_slots.json').read_text())
-    assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('status_label','coverage_warning','trim_needed')} for slot in state['slots']]
+    assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('status_label','coverage_warning','trim_needed','repeat_status')} for slot in state['slots']]
     for secret in (KEY,OTHER_KEY,STOCK_KEY): assert secret not in json.dumps(state)
 
 
@@ -181,7 +181,7 @@ def test_provider_fallback_and_relevant_image_beats_unrelated_video(stock_studio
     st=stock_studio;stock=st[0].app.state.stock
     def results(name,query,kind):
         if kind=='video': return [media('bad',name,kind,query,description='ocean dolphins sunset',duration=.01)]
-        if name=='pexels': return [media(str(i),name,kind,query) for i in range(12)]
+        if name=='pexels': return [media(str(i),name,kind,query) for i in range(64)]
         return []
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,results)
     result=start(st)
@@ -238,10 +238,12 @@ def test_unavoidable_duplicate_warning_and_manual_confirmation(stock_studio):
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,lambda name,query,kind:[media('same',name,kind,query)])
     stock.settings.clear('pixabay')
     state=start(st);assert state['job']['status']=='completed'
-    assert any(s['warnings'] for s in state['slots']) and any('aynı' in w.lower() for w in state['warnings'])
-    slot=state['slots'][0]
+    assert state['slots'][0]['selected_media'] and all(s['selected_media'] is None for s in state['slots'][1:])
+    slot=state['slots'][1]
     response=st[0].post(base(st)+f'/slots/{slot["slot_id"]}/jobs',json={**stamp(st),'action':'select','candidate_id':candidate_id(slot['candidates'][0])})
     assert response.status_code==409 and response.json()['category']=='duplicate'
+    confirmed=start(st,'select',slot['slot_id'],candidate_id=candidate_id(slot['candidates'][0]),allow_duplicate=True)
+    assert confirmed['slots'][1]['repeat_status']=='Manuel tekrar kullanım'
 
 
 def test_partial_download_failure_resume_does_not_start_over(stock_studio):
@@ -261,7 +263,7 @@ def test_partial_download_failure_resume_does_not_start_over(stock_studio):
 
 def test_restart_persistence_handoff_preview_and_no_secrets(stock_studio):
     st=stock_studio;state=start(st);first=state['slots'][0];mutate(st,first['slot_id'],'lock');state=view(st)
-    response=st[0].get(base(st)+f'/slots/{first["slot_id"]}/preview');assert response.status_code==200 and response.content==MP4
+    response=st[0].get(base(st)+f'/slots/{first["slot_id"]}/preview');assert response.status_code==200 and response.content==MP4+first['selected_media']['download_url'].encode()
     response=st[0].get(base(st)+f'/slots/{first["slot_id"]}/preview',headers={'Range':'bytes=0-11'});assert response.status_code==206
     handoff=st[0].get(base(st)+'/handoff').json();assert handoff['ready'] and not handoff['rendered']
     assert handoff['slots'][0]['trim_needed'] and handoff['slots'][0]['locked']

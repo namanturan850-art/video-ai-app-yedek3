@@ -1,3 +1,4 @@
+from app.stock.identities import identity_keys, duplicate as media_duplicate
 """Checkpointed stock assignment over the active Part 5 handoff, project scoped."""
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
@@ -152,6 +153,8 @@ class StockService:
             state = self._ensure(connection,handoff)
             public = deepcopy(state)
             for slot in public['slots']:
+                repeated=media_duplicate(slot['selected_media'],[x['selected_media'] for x in public['slots'] if x['slot_id']!=slot['slot_id']])
+                slot['repeat_status']='Manuel tekrar kullanım' if repeated and slot.get('manual_reuse') else 'Daha önce kullanılmış' if repeated else 'Benzersiz'
                 scene=next(s for s in handoff['scenes'] if s['scene_id']==slot['scene_id'])
                 current_profile=relevance.profile(scene,slot)
                 slot['subject_anchor']=current_profile['subject_anchor']
@@ -182,7 +185,9 @@ class StockService:
             public['media_mix']['video_target_range']=[75,90]
             if len(media)>=3 and not public['media_mix']['selected_videos'] and any(s['preferred_type']=='stock_video' for s in public['slots']):
                 public['warnings'].append('Hiç stok video seçilmedi. Yalnız uygun görsel bulunduysa bu korunur; ilgisiz video oranı artırmak için seçilmez. Arama Tanısı bölümünü kontrol edin.')
-            duplicates = len(media)-len({identity(m) for m in media})
+            duplicates = sum(media_duplicate(m,media[:i]) for i,m in enumerate(media))
+            locked=[s['selected_media'] for s in public['slots'] if s['locked'] and s['selected_media']]
+            if any(media_duplicate(m,locked[:i]) for i,m in enumerate(locked)):public['warnings'].append('Aynı medya birden fazla kilitli alanda kullanılıyor.')
             if duplicates: public['warnings'].append('Aynı stok medya birden fazla yuvada kullanılıyor. İsterseniz Değiştir ile çeşitlendirin.')
             if len(media)>=3 and any(all(m['media_type']=='image' for m in media[i:i+3]) for i in range(len(media)-2)):
                 public['warnings'].append('Art arda durağan görseller var. Uygun video adaylarını kontrol edin.')
@@ -247,11 +252,14 @@ class StockService:
                 if action=='select':
                     candidate = next((m for m in slot['candidates'] if candidate_id(m)==payload.get('candidate_id')),None)
                     if not candidate: raise StockError('invalid_candidate','Aday artık listede değil. Yeniden Ara deyin.',422)
-                    duplicate = any(s['slot_id']!=slot_id and s['selected_media'] and identity(s['selected_media'])==identity(candidate) for s in state['slots'])
+                    cached=connection.execute('SELECT metadata_json FROM stock_assets WHERE project_id=? AND provider=? AND media_id=? AND media_type=?',(project_id,candidate['provider'],candidate['media_id'],candidate['media_type'])).fetchone()
+                    if cached:candidate={**candidate,'sha256':json.loads(cached[0]).get('sha256')}
+                    duplicate = media_duplicate(candidate,[s['selected_media'] for s in state['slots'] if s['slot_id']!=slot_id])
                     if duplicate and payload.get('allow_duplicate') is not True:
                         raise StockError('duplicate','Bu medya başka yuvada kullanılıyor. Başka aday seçin veya tekrar kullanımını onaylayın.',409)
                     progress['candidate'] = candidate
                     progress['duplicate'] = duplicate
+                    progress['allow_duplicate'] = payload.get('allow_duplicate') is True
             if action=='replace_images' and not any(self._replaceable(s) for s in state['slots']):
                 raise StockError('no_selection','Video tercihli, kilitsiz görsel yuvası bulunamadı.',422)
             if not any(self.settings.stock_config(name).get('api_key') for name in ('pexels','pixabay')) and action!='select':
@@ -377,7 +385,7 @@ class StockService:
                         if reason: rejected[reason] += 1
                         else:
                             rated=relevance.annotate(media,profile,tier,query)
-                            if not relevance.acceptable(rated):rejected['relevance']+=1
+                            if not relevance.acceptable(rated,profile):rejected['relevance']+=1
                             else:eligible.append(rated)
                             previous=candidates.get(identity(rated))
                             if previous is None or relevance.rank(rated,slot)>relevance.rank(previous,slot):candidates[identity(rated)]=rated
@@ -403,13 +411,21 @@ class StockService:
             progress = job['progress'];self._checkpoint(job,progress)
             slots = [deepcopy(s) for s in state['slots'] if not job['slot_id'] or s['slot_id']==job['slot_id']]
             if job['action']=='replace_images': slots = [s for s in slots if self._replaceable(s)]
-            selections={s['slot_id']:identity(s['selected_media']) for s in state['slots'] if s['selected_media']}
+            selections={s['slot_id']:s['selected_media'] for s in state['slots'] if s['selected_media']}
+            if job['action']=='relevance_research':
+                # Locked reservations win. Of unlocked duplicates only the first
+                # occurrence owns the identity; later slots must find new media.
+                reservations=[s for s in state['slots'] if s['locked'] and s['selected_media']]
+                for old in state['slots']:
+                    if old['locked'] or not old['selected_media']:continue
+                    if media_duplicate(old['selected_media'],[r['selected_media'] for r in reservations]):selections.pop(old['slot_id'],None)
+                    else:reservations.append(old)
             for index,slot in enumerate(slots):
                 if self.closed: raise StockError('interrupted','İşlem durdu. Tamamlanan medya korundu; Devam Et deyin.')
                 progress['percent'] = int(index/max(1,len(slots))*100)
                 if slot['locked']: continue
                 if slot['slot_id'] in progress['completed']: continue
-                used={value for key,value in selections.items() if key!=slot['slot_id']}
+                used=set().union(*(identity_keys(value) for key,value in selections.items() if key!=slot['slot_id']))
                 if job['action'] in ('auto','missing') and slot['selected_media'] and slot['status']=='complete':
                     try:
                         asset_path(self.projects,job['project_id'],slot['selected_media'])
@@ -440,25 +456,37 @@ class StockService:
                     duplicate=bool(chosen_candidate and identity(chosen_candidate) in used)
                     if chosen_candidate is None:
                         if failures: raise failures[-1]
-                        if job['action']=='relevance_research' and slot['selected_media'] and not relevance.acceptable(relevance.evaluate(slot['selected_media'],slot['relevance_profile'])):
+                        if job['action']=='relevance_research' and slot['selected_media'] and (not relevance.acceptable(relevance.evaluate(slot['selected_media'],slot['relevance_profile']),slot['relevance_profile']) or bool(identity_keys(slot['selected_media'])&used)):
                             slot['selected_media']=None;selections.pop(slot['slot_id'],None)
                             for key in ('search_tier','query_used','relevance_score','relevance_label'):slot.pop(key,None)
                         if not slot['selected_media']: slot['status']='ai_needed'
-                        slot['message']=('Uygun video bulunamadı. Mevcut görsel korundu.' if job['action']=='replace_images' else 'Uygun stok medya bulunamadı. AI görsel gerekebilir; AI üretimi bu aşamada kapalı.')
+                        slot['message']=('Uygun video bulunamadı. Mevcut görsel korundu.' if job['action']=='replace_images' else 'Uygun ve kullanılmamış stok medya bulunamadı.')
                         self._checkpoint(job,progress,slot=slot)
                     else:
                         progress['message']=f"Medya {index+1}/{len(slots)} indiriliyor"
                         if not slot['selected_media']: slot['status']='downloading'
                         self._checkpoint(job,progress,slot=slot)
                         chosen = self.downloader.download(job['project_id'],chosen_candidate)
+                        while identity_keys(chosen)&used and job['action']!='select':
+                            used.update(identity_keys(chosen));chosen_candidate=relevance.choose(candidates,used,slot)
+                            if chosen_candidate is None:break
+                            chosen=self.downloader.download(job['project_id'],chosen_candidate)
+                        if job['action']!='select' and identity_keys(chosen)&used:
+                            # Files stay archived, but duplicate bytes never become an automatic selection.
+                            if job['action']=='relevance_research' or not slot['selected_media']:
+                                slot.update(selected_media=None,status='ai_needed');selections.pop(slot['slot_id'],None)
+                            slot['message']='Uygun ve kullanılmamış stok medya bulunamadı.'
+                            self._checkpoint(job,progress,slot=slot);progress['completed'].append(slot['slot_id']);continue
+                        if job['action']=='select' and identity_keys(chosen)&used and not progress.get('allow_duplicate'):
+                            raise StockError('duplicate','Bu medya başka yuvada kullanılıyor. Tekrar kullanımını onaylayın.',409)
                         self._guard(chosen)
-                        slot.update(selected_media=chosen,status='complete',message='İndirildi. Anlatıma uygunluğu Önizle ile kontrol edin.',warnings=[])
+                        slot.update(manual_reuse=job['action']=='select' and bool(identity_keys(chosen)&used),selected_media=chosen,status='complete',message='İndirildi. Anlatıma uygunluğu Önizle ile kontrol edin.',warnings=[])
                         slot.update({key:chosen.get(key) for key in ('search_tier','query_used','provider_query','relevance_score','relevance_label')})
                         if job['action']!='select' and slot['preferred_type']=='stock_video' and chosen['media_type']=='image':
                             slot['warnings'].append('Daha ilgili görsel seçildi. Render sırasında yerel kamera hareketi kullanılabilir.')
                         if duplicate or progress.get('duplicate'): slot['warnings'].append('Bu medya projede tekrar kullanılıyor. Değiştir ile başka aday seçebilirsiniz.')
                         if chosen['width']<1800 or chosen['height']<1000: slot['warnings'].append('Kaynak çözünürlüğü 1080p sınıfından düşük. Uygun daha yüksek çözünürlüklü aday varsa değiştirin.')
-                        selections[slot['slot_id']]=identity(chosen);self._checkpoint(job,progress,slot=slot)
+                        selections[slot['slot_id']]=chosen;self._checkpoint(job,progress,slot=slot)
                 progress['completed'].append(slot['slot_id'])
                 self._checkpoint(job,progress)
             progress.update(percent=100,message='Medya işlemi tamamlandı. Önizlemeleri kontrol edin.',category='none')

@@ -247,15 +247,17 @@ def test_duration_tolerance_configuration_persists(stock_studio):
         assert restarted.get(base(st)).json()['search_options']==state['search_options']
 
 
-def test_reused_eligible_video_not_displaced_by_unused_image(stock_studio):
+def test_used_video_is_excluded_unique_image_then_unresolved(stock_studio):
     st=stock_studio;stock=only_pixabay(st)
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,
         lambda name,q,kind:[media('only-video' if kind=='video' else 'new-image',name,kind,q,
-            description='electric cars Germany dealership EV charging station Europe modern electric vehicle showroom' if kind=='video' else 'electric cars')])
+            description='electric cars Germany dealership EV charging station Europe modern electric vehicle showroom')])
     state=start(st)
-    assert all(s['selected_media']['media_type']=='video' for s in state['slots'])
-    assert any('tekrar' in w for s in state['slots'] for w in s['warnings'])
-    assert not any(kind=='image' for name,kind,q in stock.test_calls)
+    assert state['slots'][0]['selected_media']['media_type']=='video'
+    assert state['slots'][1]['selected_media']['media_type']=='image'
+    assert all(s['selected_media'] is None for s in state['slots'][2:])
+    assert any(kind=='image' for name,kind,q in stock.test_calls)
+    assert not any(s['manual_reuse'] for s in state['slots'] if s['selected_media'])
 
 
 def test_specific_tier_precedes_broader_video_fallback(stock_studio):

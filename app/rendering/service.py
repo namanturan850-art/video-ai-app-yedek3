@@ -73,7 +73,7 @@ class RenderService:
                 m=selected.get(slot['slot_id'],{}).get('selected_media');identity=slot['selected_media_local_identity']
                 if not m or any(m.get(k)!=v for k,v in identity.items()):raise RenderError('source_stale',SOURCE_MESSAGE)
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
-                originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration')}
+                originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'description':m.get('description',''),'sha256':digest}
                 identities.append({'slot_id':slot['slot_id'],'identity':identity,'sha256':digest})
             for name in ('srt_local_path','vtt_local_path'):
                 path=file_path(self.projects,pid,h[name]);originals[str(path)]=self._hash(path,force)
@@ -97,7 +97,13 @@ class RenderService:
                 if (isinstance(stored_edit_plan,dict) and stored_edit_plan.get('source_fingerprint')==fingerprint
                         and stored_edit_plan.get('editing_style')==opts['editing_style']):
                     plan=deepcopy(stored_edit_plan)
-                else:plan=smart_edit.build(t,h,opts['editing_style'],fingerprint)
+                else:
+                    seed=opts.get('edit_variation_seed')
+                    # Default editorial choices depend on source content, not
+                    # encoder/music settings or preview-only option defaults.
+                    if not seed and opts['editing_style']=='adaptive':
+                        seed=smart_edit.digest({'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash})[:16]
+                    plan=smart_edit.build(t,h,opts['editing_style'],fingerprint,seed=seed,subtitle_mode=opts.get('subtitle_display') or ('emphasis' if opts['editing_style']=='adaptive' else 'full' if opts['subtitle_burned'] else 'none'),media_details=media)
                 self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
             return {'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan}
@@ -242,8 +248,8 @@ class RenderService:
         # Queued work runs only to observe cancellation and persist terminal status.
         self.executor.shutdown(wait=True)
 
-    def view(self,pid,*,refresh_tools=False,editing_style='balanced'):
-        self.projects.get(pid);source=None;source_error='';source_category='';opts=options({'editing_style':editing_style})
+    def view(self,pid,*,refresh_tools=False,editing_style='adaptive',edit_variation_seed=None,subtitle_display=None):
+        self.projects.get(pid);source=None;source_error='';source_category='';opts=options({'editing_style':editing_style,'edit_variation_seed':edit_variation_seed,'subtitle_display':subtitle_display})
         try:source=self._inputs(pid,opts)
         except RenderError as e:source_error=str(e);source_category=e.category
         try:tool=self._tools(True) if refresh_tools else self._tools()

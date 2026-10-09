@@ -9,19 +9,20 @@ class Element{
  find(predicate){return predicate(this)?this:this.children.map(c=>c.find(predicate)).find(Boolean);}
 }
 const counts={motion_effects:27,scene_transitions:8,emphasis_texts:7,internal_edits:11,slots:37,scenes:24};
-const plan=style=>({editing_style:style,style_label:{basic:'Temel',balanced:'Dengeli YouTube',dynamic:'Dinamik YouTube'}[style],fingerprint:style,
+const plan=style=>({editing_style:style,style_label:{adaptive:'Uyarlanabilir YouTube',basic:'Temel',balanced:'Dengeli YouTube',dynamic:'Dinamik YouTube'}[style],fingerprint:style,
  summary:style==='basic'?{...counts,motion_effects:0,scene_transitions:0,emphasis_texts:0,internal_edits:0}:counts,
  slots:[{slot_id:'a',scene_id:'s',transition_out:'crossfade',segments:[{start:0,end:4,motion_effect:'push_in'}]}],
  emphasis:[{slot_id:'a',start:0,text:'Im Jahr 2026'}],raw_filter:'private-filter-never-show'});
-async function harness({job=null,versions=[]}={}){
+async function harness({job=null,versions=[],delay=null}={}){
  const root=new Element('main'),calls=[];
- const fetch=async(url,opts)=>{calls.push({url,method:opts.method,body:opts.body});const style=new URL(url,'http://local').searchParams.get('editing_style')||'balanced';
-  return {ok:true,json:async()=>({ready:true,source_ready:true,summary:null,ffmpeg:{found:true,status:'Hazır'},smart_edit_plan:plan(style),music:null,job,versions,active:versions[0]||null})};};
+ const fetch=async(url,opts)=>{if(delay)await delay(url);calls.push({url,method:opts.method,body:opts.body});const params=new URL(url,'http://local').searchParams,style=params.get('editing_style')||'balanced',seed=params.get('edit_variation_seed'),chosen=plan(style);
+  if(seed){chosen.edit_variation_seed=seed;chosen.fingerprint+=seed;chosen.style_label+=' Varyasyon '+seed;}
+  return {ok:true,json:async()=>({ready:true,source_ready:true,summary:null,ffmpeg:{found:true,status:'Hazır'},smart_edit_plan:chosen,music:null,job,versions,active:versions[0]||null})};};
  vm.runInContext(source,vm.createContext({location:{pathname:'/projects/abc/render'},document:{querySelector:()=>root,createElement:tag=>new Element(tag)},window:{addEventListener(){}},File:class{},AbortSignal:{timeout(){}},fetch,setTimeout(){}}));
  await new Promise(resolve=>setImmediate(resolve));return {root,calls,find:id=>root.find(n=>n.id===id)};
 }
-test('balanced is default and nonzero local editing plan appears before render',async()=>{
- const {root,calls,find}=await harness();assert.equal(find('render-editing-style').value,'balanced');assert.match(calls[0].url,/editing_style=balanced/);
+test('adaptive is default and nonzero local editing plan appears before render',async()=>{
+ const {root,calls,find}=await harness();assert.equal(find('render-editing-style').value,'adaptive');assert.match(calls[0].url,/editing_style=adaptive/);
  assert.match(root.textContent,/Hareket efektleri: 27/);assert.match(root.textContent,/Sahne geçişleri: 8/);assert.match(root.textContent,/Vurgu yazıları: 7/);assert.match(root.textContent,/Klip içi değişimler: 11/);
  assert.match(root.textContent,/Kurgu Planını Gör/);assert.match(root.textContent,/Im Jahr 2026/);assert.doesNotMatch(root.textContent,/private-filter/);
 });
@@ -32,7 +33,7 @@ test('changing style recalculates plan using only local GET',async()=>{
 test('create sends chosen style and manual refresh retains style',async()=>{
  const {root,calls,find}=await harness();find('render-editing-style').value='dynamic';await find('render-create').listeners.click();
  const posted=calls.find(c=>c.method==='POST');assert.equal(JSON.parse(posted.body).editing_style,'dynamic');
- await root.find(n=>n.tag==='button'&&n.textContent==='Durumu Yenile').listeners.click();assert.match(calls.at(-1).url,/editing_style=dynamic&refresh_tools=true/);
+ await root.find(n=>n.tag==='button'&&n.textContent==='Durumu Yenile').listeners.click();assert.match(calls.at(-1).url,/editing_style=dynamic.*&refresh_tools=true/);
 });
 test('finished version distinguishes planned and actually applied effects',async()=>{
  const version={id:'v1',version:1,status:'completed',status_label:'Tamamlandı',encoder_label:'NVIDIA NVENC',created_at:'2026-10-09T00:00:00Z',metadata:{duration:193,file_size:1024,editing_style:'balanced',smart_edit_summary:counts,smart_edit_applied_summary:{...counts,motion_effects:26,emphasis_texts:6}}};
@@ -47,4 +48,27 @@ test('subtitle profile follows each style without exposing ASS internals',async(
  for(const [style,label] of [['basic','Klasik altyazı'],['dynamic','Kalın büyük YouTube altyazısı'],['balanced','Kalın YouTube altyazısı']]){
   const select=find('render-editing-style');select.value=style;await select.listeners.change();assert.equal(find('render-subtitle-profile').textContent,label);
  }
+});
+
+test('variation uses only local GET, subtitle modes reach preview and render',async()=>{
+ const {calls,find}=await harness();const modes=find('render-subtitles');assert.equal(modes.value,'emphasis');
+ await find('render-variation').listeners.click();assert.equal(calls.at(-1).method,'GET');assert.match(calls.at(-1).url,/edit_variation_seed=1/);
+ modes.value='none';await modes.listeners.change();assert.match(calls.at(-1).url,/subtitle_display=none/);
+ await find('render-create').listeners.click();const body=JSON.parse(calls.find(c=>c.method==='POST').body);
+ assert.equal(body.subtitle_display,'none');assert.equal(body.edit_variation_seed,'1');assert.equal(body.subtitle_burned,false);
+});
+
+
+test('slow old variation response cannot replace newer preview',async()=>{
+ let release;const old=new Promise(resolve=>release=resolve);
+ const {root,calls,find}=await harness({delay:async url=>{if(url.includes('edit_variation_seed=1'))await old;}});
+ const initial=calls.length;
+ const first=find('render-variation').listeners.click();await new Promise(resolve=>setImmediate(resolve));
+ const second=find('render-variation').listeners.click();await second;
+ assert.match(root.textContent,/Kurgu stili: Uyarlanabilir YouTube Varyasyon 2/);
+ const before=find('render-editing-style').value;release();await first;
+ assert.match(root.textContent,/Kurgu stili: Uyarlanabilir YouTube Varyasyon 2/);assert.doesNotMatch(root.textContent,/Kurgu stili: Uyarlanabilir YouTube Varyasyon 1/);
+ assert.equal(before,'adaptive');assert.equal(find('render-editing-style').value,'adaptive');
+ // Fetch completion order differs from requested order; only the newer local choice stays active.
+ assert.match(calls[initial].url,/edit_variation_seed=2/);assert.match(calls.at(-1).url,/edit_variation_seed=1/);
 });

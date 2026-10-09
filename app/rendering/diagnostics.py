@@ -2,6 +2,7 @@
 import re
 
 PHASES={
+    'adaptive_layout':'Uyarlanabilir görsel düzen',
     'ffmpeg':'FFmpeg işlemi', 'input_preflight':'Stok medya ön kontrolü',
     'subtitle_preflight':'Altyazı ön kontrolü', 'slot_render':'Medya işleme',
     'crossfade':'Sahne geçişi', 'final_assembly':'Son birleştirme',
@@ -9,6 +10,7 @@ PHASES={
     'smart_motion':'Akıllı kamera hareketi', 'smart_transition':'Akıllı sahne geçişi', 'emphasis_render':'Vurgu yazısı',
 }
 SUMMARIES={
+    'adaptive_layout_failed':'Görsel düzen uygulanamadı; B-roll ve ses zamanlaması korundu.',
     'input_decode_failed':'Stok medya dosyalarından biri FFmpeg tarafından okunamadı.',
     'filter_graph_failed':'FFmpeg filtre işlemi başarısız oldu.',
     'filter_option_unsupported':'FFmpeg bu filtre komutu seçeneğini desteklemiyor.',

@@ -3,7 +3,7 @@ import hashlib
 import json
 import re
 
-STYLES={'basic':'Temel','balanced':'Dengeli YouTube','dynamic':'Dinamik YouTube'}
+STYLES={'adaptive':'Uyarlanabilir YouTube','basic':'Temel','balanced':'Dengeli YouTube','dynamic':'Dinamik YouTube'}
 MOTIONS={'none':'Yok','push_in':'Yakınlaşma','push_out':'Uzaklaşma','pan_left':'Sola kayma',
          'pan_right':'Sağa kayma','pan_up':'Yukarı kayma','pan_down':'Aşağı kayma','subtle_reframe':'Hafif kadraj değişimi'}
 TRANSITIONS={'hard_cut':'Temiz kesme','crossfade':'Yumuşak geçiş','fade_dark':'Koyu geçiş','dip_black':'Kısa kararma','none':'Yok','fade':'Koyu geçiş'}
@@ -79,7 +79,7 @@ def motion(scene,index,style,opening):
     return sequence[index%len(sequence)],strength,'Açılış temposu' if opening else 'Dengeli görsel çeşitlilik'
 
 
-def build(t,h,style,source_fingerprint):
+def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_details=None):
     meta={s['scene_id']:s for s in t['editing_scenes']};items=[];boundary=0
     for i,slot in enumerate(t['slots']):
         scene=meta[slot['scene_id']];duration=slot['frames']/30;opening=slot['start']<15
@@ -88,11 +88,13 @@ def build(t,h,style,source_fingerprint):
             effect=('pan_right' if hint=='pan' else 'push_in') if image and hint in ('pan','slow_zoom','ken_burns') else 'none'
             strength=.04 if effect!='none' else 0.;reason='Mevcut Part 9 kurgu';count=1
         else:
-            effect,strength,reason=motion(scene,i,style,opening)
+            effect,strength,reason=motion(scene,i,'balanced' if style=='adaptive' else style,opening)
+            if style=='adaptive' and (slot['selected_media_local_identity']['media_type']=='video' and scene.get('motion') not in ('pan','slow_zoom','ken_burns') or i%3):effect,strength,reason='none',0.,'Sakin B-roll'
             count=3 if duration>(11 if style=='balanced' else 10) else 2 if duration>(7 if style=='balanced' else 6) or (opening and duration>5.5) else 1
             count=min(count,max(1,slot['frames']//75))
             if effect=='none' and scene.get('composition') in ('movement','close','detail','graphic','person'):count=1
             if reason=='Hareketli sahne korunur':count=1
+        if style=='adaptive' and effect=='none':count=1
         segments=[]
         for j in range(count):
             a=round(j*slot['frames']/count);b=round((j+1)*slot['frames']/count)
@@ -135,6 +137,12 @@ def build(t,h,style,source_fingerprint):
                      'scene_transitions':sum(item['transition_out'] not in ('none','hard_cut') for item in items),
                      'emphasis_texts':len(texts),'internal_edits':sum(len(item['segments'])-1 for item in items)}
     plan['fingerprint']=digest(plan)
+    if style=='adaptive':
+        from app.rendering.adaptive import apply
+        return apply(plan,t,h,seed,subtitle_mode or 'emphasis',media_details)
+    if subtitle_mode=='none':
+        plan['emphasis']=[];plan['summary']['emphasis_texts']=0
+        plan['fingerprint']=digest({k:v for k,v in plan.items() if k!='fingerprint'})
     return plan
 
 

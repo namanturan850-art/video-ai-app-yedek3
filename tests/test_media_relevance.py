@@ -70,7 +70,7 @@ def test_bermuda_a_b_c_weighted_ranking_and_wrong_city_never_wins():
     assert a['relevance_label']=='Çok ilgili' and b['relevance_label']=='Genel bağlantılı' and c['relevance_label']=='Zayıf eşleşme'
     slot={'relevance_profile':relevance.profile(scene())}
     assert relevance.choose([c,b,a],set(),slot)==a
-    assert relevance.choose([b,c],set(),slot)==b
+    assert relevance.choose([b,c],set(),slot) is None
     assert relevance.choose([c],set(),slot) is None
 
 
@@ -112,7 +112,7 @@ def test_duplicate_avoidance_cannot_trade_relevance_for_variety():
     direct=rated('Bermuda Triangle ocean');other=rated('ocean ship waves',mid='2');city=rated('city skyline',mid='3')
     used={(direct['provider'],direct['media_type'],direct['media_id'])}
     slot={'relevance_profile':relevance.profile(scene())}
-    assert relevance.choose([direct,other,city],used,slot)==direct
+    assert relevance.choose([direct,other,city],used,slot) is None
     equal={**direct,'media_id':'4'}
     assert relevance.choose([direct,equal,city],used,slot)==equal
 
@@ -172,7 +172,7 @@ def studio(tmp_path,request):
         class Provider:
             def search(self,q,kind):calls.append((q,kind));return stock.test_results(q,kind)
         stock.test_results=lambda q,kind:[];stock.factory=lambda *args:Provider()
-        stock.downloader=Downloader(app.state.projects,transport=httpx.MockTransport(lambda req:(downloads.append(str(req.url)) or httpx.Response(200,headers={'Content-Type':'video/mp4' if req.url.path.endswith('.mp4') else 'image/jpeg'},content=MP4 if req.url.path.endswith('.mp4') else JPEG))))
+        stock.downloader=Downloader(app.state.projects,transport=httpx.MockTransport(lambda req:(downloads.append(str(req.url)) or httpx.Response(200,headers={'Content-Type':'video/mp4' if req.url.path.endswith('.mp4') else 'image/jpeg'},content=(MP4 if req.url.path.endswith('.mp4') else JPEG)+str(req.url).encode()))))
         st.update(client=client,storage=tmp_path/'data',stock=stock,calls=calls,downloads=downloads,root=app.state.projects._path(st['pid']))
         yield st
 
@@ -196,12 +196,13 @@ def test_real_service_tiered_search_download_choice_and_weak_manual_candidates(s
         return [media('context','pixabay',kind,q,description='Atlantic ocean ship waves')]
     st['stock'].test_results=results;state=run(st)
     assert state['slots']
-    if availability=='city':
+    if availability in ('city','context'):
         assert all(s['status']=='ai_needed' and s['selected_media'] is None for s in state['slots'])
         assert not st['downloads']
-        assert all(s['candidates'] and s['candidates'][0]['relevance_label']=='Zayıf eşleşme' for s in state['slots'])
+        assert all(s['candidates'] and s['candidates'][0]['relevance_label']==('Zayıf eşleşme' if availability=='city' else 'Genel bağlantılı') for s in state['slots'])
         return
-    for s in state['slots']:
+    assert all(s['selected_media'] is None for s in state['slots'][1:])
+    for s in state['slots'][:1]:
         m=s['selected_media'];assert m and relevance.acceptable(m)
         assert m['media_id']==('map' if availability=='image' else availability)
         if availability=='context':
@@ -244,7 +245,8 @@ def test_explicit_research_with_only_city_leaves_slot_unresolved_keeps_old_files
     # Simulate the owner's older weak automatic selection, without a new download.
     with closing(st['stock'].projects._connection()) as c,c:
         state=st['stock']._load(c,st['pid'],before['plan_id'])
-        for s in state['slots']:s['selected_media']['description']='city skyline buildings downtown'
+        for s in state['slots']:
+            if s['selected_media']:s['selected_media']['description']='city skyline buildings downtown'
         st['stock']._save(c,state);c.execute('DELETE FROM stock_search_cache WHERE project_id=?',(st['pid'],))
     st['stock'].test_results=lambda q,kind:[media('city','pixabay',kind,q,description='city skyline buildings downtown')]
     result=run(st,'relevance_research')

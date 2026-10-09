@@ -65,6 +65,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const card=node('article','','stock-slot');card.dataset.slotId=slot.slot_id;
     card.append(node('h4',`Medya ${slot.order}${slot.locked?' · Kilitli':''} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`),node('p',`${slot.status_label} · ${slot.duration.toFixed(1)} sn`),node('p',`Görsel amaç: ${slot.visual_goal}`),node('p',`Arama: ${slot.search_query}`));
     const media=slot.selected_media;
+    card.append(node('p',`Tekrar durumu: ${slot.repeat_status||'Benzersiz'}`));
     if(slot.subject_anchor)card.append(node('p',`Ana konu: ${slot.subject_anchor}`));
     if(media)card.append(thumbnail(media),node('p',mediaInfo(media)),sourceInfo(media));
     if(media?.relevance_label)card.append(node('p',`Alaka: ${media.relevance_label} · Arama kademesi: ${media.search_tier||'—'}`));

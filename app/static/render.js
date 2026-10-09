@@ -7,28 +7,30 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   const summary=el('section'),editSummary=el('section'),form=el('section'),jobs=el('section'),versions=el('section');form.className='settings-panel';
   root.append(link('← Projeye dön',`/projects/${pid}`),status,summary,form,editSummary,jobs,versions);
   form.append(el('h2','Yerel video ayarları'),el('p','Video bu bilgisayarda oluşturulur. Ses, altyazı ve stok dosyaları değiştirilmez; API kredisi kullanılmaz.'));
-  function field(label,type,value){const wrap=el('label',label),n=el('input');n.type=type;if(type==='checkbox')n.checked=value;else n.value=value;wrap.append(n);form.append(wrap);return n;}
+  function field(label,type,value,parent=form){const wrap=el('label',label),n=el('input');n.type=type;if(type==='checkbox')n.checked=value;else n.value=value;wrap.append(n);parent.append(wrap);return n;}
   const encLabel=el('label','Encoder'),encoder=el('select');encoder.id='render-encoder';for(const [v,t] of [['auto','Otomatik — NVIDIA tercih et'],['nvenc','NVIDIA NVENC'],['cpu','CPU']]){const o=el('option',t);o.value=v;encoder.append(o);}encLabel.append(encoder);form.append(encLabel);
   const styleLabel=el('label','Kurgu Stili'),editingStyle=el('select');editingStyle.id='render-editing-style';
-  for(const [value,text] of [['basic','Temel'],['balanced','Dengeli YouTube'],['dynamic','Dinamik YouTube']]){const option=el('option',text);option.value=value;editingStyle.append(option);}
-  const subtitleProfiles={basic:'Klasik altyazı',balanced:'Kalın YouTube altyazısı',dynamic:'Kalın büyük YouTube altyazısı'};
+  for(const [value,text] of [['adaptive','Uyarlanabilir YouTube (önerilen)'],['basic','Temel'],['balanced','Dengeli YouTube'],['dynamic','Dinamik YouTube']]){const option=el('option',text);option.value=value;editingStyle.append(option);}
+  const subtitleProfiles={adaptive:'Kalın YouTube altyazısı',basic:'Klasik altyazı',balanced:'Kalın YouTube altyazısı',dynamic:'Kalın büyük YouTube altyazısı'};
   const subtitleProfile=el('p',subtitleProfiles.balanced);subtitleProfile.id='render-subtitle-profile';
-  editingStyle.value='balanced';styleLabel.append(editingStyle);form.append(styleLabel,subtitleProfile);
-  editingStyle.addEventListener('change',()=>{subtitleProfile.textContent=subtitleProfiles[editingStyle.value];return load();});
-  const subtitles=field('Altyazıları Videoya Yaz','checkbox',true);subtitles.id='render-subtitles';
-  const music=field('Arka plan müziği açık','checkbox',false),file=field('Arka plan müziği ekle (en fazla 100 MB)','file','');file.accept='.mp3,.wav,.m4a,.ogg,.flac';
-  const license=field('Bu müziği kullanma hakkına sahibim.','checkbox',false);
-  const volume=field('Müzik seviyesi (0–0,30)','number',.12);volume.min=0;volume.max=.3;volume.step=.01;
-  const fadeIn=field('Müzik başlangıç geçişi (saniye)','number',2),fadeOut=field('Müzik bitiş geçişi (saniye)','number',3);for(const n of [fadeIn,fadeOut]){n.min=0;n.max=30;n.step=.1;}
-  const duck=field('Konuşma sırasında müziği kıs','checkbox',true),musicStatus=el('p');form.append(musicStatus);
+  editingStyle.value='adaptive';styleLabel.append(editingStyle);form.append(styleLabel,subtitleProfile);
+  editingStyle.addEventListener('change',()=>{subtitleProfile.textContent=subtitleProfiles[editingStyle.value];if(!subtitleModeChosen)subtitles.value=editingStyle.value==='adaptive'?'emphasis':'full';return load();});
+  const subtitles=el('select');subtitles.id='render-subtitles';const subtitleLabel=el('label','Altyazı Gösterimi');for(const [value,text] of [['full','Tam altyazı'],['emphasis','Sadece önemli vurgular'],['none','Altyazı yok']]){const o=el('option',text);o.value=value;subtitles.append(o);}subtitles.value='emphasis';subtitleLabel.append(subtitles);form.append(subtitleLabel);let subtitleModeChosen=false;subtitles.addEventListener('change',()=>{subtitleModeChosen=true;return load();});
+  let variationSeed='';try{variationSeed=localStorage.getItem(`render-variation-${pid}`)||'';}catch{}
+  const music=field('Arka plan müziği açık','checkbox',false),musicDetails=el('details');musicDetails.append(el('summary','Müzik dosyası ve ayrıntıları'));form.append(musicDetails);const file=field('Arka plan müziği ekle (en fazla 100 MB)','file','',musicDetails);file.accept='.mp3,.wav,.m4a,.ogg,.flac';
+  const license=field('Bu müziği kullanma hakkına sahibim.','checkbox',false,musicDetails);
+  const volume=field('Müzik seviyesi (0–0,30)','number',.12,musicDetails);volume.min=0;volume.max=.3;volume.step=.01;
+  const fadeIn=field('Müzik başlangıç geçişi (saniye)','number',2,musicDetails),fadeOut=field('Müzik bitiş geçişi (saniye)','number',3,musicDetails);for(const n of [fadeIn,fadeOut]){n.min=0;n.max=30;n.step=.1;}
+  const duck=field('Konuşma sırasında müziği kıs','checkbox',true,musicDetails),musicStatus=el('p');form.append(musicStatus);
   let state=null,pending=false,lastVersionKey='',stopped=false;
   const button=(parent,text,fn)=>{const n=el('button',text);n.type='button';n.addEventListener('click',fn);parent.append(n);return n;};
-  const upload=button(form,'Müziği Kaydet',async()=>{
+  const upload=button(musicDetails,'Müziği Kaydet',async()=>{
     if(!file.files[0]||!license.checked){status.textContent='Müzik dosyasını seçin ve kullanma hakkınızı onaylayın.';return;}
     const f=file.files[0];if(f.size>100000000){status.textContent='Müzik dosyası 100 MB sınırını aşıyor.';return;}
     await action(async()=>{await request(base+'/music','POST',f,{'X-Music-Format':f.name.split('.').pop().toLowerCase(),'X-Music-License':'confirmed'});file.value='';});
   });
-  const create=button(form,'Videoyu Oluştur',()=>action(async()=>{await request(base+'/jobs','POST',{encoder:encoder.value,editing_style:editingStyle.value,subtitle_burned:subtitles.checked,music_enabled:music.checked,music_volume:Number(volume.value),music_fade_in:Number(fadeIn.value),music_fade_out:Number(fadeOut.value),music_ducking:duck.checked});}));create.id='render-create';
+  const variation=button(form,'Yeni Kurgu Varyasyonu',()=>{variationSeed=String(Number(variationSeed||0)+1);try{localStorage.setItem(`render-variation-${pid}`,variationSeed);}catch{}return load();});variation.id='render-variation';
+  const create=button(form,'Videoyu Oluştur',()=>action(async()=>{await request(base+'/jobs','POST',{encoder:encoder.value,editing_style:editingStyle.value,edit_variation_seed:variationSeed||null,subtitle_display:subtitles.value,subtitle_burned:subtitles.value==='full',music_enabled:music.checked,music_volume:Number(volume.value),music_fade_in:Number(fadeIn.value),music_fade_out:Number(fadeOut.value),music_ducking:duck.checked});}));create.id='render-create';
   const refresh=button(form,'Durumu Yenile',()=>load(true));
   async function request(url,method='GET',body=null,extra={}){
     const headers={'X-AI-Video-Studio':'projects',...extra},isFile=body instanceof File;
@@ -38,21 +40,22 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   }
   async function action(fn){if(pending)return;pending=true;updateButtons();try{await fn();status.textContent='İşlem alındı.';await load();}catch(e){status.textContent=e.message;}finally{pending=false;updateButtons();}}
   const activeJob=()=>state?.job&&['queued','preparing','rendering','validating'].includes(state.job.status);
-  function updateButtons(){create.disabled=pending||!state?.ready||activeJob();upload.disabled=pending||activeJob();encoder.disabled=activeJob();editingStyle.disabled=pending||activeJob();subtitles.disabled=activeJob();music.disabled=activeJob();create.textContent=state?.job&&['error','cancelled'].includes(state.job.status)?'Yeniden Render Et':'Videoyu Oluştur';}
+  function updateButtons(){create.disabled=pending||!state?.ready||activeJob();upload.disabled=pending||activeJob();encoder.disabled=activeJob();editingStyle.disabled=pending||activeJob();subtitles.disabled=pending||activeJob();variation.disabled=pending||activeJob();music.disabled=activeJob();create.textContent=state?.job&&['error','cancelled'].includes(state.job.status)?'Yeniden Render Et':'Videoyu Oluştur';}
   function clock(s){return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;}
   const motionLabels={none:'Yok',push_in:'Yakınlaşma',push_out:'Uzaklaşma',pan_left:'Sola kayma',pan_right:'Sağa kayma',pan_up:'Yukarı kayma',pan_down:'Aşağı kayma',subtle_reframe:'Hafif kadraj değişimi'};
   const transitionLabels={hard_cut:'Temiz kesme',none:'Yok',crossfade:'Yumuşak geçiş',fade:'Koyu geçiş',fade_dark:'Koyu geçiş',dip_black:'Kısa kararma'};
-  const styleLabels={basic:'Temel',balanced:'Dengeli YouTube',dynamic:'Dinamik YouTube'};
-  function editCounts(parent,count,label){if(!count)return;parent.append(el('p',`${label}: Hareket efektleri: ${count.motion_effects} · Sahne geçişleri: ${count.scene_transitions} · Vurgu yazıları: ${count.emphasis_texts} · Klip içi değişimler: ${count.internal_edits}`));}
+  const styleLabels={adaptive:'Uyarlanabilir YouTube',basic:'Temel',balanced:'Dengeli YouTube',dynamic:'Dinamik YouTube'};
+  const layoutLabels={full_broll:'Tam B-roll',split_media_text:'Medya ve metin',fact_card:'Bilgi kartı',big_number:'Büyük sayı',timeline_card:'Zaman çizelgesi',dual_media:'İki medya',minimal_title:'Kısa başlık',quote_emphasis:'Kısa vurgu',location_card:'Konum kartı'};
+  function editCounts(parent,count,label){if(!count)return;parent.append(el('p',`${label}: Hareket efektleri: ${count.motion_effects} · Sahne geçişleri: ${count.scene_transitions} · Vurgu yazıları: ${count.emphasis_texts} · Klip içi değişimler: ${count.internal_edits}`));if(count.layouts)parent.append(el('p',Object.entries(count.layouts).map(([k,v])=>`${layoutLabels[k]}: ${v}`).join(' · ')),el('p',`Görsel düzen hataları: ${count.layout_failures||0} · B-roll: ${clock(count.broll_seconds||0)} · Grafik: ${clock(count.graphic_seconds||0)}`));}
   let planKey='';
   function showEditPlan(){const plan=state.smart_edit_plan,key=plan?.fingerprint||'';if(planKey===key)return;planKey=key;editSummary.replaceChildren();if(!plan)return;
     editSummary.append(el('h2',`Kurgu stili: ${plan.style_label}`),el('p','Yerel ve aynı kaynaklarda aynı plan. API kredisi kullanılmaz; yeni stok dosyası indirilmez.'));
-    editCounts(editSummary,plan.summary,'Planlanan kurgu');const details=el('details');details.append(el('summary','Kurgu Planını Gör'));
-    const table=el('table'),thead=el('thead'),head=el('tr');for(const text of ['Zaman','Sahne','Efekt','Geçiş','Vurgu'])head.append(el('th',text));thead.append(head);table.append(thead);
+    if(plan.edit_variation_seed)editSummary.append(el('p',`Kurgu Varyasyonu: ${variationSeed||'Varsayılan'}`));editCounts(editSummary,plan.summary,'Planlanan kurgu');const details=el('details');details.append(el('summary','Kurgu Planını Gör'));
+    const table=el('table'),thead=el('thead'),head=el('tr');for(const text of ['Zaman','Sahne','Düzen','Medya','Efekt','Geçiş','Metin'])head.append(el('th',text));thead.append(head);table.append(thead);
     const body=el('tbody');let sceneOrder=0,lastScene='';for(const item of plan.slots){if(lastScene!==item.scene_id){sceneOrder++;lastScene=item.scene_id;}
       for(const segment of item.segments){const row=el('tr'),texts=plan.emphasis.filter(e=>e.slot_id===item.slot_id&&e.start>=segment.start&&e.start<segment.end).map(e=>e.text).join(' · ');
         const transition=segment===item.segments[item.segments.length-1]?item.transition_out:'hard_cut';
-        for(const text of [`${clock(segment.start)}–${clock(segment.end)}`,String(sceneOrder),motionLabels[segment.motion_effect]||'Mevcut hareket',transitionLabels[transition]||'Temiz kesme',texts||'—'])row.append(el('td',text));body.append(row);}}
+        for(const text of [`${clock(segment.start)}–${clock(segment.end)}`,String(sceneOrder),item.layout_label||'Tam B-roll',item.media_type==='image'?'Görsel':'Video',motionLabels[segment.motion_effect]||'Mevcut hareket',transitionLabels[transition]||'Temiz kesme',(item.texts||[]).join(' · ')||texts||'—'])row.append(el('td',text));body.append(row);}}
     table.append(body);const wrapper=el('div');wrapper.style.overflowX='auto';wrapper.append(table);details.append(wrapper);editSummary.append(details);
   }
   function render(){showEditPlan();
@@ -80,7 +83,7 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
         if(v.video_missing)card.append(el('p','Video dosyası eksik veya değişmiş. Kaynaklar ve kayıtlar korundu.'));versions.append(card);
       }}updateButtons();
   }
-  async function load(refreshTools=false){try{const chosen=editingStyle.value;const loaded=await request(`${base}?editing_style=${encodeURIComponent(chosen)}${refreshTools?'&refresh_tools=true':''}`);if(chosen!==editingStyle.value)return;state=loaded;render();status.textContent=activeJob()?'Video yerel olarak oluşturuluyor. Bu sayfayı açık tutabilirsiniz.':state.job?.status==='completed'?'Tamamlandı. Videonun başlangıcını, ortasını ve sonunu kontrol edin.':'Yerel video ayarlarını kontrol edin.';}catch(e){status.textContent=e.message;}}
+  async function load(refreshTools=false){try{const chosen=editingStyle.value,selectedSeed=variationSeed,selectedMode=subtitles.value;const loaded=await request(`${base}?editing_style=${encodeURIComponent(chosen)}${variationSeed?'&edit_variation_seed='+encodeURIComponent(variationSeed):''}&subtitle_display=${subtitles.value}${refreshTools?'&refresh_tools=true':''}`);if(chosen!==editingStyle.value||selectedSeed!==variationSeed||selectedMode!==subtitles.value)return;state=loaded;render();status.textContent=activeJob()?'Video yerel olarak oluşturuluyor. Bu sayfayı açık tutabilirsiniz.':state.job?.status==='completed'?'Tamamlandı. Videonun başlangıcını, ortasını ve sonunu kontrol edin.':'Yerel video ayarlarını kontrol edin.';}catch(e){status.textContent=e.message;}}
   async function poll(){if(stopped)return;await load();if(!stopped)setTimeout(poll,2000);}
   window.addEventListener('pagehide',()=>{stopped=true;});poll();
 }

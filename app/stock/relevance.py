@@ -5,6 +5,7 @@ compares provider tags; it never adds a person, location, event or factual claim
 """
 import re
 import unicodedata
+from app.stock.identities import identity_keys
 
 LABELS=('Zayıf eşleşme','Genel bağlantılı','İlgili','Çok ilgili')
 MINIMUM=12
@@ -30,18 +31,20 @@ WORDS={
  'urban':'city skyline buildings building downtown architecture skyscraper office street traffic stadt gebaude buro strasse ciudad edificios oficina calle ville batiment bureau rue sehir bina ofis sokak trafik',
  'car':'car cars vehicle vehicles automobile automobiles auto autos automobil elektroauto elektroautos coche coches voiture voitures otomobil araba arac',
  'charging':'charging charger chargers charge laden ladestation cargador carga recharge sarj',
- 'history':'history historical historic archival geschichte historisch historia historique histoire tarih tarihi',
+ 'history':'history geschichte historia histoire tarih',
+ 'crew':'crew crews personnel ekip murettebat besatzung equipage tripulacion',
+ 'fatigue':'fatigue tired exhausted yorgun yorgunluk mudigkeit fatigue agotado',
  'map':'map maps chart karte karten mapa mapas carte cartes harita',
  'compass':'compass kompass brujula boussole pusula',
  'aviation':'aviation flight flights pilot pilots aeronautics luftfahrt flug pilot aviacion vuelo piloto vol pilote havacilik ucus pilot',
- 'cockpit':'cockpit cockpits kokpit kabine cabina cabine',
+ 'cockpit':'cockpit cockpits kokpit kokpiti kabine cabina cabine',
  'navigation':'navigation navigational gps navigasyon navegacion navegacion navigation ortung',
  'instrument':'instrument instruments instrumentation dashboard instrumente instrumentacion tableau gostergeler gosterge',
  'computer':'computer computers computing technology technological screen screens display displays monitor laptop bildschirm bildschirme ordinateur ecran pantalla computadora ordenador technologie technologie bilgisayar bilgisayarlar teknolojisi teknoloji ekran ekrani dijital digital',
  'animal':'animal animals dog dogs pet pets cat cats hund katze tier haustier perro gato mascota chien chat animaux kopek kedi hayvan evcil',
  'food':'food foods cooking meal cuisine essen kochen lebensmittel comida cocina nourriture yemek gida mutfak',
 }
-DOMAINS={'aviation':{'aircraft','aviation','cockpit'},'rail':{'train'},'animal':{'animal'},'food':{'food'},
+DOMAINS={'aviation':{'aircraft','aviation','cockpit','crew'},'rail':{'train'},'animal':{'animal'},'food':{'food'},
          'urban':{'urban'},'marine':{'ocean','ship','storm'},'mountain':{'mountain','snow'},
          'forest':{'forest'},'beach':{'beach'},'vehicle':{'car','charging'},'technology':{'computer','navigation','instrument'}}
 
@@ -57,7 +60,14 @@ ALIASES={word:meaning for meaning,words in WORDS.items() for word in normalized(
 def tokens(text):return re.findall(r'[^\W_]+',normalized(text))
 
 
-def canonical(text):return {ALIASES.get(word,word) for word in tokens(text) if word not in STOP and word not in GENERIC}
+STYLE=set(normalized("documentary interview style cinematic vintage retro archive archival black white old photo historical footage dramatic beautiful aerial close up wide shot background b roll belgesel tarz tarzı röportaj eski siyah beyaz fotoğraf tarihi arşiv sinematik dramatik güzel yakın plan geniş çekim görüntü dokümantasyon dokumentar dokumentarisch interview alt schwarz weiss historisch archiv filmisch nahaufnahme weitaufnahme documental entrevista antiguo blanco negro historico archivo cinematografico primer plano documentaire entretien ancien noir blanc historique archives cinematographique gros plan").split())
+
+
+def meaningful(text):
+    return canonical(text)-STYLE-MODIFIERS
+
+
+def canonical(text):return {ALIASES.get(word,word) for word in tokens(text) if word not in STOP and word not in GENERIC and word not in STYLE}
 
 
 def domains(concepts):return {name for name,group in DOMAINS.items() if concepts&group}
@@ -80,15 +90,17 @@ def unique(values):
 
 
 def query_anchor(query):
-    """Retain a contiguous subject prefix, never translate a proper name."""
-    words=phrase(query).split()
-    if not words:return ''
-    cut=len(words)
-    for i,word in enumerate(words):
-        term=normalized(word)
-        if i>=2 and (term in GENERIC or term in ALIASES or term in ('atlantic','pacific','aerial','archival')):
-            cut=i;break
-    return ' '.join(words[:min(cut,5)])
+    words=[w for w in phrase(query).split() if normalized(w) not in STYLE|STOP|GENERIC]
+    known=[ALIASES[normalized(w)] for w in words if normalized(w) in ALIASES and ALIASES[normalized(w)] not in ('history','fatigue')]
+    # An exact proper noun prefix takes priority over its visual modifiers.
+    if words and normalized(words[0]) not in ALIASES and not normalized(words[0]).isdigit():
+        prefix=[]
+        for word in words:
+            if normalized(word) in ALIASES or normalized(word) in ('atlantic','pacific'):break
+            prefix.append(word)
+        if len(prefix)>=2:return ' '.join(prefix[:4])
+    if known:return ' '.join(dict.fromkeys(known[:3]))
+    return ' '.join(words[:4])
 
 
 def exact_named_terms(text):
@@ -106,18 +118,13 @@ def profile(scene,slot=None):
     visual=phrase(scene.get('visual_intent',slot.get('visual_goal','')))
     narration=phrase(scene.get('narration_text',scene.get('narration',''))[:300])
     trusted=' '.join([*entities,location,primary,visual,narration])
+    core=meaningful(primary+' '+visual)
+    valid=lambda value: bool(canonical(value)) and (bool(meaningful(value)&core) or normalized(value) in normalized(trusted))
+    entities=[e for e in entities if valid(e)]
+    location=location if valid(location) else ''
     explicit=phrase(scene.get('search_anchor',''))
-    if explicit and normalized(explicit) not in normalized(trusted):explicit=''
-    anchor=next((e for e in entities if canonical(e)), '') or explicit or location
-    if not anchor:
-        anchor=query_anchor(queries[0]) if queries else query_anchor(visual) or exact_named_terms(narration) or query_anchor(narration)
-        if not (canonical(anchor)-set(WORDS)):
-            anchor=exact_named_terms(visual) or exact_named_terms(narration) or anchor
-    # Preserve a shared entity prefix even when the primary query has a context.
-    if not entities and not explicit and not location and queries:
-        for query in queries[1:]:
-            a=query_anchor(query)
-            if len(tokens(a))>=2 and normalized(queries[0]).startswith(normalized(a)) and len(a)<len(anchor):anchor=a
+    if not valid(explicit) or not meaningful(explicit)&core:explicit=''
+    anchor=next(iter(entities),'') or location or query_anchor(primary) or query_anchor(visual) or exact_named_terms(narration) or explicit
     anchor=anchor[:150]
     # Primary visual metadata defines the subject. Incidental narration words or
     # a polluted alternative cannot certify an unrelated result as relevant.
@@ -136,9 +143,11 @@ def profile(scene,slot=None):
     hints=canonical(' '.join([*queries,phrase(scene.get('search_context',''))]))
     context=(base|hints&compatible)-canonical(anchor)
     context|=base&set(WORDS)
-    return {'subject_anchor':anchor,'anchor_tokens':sorted(canonical(anchor)),
+    protected_name=anchor if not meaningful(anchor)-set(WORDS) and sum(w[:1].isupper() for w in anchor.split())>=2 and any(normalized(w) in MODIFIERS for w in anchor.split()) else ''
+    return {'protected_name':protected_name,'subject_anchor':anchor,'anchor_tokens':sorted(canonical(anchor)),
             'context_tokens':sorted(context),'queries':queries,'visual_goal':visual,
-            'search_context':phrase(scene.get('search_context','')),'expected_domains':sorted(expected)}
+            'search_context':phrase(scene.get('search_context','')),'expected_domains':sorted(expected),
+            'specificity':'named_specific' if protected_name or meaningful(anchor)-set(WORDS) else 'domain_specific' if expected&{'aviation','technology','rail','vehicle','animal','food'} else 'generic_visual'}
 
 
 def provider_query(value,anchor=''):
@@ -151,14 +160,14 @@ def provider_query(value,anchor=''):
     represented=canonical(' '.join(prefix));result=list(prefix)
     for word in tokens(source):
         concept=ALIASES.get(word,word)
-        if concept in represented or word in STOP or word in GENERIC:continue
+        if concept in represented or word in STOP or word in GENERIC or word in STYLE:continue
         if concept in WORDS:
             result.append('buildings' if concept=='urban' else concept);represented.add(concept)
         elif word not in MODIFIERS and (normalized(word) in {normalized(w) for w in anchor.split()} or any(w[:1].isupper() and normalized(w)==word for w in source.split())):
             original=next(w for w in [*anchor.split(),*source.split()] if normalized(w)==word)
             result.append(original);represented.add(concept)
-        if len(result)>=6:break
-    if not result:result=source.split()[:6]
+        if len(result)>=5:break
+    if not result:result=[w for w in source.split() if normalized(w) not in STYLE|STOP|GENERIC][:5]
     return ' '.join(result)[:300]
 
 
@@ -192,6 +201,8 @@ def queries_for(profile):
 
 def evaluate(media,profile):
     desc=media.get('description','');actual=canonical(desc)
+    protected=profile.get('protected_name','')
+    if protected and not re.search(r'(?<!\w)'+re.escape(normalized(protected))+r'(?!\w)',normalized(desc)):return {'relevance_score':0,'relevance_label':LABELS[0]}
     anchor=set(profile['anchor_tokens']);context=set(profile['context_tokens'])
     matches=anchor&actual;context_matches=(context&actual)-matches
     named=anchor-set(WORDS)-MODIFIERS
@@ -211,6 +222,7 @@ def evaluate(media,profile):
     # A close-context fallback needs genuine visual evidence, not generic words.
     if (matches|context_matches)&set(WORDS):
         value=max(value,MINIMUM)
+    if profile.get('specificity')=='domain_specific' and len(matches&set(WORDS))>=2:value=max(value,RELATED)
     conflict=(('ocean','urban'),('mountain','beach'),('train','forest'))
     for expected,wrong in conflict:
         if expected in context|anchor and wrong in actual and expected not in actual and not matches:value-=20
@@ -223,7 +235,9 @@ def annotate(media,profile,tier,query):
     return {**media,**evaluate(media,profile),'search_tier':tier,'query_used':query,'provider_query':query}
 
 
-def acceptable(media):return type(media.get('relevance_score')) is int and media['relevance_score']>=MINIMUM
+def acceptable(media,current=None):
+    threshold=RELATED if current and current.get('specificity') in ('named_specific','domain_specific') else MINIMUM
+    return type(media.get('relevance_score')) is int and media['relevance_score']>=threshold
 
 
 def rank(media,slot):
@@ -237,18 +251,13 @@ def choose(candidates,used,slot):
     # Saved scores are history/display only. Never infer the current scene from
     # candidate query_used; search provenance is not evidence about its content.
     refreshed=[{**m,**evaluate(m,current)} for m in candidates]
-    valid=sorted((m for m in refreshed if acceptable(m)),key=lambda m:rank(m,slot),reverse=True)
+    valid=sorted((m for m in refreshed if acceptable(m,current) and not identity_keys(m)&used),key=lambda m:rank(m,slot),reverse=True)
     if not valid:return None
     best=valid[0]
     videos=[m for m in valid if m['media_type']=='video' and (m['relevance_score']>=RELATED or best['relevance_score']<RELATED)]
     if videos and slot.get('preferred_type')!='stock_image' and videos[0]['relevance_score']>=best['relevance_score']-VIDEO_TOLERANCE:
         best=videos[0]
-    floor=best['relevance_score']-6
-    if best['media_type']=='video':
-        floor=max(floor,valid[0]['relevance_score']-VIDEO_TOLERANCE)
-        if valid[0]['relevance_score']>=RELATED:floor=max(floor,RELATED)
-    fresh=[m for m in valid if m['media_type']==best['media_type'] and (m['provider'],m['media_type'],m['media_id']) not in used and m['relevance_score']>=floor]
-    return fresh[0] if fresh else best
+    return best
 
 
 def ordered(candidates,used,slot):

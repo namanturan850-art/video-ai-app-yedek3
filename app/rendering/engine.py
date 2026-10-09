@@ -36,23 +36,29 @@ class FFmpegRenderProvider:
             return self.attempt(plan,'libx264')
 
     def decorative(self,code,**context):
-        phase={'smart_motion_failed':'smart_motion','smart_transition_failed':'smart_transition','emphasis_render_failed':'emphasis_render'}[code]
+        phase={'adaptive_layout_failed':'adaptive_layout','smart_motion_failed':'smart_motion','smart_transition_failed':'smart_transition','emphasis_render_failed':'emphasis_render'}[code]
         safe=diagnostic(code,phase=phase,**context)
         getattr(self.runner,'diagnostic_callback',lambda value:None)(safe)
         self.log(code)
 
     def attempt(self,plan,encoder):
         folder=plan['temporary'];timeline=plan['timeline'];duration=timeline['duration'];slots=timeline['slots'];opts=plan['options']
+        opts=dict(opts)
         edit=plan.get('smart_edit_plan');style=edit['editing_style'] if edit else 'basic';smart=style!='basic' and edit is not None
+        mode=opts.get('subtitle_display') or ('emphasis' if style=='adaptive' else 'full' if opts['subtitle_burned'] else 'none')
+        opts['subtitle_burned']=mode=='full'
         edits={item['slot_id']:item for item in edit['slots']} if edit else {}
         emphasis=list(edit['emphasis']) if smart else None
         applied={'motion_effects':0,'scene_transitions':0,'emphasis_texts':0,'internal_edits':0};transitions=set()
+        if style=='adaptive':
+            from app.rendering import adaptive
+            applied.update(adaptive_texts=0,layouts={name:0 for name in adaptive.LAYOUTS},layout_failures=0,graphic_seconds=0.)
         self.progress('preparing',2,encoder,self.warnings)
         if opts['subtitle_burned'] and 'ass' not in self.tools['filters']:
             raise RenderError('subtitle_invalid','Bu FFmpeg sürümü altyazı yazmayı desteklemiyor. Altyazı seçimini kapatın veya libass destekli FFmpeg kullanın.',diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder))
         timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]
         for scene,original in zip(timed,timeline['scenes']):scene.update(start=original['start'],end=original['end'])
-        try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays='ass' in self.tools['filters'],editing_style=style,emphasis=emphasis)
+        try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,emphasis=emphasis)
         except RenderError as error:
             raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
         self.warnings+=warnings;caption_name=None
@@ -66,7 +72,7 @@ class FFmpegRenderProvider:
                 self.decorative('emphasis_render_failed',encoder=encoder)
                 self.warnings.append('Vurgu yazısı ön kontrolü başarısız; yalnız mevcut altyazılar kullanılıyor.')
                 emphasis=[]
-                content,_,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=True,editing_style=style,emphasis=[])
+                content,_,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,emphasis=[])
                 self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
                 args[args.index('-vf')+1]=f'ass=filename={caption_name}'
                 if has_text:self.runner.run(args,folder,phase='subtitle_preflight')
@@ -115,7 +121,19 @@ class FFmpegRenderProvider:
             if smart_slot and any(x['motion_effect']!='none' for x in smart_slot['segments']) and 'zoompan' not in self.tools['filters']:
                 decorate=False;self.decorative('smart_motion_failed',**context)
                 self.warnings.append('Akıllı kamera hareketi bu FFmpeg sürümünde desteklenmiyor; normal kadraj kullanıldı.')
-            graph=smart_graph.slot_graph(normalize,parts,i,incoming,outgoing,fades,smart_slot,emphasis or (),decorate=decorate)
+            layout_graph=None
+            if style=='adaptive' and smart_slot and smart_slot.get('layout')!='full_broll' and decorate:
+                if 'ass' not in self.tools['filters']:
+                    applied['layout_failures']+=1;self.warnings.append('Görsel düzen desteklenmiyor; B-roll korunuyor.')
+                else:
+                    secondary=smart_slot.get('secondary_slot_id')
+                    if secondary:
+                        second=plan['media'].get(secondary)
+                        if second:
+                            args+=(['-stream_loop','-1'] if second['type']=='video' else ['-loop','1','-framerate','30'])+['-t',f'{length:.6f}','-i',str(second['path'])]
+                    name=f'layout-{i}.ass';write(folder/name,adaptive.captions(smart_slot,edit['theme']))
+                    layout_graph=adaptive.graph(smart_slot,edit['theme'],name)
+            graph=smart_graph.slot_graph(normalize,parts,i,incoming,outgoing,fades,smart_slot,emphasis or (),decorate=decorate,layout_graph=layout_graph)
             graph_index=len(args)
             args+=self.graph(folder,graph.rstrip(';\n'))
             for name,start,end in parts:args+=['-map',f'[{name}]','-an',*self.codec(encoder),'-frames:v',str(end-start),f'{name}-{i}.mp4']
@@ -124,9 +142,10 @@ class FFmpegRenderProvider:
             try:self.runner.run(args,folder,callback,phase='slot_render',**context)
             except RenderError as error:
                 has_motion=smart_slot and any(x['motion_effect']!='none' for x in smart_slot['segments'])
-                if not smart or not decorate or error.category!='render_failed' or not (has_motion or fades[i] or (i and fades[i-1])):raise
-                self.decorative('smart_motion_failed' if has_motion else 'smart_transition_failed',**context)
+                if not smart or not decorate or error.category!='render_failed' or not (has_motion or layout_graph or fades[i] or (i and fades[i-1])):raise
+                self.decorative('adaptive_layout_failed' if layout_graph else 'smart_motion_failed' if has_motion else 'smart_transition_failed',**context)
                 self.warnings.append('Bir dekoratif klip efekti uygulanamadı; aynı medya ve süre normal kadrajla korundu.')
+                if layout_graph:applied['layout_failures']+=1
                 decorate=False
                 graph=smart_graph.slot_graph(normalize,parts,i,incoming,outgoing,fades,decorate=False)
                 retry=args[:graph_index]+self.graph(folder,graph)+args[graph_index+2:]
@@ -138,6 +157,12 @@ class FFmpegRenderProvider:
             if not decorate:
                 for boundary in (i-1,i):
                     if boundary>=0:transitions.discard(boundary);fades[boundary]=0.
+            if style=='adaptive':
+                actual_layout=smart_slot['layout'] if layout_graph and decorate else 'full_broll'
+                applied['layouts'][actual_layout]+=1
+                if actual_layout!='full_broll':
+                    applied['adaptive_texts']+=len(smart_slot['texts'])
+                    applied['graphic_seconds']+=smart_slot['layout_window']['end']-smart_slot['layout_window']['start']
             completed+=count
         assembly=[]
         for i,slot in enumerate(slots):
@@ -188,7 +213,7 @@ class FFmpegRenderProvider:
             self.decorative('emphasis_render_failed',encoder=encoder)
             self.warnings.append('Son birleştirmede vurgu yazısı atlandı; mevcut altyazı/ses zamanları korundu.')
             emphasis=[]
-            content,_,subtitles_remain=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=True,editing_style=style,emphasis=[])
+            content,_,subtitles_remain=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,emphasis=[])
             previous_caption=caption_name
             self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
             graph=graph.replace(f'ass=filename={previous_caption}',f'ass=filename={caption_name}')
@@ -211,6 +236,9 @@ class FFmpegRenderProvider:
             validated={'duration':duration,'width':1920,'height':1080,'fps':30,'video_codec':'h264','audio_codec':'aac','validation_method':'ffmpeg_decode_configured_format'}
             self.warnings.append('ffprobe bulunamadı; akışlar ve süre FFmpeg dekoduyla kontrol edildi. Biçim alanları render ayarlarından alınmıştır.')
         applied['scene_transitions']=len(transitions)
-        applied['emphasis_texts']=len(emphasis or ()) if smart and 'ass' in self.tools['filters'] else len(edit['emphasis']) if edit and 'ass' in self.tools['filters'] else sum(bool(x.get('overlay_text')) for x in timed) if 'ass' in self.tools['filters'] else 0
-        validated.update(editing_style=style,smart_edit_applied_summary=applied,encoder_used=encoder,subtitle_burned=opts['subtitle_burned'],music_enabled=opts['music_enabled'],warnings=list(dict.fromkeys(self.warnings)))
+        applied['emphasis_texts']=len(emphasis or ()) if smart and 'ass' in self.tools['filters'] else len(edit['emphasis']) if edit and 'ass' in self.tools['filters'] else sum(bool(x.get('overlay_text')) for x in timed) if mode!='none' and 'ass' in self.tools['filters'] else 0
+        if style=='adaptive':
+            applied['emphasis_texts']=applied['adaptive_texts'];applied['graphic_seconds']=round(applied['graphic_seconds'],3)
+            applied['broll_seconds']=round(duration-applied['graphic_seconds'],3)
+        validated.update(subtitle_display=mode,edit_variation_seed=edit.get('edit_variation_seed') if edit else None,editing_style=style,smart_edit_applied_summary=applied,encoder_used=encoder,subtitle_burned=opts['subtitle_burned'],music_enabled=opts['music_enabled'],warnings=list(dict.fromkeys(self.warnings)))
         return {'path':output,'metadata':validated}

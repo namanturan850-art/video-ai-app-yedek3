@@ -170,7 +170,7 @@ def test_full_auto_downloads_multiple_unique_video_slots_preserves_part5(stock_s
     assert len({(s['selected_media']['provider'],s['selected_media']['media_id']) for s in state['slots']})==len(state['slots'])
     assert all((data/'projects'/project['id']/s['selected_media']['local_path']).is_file() for s in state['slots'])
     assert client.get(base(st).removesuffix('/stock')).json()==before
-    assert all(call[1]=='video' for call in client.app.state.stock.test_calls)
+    assert client.app.state.stock.test_calls[0][1]=='video'
     assert state['slots'][0]['selected_media']['creator_name']=='Fixture Creator'
     mirror=json.loads((data/'projects'/project['id']/'stock/media_slots.json').read_text())
     assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('status_label','coverage_warning','trim_needed')} for slot in state['slots']]
@@ -199,7 +199,7 @@ def test_video_priority_and_short_clip_filter(stock_studio):
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,results)
     state=start(st)
     assert all(s['selected_media']['provider']=='pixabay' and s['selected_media']['media_type']=='video' for s in state['slots'])
-    assert not any(kind=='image' for _,kind,_ in stock.test_calls)
+    assert stock.test_calls[0][1]=='video'
 
 
 def test_no_stock_marks_future_only_no_image_calls(stock_studio,monkeypatch):
@@ -509,8 +509,10 @@ def test_secret_echo_in_provider_metadata_never_persisted_or_logged(stock_studio
             assert all(STOCK_KEY not in row[0] for row in connection.execute('SELECT '+column+' FROM '+table))
 
 
-def test_pexels_numeric_video_page_url_is_unknown_not_false_mismatch():
+def test_pexels_numeric_video_page_url_is_valid_but_not_verified_relevant():
     item=pexels_item();item['url']='https://www.pexels.com/video/1093662/'
     normalized=PexelsStockProvider(STOCK_KEY).normalize_result(item,'video','electric cars')
     assert normalized['description']==''
-    assert score(normalized,{'duration':6})>=0
+    assert score(normalized,{'duration':6})==-1
+    from app.stock.models import rejection_reason
+    assert rejection_reason(normalized,{'duration':6},technical_only=True) is None

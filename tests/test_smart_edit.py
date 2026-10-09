@@ -119,7 +119,7 @@ def test_smart_ass_exact_words_timing_safe_area_and_no_karaoke(style):
     assert h['subtitles'][0]['text'] in text
     assert '0:00:00.50,0:00:03.50,Subtitle' in text
     assert 'EmphasisCenter' in text and r'\fad(180,100)' in text and r'\t(0,180' in text
-    assert r'\k' not in text and ',2,100,100,72,1' in text
+    assert r'\k' not in text and ',2,90,90,60,1' in text
 
 
 def pixels(path,when,crop=None):

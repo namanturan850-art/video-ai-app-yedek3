@@ -1,0 +1,190 @@
+"""Local metadata ranking, not visual recognition or an AI confidence score.
+
+Names are copied from trusted scene fields. A small multilingual visual vocabulary
+compares provider tags; it never adds a person, location, event or factual claim.
+"""
+import re
+import unicodedata
+
+LABELS=('Zayıf eşleşme','Genel bağlantılı','İlgili','Çok ilgili')
+MINIMUM=12
+STRONG=60
+MODIFIERS={'new','old','black','white','north','south','east','west','mount','world','war','triangle','ii','iii'}
+CONTEXT_GROUPS=({'ocean','ship','aircraft','storm','map','compass'},{'mountain','snow'},{'car','charging'})
+STOP=set('the a an and or of in on at with for to from into by is are this that de der die das ein eine und im am mit von zu des den el la los las un una y en del le les une et du au aux sur dans il que bir ve ile bu da de için'.split())
+GENERIC=set('world people city nature video background view travel beautiful general footage aerial panorama landscape scene context show showing modern wide close detail slow cinematic environment dunya insanlar sehir doga goruntu seyahat guzel genel welt menschen stadt natur hintergrund ansicht reise schon allgemein mundo gente ciudad naturaleza fondo vista viaje hermoso general monde personnes ville fond voyage beau'.split())
+# Comparable *visual* terms in English/German/Spanish/French/Turkish. Proper names
+# do not enter this dictionary: Bermuda/Titanic/Everest/Tokyo remain exact names.
+WORDS={
+ 'ocean':'ocean sea seas oceans water waves wave coast coastal meer meere ozean wasser wellen kuste mar mares oceano agua olas costa mer eau vagues cote deniz okyanus su dalga dalgalar kiyi',
+ 'ship':'ship ships boat boats vessel vessels schiff schiffe boot barco barcos navire bateau gemi tekne',
+ 'aircraft':'aircraft airplane airplanes plane planes flugzeug flugzeuge avion aviones avions ucak',
+ 'storm':'storm storms tempest sturm gewitter tormenta tempete orage firtina',
+ 'mountain':'mountain mountains alpine berg berge gebirge montaña montana montañas montanas montagne montagnes dag daglar',
+ 'snow':'snow snowy ice schnee eis nieve hielo neige glace kar buz',
+ 'train':'train trains subway metro underground railway rail zug bahn ubahn tren ferrocarril chemin fer treni ray',
+ 'forest':'forest woods trees wald baume bosque arboles foret arbres orman agac',
+ 'beach':'beach beaches sand strand plage arena playa kum sahil plaj',
+ 'urban':'city skyline buildings building downtown architecture skyscraper office street traffic stadt gebaude buro strasse ciudad edificios oficina calle ville batiment bureau rue sehir bina ofis sokak trafik',
+ 'car':'car cars vehicle vehicles automobile automobiles auto autos automobil elektroauto elektroautos coche coches voiture voitures otomobil araba arac',
+ 'charging':'charging charger chargers charge laden ladestation cargador carga recharge sarj',
+ 'history':'history historical historic archival geschichte historisch historia historique histoire tarih tarihi',
+ 'map':'map maps chart karte karten mapa mapas carte cartes harita',
+ 'compass':'compass kompass brujula boussole pusula',
+}
+
+
+def normalized(text):
+    value=unicodedata.normalize('NFKD',str(text).casefold().replace('ı','i'))
+    return ''.join(c for c in value if not unicodedata.combining(c))
+
+
+ALIASES={word:meaning for meaning,words in WORDS.items() for word in normalized(words).split()}
+
+
+def tokens(text):return re.findall(r'[^\W_]+',normalized(text))
+
+
+def canonical(text):return {ALIASES.get(word,word) for word in tokens(text) if word not in STOP and word not in GENERIC}
+
+
+def phrase(text):
+    if not isinstance(text,str):return ''
+    value=' '.join(text.split())
+    if not value or len(value)>300 or re.search(r'https?://|[?=&{}\\]|[\x00-\x1f]',value,re.I):return ''
+    return value
+
+
+def unique(values):
+    result=[];seen=set()
+    for value in values:
+        value=phrase(value)
+        if value and normalized(value) not in seen:
+            result.append(value);seen.add(normalized(value))
+    return result
+
+
+def query_anchor(query):
+    """Retain a contiguous subject prefix, never translate a proper name."""
+    words=phrase(query).split()
+    if not words:return ''
+    cut=len(words)
+    for i,word in enumerate(words):
+        term=normalized(word)
+        if i>=2 and (term in GENERIC or term in ALIASES or term in ('atlantic','pacific','aerial','archival')):
+            cut=i;break
+    return ' '.join(words[:min(cut,5)])
+
+
+def exact_named_terms(text):
+    # A local fallback only: exact capitalized source phrases, no inferred names.
+    found=re.findall(r'\b[A-ZÀ-ÖØ-Þİ][^\W_]*(?:\s+[A-ZÀ-ÖØ-Þİ][^\W_]*){0,3}',text)
+    found=[' '.join(w for w in item.split() if normalized(w) not in STOP) for item in found]
+    return next((item for item in found if len(item.split())>=2 and canonical(item)-set(WORDS)), '')
+
+
+def profile(scene,slot=None):
+    slot=slot or {}
+    primary=phrase(scene.get('primary_stock_query',scene.get('stock_query','')) or slot.get('search_query',''))
+    queries=unique([primary,slot.get('search_query',''),*scene.get('alternative_stock_queries',[]),*slot.get('fallback_queries',[])])
+    entities=unique(scene.get('entities',[]));location=phrase(scene.get('location',''))
+    visual=phrase(scene.get('visual_intent',slot.get('visual_goal','')))
+    narration=phrase(scene.get('narration_text',scene.get('narration',''))[:300])
+    trusted=' '.join([*entities,location,primary,visual,narration])
+    explicit=phrase(scene.get('search_anchor',''))
+    if explicit and normalized(explicit) not in normalized(trusted):explicit=''
+    anchor=next((e for e in entities if canonical(e)), '') or explicit or location
+    if not anchor:
+        anchor=query_anchor(queries[0]) if queries else query_anchor(visual) or exact_named_terms(narration) or query_anchor(narration)
+        if not (canonical(anchor)-set(WORDS)):
+            anchor=exact_named_terms(visual) or exact_named_terms(narration) or anchor
+    # Preserve a shared entity prefix even when the primary query has a context.
+    if not entities and not explicit and not location and queries:
+        for query in queries[1:]:
+            a=query_anchor(query)
+            if len(tokens(a))>=2 and normalized(queries[0]).startswith(normalized(a)) and len(a)<len(anchor):anchor=a
+    anchor=anchor[:150]
+    base=canonical(' '.join([primary,visual,narration]))|canonical(anchor)
+    # A weak old alternative (e.g. random urban footage for an ocean scene)
+    # must not certify its own irrelevant tags as valid context.
+    queries=[q for q in unique([*queries,*scene.get('search_alternatives',[])])
+             if canonical(q)&base or not base or any(canonical(q)&group and base&group for group in CONTEXT_GROUPS)]
+    context=canonical(' '.join([primary,visual,narration,phrase(scene.get('search_context',''))]))-canonical(anchor)
+    context|=canonical(' '.join(queries))-canonical(anchor)
+    # Scene visual concepts remain context evidence even when present in a
+    # generic anchor (e.g. "storm at sea").
+    context|={ALIASES[w] for w in tokens(' '.join([primary,visual,narration])) if w in ALIASES and w not in GENERIC}
+    return {'subject_anchor':anchor,'anchor_tokens':sorted(canonical(anchor)),
+            'context_tokens':sorted(context),'queries':queries,'visual_goal':visual,
+            'search_context':phrase(scene.get('search_context',''))}
+
+
+def queries_for(profile):
+    """Up to six queries; images in a specific tier precede broader video."""
+    anchor=profile['subject_anchor'];queries=profile['queries'];direct=[];combined=[];close=[]
+    if anchor:direct.append(anchor)
+    for q in queries:
+        if anchor and normalized(anchor) in normalized(q):direct.append(q)
+        elif anchor:combined.append((anchor+' '+q)[:300]);close.append(q)
+        else:direct.append(q)
+    if anchor:
+        for q in queries:
+            remainder=re.sub(re.escape(anchor),'',q,flags=re.I).strip()
+            if remainder and canonical(remainder):close.append(remainder)
+    context=profile.get('search_context','')
+    if context:
+        combined.append((anchor+' '+context).strip()[:300]);close.append(context)
+    general=' '.join(word for word in profile['context_tokens'] if word in WORDS)
+    if not general:general=profile['visual_goal']
+    tiers=[];seen=set()
+    for tier,values in ((1,direct[:2]),(2,[*direct[2:],*combined][:2]),(3,close[:2]),(4,[general])):
+        for q in unique(values):
+            if normalized(q) not in seen:
+                tiers.append((tier,q));seen.add(normalized(q))
+    # Always leave room for a compatible final contextual query.
+    return tiers[:5]+tiers[-1:] if len(tiers)>6 else tiers
+
+
+def evaluate(media,profile):
+    desc=media.get('description','');actual=canonical(desc)
+    anchor=set(profile['anchor_tokens']);context=set(profile['context_tokens'])
+    matches=anchor&actual;context_matches=(context&actual)-matches
+    full=bool(anchor and re.search(r'(?<!\w)'+re.escape(normalized(profile['subject_anchor']))+r'(?!\w)',normalized(desc)))
+    value=sum(2 if w in MODIFIERS else 4 if w in WORDS else 12 for w in matches)+4*len(context_matches)+(52 if full else 0)
+    if anchor and matches==anchor:value+=12
+    # A close-context fallback needs genuine visual evidence, not generic words.
+    if not matches and context_matches:
+        value=max(value,12 if any(w in WORDS for w in context_matches) else 0)
+    conflict=(('ocean','urban'),('mountain','beach'),('train','forest'))
+    for expected,wrong in conflict:
+        if expected in context|anchor and wrong in actual and expected not in actual and not matches:value-=20
+    value=max(0,min(300,value))
+    label=LABELS[3] if value>=STRONG else LABELS[2] if value>=25 else LABELS[1] if value>=MINIMUM else LABELS[0]
+    return {'relevance_score':value,'relevance_label':label}
+
+
+def annotate(media,profile,tier,query):
+    return {**media,**evaluate(media,profile),'search_tier':tier,'query_used':query}
+
+
+def acceptable(media):return type(media.get('relevance_score')) is int and media['relevance_score']>=MINIMUM
+
+
+def rank(media,slot):
+    quality=(int(media['width']>=media['height']),min(media['height'],2160),min(media['width']*media['height'],3840*2160))
+    preferred='image' if slot.get('preferred_type')=='stock_image' else 'video'
+    return media['relevance_score'],quality,int(media['media_type']==preferred)
+
+
+def choose(candidates,used,slot):
+    valid=sorted((m for m in candidates if acceptable(m)),key=lambda m:rank(m,slot),reverse=True)
+    if not valid:return None
+    best=valid[0];fresh=[m for m in valid if (m['provider'],m['media_type'],m['media_id']) not in used and m['relevance_score']>=best['relevance_score']-6]
+    return fresh[0] if fresh else best
+
+
+def ordered(candidates,used,slot):
+    ranked=sorted(candidates,key=lambda m:rank(m,slot),reverse=True)
+    chosen=choose(ranked,used,slot)
+    if chosen:ranked=[chosen,*[m for m in ranked if m is not chosen]]
+    return ranked[:12]

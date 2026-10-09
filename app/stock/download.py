@@ -77,6 +77,19 @@ def mirror(projects, project_id, plan_id, state):
             temporary.unlink(missing_ok=True)
 
 
+def archive_selection(projects,project_id,state):
+    """Create-only snapshot before an explicit rebuild. Never remove old assets."""
+    folder=directory(projects,project_id);identifier=uuid4().hex
+    target=folder/('selection-'+identifier+'.json')
+    # Avoid recursively copying historical snapshots and candidate URL lists.
+    saved={k:v for k,v in state.items() if k not in ('selection_history','job')}
+    saved['slots']=[{k:v for k,v in slot.items() if k not in ('candidates','search_diagnostics')} for slot in state['slots']]
+    with target.open('x',encoding='utf-8',newline='\n') as stream:
+        json.dump(saved,stream,ensure_ascii=False,indent=2);stream.flush();os.fsync(stream.fileno())
+    return {'id':identifier,'version':state.get('selection_version',1),'revision':state['revision'],
+            'local_path':'stock/'+target.name,'created_at':now()}
+
+
 class Downloader:
     def __init__(self, projects, *, transport=None):
         self.projects, self.transport = projects, transport

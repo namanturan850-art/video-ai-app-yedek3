@@ -8,6 +8,7 @@ from typing import Literal
 
 from app.production import narration_units
 from app.scripts.models import ScriptError, word_count
+from app.stock import relevance
 
 
 class StockError(ScriptError):
@@ -33,6 +34,9 @@ class Media(BaseModel):
     query_used: str = Field(max_length=300)
     description: str = Field(default='', max_length=1000)
     source_metadata: dict = Field(default_factory=dict)
+    search_tier: int | None = Field(default=None,ge=1,le=4)
+    relevance_score: int | None = Field(default=None,ge=0,le=300)
+    relevance_label: Literal['Çok ilgili','İlgili','Genel bağlantılı','Zayıf eşleşme'] | None = None
 
 
 def normalized_media(value):
@@ -88,8 +92,8 @@ def identity(media):
 DEFAULT_VIDEO_TOLERANCE = 1.25
 
 
-def rejection_reason(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE):
-    """Technical gates remain strict; Pixabay video tags are a ranking hint."""
+def rejection_reason(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE, *, technical_only=False):
+    """Provider-neutral technical and weighted scene relevance gates."""
     if media['width'] < 960 or media['height'] < 540:
         return 'resolution'
     if media['media_type'] == 'video':
@@ -98,11 +102,9 @@ def rejection_reason(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE):
         allowed = min(tolerance, slot['duration'] * .2)
         if media['duration'] + allowed + .001 < slot['duration']:
             return 'duration'
-    keywords = set(re.findall(r'[a-z]{3,}', media['query_used'].casefold())) - {'the','with','and','for'}
-    description = media['description'].casefold()
-    if (description and keywords and not any(word in description for word in keywords)
-            and not (media['provider']=='pixabay' and media['media_type']=='video')):
-        return 'relevance'
+    if not technical_only:
+        profile=slot.get('relevance_profile') or relevance.profile({}, {**slot,'search_query':slot.get('search_query') or media['query_used']})
+        if relevance.evaluate(media,profile)['relevance_score']<relevance.MINIMUM:return 'relevance'
     return None
 
 
@@ -116,11 +118,7 @@ def score(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE):
     """Conservative metadata match, never a claim of semantic image recognition."""
     if rejection_reason(media,slot,tolerance):
         return -1
-    keywords = set(re.findall(r'[a-z]{3,}', media['query_used'].casefold()))
-    keywords -= {'the', 'with', 'and', 'for'}
-    description = media['description'].casefold()
-    # Search ranking is baseline relevance; matching Pixabay video tags BOOST,
-    # rather than acting as a compulsory exact-token intersection.
-    relevance = 5 if description and keywords and any(word in description for word in keywords) else 3
-    return (relevance + (2 if media['width'] >= media['height'] else 0)
-            + (1 if media['height'] >= 1000 else 0) + (2 if media['media_type']=='video' else 0))
+    profile=slot.get('relevance_profile') or relevance.profile({}, {**slot,'search_query':slot.get('search_query') or media['query_used']})
+    value=relevance.evaluate(media,profile)['relevance_score']
+    preferred='image' if slot.get('preferred_type')=='stock_image' else 'video'
+    return value*100+(20 if media['width']>=media['height'] else 0)+(10 if media['height']>=1000 else 0)+int(media['media_type']==preferred)

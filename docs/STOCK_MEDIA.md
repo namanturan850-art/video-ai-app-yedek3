@@ -1,6 +1,27 @@
-# Stok Medya — Aşama 6
+# Stok Medya — Aşama 6 + 6.5
 
 Güncel ve **Hazır** sahne planını açın: **Proje → Görsel / Kurgu Planı**. Her sahnenin altında **Medya Yuvaları** görünür. Bir sahne birden fazla video veya görsel taşıyabilir. Onaylı anlatım ve plan sürümleri değiştirilmez.
+
+## Part 6.5 — Konuya uygun medya
+
+Eski projeyi açmak mevcut stok seçimlerini değiştirmez. **Alakaya Göre Medyayı Yeniden Ara** açık onayla yeni aramayı başlatır. Kilitler korunur. Önceki seçimler `stock/selection-<kimlik>.json` olarak saklanır; seçim sürümü artar. Önceki indirilen dosyalar, senaryo, seslendirme, altyazılar ve videolar silinmez. HTTP/indirme hatasında eski seçim korunur. Başarılı arama yalnız zayıf sonuç bulursa zayıf eski atama boşaltılabilir; dosyası ve arşivdeki kaydı kalır. Planı/senaryoyu yeniden oluşturmak gerekmez.
+
+Her sahnenin **Ana konu** çapası mevcut özne → konum → sorgu → görsel amaç → aynen anlatım terimlerinden çıkarılır. Gelecekteki sahne çağrısında isteğe bağlı `search_anchor`, `search_context`, `search_alternatives` aynı mevcut istek içinde dönebilir; yeni LLM çağrısı yoktur. Çok sözcüklü özel isimler korunur. Beş dildeki genel/görsel terimler yalnız yerel karşılaştırmada normalleştirilir; özel isimler çevrilmez veya uydurulmaz.
+
+| Arama kademesi | Sıra |
+| --- | --- |
+| 1 | Doğrudan konu ve özgül ana sorgu |
+| 2 | Konu + verilmiş görsel bağlam |
+| 3 | Yakın, verilmiş veya uyumlu bağlam |
+| 4 | Son çare olarak konuyla uyumlu genel B-roll |
+
+Her kademede video ve ilgili görsel denenir; özgül harita/fotoğraf geniş ve ilgisiz videodan önce gelir. Varsayılan sıralama **alaka → teknik kalite → tercih edilen medya türü**. Benzer alakalı alternatif varsa tekrar azaltılır; yalnız çeşitlilik için alaka kaybedilmez. En fazla altı farklı sorgu; sağlayıcılar ve 24 saatlik önbellek aynı kalır. Yeterince güçlü sonuçta daha fazla arama durur.
+
+Puan resmî sağlayıcı açıklama/etiketlerinden hesaplanır; Pixabay VIDEO muafiyeti kaldırıldı. Özel isim/çok sözcüklü çapa en güçlü kanıt, görsel bağlam ikincil kanıttır. Genel world/people/city/nature/view vb. sözcükler tek başına uygunluk kanıtı değildir. Küçük, ihtiyatlı görsel uyumsuzluk kontrolü şehir-okyanus, plaj-dağ, orman-metro gibi bariz yanlış bağlamı geriye iter. Bu görüntü tanıma veya AI güven yüzdesi değildir; sahibi önizlemeyi kontrol etmelidir.
+
+Yuvada ve seçilen medyada `search_tier`, `query_used`, `relevance_score`, `relevance_label` saklanır. Arama kademesi gerçek sorgunun kademesidir; örneğin doğrudan aramada bulunan yalnız okyanus etiketli sonuç **Genel bağlantılı** olabilir. Etiket bantları: **Çok ilgili** ≥60, **İlgili** ≥25, **Genel bağlantılı** ≥12, **Zayıf eşleşme** <12. Puan arayüzde yüzde olarak gösterilmez. Bütün sonuçlar zayıfsa otomatik indirme/seçim yok; **Uygun stok medya bulunamadı** gösterilir. Teknik olarak güvenli adaylar elle seçim için kalabilir. AI görsel üretimi bu kapsamda kapalıdır.
+
+Bermuda regresyonunda `Bermuda Triangle ocean mystery` > `Atlantic ocean ship waves` >>> `city skyline buildings downtown`. Konu sonucu yoksa okyanus bağlamı kabul edilir; yalnız şehir varsa yuva eksik kalır. Titanic, Mount Everest, Tokyo subway, storm at sea ve çok sözcüklü/multilingual isimler de aynı genel kurallarla test edilir. [16 basit Windows kontrol adımı](RENDERING.md#part-95-windows-kontrolü).
 
 ## Çok basit Windows denemesi
 
@@ -57,11 +78,11 @@ Pixabay belge gereği arama yanıtları **24 saat** önbelleklenir. Proje aramas
 
 - Var olan Part 5 handoff tek sahne kaynağıdır. Sahneler bölünmez, anlatım değiştirilmez. Medya yuvaları tahmini süre ve yakın cümle/anlatım birimi sınırlarıyla hazırlanır; normal çekim değişimi yaklaşık 4–8 saniye hedefler. Olağan kısa/orta/uzun sahneler 1/1–2/2–4 yuva taşıyabilir; çok uzun sahne daha fazlasını taşıyabilir. Dokuz adet 20 saniyelik örnek sahne yaklaşık 27 medya yuvası oluşturur; bu sabit kota değildir.
 - Önce verilmiş İngilizce birincil/alternatif sorgular kullanılır; sonraki yuvalar mevcut ilgili alternatiflerle çeşitlenir. Yeni kişi/yer/olgu eklenmez.
-- Öncelik ilgili Pexels video → Pixabay video → Pexels fotoğraf → Pixabay görsel. Her türde sorgu sırası birincil, alternatiflerdir. Kullanılmamış uygun sonuç bulununca ek sorgu/API çağrıları durur. Bir sağlayıcı hatası aynı aramada tekrar tekrar denenmez; diğer sağlayıcı kullanılabilir.
-- Çözünürlük, yatay kadraj, yuva için yeterli video süresi ve açıklama/etiket sözcükleri değerlendirilir. Pixabay videoda arama sıralaması temel uygunluktur: sorgu sözcüklerini tekrarlamayan geniş etiketler reddetme sebebi değildir; eşleşen etiketler puanı artırır. Pexels ve Pixabay görsellerinde mevcut metadata uygunluk kontrolü korunur. Video minimum 960×540 ve MP4 olmalıdır; 4K bulunmaması geçerli 720p/1080p klibi elemez. 1080p sınıfı yeterli varyant varken dev 4K dosya tercih edilmez. Daha düşük çözünürlük/tekrar/durağan görsel serisi uyarılır. Görüntü içeriği, kamera açısı veya temizliği otomatik görsel tanımayla doğrulanmaz; özellikle açıklaması sınırlı videolar sahibinin incelemesini gerektirir.
+- Konu kademeleri içinde Pexels/Pixabay video ve görsel denenir. Alaka türden önce gelir; video-only düğmeleri açık seçim olarak korunur. Güçlü uygun sonuç bulununca ek sorgu/API çağrıları durur. Bir sağlayıcı hatası aynı aramada tekrar tekrar denenmez; diğer sağlayıcı kullanılabilir.
+- Çözünürlük, yatay kadraj, yuva için yeterli video süresi ve ağırlıklı açıklama/etiket uygunluğu değerlendirilir. Pixabay video etiketleri de aynı alaka kapısından geçer; tam sorgu eşleşmesi zorunlu değildir, gerçek bağlam eşleşmesi kabul edilir. Video minimum 960×540 ve MP4 olmalıdır; 4K bulunmaması geçerli 720p/1080p klibi elemez. 1080p sınıfı yeterli varyant varken dev 4K dosya tercih edilmez. Daha düşük çözünürlük/tekrar/durağan görsel serisi uyarılır. Görüntü içeriği otomatik görsel tanımayla doğrulanmaz; açıklaması olmayan sonuç otomatik doğrulanmış uygunluk sayılmaz.
 - Tekrar kimliği `provider + media_type + media_id` (aynı sayısal kimlikteki fotoğraf ve video farklı kaynaklardır); engelleme sadece mevcut proje içindir. Başka projeler aynı kaynağı kullanabilir. Alternatif kalmazsa tekrar uyarılır; elle seçimde onay gerekir. İndirme önbelleği proje/sağlayıcı/kimlik/tür bazındadır; aynı dosya hash/boyut kontrolünden sonra yeniden kullanılır.
 - Kilitli görsel arama/tamamlama/plan yenilemesinde korunur. Aynı onaylı senaryoda sahne sınırı değişirse kilitli zaman aralığı yeni sahnelere aktarılır; sınır kilitli aralığın içinden geçerse aynı yerel dosya iki kilitli yuvada paylaşılır ve kesme kontrolü uyarılır. Yeni senaryo sürümünde eski seçimler eski plan kayıtlarında kalır; yeni planda kendiliğinden kullanılmaz.
-- SQLite **şema 7**, ek tablolarla eski planları/ayarları/senaryoları korur. Yuvalar ayrıca `stock/media_slots.json` ve plan kimlikli JSON olarak saklanır; SQLite esas kayıttır. İş ilerlemesi SQLite'ta checkpoint olarak tutulur; yeniden açılışta kesilen iş **Devam Et** durumuna geçer. Tamamlanmış yuvalar yeniden indirilmez.
+- Stok tabloları şema 7'de eklendi; mevcut SQLite **şema 10** bu kalite geçişinde değişmez. Yuvalar ayrıca `stock/media_slots.json` ve plan kimlikli JSON olarak saklanır; SQLite esas kayıttır. İş ilerlemesi SQLite'ta checkpoint olarak tutulur; yeniden açılışta kesilen iş **Devam Et** durumuna geçer. Tamamlanmış yuvalar yeniden indirilmez.
 - HTTPS ve belgelerde görülen sağlayıcı/CDN adresleri dışında istek veya yönlendirme kabul edilmez. Ham uzak dosya adı kullanılmaz. Dosya tipi, MP4/görsel imzası, HTTP sonucu ve boyut sınırları kontrol edilir. Sınırlar video 250 MB, görsel 20 MB; HTTP ağ hatasında en fazla iki deneme. Geçici dosya, `fsync` ve atomik yeniden adlandırma; başarısız geçici indirme temizlenir. Tanınmayan CDN yönlendirmesi güvenli hata üretir, otomatik geniş izin verilmez.
 - Anahtarlar mevcut şifreli yerel kasadadır. API yanıtları/proje JSON'u/günlükler anahtar içeremez. Özellikle Pixabay anahtarı URL parametresi olduğundan stok HTTP debug/URL günlükleri filtrelenir. Tanı günlüğü işlem/sağlayıcı/güvenli kategori/süre ve arama türü/güvenli sorgu/sayaçları içerir; adres veya gizli bilgi biçimindeki sorgular gizlenir; ham API hatası veya Authorization başlığı yoktur.
 
@@ -69,7 +90,7 @@ Pixabay belge gereği arama yanıtları **24 saat** önbelleklenir. Proje aramas
 
 `GET /api/projects/{id}/production/stock/handoff` her yuva için sahne/yuva kimliği, tahmini başlangıç/bitiş, yuva süresi, kaynak türü/yerel yolu/süresi/çözünürlüğü/sağlayıcı/kimlik, kilit, `trim_needed` ve `coverage_warning` verir. `ready` yalnız bütün yerel atamalar geçerliyse doğrudur; eksikler açıkça boş alan/status taşır. Uzun klip gerçekten kesilmez; `rendered=false`.
 
-Stok yoksa **AI görsel gerekebilir** görünür. Hazır ImageProvider mimarisi korunur, gerçek AI görsel çağrısı yapılmaz. **Part 7 / AI33, altyazı, FFmpeg render, müzik işleme veya YouTube yükleme uygulanmadı.**
+Stok yoksa **Uygun stok medya bulunamadı / AI görsel gerekebilir** görünür. Hazır ImageProvider mimarisi korunur, gerçek AI görsel çağrısı yapılmaz. Part 7–9.5 ses/altyazı/render kendi mevcut ekranlarında kullanılabilir; stok yeniden araması bunları çalıştırmaz. **Part 10 ve YouTube yükleme başlamadı.**
 
 ## Doğrulama
 

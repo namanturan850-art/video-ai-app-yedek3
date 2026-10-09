@@ -42,18 +42,18 @@ def provide_cached_videos(st, *, duration=30):
     with closing(stock.projects._connection()) as connection,connection:
         rows=connection.execute("SELECT * FROM stock_search_cache WHERE media_type='video'").fetchall()
         for row in rows:
-            results=[media(str(i),'pixabay','video',row['query'],description='transport landscape',duration=duration) for i in range(1,50)]
+            results=[media(str(i),'pixabay','video',row['query'],description='electric cars Germany dealership EV charging station Europe modern electric vehicle showroom',duration=duration) for i in range(1,50)]
             connection.execute('UPDATE stock_search_cache SET result_json=? WHERE project_id=? AND provider=? AND media_type=? AND query=?',
                                (json.dumps(results),row['project_id'],row['provider'],row['media_type'],row['query']))
     stock.factory=lambda *args:(_ for _ in ()).throw(AssertionError('24h cache must survive'))
 
 
-def test_pixabay_broad_tags_are_eligible_and_matching_tags_boost():
+def test_pixabay_unrelated_broad_tags_are_weak_and_matching_tags_are_required():
     broad=media(provider='pixabay',description='transport landscape')
     matching={**broad,'description':'electric cars transport'}
-    assert score(broad,{'duration':8})>=0
+    assert score(broad,{'duration':8})==-1
     assert score(matching,{'duration':8})>score(broad,{'duration':8})
-    assert score(broad,{'duration':8})>score(media(provider='pixabay',kind='image',description=''),{'duration':8})
+    assert score(matching,{'duration':8})>=0
 
 
 def test_pexels_metadata_gate_and_contract_unchanged():
@@ -87,7 +87,7 @@ def test_720p_mp4_without_4k_or_thumbnail_is_valid():
 
 def test_real_adapter_counts_normalization_and_quality_then_cache(stock_studio,caplog):
     st=stock_studio;stock=only_pixabay(st);calls=[]
-    valid=pixabay_item(mid=101);valid['tags']='transport landscape'
+    valid=pixabay_item(mid=101);valid['tags']='electric cars Germany dealership EV charging station Europe modern electric vehicle showroom'
     low=deepcopy(valid);low['id']=102
     for variant in low['videos'].values(): variant.update(width=640,height=360)
     short=deepcopy(valid);short.update(id=103,duration=.01)
@@ -116,13 +116,13 @@ def test_real_adapter_counts_normalization_and_quality_then_cache(stock_studio,c
     assert 'rejected_duration=1' in caplog.text
 
 
-def test_only_pixabay_video_preferred_without_exact_tags(stock_studio):
+def test_only_pixabay_relevant_video_without_exact_full_phrase(stock_studio):
     st=stock_studio;stock=only_pixabay(st);calls=[]
     def respond(request):
         calls.append(request.url.path)
-        assert request.url.path=='/api/videos/'  # No image request even with stronger image tags.
+        assert request.url.path=='/api/videos/'
         fixtures=[pixabay_item(mid=i) for i in range(1,50)]
-        for fixture in fixtures:fixture['tags']='transport landscape'
+        for fixture in fixtures:fixture['tags']='Germany cars dealership electric Europe station charging EV showroom vehicle modern'
         return httpx.Response(200,json={'hits':fixtures})
     stock.factory=lambda name,settings:PixabayStockProvider(STOCK_KEY,transport=httpx.MockTransport(respond))
     state=start(st)
@@ -182,7 +182,10 @@ def test_video_only_without_candidates_keeps_image_no_image_search(stock_studio)
     state=start(st,'search_videos',old['slots'][0]['slot_id'])
     assert state['job']['status']=='completed' and state['slots'][0]['selected_media']==old['slots'][0]['selected_media']
     assert state['slots'][0]['candidates']==[] and 'Mevcut görsel korundu' in state['slots'][0]['message']
-    assert len(stock.test_calls)==before  # Old empty cache retained, not API spammed.
+    assert all(kind=='video' for name,kind,q in stock.test_calls[before:])
+    # Specific image discovery can finish before broader video tiers are cached.
+    # First video-only search may fill them; a repeated one is fully cached.
+    count=len(stock.test_calls);start(st,'search_videos',old['slots'][0]['slot_id']);assert len(stock.test_calls)==count
 
 
 def test_bulk_replacement_keeps_locked_and_intentional_images_files_and_script(stock_studio):
@@ -246,21 +249,22 @@ def test_duration_tolerance_configuration_persists(stock_studio):
 def test_reused_eligible_video_not_displaced_by_unused_image(stock_studio):
     st=stock_studio;stock=only_pixabay(st)
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,
-        lambda name,q,kind:[media('only-video' if kind=='video' else 'new-image',name,kind,q,description='' if kind=='video' else 'electric cars')])
+        lambda name,q,kind:[media('only-video' if kind=='video' else 'new-image',name,kind,q,
+            description='electric cars Germany dealership EV charging station Europe modern electric vehicle showroom' if kind=='video' else 'electric cars')])
     state=start(st)
     assert all(s['selected_media']['media_type']=='video' for s in state['slots'])
     assert any('tekrar' in w for s in state['slots'] for w in s['warnings'])
     assert not any(kind=='image' for name,kind,q in stock.test_calls)
 
 
-def test_video_fallback_query_precedes_image_search(stock_studio):
+def test_specific_tier_precedes_broader_video_fallback(stock_studio):
     st=stock_studio;stock=only_pixabay(st);slot=view(st)['slots'][0]
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,
         lambda name,q,kind:[] if q==slot['search_query'] else [media('alternate',name,kind,q,description='transport')])
     state=start(st,'search',slot['slot_id'])
     assert state['slots'][0]['candidates'][0]['media_type']=='video'
-    assert state['slots'][0]['candidates'][0]['query_used'] in slot['fallback_queries']
-    assert not any(kind=='image' for name,kind,q in stock.test_calls)
+    assert any(q in state['slots'][0]['candidates'][0]['query_used'] for q in slot['fallback_queries'])
+    assert stock.test_calls[0][1]=='video'
 
 
 def test_all_malformed_response_has_safe_diagnostics_preserves_old_image(stock_studio,caplog):

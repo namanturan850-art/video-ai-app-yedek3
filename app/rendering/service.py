@@ -56,7 +56,7 @@ class RenderService:
         row=c.execute('SELECT metadata_json FROM render_music WHERE project_id=?',(pid,)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def _inputs(self,pid,opts,force=False):
+    def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None):
         try:
             h=self.subtitles.handoff(pid);p=self.production.handoff(pid);t=timeline.build(h,p)
             with closing(self.projects._connection()) as c:
@@ -91,7 +91,14 @@ class RenderService:
             plan=None
             # Pre-9.5 versions have no style key: retain their EXACT old fingerprint.
             if 'editing_style' in opts:
-                plan=smart_edit.build(t,h,opts['editing_style'],fingerprint);self._guard(plan)
+                # Existing completed versions keep their saved deterministic plan
+                # when its source is still exact; tuning a new algorithm cannot
+                # invalidate an owner's successful render.
+                if (isinstance(stored_edit_plan,dict) and stored_edit_plan.get('source_fingerprint')==fingerprint
+                        and stored_edit_plan.get('editing_style')==opts['editing_style']):
+                    plan=deepcopy(stored_edit_plan)
+                else:plan=smart_edit.build(t,h,opts['editing_style'],fingerprint)
+                self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
             return {'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan}
         except RenderError:raise
@@ -248,9 +255,9 @@ class RenderService:
             state=c.execute('SELECT active_version_id FROM render_state WHERE project_id=?',(pid,)).fetchone();active_id=state[0] if state else None
             versions=[];fingerprints={}
             for row in c.execute('SELECT id FROM render_versions WHERE project_id=? ORDER BY version DESC',(pid,)).fetchall():
-                item=self._version(c,pid,row['id']);meta=item['metadata'];key=json.dumps(meta['options'],sort_keys=True)
+                item=self._version(c,pid,row['id']);meta=item['metadata'];saved_plan=meta.get('smart_edit_plan');key=smart_edit.digest([meta['options'],saved_plan])
                 if key not in fingerprints:
-                    try:fingerprints[key]=self._inputs(pid,meta['options'])['fingerprint']
+                    try:fingerprints[key]=self._inputs(pid,meta['options'],stored_edit_plan=saved_plan)['fingerprint']
                     except RenderError:fingerprints[key]=None
                 item['stale']=item['source_fingerprint']!=fingerprints[key];item['stale_message']='Eski kaynaklara ait' if item['stale'] else '';item['status_label']=LABELS[item['status']]
                 item['video_missing']=False
@@ -283,7 +290,7 @@ class RenderService:
     def activate(self,pid,vid):
         with self.projects.lock,closing(self.projects._connection()) as c,c:
             self._idle(c,pid);item=self._version(c,pid,vid);self._output(pid,item)
-            if self._inputs(pid,item['metadata']['options'])['fingerprint']!=item['source_fingerprint']:raise RenderError('source_stale',SOURCE_MESSAGE)
+            if self._inputs(pid,item['metadata']['options'],stored_edit_plan=item['metadata'].get('smart_edit_plan'))['fingerprint']!=item['source_fingerprint']:raise RenderError('source_stale',SOURCE_MESSAGE)
             c.execute('INSERT INTO render_state VALUES (?,?,?) ON CONFLICT(project_id) DO UPDATE SET active_version_id=excluded.active_version_id,updated_at=excluded.updated_at',(pid,vid,now()))
         return {'message':'Aktif video seçildi.'}
 

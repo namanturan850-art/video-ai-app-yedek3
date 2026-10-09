@@ -28,6 +28,8 @@ Onaylı senaryo, mevcut **Görsel / Kurgu Planı** ekranında düzenlenebilir sa
 
 ## Planlama ve kalite
 
+Part 6.5 için **aynı mevcut** sahne planlama isteği isteğe bağlı `search_anchor`, `search_context`, `search_alternatives` döndürebilir. Çapa mevcut konunun/öznenin aynen ismidir; bağlam ve alternatifler verilmiş görsel bilgilerden alınır. Belirsiz bilgiler atlanır; bu alanlar eksik/geçersizse ek ücretli onarım çağrısı yapılmaz. Yedi kritik alan ve anlatım birimi doğrulaması değişmedi. Eski projeler yeniden üretilmez veya kendiliğinden yazılmaz; stok araması mevcut bilgilerden çapayı yerel çıkarır.
+
 AI; anlam, konu değişimi, önemli bilgi, örnek, karşılaştırma, liste, duygusal geçiş ve bölüm sınırına göre sahneler önerir. Açılış için 3–7, ana içerik için 5–12 saniye yalnızca yönlendirmedir; sabit sahne süresi uygulanmaz. Belgesel, teknoloji, finans, liste, tarih, spor ve anlatı içerikleri kendi bağlamında planlanır; her konu hikâyeye çevrilmez.
 
 Uygulama önce onaylı metni kimlikli, sıralı cümle/paragraf birimlerine ayırır. Kaynak kelimeler, noktalama ve boşluklar aynen saklanır. Çok uzun cümlede virgül, noktalı virgül, iki nokta veya uzun çizgiyle ayrılmış uygun ifadeler birim olabilir; güvenli noktalama yoksa zorla sabit kelime/saniye dilimleri oluşturulmaz. Böyle uzun bir sahne için süre uyarısı görülebilir.

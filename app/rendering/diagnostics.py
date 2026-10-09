@@ -2,6 +2,7 @@
 import re
 
 PHASES={
+    'openmontage':'OpenMontage dış araç',
     'adaptive_layout':'Uyarlanabilir görsel düzen',
     'ffmpeg':'FFmpeg işlemi', 'input_preflight':'Stok medya ön kontrolü',
     'subtitle_preflight':'Altyazı ön kontrolü', 'slot_render':'Medya işleme',
@@ -10,6 +11,7 @@ PHASES={
     'smart_motion':'Akıllı kamera hareketi', 'smart_transition':'Akıllı sahne geçişi', 'emphasis_render':'Vurgu yazısı',
 }
 SUMMARIES={
+    'openmontage_failed':'OpenMontage dış aracı tamamlanamadı; önceki video korundu. Ayarlar bölümünü kontrol edin veya Yerel Adaptif seçin.',
     'adaptive_layout_failed':'Görsel düzen uygulanamadı; B-roll ve ses zamanlaması korundu.',
     'input_decode_failed':'Stok medya dosyalarından biri FFmpeg tarafından okunamadı.',
     'filter_graph_failed':'FFmpeg filtre işlemi başarısız oldu.',
@@ -56,6 +58,7 @@ def diagnostic(code,**context):
 
 
 def classify(stderr,*,encoder='',phase='ffmpeg'):
+    if phase=='openmontage':return 'openmontage_failed'
     # Text is local and bounded by the runner. Output is a fixed code only.
     from app.rendering.tools import nvenc_initialization_failure
     text=stderr.lower()

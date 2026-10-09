@@ -109,6 +109,8 @@ class Downloader:
                 except (StockError, OSError, KeyError):
                     pass
             folder = directory(self.projects,project_id)
+        if media['provider']=='openmontage':
+            raise StockError('missing_file','OpenMontage adayının yerel dosyası eksik. Yeniden Ara ile başka aday bulun; eski seçim korunur.',409)
         # Only our generated filenames. No API key or API Authorization sent to CDN.
         for attempt in range(2):
             temporary = folder/('.download-'+uuid4().hex+'.part')

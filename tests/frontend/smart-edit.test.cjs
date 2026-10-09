@@ -13,11 +13,11 @@ const plan=style=>({editing_style:style,style_label:{adaptive:'Uyarlanabilir You
  summary:style==='basic'?{...counts,motion_effects:0,scene_transitions:0,emphasis_texts:0,internal_edits:0}:counts,
  slots:[{slot_id:'a',scene_id:'s',transition_out:'crossfade',segments:[{start:0,end:4,motion_effect:'push_in'}]}],
  emphasis:[{slot_id:'a',start:0,text:'Im Jahr 2026'}],raw_filter:'private-filter-never-show'});
-async function harness({job=null,versions=[],delay=null}={}){
+async function harness({job=null,versions=[],delay=null,responseState={}}={}){
  const root=new Element('main'),calls=[];
  const fetch=async(url,opts)=>{if(delay)await delay(url);calls.push({url,method:opts.method,body:opts.body});const params=new URL(url,'http://local').searchParams,style=params.get('editing_style')||'balanced',seed=params.get('edit_variation_seed'),chosen=plan(style);
   if(seed){chosen.edit_variation_seed=seed;chosen.fingerprint+=seed;chosen.style_label+=' Varyasyon '+seed;}
-  return {ok:true,json:async()=>({ready:true,source_ready:true,summary:null,ffmpeg:{found:true,status:'Hazır'},smart_edit_plan:chosen,music:null,job,versions,active:versions[0]||null})};};
+  return {ok:true,json:async()=>({ready:true,source_ready:true,summary:null,ffmpeg:{found:true,status:'Hazır'},smart_edit_plan:chosen,music:null,job,versions,active:versions[0]||null,...responseState})};};
  vm.runInContext(source,vm.createContext({location:{pathname:'/projects/abc/render'},document:{querySelector:()=>root,createElement:tag=>new Element(tag)},window:{addEventListener(){}},File:class{},AbortSignal:{timeout(){}},fetch,setTimeout(){}}));
  await new Promise(resolve=>setImmediate(resolve));return {root,calls,find:id=>root.find(n=>n.id===id)};
 }
@@ -71,4 +71,21 @@ test('slow old variation response cannot replace newer preview',async()=>{
  assert.equal(before,'adaptive');assert.equal(find('render-editing-style').value,'adaptive');
  // Fetch completion order differs from requested order; only the newer local choice stays active.
  assert.match(calls[initial].url,/edit_variation_seed=2/);assert.match(calls.at(-1).url,/edit_variation_seed=1/);
+});
+
+
+test('incomplete stock explains blocker, count and safe action above disabled create',async()=>{
+ const {root,find}=await harness({responseState:{ready:false,source_ready:false,readiness:{unresolved_stock_slots:3,blockers:[{code:'stock_unresolved',message:'3 medya yuvasında uygun medya yok.',screen:'production'}]}}});
+ assert.equal(find('render-create').disabled,true);assert.match(find('render-blockers').textContent,/Video henüz oluşturulamıyor/);assert.match(root.textContent,/Eksik medya: 3/);
+ const action=root.find(n=>n.tag==='a'&&n.textContent.includes('Eksik Kısa Videoları Bul'));assert.equal(action.href,'/projects/abc/production#stock-short-clips');
+ await find('render-variation').listeners.click();assert.match(find('render-variation-feedback').textContent,/Kurgu varyasyonu hazırlandı ancak 3 medya alanı tamamlanmadan render başlatılamaz/);
+ assert.match(root.textContent,/Kurgu Varyasyonu/);
+});
+test('complete defaults enable create and choose native, emphasis and auto without music',async()=>{
+ const {find,calls}=await harness();assert.equal(find('render-create').disabled,false);assert.equal(find('render-engine').value,'native');
+ await find('render-create').listeners.click();const body=JSON.parse(calls.find(c=>c.method==='POST').body);assert.equal(body.montage_engine,'native');assert.equal(body.subtitle_display,'emphasis');assert.equal(body.music_enabled,false);
+});
+test('explicit unavailable OpenMontage never starts a hidden native job',async()=>{
+ const {root,find,calls}=await harness({responseState:{ready:false,readiness:{blockers:[{code:'openmontage_missing',message:'OpenMontage hazır değil. Ayarlar bölümünden kurulumu tamamlayın veya Yerel Adaptif motorunu seçin.',screen:'settings'}]},openmontage:{ready:false,status:'Kurulu değil'}}});
+ find('render-engine').value='openmontage';await find('render-engine').listeners.change();assert.equal(find('render-create').disabled,true);assert.match(root.textContent,/OpenMontage hazır değil/);assert.equal(calls.filter(c=>c.method==='POST').length,0);
 });

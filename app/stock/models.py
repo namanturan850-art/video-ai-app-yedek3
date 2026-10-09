@@ -19,7 +19,7 @@ class StockError(ScriptError):
 
 class Media(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
-    provider: Literal['pexels', 'pixabay']
+    provider: Literal['pexels', 'pixabay', 'openmontage']
     media_id: str = Field(min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
     media_type: Literal['video', 'image']
     source_url: str = Field(max_length=2000)
@@ -54,7 +54,9 @@ def make_slots(scene):
     """Keep semantic scenes intact; choose visual beats near narration boundaries."""
     start, end = float(scene['start_estimate']), float(scene['end_estimate'])
     duration = end-start
-    count = max(1, math.ceil(duration/8))
+    importance=scene.get('importance',50)
+    target=4.5 if importance>=85 else 3.1 if importance<40 else 3.7
+    count = max(1, min(max(1,math.floor(duration/2.5)),max(round(duration/target),math.ceil(duration/4.5))))
     # Sentence / deterministic narration-unit boundaries influence visual timing.
     units = narration_units(scene['narration_text'])
     total = word_count(scene['narration_text'])
@@ -63,11 +65,14 @@ def make_slots(scene):
     for unit in units[:-1]:
         cumulative += word_count(unit['text'])
         boundaries.append(start + duration*cumulative/max(1, total))
+    boundaries=scene.get('_visual_boundaries',boundaries)
     cuts = [start]
     for index in range(1, count):
-        ideal = start + duration*index/count
-        useful = [b for b in boundaries if b > cuts[-1]+3 and b < end-(count-index)*3
-                  and abs(b-ideal) <= 2]
+        ideal = start + duration*index/count + (.28,-.22,.15,-.18)[(index-1)%4]
+        low=max(cuts[-1]+2.5,end-(count-index)*5.5)
+        high=min(cuts[-1]+5.5,end-(count-index)*2.5)
+        ideal=min(high,max(low,ideal))
+        useful = [b for b in boundaries if low<=b<=high and abs(b-ideal)<=.65]
         cuts.append(min(useful, key=lambda b: abs(b-ideal)) if useful else ideal)
     cuts.append(end)
     alternatives = list(dict.fromkeys(scene['alternative_stock_queries']))
@@ -78,7 +83,7 @@ def make_slots(scene):
         query = queries[min(index, len(queries)-1)]
         slots.append({'slot_id': uuid4().hex, 'scene_id': scene['scene_id'], 'order': index+1,
                       'estimated_start': round(a, 3), 'estimated_end': round(b, 3),
-                      'duration': round(b-a, 3), 'visual_goal': scene['visual_intent'],
+                      'duration': round(round(b,3)-round(a,3), 3), 'pacing_version':1, 'visual_goal': scene['visual_intent'],
                       'search_query': query, 'fallback_queries': [q for q in queries if q != query],
                       'preferred_type': scene['preferred_media_type'], 'composition': scene['composition'],
                       'selected_media': None, 'locked': False, 'status': 'pending',
@@ -98,10 +103,13 @@ def rejection_reason(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE, *, technica
     if media['width'] < 960 or media['height'] < 540:
         return 'resolution'
     if media['media_type'] == 'video':
+        if media['width']<=media['height']:return 'orientation'
+        if media['width']<1280 or media['height']<720:return 'resolution'
         # Absolute tolerance also has a proportional cap: tiny clips cannot fill
         # a short slot just because their deficit is less than 1.25 seconds.
-        allowed = min(tolerance, slot['duration'] * .2)
-        if media['duration'] + allowed + .001 < slot['duration']:
+        used=slot.get('actual_duration_hint',slot['duration'])
+        allowed = 0 if slot.get('pacing_version')==1 else min(tolerance, used * .2)
+        if media['duration'] + allowed + .001 < used:
             return 'duration'
     if not technical_only:
         profile=slot.get('relevance_profile') or relevance.profile({}, {**slot,'search_query':slot.get('search_query') or media['query_used']})
@@ -110,7 +118,7 @@ def rejection_reason(media, slot, tolerance=DEFAULT_VIDEO_TOLERANCE, *, technica
 
 
 def coverage_warning(media, slot):
-    if media and media['media_type']=='video' and media['duration'] < slot['duration']-.05:
+    if media and media['media_type']=='video' and media['duration'] < slot.get('actual_duration_hint',slot['duration'])-.05:
         return 'Video yuva süresinden biraz kısa'
     return ''
 

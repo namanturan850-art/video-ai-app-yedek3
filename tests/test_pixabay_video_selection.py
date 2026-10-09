@@ -106,7 +106,7 @@ def test_real_adapter_counts_normalization_and_quality_then_cache(stock_studio,c
     slot=view(st)['slots'][0]['slot_id'];state=start(st,'search',slot)
     diag=state['slots'][0]['search_diagnostics'][0]
     assert diag['raw_count']==6 and diag['normalized_count']==3 and diag['accepted_count']==1
-    assert diag['rejected']=={'resolution':1,'duration':1,'relevance':0,'malformed_result':2,'unsafe_url':1}
+    assert diag['rejected']=={'resolution':1,'duration':1,'relevance':0,'orientation':0,'malformed_result':2,'unsafe_url':1}
     assert diag['summary'].startswith('Pixabay video: 6 sonuç → 3 kullanılabilir → 1 uygun aday')
     assert state['slots'][0]['candidates'][0]['media_id']=='101'
     assert calls==['/api/videos/']
@@ -138,7 +138,7 @@ def test_no_usable_video_falls_back_to_images_and_all_image_warning(stock_studio
     stock.factory=lambda name,settings:FakeStock(name,stock.test_calls,
         lambda name,q,kind:[media(str(i),name,kind,q,duration=.01 if kind=='video' else None) for i in range(1,50)])
     state=start(st)
-    assert state['media_mix']=={'total_slots':len(state['slots']),'selected_videos':0,'selected_images':len(state['slots']),'unresolved_slots':0,'video_ratio_percent':0,'video_target_range':[75,90]}
+    assert {k:state['media_mix'][k] for k in ('total_slots','selected_videos','selected_images','unresolved_slots','video_ratio_percent','video_target_range')}=={'total_slots':len(state['slots']),'selected_videos':0,'selected_images':len(state['slots']),'unresolved_slots':0,'video_ratio_percent':0,'video_target_range':[80,95]}
     assert any(w.startswith('Hiç stok video seçilmedi.') for w in state['warnings'])
     assert any(kind=='video' for name,kind,q in stock.test_calls) and any(kind=='image' for name,kind,q in stock.test_calls)
 
@@ -217,6 +217,9 @@ def test_short_selected_clip_handoff_warning_no_trim_no_render(stock_studio):
     slot=next(s for s in old['slots'] if s['duration']>4)
     stock=st[0].app.state.stock
     with closing(stock.projects._connection()) as connection,connection:
+        saved=stock._load(connection,st[1]['id'],old['plan_id'])
+        next(s for s in saved['slots'] if s['slot_id']==slot['slot_id']).pop('pacing_version',None)  # Existing Part 9.6 short-source tolerance remains supported.
+        stock._save(connection,saved)
         rows=connection.execute("SELECT * FROM stock_search_cache WHERE media_type='video'").fetchall()
         for row in rows:
             clips=json.loads(row['result_json'])
@@ -295,7 +298,7 @@ def test_37_existing_images_visible_preserved_and_missing_counted(stock_studio):
         saved['slots']=[{**deepcopy(saved['slots'][i%len(saved['slots'])]),'slot_id':f'existing-{i}'} for i in range(37)]
         stock._save(connection,saved)
     state=view(st)
-    assert state['media_mix']=={'total_slots':37,'selected_images':37,'selected_videos':0,'unresolved_slots':0,'video_ratio_percent':0,'video_target_range':[75,90]}
+    assert {k:state['media_mix'][k] for k in ('total_slots','selected_videos','selected_images','unresolved_slots','video_ratio_percent','video_target_range')}=={'total_slots':37,'selected_images':37,'selected_videos':0,'unresolved_slots':0,'video_ratio_percent':0,'video_target_range':[80,95]}
     assert any(w.startswith('Hiç stok video seçilmedi.') for w in state['warnings'])
     with TestClient(create_app(st[3]),headers=HEADERS) as restarted:
         assert restarted.get(base(st)).json()['slots']==state['slots']

@@ -106,3 +106,12 @@ Güncel sahne + gerçek metadata ile taze alaka; eski puan/etiket ve query_used/
 - backup/restore project database
 - full smoke test
 - beginner README
+
+## Part 9.7 — Short Clip Pipeline + OpenMontage Integration
+
+- Yaklaşık 2,8–4,5 saniyelik, anlamlı anlatım sınırlarına yakın değişken görsel kesitler; mevcut uzun kilitsiz alanların açık onaylı yerel bölünmesi. Yeni LLM/TTS çağrısı yok.
+- Otomatik yatay video/minimum 1280×720; alaka önce, ilgili kısa kaynak tercihi, uzun kaynakta deterministik yerel kesit. Kimlik/URL/SHA-256 tekrar koruması.
+- Render hazırlık bayrakları, eksik/güncel olmayan/dosya sayaçları ve açık Türkçe engeller; eksik kaynakla tahmini plan/varyasyon geri bildirimi.
+- Varsayılan Yerel Adaptif / FFmpeg / NVENC korunur; OpenMontage ayrı, isteğe bağlı, sabit sürümlü süreç/ortam. Arama, isteğe bağlı CLIP, kesme ve Remotion kompozisyon adaptörleri; açık seçimde hata gizlenmez.
+- [Sözleşme, lisans ve doğrulama sınırları](docs/OPENMONTAGE_INTEGRATION.md). Uygulamanın lisansı değişmedi; upstream kaynak kopyalanmadı.
+- Part 10 kapsam dışı; mevcut projeler, anahtarlar ve eski video sürümleri korunur.

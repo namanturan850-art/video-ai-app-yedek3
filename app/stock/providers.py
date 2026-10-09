@@ -134,7 +134,7 @@ class PexelsStockProvider(APIStockProvider):
     def request(self, query, media_type, key):
         # Current docs announce /v1/videos/; old SDK /videos/ is deprecated.
         url = 'https://api.pexels.com/v1/videos/search' if media_type == 'video' else 'https://api.pexels.com/v1/search'
-        return url, {'Authorization':key}, {'query':query,'per_page':12,'orientation':'landscape'}, 'videos' if media_type == 'video' else 'photos'
+        return url, {'Authorization':key}, {'query':query,'per_page':40,'orientation':'landscape'}, 'videos' if media_type == 'video' else 'photos'
 
     def normalize_result(self, item, media_type, query):
         if media_type == 'video':
@@ -163,7 +163,7 @@ class PixabayStockProvider(APIStockProvider):
     name, label = 'pixabay', 'Pixabay'
     def request(self, query, media_type, key):
         # Pixabay documents a 100-character query limit and 24-hour caching.
-        params = {'key':key,'q':query[:100],'per_page':12,'safesearch':'true'}
+        params = {'key':key,'q':query[:100],'per_page':40,'safesearch':'true'}
         if media_type == 'image': params.update(image_type='photo',orientation='horizontal')
         return 'https://pixabay.com/api/videos/' if media_type == 'video' else 'https://pixabay.com/api/', {}, params, 'hits'
 

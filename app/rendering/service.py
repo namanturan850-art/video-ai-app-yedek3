@@ -34,6 +34,8 @@ class RenderService:
         self.executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='local-render')
         self.runners={};self.lock=RLock();self.tool_lock=RLock();self.tool_cache=None;self.tool_time=0
         self.hashes={};self.closed=False;self.factory=FFmpegRenderProvider
+        from app.integrations.openmontage.bridge import Bridge
+        self.openmontage=Bridge(self.projects,settings)
 
     def _guard(self,value):
         SecretGuard(self.settings.secret_values()).validate(value)
@@ -73,7 +75,7 @@ class RenderService:
                 m=selected.get(slot['slot_id'],{}).get('selected_media');identity=slot['selected_media_local_identity']
                 if not m or any(m.get(k)!=v for k,v in identity.items()):raise RenderError('source_stale',SOURCE_MESSAGE)
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
-                originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'description':m.get('description',''),'sha256':digest}
+                originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest}
                 identities.append({'slot_id':slot['slot_id'],'identity':identity,'sha256':digest})
             for name in ('srt_local_path','vtt_local_path'):
                 path=file_path(self.projects,pid,h[name]);originals[str(path)]=self._hash(path,force)
@@ -125,6 +127,7 @@ class RenderService:
         with self.projects.lock:
             with closing(self.projects._connection()) as c:self._idle(c,pid)
             inputs=self._inputs(pid,opts,True);tool=self._tools(True)
+            if opts.get('montage_engine')=='openmontage' and not self.openmontage.status(True)['ready']:raise RenderError('openmontage_unavailable',self.openmontage.status()['message'])
             if not tool['found']:raise RenderError('ffmpeg_missing','Video oluşturmak için FFmpeg gerekli.')
             tools.select_encoder(opts['encoder'],tool)
             with self.lock:
@@ -174,6 +177,9 @@ class RenderService:
             self._log(pid,version,'started');inputs['temporary']=files.job_directory(self.projects,pid,jid)
             if runner.event.is_set():raise RenderError('render_cancelled','Render iptal edildi.')
             engine=self.factory(tool,runner,lambda *args:self._progress(pid,jid,vid,started,*args),lambda event:self._log(pid,version,event))
+            if inputs['options'].get('montage_engine')=='openmontage':
+                from app.integrations.openmontage.provider import OpenMontageProvider
+                engine=OpenMontageProvider(self.openmontage,tool,runner,lambda *args:self._progress(pid,jid,vid,started,*args),lambda event:self._log(pid,version,event))
             result=engine.render(inputs)
             # Reject activation if a source changed during the job. No source is modified here.
             with self.projects.lock,self.lock:
@@ -248,10 +254,10 @@ class RenderService:
         # Queued work runs only to observe cancellation and persist terminal status.
         self.executor.shutdown(wait=True)
 
-    def view(self,pid,*,refresh_tools=False,editing_style='adaptive',edit_variation_seed=None,subtitle_display=None):
-        self.projects.get(pid);source=None;source_error='';source_category='';opts=options({'editing_style':editing_style,'edit_variation_seed':edit_variation_seed,'subtitle_display':subtitle_display})
+    def view(self,pid,*,refresh_tools=False,editing_style='adaptive',edit_variation_seed=None,subtitle_display=None,montage_engine='native'):
+        self.projects.get(pid);source=None;source_error='';source_category='';error=None;opts=options({'editing_style':editing_style,'edit_variation_seed':edit_variation_seed,'subtitle_display':subtitle_display,'montage_engine':montage_engine})
         try:source=self._inputs(pid,opts)
-        except RenderError as e:source_error=str(e);source_category=e.category
+        except RenderError as e:source_error=str(e);source_category=e.category;error=e
         try:tool=self._tools(True) if refresh_tools else self._tools()
         except RenderError as e:tool={'found':False,'status':'Hata','message':str(e),'encoders':[]};source_category=e.category
         summary=None
@@ -281,6 +287,13 @@ class RenderService:
                     job['progress']['elapsed_seconds']=round((datetime.now(timezone.utc)-datetime.fromisoformat(job['created_at'])).total_seconds(),1)
             music=self._music(c,pid)
         result={'ready':bool(source and tool['found']),'source_ready':bool(source),'source_message':source_error,'safe_error_category':source_category,'ffmpeg':{k:tool[k] for k in ('found','status','message','encoders')},'summary':summary,'versions':versions,'active':next((v for v in versions if v['id']==active_id),None),'job':job,'music':music,'smart_edit_plan':source['smart_edit_plan'] if source else None}
+        from app.rendering.readiness import inspect,estimated_plan
+        om=self.openmontage.status(refresh_tools)
+        r,h,p=inspect(self,pid,tool,source,error,om if montage_engine=='openmontage' else None)
+        if job and job['status'] in ACTIVE:
+            r['blockers'].append({'code':'render_active','message':'Başka render işlemi devam ediyor.','screen':'render'});r['ready']=False
+        result.update(ready=r['ready'],readiness=r,openmontage=om,montage_engine=montage_engine)
+        if not source:result['smart_edit_plan']=estimated_plan(h,p,opts)
         return SecretGuard(self.settings.secret_values()).clean(result)
 
     def _output(self,pid,item):

@@ -50,3 +50,10 @@ test('saved version speed controls its range even when the future generation for
   assert.deepEqual(Array.from(context.scriptReviewMessages([], saved)), []);
   assert.deepEqual(Array.from(context.scriptReviewMessages([], future)), ['⚠ Metin hedef süreden kısa.']);
 });
+
+test('language speech-rate defaults: German unchanged, Turkish fewer words, unknown falls back', () => {
+  assert.deepEqual(Array.from(context.scriptSpeechRate('de')), [125, 145]);
+  assert.deepEqual(Array.from(context.scriptSpeechRate('tr')), [105, 125]);
+  assert.ok(context.scriptSpeechRate('es')[0] > context.scriptSpeechRate('de')[0]);
+  assert.deepEqual(Array.from(context.scriptSpeechRate('xx')), [125, 145]);
+});

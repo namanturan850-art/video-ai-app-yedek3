@@ -1,4 +1,10 @@
 /* Same final-text word rule and saved options as Python's duration_metrics. */
+/* Typical narration words/minute per language. Agglutinative Turkish needs far
+   fewer words per minute; German (measured: ~3,139 chars ≈ 3:13 with an AI33
+   ElevenLabs voice) keeps the previous 125–145 default. Only a starting point:
+   real narration duration always wins once audio exists. */
+const SCRIPT_SPEECH_RATES = {de: [125, 145], en: [140, 160], es: [145, 165], fr: [140, 160], tr: [105, 125]};
+function scriptSpeechRate(language) { return SCRIPT_SPEECH_RATES[language] || [125, 145]; }
 function scriptWordCount(text) {
   return (text.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu) || []).length;
 }

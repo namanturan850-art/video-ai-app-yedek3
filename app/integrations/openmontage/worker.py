@@ -63,13 +63,24 @@ def command(args,*,timeout=None,cwd=None):
 
 
 def work(operation,inputs):
+    spec=importlib.util.spec_from_file_location('avs_visual_engine',Path(__file__).with_name('visual_engine.py'))
+    visual=importlib.util.module_from_spec(spec);spec.loader.exec_module(visual)
+    if operation in ('visual','semantic'):
+        status=visual.model_status(ROOT)
+        if not status:raise ValueError('semantic_model_missing')
+        os.environ.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
+        if operation=='visual':return visual.analyse(ROOT,inputs,command)
+        from lib import clip_embedder
+        clip_embedder._MODEL_ID=str(status['folder'])
     if operation=='doctor':
         from tools.video.video_compose import VideoCompose
         from tools.video.stock_sources import available_sources
         node=command(['npx','remotion','versions'],timeout=15,cwd=ROOT/'remotion-composer')
         browser()
+        weights=visual.model_status(ROOT)
         return {'sources':[s.name for s in available_sources() if s.name in FREE],
-                'semantic_ready':all(importlib.util.find_spec(n) for n in ('torch','transformers','cv2'))}
+                'semantic_ready':bool(weights and all(importlib.util.find_spec(n) for n in ('torch','transformers','cv2'))),
+                'semantic_model_version':weights['version'] if weights else ''}
     if operation in ('search','semantic'):
         from tools.video.stock_sources import available_sources
         names=[s.name for s in available_sources() if s.name in (*FREE,'pexels','pixabay_video')]

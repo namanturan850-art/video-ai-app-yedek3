@@ -1,0 +1,107 @@
+"""Original local frame-check adapter, loaded only in the external environment."""
+import hashlib
+import json
+import os
+import re
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+from uuid import uuid4
+
+MODEL='openai/clip-vit-base-patch32'  # Verified upstream lib.clip_embedder._MODEL_ID.
+NEGATIVES=('a dog on grass','a passenger inside a train','a barbershop haircut',
+           'a city skyline','a beach sunset','a forest','an aircraft cockpit instruments',
+           'an aircraft flight crew','open ocean water','a ship navigation compass')
+
+
+def sha(path):
+    digest=hashlib.sha256()
+    with path.open('rb') as f:
+        for block in iter(lambda:f.read(1024*1024),b''):digest.update(block)
+    return digest.hexdigest()
+
+
+def save(path,value):
+    temporary=path.with_name('.write-'+uuid4().hex)
+    try:
+        temporary.write_text(json.dumps(value));os.replace(temporary,path)
+    finally:temporary.unlink(missing_ok=True)
+
+
+def inference(fn,value,clip,torch):
+    try:return fn(value)
+    except RuntimeError:
+        if clip._DEVICE!='cuda':raise
+        # Unsupported CUDA architecture/OOM: retry CPU once, same local model.
+        clip._MODEL=None;clip._PROCESSOR=None
+        original=torch.cuda.is_available;torch.cuda.is_available=lambda:False
+        try:return fn(value)
+        finally:torch.cuda.is_available=original
+
+
+def model_status(root):
+    folder=root/'.models'/'clip-vit-base-patch32'
+    try:
+        manifest=json.loads((folder/'avs-model.json').read_text())
+        if (manifest.get('weights')!='pytorch_model.bin' or not re.fullmatch(r'[a-f0-9]{64}',str(manifest.get('sha256','')))
+                or type(manifest.get('size')) is not int or manifest['size']<=0):return None
+        weight=folder/manifest['weights']
+        if manifest['model']!=MODEL or not weight.is_file() or weight.stat().st_size!=manifest['size']:return None
+        if weight.is_symlink() or folder.is_symlink():return None
+        return {'folder':folder,'weight':weight,'version':manifest['sha256'],'size':manifest['size']}
+    except (OSError,ValueError,KeyError,TypeError):return None
+
+
+def analyse(root,inputs,command):
+    status=model_status(root)
+    if not status:raise ValueError('semantic_model_missing')
+    os.environ.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',TOKENIZERS_PARALLELISM='false')
+    from lib import clip_embedder
+    from lib.clip_embedder import embed_images,embed_texts,model_info
+    import numpy as np
+    import torch
+    torch.set_num_threads(min(4,os.cpu_count() or 1))
+    if sha(status['weight'])!=status['version']:raise ValueError('semantic_model_changed')
+    clip_embedder._MODEL_ID=str(status['folder'])
+    cache=root/'.avs-visual-cache';cache.mkdir(exist_ok=True)
+    if cache.is_symlink():raise ValueError('cache_path')
+    if sum(1 for _ in cache.iterdir())>5000:raise ValueError('semantic_cache_limit')
+    descriptor=inputs['descriptor'][:300]
+    # Relative contrast is a heuristic, never an authenticity/confidence claim.
+    negatives=[n for n in NEGATIVES if not set(n.split())&set(descriptor.casefold().split())-{'a','an','the','on','inside'}]
+    if not negatives:negatives=['unrelated footage']
+    text_key=hashlib.sha256((status['version']+descriptor+json.dumps(negatives)).encode()).hexdigest()
+    text_file=cache/('text-'+text_key+'.json')
+    if text_file.is_symlink():raise ValueError('cache_path')
+    if text_file.exists():texts=np.array(json.loads(text_file.read_text()),dtype=np.float32)
+    else:
+        texts=inference(embed_texts,[descriptor,*negatives],clip_embedder,torch);save(text_file,texts.tolist())
+    results=[]
+    for item in inputs['candidates'][:4]:
+        source=Path(item['path'])
+        if not source.is_file() or source.is_symlink() or not source.is_absolute():raise ValueError('source_missing')
+        source_sha=sha(source)
+        if source_sha!=item['sha256']:raise ValueError('source_changed')
+        key=hashlib.sha256((source_sha+status['version']+'frames-20-50-80-v1').encode()).hexdigest()
+        vector_file=cache/('frames-'+key+'.json')
+        if vector_file.is_symlink():raise ValueError('cache_path')
+        if vector_file.exists():images=np.array(json.loads(vector_file.read_text()),dtype=np.float32)
+        else:
+            with tempfile.TemporaryDirectory(prefix='avs-frames-',dir=cache) as work:
+                frames=[]
+                fractions=(.2,.5,.8) if item['media_type']=='video' else (0.,)
+                for i,fraction in enumerate(fractions):
+                    frame=Path(work)/f'frame-{i}.jpg'
+                    args=['ffmpeg','-v','error','-y']
+                    if fraction:args+=['-ss',str(float(item['duration'])*fraction)]
+                    args+=['-i',str(source),'-frames:v','1','-vf','scale=512:-2',str(frame)]
+                    command(args,timeout=30);frames.append(frame)
+                images=inference(embed_images,frames,clip_embedder,torch);save(vector_file,images.tolist())
+        scores=images@texts.T;target=float(scores[:,0].mean());other=float(scores[:,1:].mean(axis=0).max())
+        margin=target-other
+        votes=int((scores[:,0]>scores[:,1:].max(axis=1)+.01).sum())
+        verdict='match' if target>=.20 and margin>=.015 and votes>=min(2,len(images)) else 'mismatch' if margin<=-.025 else 'uncertain'
+        results.append({'sha256':source_sha,'verdict':verdict,'similarity':round(target,4),'contrast_margin':round(margin,4),
+                        'model':MODEL,'model_version':status['version'],'sample_count':len(images),'device':model_info()['device']})
+    return {'results':results}

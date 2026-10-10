@@ -86,7 +86,26 @@ def install(root,git,node,npm):
     print('5/5 Yerel render tarayıcısı hazırlanıyor…')
     run([node,str(cli),'browser','ensure'],root/'remotion-composer',600)
     if input('İsteğe bağlı büyük CLIP/semantik paketleri de kurulsun mu? (E/H; varsayılan H): ').strip().lower()=='e':
-        run([str(python),'-m','pip','install','torch','transformers','opencv-python-headless'],root)
+        semantic(root,python)
+
+
+def semantic(root,python):
+    if input('Yerel CLIP analizi için paketler (birkaç GB olabilir) ve yaklaşık 350 MB model indirilsin mi? (E/H; varsayılan H): ').strip().lower()!='e':return
+    print('Ayrı ortamda semantik paketler ve doğrulanmış upstream CLIP modeli hazırlanıyor…')
+    run([str(python),'-m','pip','install','torch','transformers','opencv-python-headless'],root)
+    code="""import hashlib,json,sys
+from pathlib import Path
+from huggingface_hub import snapshot_download
+folder=Path(sys.argv[1]);folder.mkdir(parents=True,exist_ok=True)
+snapshot_download('openai/clip-vit-base-patch32',local_dir=folder,allow_patterns=['config.json','preprocessor_config.json','tokenizer.json','tokenizer_config.json','special_tokens_map.json','vocab.json','merges.txt','pytorch_model.bin'])
+weight=folder/'pytorch_model.bin'
+hasher=hashlib.sha256()
+with weight.open('rb') as f:
+ for block in iter(lambda:f.read(1048576),b''):hasher.update(block)
+digest=hasher.hexdigest()
+(folder/'avs-model.json').write_text(json.dumps({'model':'openai/clip-vit-base-patch32','weights':weight.name,'sha256':digest,'size':weight.stat().st_size}),encoding='utf-8')
+"""
+    run([str(python),'-c',code,str(root/'.models'/'clip-vit-base-patch32')],root)
 
 
 def main():
@@ -100,7 +119,11 @@ def main():
         git,node,npm,ffmpeg=dependencies();root=target()
         # Canonical WinGet FFmpeg may be outside an older launcher's PATH.
         os.environ['PATH']=str(Path(ffmpeg).parent)+os.pathsep+os.environ.get('PATH','')
-        install(root,git,node,npm)
+        if '--semantic-only' in sys.argv:
+            if run([git,'rev-parse','HEAD'],root,15).strip()!=PIN:raise InstallerError('Önce INSTALL_OPENMONTAGE.bat ile temel kurulumu tamamlayın.')
+            python=root/'.venv'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
+            semantic(root,python)
+        else:install(root,git,node,npm)
         print('Kurulum tamamlandı. Uygulamada Ayarlar → OpenMontage → Durumu Yenile düğmesine basın.');return 0
     except InstallerError as e:
         print(str(e));return 1

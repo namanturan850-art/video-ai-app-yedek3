@@ -86,6 +86,15 @@ Güncel sahne + gerçek metadata ile taze alaka; eski puan/etiket ve query_used/
 - Stil/format yerine gerçek özne; özgül sahnelerde İlgili/Çok ilgili kapısı; proje çapında kimlik/adres/byte-hash tekrar engeli. Benzersiz ilgili video önce; yoksa ilgili görsel veya boş yuva.
 - [Windows kontrolü](docs/RENDERING.md#part-96-windows-kontrolü) ve [V3 medya](docs/STOCK_MEDIA.md#media-relevance-v3). Canlı Windows/sağlayıcı/NVENC doğrulaması sahibi tarafından yapılmalı. **Part 10 başlamadı.**
 
+## Part 9.8 — OpenMontage Primary + Media Recovery
+
+- Yeni render varsayılanı OpenMontage; Yerel Adaptif elle seçilen alternatif. Sabit ayrı checkout/venv, gerçek VideoCompose/Remotion; sessiz motor değişimi yok.
+- Kanıta dayalı eksik alan nedenleri; kalıcı sorgu/sağlayıcı/sayfa geçmişi, sınırlı yeni konu araması, geçerli seçimleri koruma.
+- İsteğe bağlı açık onaylı yerel CLIP kurulumu, gerçek video kareleri, SHA/descriptor/model cache ve GPU/CPU fallback. Metadata/görsel benzerlik özgün olay kanıtı değildir.
+- Sürümlü render-only reflow: aynı sahnede bitişik boş aralığın kesintisiz kaynakla birleştirilmesi, sınırlı exact-source sayısal kart; güvenli olmayan aralık engeli.
+- Ham alan sayısı ile etkin süre/segment/readiness ayrı. Part 8 zamanı, kilitli aralıklar, eski sürümler/sırlar/veriler değişmez.
+- [17 Windows kontrol adımı](docs/RENDERING.md#part-98-windows-kontrolü). **Part 10 başlamadı.**
+
 ## Part 10 — Metadata + Thumbnail Planning
 - German title suggestions
 - description

@@ -1,16 +1,14 @@
-# Part 9.7 — Kısa Klipler + İsteğe Bağlı OpenMontage
+# Part 9.8 — OpenMontage Ana Motor + Akıllı Medya Kurtarma
 
-**Görsel / Kurgu Planı → Alakaya Göre Medyayı Yeniden Ara**: belgesel/röportaj/eski gibi stil sözcükleri konu değildir. Kokpit/mürettebat sahnesine ilgisiz kişi veya manzara otomatik seçilmez. Projede kullanılan medya yeniden otomatik atanmaz; uygun benzersiz aday yoksa yuva boş kalır. Kilitli seçimler ve eski dosyalar korunur.
+**Görsel / Kurgu Planı → Eksik Medyaları Akıllı Tamamla**: geçerli mevcut seçimleri korur, yalnız eksik/kilitsiz alanlarda yeni konu sorguları ve sayfalar dener. Yeterli yeni kaynak yoksa aynı sahnenin bitişik boş aralığını uygun videonun kesintisiz kullanımıyla kapatabilir. 55 ham alanın her biri için ayrı dosya zorunlu değildir. Güvenle kapatılamayan süre açık engel olarak kalır.
 
-**Video Oluştur / Render → Uyarlanabilir YouTube** yeni renderların önerilen varsayılanıdır. İçeriğe göre B-roll, medya/metin, bilgi, büyük sayı, tarih, konum ve kısa vurgu düzenleri seçilir. **Yeni Kurgu Varyasyonu** yalnız yerel planı değiştirir; API/TTS/stok çağrısı yapmaz. **Altyazı Gösterimi**: Tam altyazı / Sadece önemli vurgular / Altyazı yok. Temel/Dengeli/Dinamik seçenekleri ve önceki videolar korunur.
+Yeni renderlarda **OpenMontage — Ana Motor** varsayılandır. **INSTALL_OPENMONTAGE.bat** dosyasına çift tıklayıp açık kurulum onayı verin; ardından **Ayarlar → OpenMontage → Durumu Yenile**. Kurmak istemezseniz Render'da **Yerel Adaptif — FFmpeg / NVIDIA** seçin. Motor kendiliğinden değiştirilmez. Önceki video sürümleri kendi motorlarını korur.
 
-[Basit Windows kontrolü](docs/RENDERING.md#part-96-windows-kontrolü) · [Medya V3 kuralları](docs/STOCK_MEDIA.md#media-relevance-v3). Yerel motor için yeni bağımlılık yok; OpenMontage ayrı ve isteğe bağlı kurulur. Ücretli API veya veritabanı sıfırlama yok. **Part 10 başlamadı.** Canlı Windows/sağlayıcı/NVENC doğrulamasını sahibi yapmalıdır.
+Yerel kare analizi isteğe bağlıdır: **INSTALL_OPENMONTAGE_SEMANTIC.bat** açık onayla ayrı ortama paketler ve yaklaşık 350 MB CLIP modeli indirir. Paketler birkaç GB olabilir. Sonra **Ayarlar → OpenMontage → Yerel semantik kare analizi → Kaydet**. Kurulmadığında yalnız metadata/elle kontrol kullanılır; görsel doğrulama iddia edilmez. CLIP benzerliği tarihî gerçeklik kanıtı değildir.
+
+[17 çok basit Windows adımı](docs/RENDERING.md#part-98-windows-kontrolü) · [Motor, model ve lisans](docs/OPENMONTAGE_INTEGRATION.md) · [Arama ve kurtarma](docs/STOCK_MEDIA.md#part-98-akıllı-kurtarma). Projeler, anahtarlar ve eski dosyalar korunur. **Part 10 başlamadı.**
 
 # AI Video Studio
-
-**Part 9.7 — Kısa klipler + isteğe bağlı OpenMontage:** render düğmesi eksik kaynakları açıklar; “Eksik Kısa Videoları Bul” uzun, kilitsiz görsel alanları yaklaşık 3–4 saniyelik farklı yatay medya alanlarına böler. İlgili uzun kaynaklar yerel kesilir; anlatım ve altyazılar değişmez. Varsayılan **Yerel Adaptif** motoru Node/Git/OpenMontage gerektirmez.
-
-OpenMontage denemek isterseniz `INSTALL_OPENMONTAGE.bat` dosyasına çift tıklayın, ardından **Ayarlar → OpenMontage → Durumu Yenile**. İlk denemeyi kısa projede yapın. [Kurulum ve lisans](docs/OPENMONTAGE_INTEGRATION.md), [18 basit Windows kontrol adımı](docs/RENDERING.md#part-97-windows-kontrolü). **Part 10 başlamadı.**
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 

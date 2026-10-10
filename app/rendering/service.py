@@ -60,22 +60,32 @@ class RenderService:
 
     def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None):
         try:
-            h=self.subtitles.handoff(pid);p=self.production.handoff(pid);t=timeline.build(h,p)
+            h=self.subtitles.handoff(pid);p=self.production.handoff(pid)
             with closing(self.projects._connection()) as c:
                 voice=self.subtitles.narration._version(c,pid,h['narration_version_id'])
                 row=c.execute('SELECT state_json FROM stock_plans WHERE project_id=? AND plan_id=?',(pid,h['scene_plan_id'])).fetchone()
                 if not row:raise RenderError('source_stale',SOURCE_MESSAGE)
                 stock=json.loads(row[0]);music=self._music(c,pid)
+            from app.rendering import reflow
+            h,recovery=reflow.project(h,p,stock,self.projects,lambda path:self._hash(path,force))
+            t=timeline.build(h,p)
             audio=audio_path(self.projects,pid,voice['metadata']['audio'])
             audio_hash=self._hash(audio,force)
             if audio_hash!=voice['metadata']['audio']['sha256']:raise RenderError('source_stale',SOURCE_MESSAGE)
             originals={str(audio):audio_hash};media={};identities=[]
             selected={s['slot_id']:s for s in stock['slots']}
             for slot in t['slots']:
+                if slot.get('graphic_text'):
+                    if opts.get('editing_style')!='adaptive':raise RenderError('recovery_style_required','Grafik içeren akıllı kurgu için Uyarlanabilir YouTube stilini seçin.')
+                    media[slot['slot_id']]={'type':'graphic','path':None,'duration':None,'sha256':smart_edit.digest(slot['graphic_text'])}
+                    identities.append({'slot_id':slot['slot_id'],'graphic_text':slot['graphic_text']});continue
                 m=selected.get(slot['slot_id'],{}).get('selected_media');identity=slot['selected_media_local_identity']
                 if not m or any(m.get(k)!=v for k,v in identity.items()):raise RenderError('source_stale',SOURCE_MESSAGE)
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
                 originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest}
+                if recovery:
+                    proof=selected[slot['slot_id']].get('local_validation',{})
+                    media[slot['slot_id']].update({k:proof[k] for k in ('duration','width','height') if k in proof})
                 identities.append({'slot_id':slot['slot_id'],'identity':identity,'sha256':digest})
             for name in ('srt_local_path','vtt_local_path'):
                 path=file_path(self.projects,pid,h[name]);originals[str(path)]=self._hash(path,force)
@@ -90,6 +100,7 @@ class RenderService:
             # All contract values are local identities and safe scene/subtitle text, not URLs or secrets.
             self._guard(fingerprint_data)
             fingerprint=hashlib.sha256(json.dumps(fingerprint_data,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+            base_fingerprint=fingerprint
             plan=None
             # Pre-9.5 versions have no style key: retain their EXACT old fingerprint.
             if 'editing_style' in opts:
@@ -108,7 +119,10 @@ class RenderService:
                     plan=smart_edit.build(t,h,opts['editing_style'],fingerprint,seed=seed,subtitle_mode=opts.get('subtitle_display') or ('emphasis' if opts['editing_style']=='adaptive' else 'full' if opts['subtitle_burned'] else 'none'),media_details=media)
                 self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
-            return {'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan}
+            inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery}
+            reflow.apply_graphics(inputs)
+            if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})
+            return inputs
         except RenderError:raise
         except ScriptError:raise RenderError('source_stale',SOURCE_MESSAGE) from None
         except (OSError,ValueError,KeyError,TypeError):raise RenderError('input_invalid','Yerel video kaynakları okunamadı. Ses, altyazı ve stok medya dosyalarını kontrol edin.') from None
@@ -175,6 +189,8 @@ class RenderService:
                 except (OSError,RenderError):pass  # Logging failure must not replace the actual safe failure.
             runner.diagnostic_callback=record_diagnostic
             self._log(pid,version,'started');inputs['temporary']=files.job_directory(self.projects,pid,jid)
+            from app.rendering.reflow import materialize
+            materialize(inputs,tool,runner)
             if runner.event.is_set():raise RenderError('render_cancelled','Render iptal edildi.')
             engine=self.factory(tool,runner,lambda *args:self._progress(pid,jid,vid,started,*args),lambda event:self._log(pid,version,event))
             if inputs['options'].get('montage_engine')=='openmontage':
@@ -254,7 +270,7 @@ class RenderService:
         # Queued work runs only to observe cancellation and persist terminal status.
         self.executor.shutdown(wait=True)
 
-    def view(self,pid,*,refresh_tools=False,editing_style='adaptive',edit_variation_seed=None,subtitle_display=None,montage_engine='native'):
+    def view(self,pid,*,refresh_tools=False,editing_style='adaptive',edit_variation_seed=None,subtitle_display=None,montage_engine='openmontage'):
         self.projects.get(pid);source=None;source_error='';source_category='';error=None;opts=options({'editing_style':editing_style,'edit_variation_seed':edit_variation_seed,'subtitle_display':subtitle_display,'montage_engine':montage_engine})
         try:source=self._inputs(pid,opts)
         except RenderError as e:source_error=str(e);source_category=e.category;error=e
@@ -290,6 +306,19 @@ class RenderService:
         from app.rendering.readiness import inspect,estimated_plan
         om=self.openmontage.status(refresh_tools)
         r,h,p=inspect(self,pid,tool,source,error,om if montage_engine=='openmontage' else None)
+        with closing(self.projects._connection()) as c:
+            stock_row=c.execute('SELECT state_json FROM stock_plans WHERE project_id=? AND plan_id=?',(pid,p['plan_id'])).fetchone() if p else None
+        raw=json.loads(stock_row[0]) if stock_row else None
+        recovery=None
+        if raw and p:
+            from app.rendering.reflow import project
+            _,recovery=project(h,p,raw,self.projects,self._hash)
+        result['recovery']=recovery
+        if recovery and recovery.get('render_ready') and source and r['narration_ready'] and r['subtitles_ready']:
+            r['blockers']=[b for b in r['blockers'] if b['code'] not in ('stock_unresolved','media_file_missing')]
+            r['stock_ready']=True;r['ready']=not r['blockers']
+        elif recovery and recovery.get('effective_uncovered_duration'):
+            r['blockers'].append({'code':'effective_gap','message':f"Akıllı kurguda {recovery['effective_uncovered_duration']:.1f} saniye güvenli biçimde kapatılamadı.",'screen':'production'})
         if job and job['status'] in ACTIVE:
             r['blockers'].append({'code':'render_active','message':'Başka render işlemi devam ediyor.','screen':'render'});r['ready']=False
         result.update(ready=r['ready'],readiness=r,openmontage=om,montage_engine=montage_engine)

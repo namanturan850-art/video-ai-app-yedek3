@@ -144,7 +144,7 @@ def profile(scene,slot=None):
     context=(base|hints&compatible)-canonical(anchor)
     context|=base&set(WORDS)
     protected_name=anchor if not meaningful(anchor)-set(WORDS) and sum(w[:1].isupper() for w in anchor.split())>=2 and any(normalized(w) in MODIFIERS for w in anchor.split()) else ''
-    return {'protected_name':protected_name,'subject_anchor':anchor,'anchor_tokens':sorted(canonical(anchor)),
+    return {'semantic_descriptor':phrase(scene.get('semantic_descriptor','')),'protected_name':protected_name,'subject_anchor':anchor,'anchor_tokens':sorted(canonical(anchor)),
             'context_tokens':sorted(context),'queries':queries,'visual_goal':visual,
             'search_context':phrase(scene.get('search_context','')),'expected_domains':sorted(expected),
             'specificity':'named_specific' if protected_name or meaningful(anchor)-set(WORDS) else 'domain_specific' if expected&{'aviation','technology','rail','vehicle','animal','food'} else 'generic_visual'}
@@ -200,6 +200,12 @@ def queries_for(profile):
 
 
 def evaluate(media,profile):
+    analysis=media.get('source_metadata',{}).get('visual_analysis',{})
+    if analysis.get('verdict')=='mismatch':return {'relevance_score':0,'relevance_label':LABELS[0]}
+    if analysis.get('verdict')=='match':
+        # Actual frame support certifies contextual visuals, NEVER named-event
+        # authenticity. The adapter labels this as contextual/illustrative.
+        return {'relevance_score':RELATED+8,'relevance_label':LABELS[2]}
     desc=media.get('description','');actual=canonical(desc)
     protected=profile.get('protected_name','')
     if protected and not re.search(r'(?<!\w)'+re.escape(normalized(protected))+r'(?!\w)',normalized(desc)):return {'relevance_score':0,'relevance_label':LABELS[0]}

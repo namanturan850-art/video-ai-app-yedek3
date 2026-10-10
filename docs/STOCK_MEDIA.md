@@ -129,3 +129,30 @@ Eşit alakalı adaylar arasında 4–12sn (özellikle 4–9sn) yatay kaynak terc
 İsteğe bağlı ayrı [OpenMontage arama adaptörü](OPENMONTAGE_INTEGRATION.md): Hızlı doğrudan arama / ayrıca kurulursa Semantik CLIP. Açık kaynak arşivler ve ancak açık onayla mevcut Pexels/Pixabay anahtarları; doğrulanmış yatay MP4 adayları mevcut proje stok önbelleğine alınır. Diğer kapsayıcılar bu sürümde otomatik içe alınmaz. Lisans/kaynak bilgisi korunur; bulunurluk ve alaka garanti edilmez. Arama yalnız açık medya işlemiyle çalışır, render sırasında indirme yapılmaz.
 
 Önbellekteki OpenMontage dosyası eksik/değişmişse açık **Yeniden Ara** eski arama önbelleğini kullanmak yerine taze aday ister. Yeni UUID dosyası kaydedilir; eski dosyalar ve render sürümleri silinmez. Render bu onarımı veya dış indirmeyi kendiliğinden başlatmaz.
+
+
+## Part 9.8 Akıllı Kurtarma
+
+**Eksik Medyaları Akıllı Tamamla** eski geçerli seçimleri değiştirmez. Kilitli süre/seçim aynı kalır; geçersiz kilitli dosya/yanlış görsel açık engeldir. Önce arşiv oluşturulur, gerçek dosya SHA/ffprobe/tek kare decode kontrolü yapılır. Yalnız eksik veya geçersiz kilitsiz alanlarda arama yapılır; anlatım/altyazı/sahne üretimi yoktur.
+
+Kod denetimi: Part 9.7 kısa kesitler yeni dosya sayısını artırırken proje çapında ID/URL/SHA benzersizliği korunuyordu. Arama en fazla altı sorgunun ilk sayfasını, 24 saat önbellekle tekrar deniyordu. Ham handoff tek eksikte `ready=false` kalıyordu. Bunlar mimari nedenlerdir; sahibin özel 13 alanının bireysel nedenleri bulutta bilinmez.
+
+Her yuva için kanıtlı Türkçe nedenler: `no_provider_results`, `all_candidates_irrelevant`, `all_candidates_duplicates`, `portrait_or_resolution_rejected`, `download_failed`, `provider_rate_limited`, `query_exhausted`, `no_visual_match`, `locked_or_stale_selection`. Ham HTTP yanıtı, gizli/CDN URL veya anahtar yoktur. Sonuç sayısı olmayan eski kayıt, arama tüketildi diye işaretlenmez.
+
+Kalıcı `recovery_attempts` sorgu+sağlayıcı+tür+sayfa kimliğini izler. Başarılı eski ilk-sayfa kanıtları da aktarılır. Mevcut konudan en fazla 10 sorgu, Pexels/Pixabay belgelenmiş `page=1..3`, önce video; etkin ayrı OpenMontage ile desteklenen açık kaynak araması denenir. Geçiş başına 8 istek/yuva, 48 istek/proje ve 16 aday indirme denemesi; aday listesi 80 ile sınırlıdır. 429 sağlayıcıyı o geçişte durdurur; ağ/anahtar sorunu kalıcı boş sonuç sayılmaz. Sonraki geçiş gerçekten yeni kanıtları dener; başarılı bütün seçenekler tüketilince aynı arama dönmez. Teknik/alaka/tekrar filtreleri gevşetilmez. Gerçek kaynak süresi aralığa yetmiyorsa `source_too_short` gösterilir; otomatik döngüyle kapatılmaz. Video dosyası mevcut güvenli 250 MB, görsel 20 MB sınırındadır; indirilen dosyalar önbellekte korunur.
+
+### Gerçek kare analizi
+
+Ayrı OpenMontage ortamında açık onayla **openai/clip-vit-base-patch32** kurulursa ve **Yerel semantik kare analizi** etkinse gerçek indirilmiş videonun %20/%50/%80 kareleri FFmpeg ile çıkarılır. Upstream `lib.clip_embedder.embed_images/embed_texts/model_info` kullanılır. En fazla dört aday bir süreçte, kareler batch olarak; CPU en fazla dört thread. Uygun CUDA varsa GPU, başarısız CUDA'da aynı yerel ağırlıklarla bir CPU tekrarı. Kaynak SHA + descriptor + model SHA sürümü sonuç cache'ine; kaynak SHA + model sürümü kare embedding cache'ine bağlanır. Geçici kareler temizlenir; üst model cache'i 5000 dosya ile sınırlıdır. Açılış/arama hiçbir model indirmez.
+
+Yanlış özne bulgusu metadata'yı geçersiz kılar; yeterli görsel eşleşme yalnız bağlamsal destek sağlar. Puanlar kesinlik yüzdesi değildir. Model yoksa **Kurulum gerekli**, işlem hatasında **Hata**, yalnız hazır modelde analiz. Belirsiz/model-yok sonucunda metadata/elle kontrol korunur; otomatik görsel doğrulama uydurulmaz.
+
+`footage_role` için `direct_factual`, `contextual_broll`, `illustrative` ayrımı korunur. Yerel benzerlik otomatik olarak yalnız **contextual_broll** verir; olay/kişi/konumun doğrudan gerçek görüntüsü olduğu iddia edilmez. Tarihî doğruluk ve kullanım lisansı kaynak sayfasından kullanıcı tarafından incelenmelidir. Yeni sahne isteği aynı mevcut AI çağrısında isteğe bağlı kısa İngilizce `semantic_descriptor` üretir; eski planlar mevcut çok dilli konu/query/intent normalizasyonunu kullanır. Yeni ücretli çağrı yoktur.
+
+### Ham alanlar ve etkili zaman çizelgesi
+
+Kurtarma sonunda `stock/recovery-<UUID>.json` eklenir. Ham seçim/timing değiştirilmez. Aynı semantik sahnede bitişik boş, kilitsiz aralık uygun kaynağa kesintisiz eklenebilir: gerçek kaynak süresi yeterli olmalı, video toplamı en fazla 7,5 sn, görsel 7 sn. Aynı dosya ayrı yeni kesit olarak tekrarlanmaz. Kilitli aralık/ankraj taşınmaz; başka sahneden dolgu alınmaz. Nadir kısa sayısal kart yalnız mevcut cue ve anlatımdaki aynen metinden, 2–7 sn ve toplam sesin en fazla %20'si kadar; **Uyarlanabilir YouTube** gerektirir. Uygun kaynak yoksa kalan süre açık engeldir.
+
+55 ham alan / 42 geçerli kaynak / 13 boş örneğinde uygun yerleşimle 42 kesintisiz etkin kesit ve 193 sn kapsama mümkündür; sabit sayı veya her proje için garanti değildir. Ekran `raw_stock_slots/selected_stock_assets/unresolved_raw_slots` ile `effective_render_segments/effective_covered_duration/effective_uncovered_duration/render_ready` değerlerini ayrı gösterir. Render ayrıca gerçek ses/altyazı/kaynak/motor/FFmpeg hazır olmasını ister. Kaynak, kilit veya zaman değişirse kurtarma planı güncel değildir; düğmeyi yeniden kullanın.
+
+**Live provider test must be run by owner on Windows. Live semantic visual test must be run by owner on Windows.** CLIP ağırlıkları bu bulut çalışmasında indirilmedi; görsel sınıflandırma regresyonları taklit edilmiş kanıt sözleşmesidir. [17 basit Windows adımı](RENDERING.md#part-98-windows-kontrolü).

@@ -77,15 +77,28 @@ test('slow old variation response cannot replace newer preview',async()=>{
 test('incomplete stock explains blocker, count and safe action above disabled create',async()=>{
  const {root,find}=await harness({responseState:{ready:false,source_ready:false,readiness:{unresolved_stock_slots:3,blockers:[{code:'stock_unresolved',message:'3 medya yuvasında uygun medya yok.',screen:'production'}]}}});
  assert.equal(find('render-create').disabled,true);assert.match(find('render-blockers').textContent,/Video henüz oluşturulamıyor/);assert.match(root.textContent,/Eksik medya: 3/);
- const action=root.find(n=>n.tag==='a'&&n.textContent.includes('Eksik Kısa Videoları Bul'));assert.equal(action.href,'/projects/abc/production#stock-short-clips');
+ const action=root.find(n=>n.tag==='a'&&n.textContent.includes('Eksik Medyaları Akıllı Tamamla'));assert.equal(action.href,'/projects/abc/production#stock-short-clips');
  await find('render-variation').listeners.click();assert.match(find('render-variation-feedback').textContent,/Kurgu varyasyonu hazırlandı ancak 3 medya alanı tamamlanmadan render başlatılamaz/);
  assert.match(root.textContent,/Kurgu Varyasyonu/);
 });
-test('complete defaults enable create and choose native, emphasis and auto without music',async()=>{
- const {find,calls}=await harness();assert.equal(find('render-create').disabled,false);assert.equal(find('render-engine').value,'native');
- await find('render-create').listeners.click();const body=JSON.parse(calls.find(c=>c.method==='POST').body);assert.equal(body.montage_engine,'native');assert.equal(body.subtitle_display,'emphasis');assert.equal(body.music_enabled,false);
+test('complete defaults enable create and choose primary OpenMontage, emphasis and auto without music',async()=>{
+ const {find,calls}=await harness();assert.equal(find('render-create').disabled,false);assert.equal(find('render-engine').value,'openmontage');
+ await find('render-create').listeners.click();const body=JSON.parse(calls.find(c=>c.method==='POST').body);assert.equal(body.montage_engine,'openmontage');assert.equal(body.subtitle_display,'emphasis');assert.equal(body.music_enabled,false);
 });
 test('explicit unavailable OpenMontage never starts a hidden native job',async()=>{
  const {root,find,calls}=await harness({responseState:{ready:false,readiness:{blockers:[{code:'openmontage_missing',message:'OpenMontage hazır değil. Ayarlar bölümünden kurulumu tamamlayın veya Yerel Adaptif motorunu seçin.',screen:'settings'}]},openmontage:{ready:false,status:'Kurulu değil'}}});
  find('render-engine').value='openmontage';await find('render-engine').listeners.change();assert.equal(find('render-create').disabled,true);assert.match(root.textContent,/OpenMontage hazır değil/);assert.equal(calls.filter(c=>c.method==='POST').length,0);
+});
+
+
+test('effective coverage enables render even with thirteen empty raw stock slots',async()=>{
+ const {root,find}=await harness({responseState:{ready:true,readiness:{unresolved_stock_slots:13,stock_ready:true,blockers:[]},recovery:{raw_stock_slots:55,selected_stock_assets:42,effective_render_segments:42,effective_covered_duration:193,effective_uncovered_duration:0,render_ready:true}}});
+ assert.equal(find('render-create').disabled,false);assert.match(root.textContent,/42\/55 ham alan dolu/);assert.match(root.textContent,/193 saniye kapsandı/);assert.match(root.textContent,/Eksik süre: 0 sn/);
+ await find('render-variation').listeners.click();assert.match(find('render-variation-feedback').textContent,/Yeni kurgu varyasyonu hazırlandı/);assert.doesNotMatch(find('render-variation-feedback').textContent,/tamamlanmadan render/);
+});
+test('manual alternative is explicitly posted and completed versions retain their engine',async()=>{
+ const versions=[{id:'old',version:1,status:'completed',status_label:'Tamamlandı',encoder_label:'CPU',created_at:'2026-10-09T00:00:00Z',metadata:{duration:10,file_size:1024,options:{montage_engine:'native'}}}];
+ const {root,find,calls}=await harness({versions});assert.match(root.textContent,/Montaj Motoru: Yerel Adaptif/);
+ find('render-engine').value='native';await find('render-engine').listeners.change();assert.match(calls.at(-1).url,/montage_engine=native/);
+ await find('render-create').listeners.click();assert.equal(JSON.parse(calls.find(c=>c.method==='POST').body).montage_engine,'native');
 });

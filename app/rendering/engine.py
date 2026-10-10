@@ -154,6 +154,7 @@ class FFmpegRenderProvider:
             try:self.runner.run(args,folder,callback,phase='slot_render',**context)
             except RenderError as error:
                 has_motion=smart_slot and any(x['motion_effect']!='none' for x in smart_slot['segments'])
+                if media.get('was_graphic'):raise
                 if not smart or not decorate or error.category!='render_failed' or not (has_motion or layout_graph or fades[i] or (i and fades[i-1])):raise
                 self.decorative('adaptive_layout_failed' if layout_graph else 'smart_motion_failed' if has_motion else 'smart_transition_failed',**context)
                 self.warnings.append('Bir dekoratif klip efekti uygulanamadı; aynı medya ve süre normal kadrajla korundu.')

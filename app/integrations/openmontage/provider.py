@@ -40,7 +40,8 @@ class OpenMontageProvider:
             for c in clips:
                 if c.get('secondary_slot_id') in lookup:
                     c['secondary']={k:lookup[c['secondary_slot_id']][k] for k in ('asset','type','source_in')}
-            neutral={'project_id':plan['handoff']['project_id'],'duration':plan['timeline']['duration'],'frames':plan['timeline']['frames'],
+            neutral={'project_id':plan['handoff']['project_id'],'source_script_version_id':plan['handoff'].get('source_script_version_id'),
+                     'source_subtitle_version_id':plan['handoff'].get('subtitle_version_id'),'duration':plan['timeline']['duration'],'frames':plan['timeline']['frames'],
                      'fps':30,'width':1920,'height':1080,'narration_audio':str(plan['audio']),
                      'subtitle_display':plan['options'].get('subtitle_display') or 'emphasis','subtitles':plan['handoff']['subtitles'],
                      'theme':edit.get('theme','minimal_dark'),'scenes':plan['timeline']['scenes'],'clips':clips,

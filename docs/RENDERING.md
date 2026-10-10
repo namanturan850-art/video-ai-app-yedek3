@@ -1,7 +1,37 @@
-# Video Oluştur / Render — Part 9–9.7
+# Video Oluştur / Render — Part 9–9.8
 
 Mevcut proje → **Video Oluştur / Render**. Bu işlem tamamen yereldir; AI33, Gemini, OpenAI, Ollama, Pexels veya Pixabay çağrısı yapmaz ve API kredisi kullanmaz. Part 10 başlamadı.
 
+
+## Part 9.8 — Ana motor ve etkin kapsama
+
+Yeni render varsayılanı **OpenMontage — Ana Motor**. Gerçek ayrı `VideoCompose/Remotion` kompozisyonu kullanılır; FFmpeg teslim biçimi/encoder doğrulamasını yapar. **Yerel Adaptif — FFmpeg / NVIDIA** elle seçilen alternatiftir. Eksik dış motor: **OpenMontage ana montaj motoru olarak seçildi ancak kurulmamış.** Kurulum için `INSTALL_OPENMONTAGE.bat`; başarısız harici işte sessiz motor değişimi yoktur. Eski renderlar kendi motor/metadata/dosyalarını korur.
+
+**Eksik Medyaları Akıllı Tamamla** sonrası ham seçim sayısı aynı kalabilir. Etkin kurgu 193 sn sesin tamamını güvenle kapatırsa 13 ham boş alan renderı tek başına engellemez. Kesin kare/scene sınırları, ana ses ve altyazı cue'ları korunur. Gerçek dosya/decode/konu/benzersizlik/kaynak süreleri doğrulanır; kaynak değişirse plan geçersizdir. Eksik etkin süre, geçersiz kilitli medya, eksik ses/altyazı/FFmpeg/OpenMontage açık engeldir. Henüz geçerli recovery planı yoksa eski katı ham hazırlık uygulanır.
+
+Sayı kartı fallback'i yalnız **Uyarlanabilir YouTube** ile ve mevcut kısa aynen sayısal cue'dan çizilir; dekoratif render başarısız olursa boş arka planla başarılı sayılmaz. Kaynaklar, stok arşivleri, şifreli kasa, senaryo, AI33 ses, Part 8 dosyaları ve eski MP4 silinmez. [Kurtarma kuralları](STOCK_MEDIA.md#part-98-akıllı-kurtarma).
+
+### Part 9.8 Windows kontrolü
+
+1. GitHub'daki taslak PR'da **Ready for review**, ardından **Merge pull request** deyin.
+2. GitHub Desktop'ta **Fetch origin**, sonra **Pull origin** yapın.
+3. Uygulamanın siyah penceresini kapatın; **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
+4. **Ayarlar → OpenMontage → Durumu Yenile** deyin.
+5. Hazır değilse **INSTALL_OPENMONTAGE.bat** dosyasına çift tıklayın. Açıklamayı okuyup kuruluma **E** ile onay verin; eksik Git/Node varsa pencerenin gösterdiği siteden kurun. Sonra uygulamayı yeniden açın. Kare analizi isterseniz ayrıca **INSTALL_OPENMONTAGE_SEMANTIC.bat** ile büyük indirmeyi açıkça onaylayıp Ayarlar'dan etkinleştirin; zorunlu değildir.
+6. Mevcut 55 alanlı projenizi açın.
+7. **Görsel / Kurgu Planı → Eksik Medyaları Akıllı Tamamla** deyip onaylayın.
+8. Mevcut 42 geçerli seçimin korunduğunu kontrol edin.
+9. Kalan alanların Türkçe nedenlerini ve kurtarma raporunu okuyun.
+10. **Eksik süre: 0 sn** olmasını kontrol edin. Değilse gösterilen alanı elle tamamlayın; yeniden aynı aramaya basmanın çözüm olduğu varsayılmaz.
+11. **Video Oluştur / Render** ekranını açın.
+12. Motorun **OpenMontage — Ana Motor** olduğunu kontrol edin.
+13. **Uyarlanabilir YouTube**, **Sadece önemli vurgular**, **Otomatik** seçin; müzik kapalı kalsın.
+14. **Videoyu Oluştur** düğmesine bir kez basıp tamamlanmasını bekleyin.
+15. Başını, ortasını ve sonunu izleyin: anlatım eksiksiz, görseller ilgili, yanlışlıkla siyah boşluk yok.
+16. Önceki video sürümlerinizin hâlâ açıldığını kontrol edin.
+17. İsterseniz motoru kendiniz **Yerel Adaptif — FFmpeg / NVIDIA** yapıp ikinci sürümle karşılaştırın.
+
+Bulutta gerçek FFmpeg 9.0.2 ve ayrı sabit OpenMontage/Remotion ile CPU çıktısı doğrulanır. **Live provider test must be run by owner on Windows. Live render test must be run by owner on Windows. Live OpenMontage test must be run by owner on Windows.** RTX 5070/NVENC ve gerçek CLIP kare kalitesi burada doğrulanmış sayılmaz. **Part 10 başlamadı.**
 
 ## Part 9.6 — Uyarlanabilir Kurgu
 

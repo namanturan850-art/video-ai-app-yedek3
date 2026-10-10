@@ -54,13 +54,15 @@ class APIStockProvider:
         self.transport = transport
         self.last_diagnostic = None
 
-    def search(self, query, media_type):
-        return self.search_videos(query) if media_type == 'video' else self.search_images(query)
+    def search(self, query, media_type, *, page=1):
+        return self._search(query,media_type,page=page)
 
     def search_videos(self, query): return self._search(query, 'video')
     def search_images(self, query): return self._search(query, 'image')
 
-    def _search(self, query, media_type):
+    def _search(self, query, media_type, *, page=1):
+        if type(page) is not int or not 1<=page<=3:
+            raise StockError('invalid_query','Arama sayfası geçersiz.',422)
         key = self._key.get_secret_value()
         if not key:
             raise StockError('missing_key', self.label+' API anahtarını Ayarlar ekranında kaydedin.', 422)
@@ -72,6 +74,7 @@ class APIStockProvider:
                                 'rejected':{'malformed_result':0,'unsafe_url':0}}
         try:
             url, headers, params, field = self.request(query, media_type, key)
+            if page>1:params['page']=page
             with httpx.Client(timeout=httpx.Timeout(30, connect=10), transport=self.transport,
                               follow_redirects=False) as client:
                 with client.stream('GET', url, headers=headers, params=params) as response:

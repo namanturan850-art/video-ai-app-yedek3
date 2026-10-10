@@ -11,7 +11,7 @@ from app.rendering.runner import ProcessRunner
 
 PIN='9327439db69021ab4b0e2776729bf3b58fdb5a87'
 OFFICIAL='https://github.com/calesthio/OpenMontage.git'
-MESSAGE='OpenMontage hazır değil. Ayarlar bölümünden kurulumu tamamlayın veya Yerel Adaptif motorunu seçin.'
+MESSAGE='OpenMontage ana montaj motoru olarak seçildi ancak kurulmamış. INSTALL_OPENMONTAGE.bat ile kurulumu tamamlayın veya Yerel Adaptif motorunu seçin.'
 WORKER=Path(__file__).with_name('worker.py')
 
 
@@ -37,6 +37,7 @@ class Bridge:
     def __init__(self,projects,settings):
         self.projects,self.settings=projects,settings;self.cache=None;self.cache_time=0
         self.config_file=projects.storage/'openmontage.json'
+        self.semantic_error=False
 
     def config(self):
         if linked(self.config_file):raise RenderError('openmontage_path','OpenMontage ayar dosyası güvenli değil.',409)
@@ -51,12 +52,12 @@ class Bridge:
         return trusted_root(value)
 
     def save(self,payload):
-        if not isinstance(payload,dict) or set(payload)-{'root','media_search','reuse_stock_keys','matching'}:raise RenderError('input_invalid','OpenMontage ayarlarını kontrol edin.',422)
+        if not isinstance(payload,dict) or set(payload)-{'root','media_search','reuse_stock_keys','matching','visual_analysis'}:raise RenderError('input_invalid','OpenMontage ayarlarını kontrol edin.',422)
         value=self.config()
         if 'root' in payload:
             if not isinstance(payload['root'],str):raise RenderError('input_invalid','Kurulum klasörü geçersiz.',422)
             if payload['root']:trusted_root(payload['root'])
-        for name in ('media_search','reuse_stock_keys'):
+        for name in ('media_search','reuse_stock_keys','visual_analysis'):
             if name in payload and type(payload[name]) is not bool:raise RenderError('input_invalid','OpenMontage seçimlerini kontrol edin.',422)
         if 'matching' in payload and payload['matching'] not in ('fast','semantic'):raise RenderError('input_invalid','Hızlı veya Semantik eşleştirme seçin.',422)
         value.update(payload);temp=self.config_file.with_name('.openmontage-'+uuid4().hex)
@@ -74,7 +75,8 @@ class Bridge:
     def status(self,refresh=False):
         if self.cache and not refresh and time.monotonic()-self.cache_time<30:return dict(self.cache)
         cfg=self.config();r={'ready':False,'status':'Kurulu değil','message':MESSAGE,'commit':'','semantic_ready':False,'sources':[],
-                           'media_search':cfg.get('media_search',False),'reuse_stock_keys':cfg.get('reuse_stock_keys',False),'matching':cfg.get('matching','fast'),'custom_path':bool(cfg.get('root'))}
+                           'media_search':cfg.get('media_search',False),'reuse_stock_keys':cfg.get('reuse_stock_keys',False),'matching':cfg.get('matching','fast'),'custom_path':bool(cfg.get('root')),
+                           'visual_analysis':cfg.get('visual_analysis',False),'semantic_status':'Hata' if self.semantic_error else 'Kurulum gerekli','semantic_model_version':''}
         try:
             root=self.root()
             if root.exists():
@@ -95,6 +97,7 @@ class Bridge:
                 d=json.loads(doctor.stdout)
                 if doctor.returncode or not d.get('success'):raise ValueError()
                 r.update(ready=True,status='Hazır',message='Ayrı yerel OpenMontage motoru hazır.',commit=PIN[:7],semantic_ready=bool(d.get('semantic_ready')),sources=d.get('sources',[]))
+                r.update(semantic_model_version=d.get('semantic_model_version',''),semantic_status='Hata' if self.semantic_error else 'Hazır' if d.get('semantic_ready') else 'Kurulum gerekli')
         except (OSError,ValueError,KeyError,subprocess.SubprocessError,RenderError):pass
         self.cache,self.cache_time=dict(r),time.monotonic();return r
 
@@ -115,7 +118,13 @@ class Bridge:
                 if key:env[var]=key
         python=root/'.venv'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
         try:
-            (runner or ProcessRunner()).run([str(python),str(WORKER),str(root),str(request)],folder,phase='openmontage',env=env)
+            args=[str(python),str(WORKER),str(root),str(request)]
+            if operation=='visual':
+                # Bounded model inference; raw output never reaches diagnostics.
+                checked=subprocess.run(args,cwd=folder,shell=False,env=env,stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180)
+                if checked.returncode:raise ValueError()
+            else:(runner or ProcessRunner()).run(args,folder,phase='openmontage',env=env)
             if linked(response) or response.stat().st_size>2_000_000:raise ValueError()
             result=json.loads(response.read_text(encoding='utf-8'));self.settings_guard(result)
             if result.get('success') is not True:raise ValueError()
@@ -123,7 +132,7 @@ class Bridge:
         except RenderError as error:
             if error.category=='render_cancelled':raise
             raise RenderError('openmontage_failed','OpenMontage kullanılamadı. Yerel Adaptif motorunu seçerek tekrar deneyin; önceki video korundu.') from None
-        except (OSError,ValueError,TypeError):raise RenderError('openmontage_failed','OpenMontage kullanılamadı. Yerel Adaptif motorunu seçerek tekrar deneyin; önceki video korundu.') from None
+        except (OSError,ValueError,TypeError,subprocess.SubprocessError):raise RenderError('openmontage_failed','OpenMontage kullanılamadı. Yerel Adaptif motorunu seçerek tekrar deneyin; önceki video korundu.') from None
         finally:request.unlink(missing_ok=True);response.unlink(missing_ok=True)
 
     def settings_guard(self,value):

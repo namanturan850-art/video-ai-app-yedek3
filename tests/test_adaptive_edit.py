@@ -61,7 +61,7 @@ def test_explicit_subtitle_mode_canonicalizes_legacy_checkbox(mode,burned):
 def test_default_preview_matches_render_and_encoder_does_not_change_editorial_seed(ready):
     c=ready['client'];service=c.app.state.rendering
     preview=c.get(url(ready),params={'editing_style':'adaptive','subtitle_display':'emphasis'}).json()['smart_edit_plan']
-    payload={'editing_style':'adaptive','encoder':'auto','edit_variation_seed':None,'subtitle_display':'emphasis','subtitle_burned':False}
+    payload={'montage_engine':'native','editing_style':'adaptive','encoder':'auto','edit_variation_seed':None,'subtitle_display':'emphasis','subtitle_burned':False}
     actual=service._inputs(ready['pid'],options(payload))['smart_edit_plan']
     assert preview==actual
     cpu=service._inputs(ready['pid'],options({**payload,'encoder':'cpu'}))['smart_edit_plan']

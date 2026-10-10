@@ -23,6 +23,19 @@ from test_subtitles import seed,HEADERS,no_network,wav
 from test_production import scene
 
 
+class NativeRenderClient(TestClient):
+    """Existing native-engine regressions explicitly select the alternative.
+
+    Part 9.8 default behavior is covered independently with ordinary TestClient.
+    """
+    def request(self,method,url,**kwargs):
+        if str(url).endswith('/render'):
+            kwargs['params']={'montage_engine':'native',**dict(kwargs.get('params') or {})}
+        if method.upper()=='POST' and str(url).endswith('/render/jobs'):
+            kwargs['json']={'montage_engine':'native',**(kwargs.get('json') or {})}
+        return super().request(method,url,**kwargs)
+
+
 def contract(duration=3.14):
     h={'ready':True,'contract_version':1,'source_script_version_id':'s','scene_plan_id':'p','audio_duration':duration,
        'scenes':[{'scene_id':'a','start':0,'end':1.5},{'scene_id':'b','start':1.5,'end':duration}],
@@ -68,7 +81,7 @@ def install_ready(app,seconds=3.14):
 @pytest.fixture
 def ready(tmp_path):
     storage=tmp_path/'data (şü)'
-    with TestClient(create_app(storage),headers=HEADERS) as client:
+    with NativeRenderClient(create_app(storage),headers=HEADERS) as client:
         st=install_ready(client.app);st.update(client=client,storage=storage);yield st
 
 
@@ -212,7 +225,7 @@ def test_real_render_version_range_restart_and_readonly(ready):
     h=c.get(url(st)+'/handoff').json();assert h['ready'] and h['duration']==m['duration']
     assert 'https://' not in json.dumps(state) and '/workspace/' not in json.dumps(state)
     for name,data in before.items():assert (st['root']/name).read_bytes()==data
-    with TestClient(create_app(st['storage']),headers=HEADERS) as other:
+    with NativeRenderClient(create_app(st['storage']),headers=HEADERS) as other:
         assert other.get(url(st)).json()['active']['id']==v['id']
         assert other.get(route).status_code==200
     assert c.post(url(st)+'/jobs',json={'encoder':'cpu','subtitle_burned':False}).status_code==202

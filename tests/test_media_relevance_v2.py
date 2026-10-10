@@ -107,7 +107,9 @@ def test_strong_named_image_beats_only_general_video():
     p=relevance.profile(scene());s={'preferred_type':'stock_video','relevance_profile':p}
     image=candidate('image','Bermuda Triangle ocean map','image');video=candidate('video','Atlantic ocean ship waves')
     assert relevance.evaluate(image,p)['relevance_score']>=60
-    assert 12<=relevance.evaluate(video,p)['relevance_score']<25
+    # Contextual ship footage is acceptable, but a named direct match still wins.
+    assert relevance.evaluate(video,p)['relevance_basis']=='contextual'
+    assert relevance.evaluate(video,p)['relevance_score']<relevance.evaluate(image,p)['relevance_score']-relevance.VIDEO_TOLERANCE
     assert relevance.choose([video,image],set(),s)['media_type']=='image'
 
 

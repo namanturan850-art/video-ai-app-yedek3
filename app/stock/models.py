@@ -38,6 +38,7 @@ class Media(BaseModel):
     search_tier: int | None = Field(default=None,ge=1,le=4)
     relevance_score: int | None = Field(default=None,ge=0,le=300)
     relevance_label: Literal['Çok ilgili','İlgili','Genel bağlantılı','Zayıf eşleşme'] | None = None
+    relevance_basis: Literal['direct','contextual','visual'] | None = None
 
 
 def normalized_media(value):

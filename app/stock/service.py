@@ -521,7 +521,7 @@ class StockService:
                         if failures: raise failures[-1]
                         if job['action']=='relevance_research' and slot['selected_media'] and (not relevance.acceptable(relevance.evaluate(slot['selected_media'],slot['relevance_profile']),slot['relevance_profile']) or bool(identity_keys(slot['selected_media'])&used)):
                             slot['selected_media']=None;selections.pop(slot['slot_id'],None)
-                            for key in ('search_tier','query_used','relevance_score','relevance_label'):slot.pop(key,None)
+                            for key in ('search_tier','query_used','relevance_score','relevance_label','relevance_basis'):slot.pop(key,None)
                         if not slot['selected_media']: slot['status']='ai_needed'
                         slot['message']=('Uygun video bulunamadı. Mevcut görsel korundu.' if job['action']=='replace_images' else 'Uygun ve kullanılmamış stok medya bulunamadı.')
                         self._checkpoint(job,progress,slot=slot)
@@ -544,7 +544,7 @@ class StockService:
                             raise StockError('duplicate','Bu medya başka yuvada kullanılıyor. Tekrar kullanımını onaylayın.',409)
                         self._guard(chosen)
                         slot.update(manual_reuse=job['action']=='select' and bool(identity_keys(chosen)&used),selected_media=chosen,status='complete',message='İndirildi. Anlatıma uygunluğu Önizle ile kontrol edin.',warnings=[])
-                        slot.update({key:chosen.get(key) for key in ('search_tier','query_used','provider_query','relevance_score','relevance_label')})
+                        slot.update({key:chosen.get(key) for key in ('search_tier','query_used','provider_query','relevance_score','relevance_label','relevance_basis')})
                         if job['action']!='select' and slot['preferred_type']=='stock_video' and chosen['media_type']=='image':
                             slot['warnings'].append('Daha ilgili görsel seçildi. Render sırasında yerel kamera hareketi kullanılabilir.')
                         if duplicate or progress.get('duplicate'): slot['warnings'].append('Bu medya projede tekrar kullanılıyor. Değiştir ile başka aday seçebilirsiniz.')

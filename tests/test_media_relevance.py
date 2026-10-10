@@ -66,11 +66,16 @@ def test_multilingual_name_and_narration_are_never_translated(text):
 
 def test_bermuda_a_b_c_weighted_ranking_and_wrong_city_never_wins():
     a=rated('Bermuda Triangle ocean mystery');b=rated('Atlantic ocean ship waves');c=rated('city skyline buildings downtown')
-    assert a['relevance_score']>b['relevance_score']>c['relevance_score']
-    assert a['relevance_label']=='Çok ilgili' and b['relevance_label']=='Genel bağlantılı' and c['relevance_label']=='Zayıf eşleşme'
+    weak=rated('Atlantic ocean waves')
+    assert a['relevance_score']>b['relevance_score']>weak['relevance_score']>c['relevance_score']
+    assert a['relevance_label']=='Çok ilgili' and c['relevance_label']=='Zayıf eşleşme'
+    # Two concrete scene concepts (ocean+ship) are contextual B-roll, never the named event.
+    assert b['relevance_label']=='İlgili' and b['relevance_basis']=='contextual' and a['relevance_basis']=='direct'
+    assert weak['relevance_label']=='Genel bağlantılı'
     slot={'relevance_profile':relevance.profile(scene())}
     assert relevance.choose([c,b,a],set(),slot)==a
-    assert relevance.choose([b,c],set(),slot) is None
+    assert relevance.choose([b,c],set(),slot)==b
+    assert relevance.choose([weak,c],set(),slot) is None
     assert relevance.choose([c],set(),slot) is None
 
 
@@ -109,10 +114,12 @@ def test_relevant_image_beats_unrelated_higher_quality_video():
 
 
 def test_duplicate_avoidance_cannot_trade_relevance_for_variety():
-    direct=rated('Bermuda Triangle ocean');other=rated('ocean ship waves',mid='2');city=rated('city skyline',mid='3')
+    direct=rated('Bermuda Triangle ocean');weak=rated('ocean waves',mid='2');city=rated('city skyline',mid='3')
     used={(direct['provider'],direct['media_type'],direct['media_id'])}
     slot={'relevance_profile':relevance.profile(scene())}
-    assert relevance.choose([direct,other,city],used,slot) is None
+    assert relevance.choose([direct,weak,city],used,slot) is None
+    contextual=rated('ocean ship waves',mid='5')
+    assert relevance.choose([direct,weak,contextual,city],used,slot)==contextual
     equal={**direct,'media_id':'4'}
     assert relevance.choose([direct,equal,city],used,slot)==equal
 
@@ -186,17 +193,18 @@ def run(st,action='auto',slot=None,**extra):
     state=view(st);assert state['job']['status']=='completed',state['job'];return state
 
 
-@pytest.mark.parametrize('availability',['direct','context','city','image'])
+@pytest.mark.parametrize('availability',['direct','context','weak','city','image'])
 def test_real_service_tiered_search_download_choice_and_weak_manual_candidates(studio,availability):
     st=studio
     def results(q,kind):
         if availability=='city':return [media('city','pixabay',kind,q,description='city skyline buildings downtown')]
         if availability=='image':return [media('map' if kind=='image' else 'city','pixabay',kind,q,description='Bermuda Triangle map' if kind=='image' else 'city skyline buildings downtown')]
         if availability=='direct':return [media('direct','pixabay',kind,q,description='Bermuda Triangle ocean mystery')]
+        if availability=='weak':return [media('weak','pixabay',kind,q,description='Atlantic ocean waves')]
         return [media('context','pixabay',kind,q,description='Atlantic ocean ship waves')]
     st['stock'].test_results=results;state=run(st)
     assert state['slots']
-    if availability in ('city','context'):
+    if availability in ('city','weak'):
         assert all(s['status']=='ai_needed' and s['selected_media'] is None for s in state['slots'])
         assert not st['downloads']
         assert all(s['candidates'] and s['candidates'][0]['relevance_label']==('Zayıf eşleşme' if availability=='city' else 'Genel bağlantılı') for s in state['slots'])
@@ -209,7 +217,8 @@ def test_real_service_tiered_search_download_choice_and_weak_manual_candidates(s
             # Equally relevant fresh images can avoid repeating the same video.
             assert m['media_type'] in ('video','image')
         else:assert m['media_type']==('image' if availability=='image' else 'video')
-        assert all(s[key]==m[key] for key in ('search_tier','query_used','relevance_score','relevance_label'))
+        assert all(s[key]==m[key] for key in ('search_tier','query_used','relevance_score','relevance_label','relevance_basis'))
+        assert m['relevance_basis']==('contextual' if availability=='context' else 'direct')
         assert s['subject_anchor']=='Bermuda Triangle'
     if availability=='image':
         assert st['calls'][0][1]=='video' and any(kind=='image' for q,kind in st['calls'])

@@ -195,7 +195,7 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
         # push; other scene changes rotate subtle styles (fade stays dominant).
         variety=('fade','zoomin','fade','smoothleft','fade','circleopen');k=0
         for idx,(previous,current) in enumerate(zip(items,items[1:])):
-            if continuing.get(current['slot_id']) or continuing.get(previous['slot_id']):continue
+            if continuing.get(current['slot_id']):continue  # the same take goes on: never blend it with itself
             motion_out=bool((media_details or {}).get(previous['slot_id'],{}).get('motion'))
             motion_in=bool((media_details or {}).get(current['slot_id'],{}).get('motion'))
             if motion_out!=motion_in:  # a motion graphic enters or leaves, even inside a scene
@@ -204,7 +204,7 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
                     previous.update(transition_out='crossfade',transition_duration=round(seconds,6),transition_style='smoothleft' if motion_in else 'smoothright')
                     current['transition_in']='crossfade'
                 continue
-            if previous['scene_id']==current['scene_id']:continue
+            if previous['scene_id']==current['scene_id'] or continuing.get(previous['slot_id']):continue
             if motion_out and motion_in:
                 seconds=min(.4,t['slots'][idx]['frames']/120,t['slots'][idx+1]['frames']/120)
                 if seconds>=2/30:

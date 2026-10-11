@@ -106,7 +106,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
   function renderTools() {
     toolResults.replaceChildren();
     const labels = {retention: 'Retention Analizi', hooks: 'Açılış Hookları', alternatives: 'A/B Alternatifleri', claims: 'İddia / Bilgi İncelemesi'};
-    const optionLabels = {opening: 'Açılış', title: 'Başlık', thumbnail_text: 'Küçük resim yazısı', intro: 'Giriş', CTA: 'CTA', description: 'Açıklama'};
+    const optionLabels = {opening: 'Açılış', title: 'Başlık', intro: 'Giriş', CTA: 'CTA', description: 'Açıklama'};
     for (const artifact of view.artifacts || []) {
       if (artifact.kind === 'visual') continue;
       if (artifact.version_id !== view.current?.id) continue;

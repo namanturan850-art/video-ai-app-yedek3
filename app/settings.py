@@ -152,8 +152,8 @@ class AI33Settings(KeySettings):
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
           "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings,
-          "claude": ClaudeSettings}
-PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude")
+          "claude": ClaudeSettings, "youtube": KeySettings}
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube")
 
 
 def stored_secrets(values):
@@ -259,10 +259,9 @@ class SettingsService:
                         status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
-            result["youtube"] = {"status": "Daha sonra", "message": "YouTube bağlantısı bu aşamada kullanılamaz."}
             result['images'] = self.image_view()
             return result
 
@@ -357,8 +356,13 @@ class SettingsService:
         with self.store.lock:
             return stored_secrets(self._values())
 
+    def youtube_key(self):
+        """Private YouTube Data API key ('' when not saved); never returned by a route."""
+        with self.store.lock:
+            return self._values()['youtube'].get('api_key', '')
+
     def stock_config(self, provider):
-        if provider not in ('pexels','pixabay'):
+        if provider not in ('pexels','pixabay','youtube'):
             raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
         with self.store.lock:
             return dict(self._values()[provider])

@@ -1,5 +1,21 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Referans video analizi + YouTube kartı kuralları
+
+- **Kaynak analizi**: referans YouTube linki ve isteğe bağlı transkript ile bir kart oluşur.
+  - YouTube Data API (izlenme, beğeni, yorum, en çok beğenilen 50 yorum) ve Gemini (herkese açık linki okur; indirme yok) birlikte kullanılır.
+  - Kart “Neden tuttu?” ve “Ne anlatıyor?” bölümlerini gösterir; şüpheli bilgiler ⚠ ile işaretlenir.
+  - Senaryo bu analizden hedef dilde, yeni cümlelerle yazılır (çeviri değil); izleyici soruları eklenir.
+  - Anahtar yoksa uyarıyla devam edilir. Link ve transkript yoksa senaryo başlıktan üretilir. Ayrıntı: [SOURCE_ANALYSIS.md](SOURCE_ANALYSIS.md).
+- **Ayarlar → YouTube Data API** anahtarı alanı ve bağlantı testi eklendi.
+- **YouTube kartı**:
+  - Kapak üretimi tamamen kaldırıldı.
+  - Başlık en fazla 97 karakter; aşarsa yapay zekâ kısaltır.
+  - Etiketler en fazla 500 karakter (YouTube sayımı), # yok.
+  - Yayına hazır göstermeden önce yapay zekâ dil kontrolü yapılır; sayaçlar 94/97 ve 487/500 biçiminde gösterilir.
+- **Testler**: 12 yeni test (link, transkript, başlıktan üretim, anahtarsız devam, okunamayan link, 97 sınırı, 500 sınırı, #, kapak kaldırıldı, dil kontrolü).
+  - Gerçek API çağrılmadı.
+
 ## 2026-10-11 — Profesyonel kurgu: geçişler, yazı grafikleri, müzik, %40 motion
 
 - **Kanallar menüden kaldırıldı** (veriler silinmedi; tüm projeler varsayılan kanalı kullanır). Yerine **Video ekranında “Video görünümü”**: Belgesel, Gizem, Enerjik, Sakin, Eğlenceli, Bilim — tek seçimle renk, yazı tipi ve animasyon ritmi. Motion grafikler ve yazı grafikleri bu görünümle çizilir; görünüm değişince motion klipleri bir sonraki videoda yeniden çizilir.

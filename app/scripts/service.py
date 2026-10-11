@@ -55,6 +55,11 @@ class ScriptService:
         if action not in ('generate', 'analyze'):
             raise ScriptError('Bu senaryo işlemi kullanılamıyor.')
         project_language = self.projects.get(project_id)['language']
+        sources = getattr(self, 'sources', None)
+        if sources and payload.get('mode', 'original') == 'original' and not payload.get('reference_notes') and not payload.get('reference_text'):
+            # The reference video's abstract analysis (never its wording) guides an original adaptation.
+            brief = sources.brief(project_id)
+            if brief: payload = {**payload, 'reference_notes': brief}
         options = self.options({'language': project_language, **payload})
         if action == 'analyze' and options.mode == 'translate_owned':
             raise ScriptError('Kendi metninizi çevirmek için Senaryo Oluştur düğmesini kullanın; konsept analizi gerekmez.')

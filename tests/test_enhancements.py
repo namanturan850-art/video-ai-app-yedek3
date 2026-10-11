@@ -34,7 +34,7 @@ def quality_studio(studio):
             fake.calls.append((task, payload, prompt))
         if task == 'retention': return json.dumps({'ratings': {key: 'Orta' for key in CRITERIA}, 'suggestions': [{'scope': 'opening', 'suggestion': 'Açılışı kısa ve konuya uygun yapın.'}]})
         if task == 'hooks': return json.dumps({'hooks': ['Seçenek bir', 'Seçenek iki', 'Seçenek üç']})
-        if task == 'alternatives': return json.dumps({key: ['Bir', 'İki'] for key in ('opening', 'title', 'thumbnail_text', 'intro', 'CTA', 'description')})
+        if task == 'alternatives': return json.dumps({key: ['Bir', 'İki'] for key in ('opening', 'title', 'intro', 'CTA', 'description')})
         if task == 'claims': return json.dumps({'claims': [{'statement': '2024 yılında artış yaşandı.', 'reason': 'Tarih ve artış için kaynak gerekli.'}]})
         if task == 'apply_suggestions': return 'Yeni açılış. ' + payload['segment']
         return generate(prompt)

@@ -12,6 +12,7 @@ if (window.location.pathname === '/settings') {
     {id: 'openai', title: 'OpenAI (isteğe bağlı)', description: 'Etkinleştir seçimini açın, anahtarınızı ve Chat Completions modelini Kaydet deyin. Bağlantı testi resmi API’den model erişimini kontrol eder; metin üretmez. Üretim kota/bakiye kontrolü ayrıca yapılır.', fields: [{name: 'enabled', label: 'Etkinleştir', type: 'checkbox'}, {name: 'model', label: 'Model adı', type: 'text'}], secret: true, test: true},
     {id: 'gemini', title: 'Gemini (isteğe bağlı)', description: 'Google Gemini Developer API anahtarınızı kaydedin. Gemini Plus / Google AI Pro web aboneliği API erişimi yerine geçmez. Kullanmak zorunda değilsiniz.', fields: [{name: 'model', label: 'Model (API listesinden seçin)', type: 'select'}], secret: true, test: true},
     {id: 'pexels', title: 'Pexels', description: 'Resmî Pexels API ile video ve fotoğraf arayın. Anahtarı önce Kaydet deyin, ardından Bağlantıyı Test Et düğmesine basın.', fields: [], secret: true, test: true},
+    {id: 'youtube', title: 'YouTube Data API (kaynak video analizi)', description: 'İsteğe bağlı. Referans videonun izlenme, beğeni, yorum sayılarını ve en çok beğenilen yorumlarını okumak için. Google Cloud Console’dan ücretsiz anahtar alın (YouTube Data API v3). Anahtar yalnız Google’a gönderilir. Anahtar yoksa analiz Gemini ile sürer.', fields: [], secret: true, test: true},
     {id: 'pixabay', title: 'Pixabay', description: 'Resmî Pixabay API ile video ve görsel arayın. Anahtarı önce Kaydet deyin, ardından Bağlantıyı Test Et düğmesine basın.', fields: [], secret: true, test: true},
     {id:'ai33',title:'AI33 / OpenSpeaker',description:'Anahtarınızı Kaydet, ardından Bağlantıyı Test Et. Ses sağlayıcısını kaydedip Sesleri Getir deyin. Bağlantı testi ücretli ses üretmez.',fields:[{name:'voice_provider',label:'Ses sağlayıcısı',type:'select',choices:[['elevenlabs','ElevenLabs'],['minimax','MiniMax'],['clone','Mevcut klon sesler'],['edge','Microsoft Edge'],['vbee','Vbee'],['fishaudio','Fish Audio']]},{name:'voice_id',label:'Ses',type:'select',choices:[['','Önce Sesleri Getir düğmesine basın']]},{name:'speed',label:'Hız (0,5–1,5)',type:'number'},{name:'base_url',label:'Eski kayıtlı Base URL (uyumluluk için korunur)',type:'url',advanced:true},{name:'model',label:'Eski model alanı (kullanılmaz)',type:'text',advanced:true}],secret:true,test:true}
   ];
@@ -211,10 +212,7 @@ if (window.location.pathname === '/settings') {
     finally { ffmpegButton.disabled = false; }
   });
   ffmpeg.append(ffmpegStatus, ffmpegPath, ffmpegButton);
-  const youtube = element('section', '', 'settings-panel');
-  youtube.id = 'settings-youtube';
-  youtube.append(element('h2', 'YouTube'), element('p', 'Daha sonra', 'provider-status'), element('p', 'YouTube bağlantısı ve yükleme sonraki aşamalarda ele alınacak.', 'note'));
-  sections.append(ffmpeg, youtube);
+  sections.append(ffmpeg);
 
   function setBusy(form, busy, definition) {
     form.dataset.busy=String(busy);

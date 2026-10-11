@@ -123,7 +123,7 @@ class QualityService:
             if not row or row['kind'] != 'alternatives': raise ScriptError('Alternatifler bulunamadı.', 404)
             result = json.loads(row['result_json'])
             for key, index in payload['choices'].items():
-                if key not in ('opening', 'title', 'thumbnail_text', 'intro', 'CTA', 'description') or type(index) is not int or not 0 <= index < len(result[key]):
+                if key not in ('opening', 'title', 'intro', 'CTA', 'description') or type(index) is not int or not 0 <= index < len(result[key]):
                     raise ScriptError('Geçerli alternatifleri seçin.')
             result['selected'] = {**result.get('selected', {}), **payload['choices']}
             connection.execute('UPDATE script_artifacts SET result_json=? WHERE id=?', (dumps(result), artifact_id))
@@ -349,7 +349,7 @@ class QualityService:
         return common + {
             'retention': 'Evaluate opening 10–30 seconds, hook, slow sections, repetition, transitions, overload, pacing, section length, curiosity, payoff and ending. Return JSON {"ratings":{"opening_10_30_seconds":"Orta","hook":"Orta","slow_sections":"Orta","repetition":"Orta","transitions":"Orta","overload":"Orta","pacing":"Orta","section_length":"Orta","curiosity":"Orta","payoff":"Orta","ending":"Orta"},"suggestions":[{"scope":"opening or specific segment","suggestion":"Turkish actionable suggestion"}]}. Ratings only Güçlü, Orta, Geliştirilebilir.',
             'hooks': 'Create EXACTLY three distinct optional opening hooks in the target language based on actual subject/content. Do not promise unseen content. Return JSON {"hooks":["...","...","..."]}.',
-            'alternatives': 'Create 2–3 truthful options EACH for opening, title, thumbnail_text, intro, CTA and description in the target language. No automatic selection. Return JSON with those six keys, each a string array.',
+            'alternatives': 'Create 2–3 truthful options EACH for opening, title, intro, CTA and description in the target language. No automatic selection. Return JSON with those five keys, each a string array.',
             'claims': 'Identify dates/statistics/prices/health/scientific/history/financial/specification/named-event claims requiring verification. Do not claim verified. Return JSON {"claims":[{"statement":"exact relevant statement","reason":"Turkish reason"}]}. Empty list if none.'}[kind]
 
     @staticmethod
@@ -360,7 +360,7 @@ class QualityService:
         if kind == 'retention':
             valid = isinstance(result.get('ratings'), dict) and set(result['ratings']) == set(CRITERIA) and all(value in RATINGS for value in result['ratings'].values()) and isinstance(result.get('suggestions'), list) and len(result['suggestions']) <= 20 and all(isinstance(item, dict) and set(item) == {'scope', 'suggestion'} and all(isinstance(x, str) and 0 < len(x) <= 3000 for x in item.values()) for item in result['suggestions'])
         elif kind == 'hooks': valid = strings(result.get('hooks'), 3, 3)
-        elif kind == 'alternatives': valid = all(strings(result.get(key), 2, 3) for key in ('opening', 'title', 'thumbnail_text', 'intro', 'CTA', 'description'))
+        elif kind == 'alternatives': valid = all(strings(result.get(key), 2, 3) for key in ('opening', 'title', 'intro', 'CTA', 'description'))
         elif kind == 'claims': valid = isinstance(result.get('claims'), list) and len(result['claims']) <= 100 and all(isinstance(item, dict) and set(item) == {'statement', 'reason'} and all(isinstance(value, str) and 0 < len(value) <= 3000 for value in item.values()) for item in result['claims'])
         if not valid:
             raise ScriptError('AI aracı beklenen biçimde sonuç döndürmedi. Tekrar deneyin.')

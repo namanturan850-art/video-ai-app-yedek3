@@ -120,7 +120,7 @@ CLAUDE_MODELS = {'claude-opus-5-5': 'Claude Opus 5.5 — en iyi kalite (önerile
 class ClaudeSettings(KeySettings):
     model: Literal['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] = 'claude-opus-5-5'
     # Claude becomes the script/scene "director" for every project when ready.
-    default_engine: bool = True
+    default_engine: bool = False  # Gemini (free tier) unless the owner opts in
 
     @field_validator('api_key')
     @classmethod
@@ -463,6 +463,15 @@ class SettingsService:
         with self.store.lock:
             config = self._values()['claude']
         return bool(config.get('api_key')) and bool(config.get('default_engine'))
+
+    def ai_engine(self):
+        """Engine for the director and media selection. Gemini's free tier by
+        default; Claude (paid API) only when the owner explicitly chose it.
+        None = nothing usable is configured yet."""
+        if self.claude_director():
+            return 'claude'
+        view = self.safe_view()
+        return 'gemini' if view['gemini']['model_verified'] else None
 
     def image_config(self):
         from app.production_settings import ImageSettings

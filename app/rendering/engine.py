@@ -102,7 +102,7 @@ class FFmpegRenderProvider:
             if media['type']=='video':
                 source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
                 planned=edits.get(slot['slot_id'],{})
-                seek=min(max(0,planned.get('source_in',max(0,(source_duration-length)/2))),max(0,source_duration-length))
+                seek=min(max(0,planned.get('source_in',media.get('segment_start',max(0,(source_duration-length)/2)))),max(0,source_duration-length))
                 # Legacy short assets remain playable; newly acquired normal
                 # B-roll has strict coverage and is never sped up or looped.
                 loop=['-stream_loop','-1'] if source_duration<count/30-.04 else []
@@ -115,8 +115,14 @@ class FFmpegRenderProvider:
             # alignment/transition handles, never fills an undersized new clip.
             if media['type']=='video' and not loop:normalize+=f',tpad=stop_mode=clone:stop_duration={outgoing[i]/30+.1:.6f}'
             portrait=bool(actual and next((s['width']<=s['height'] for s in actual.get('streams',[]) if s.get('codec_type')=='video'),False))
-            if media['type']=='image' and (portrait or edits.get(slot['slot_id'],{}).get('fit')=='contain'):
-                normalize='scale=1920:1080:force_original_aspect_ratio=decrease:out_range=tv,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=0x101823,setsar=1,fps=30,format=yuv420p'
+            if portrait or edits.get(slot['slot_id'],{}).get('fit')=='contain':
+                # Portrait/square source in a 16:9 video: sharp centre over a
+                # blurred, darkened full-frame copy of itself (no black bars).
+                normalize=('split=2[bgsrc][fgsrc];[bgsrc]scale=1920:1080:force_original_aspect_ratio=increase:out_range=tv,crop=1920:1080,gblur=sigma=28,eq=brightness=-0.12[bg];'
+                           '[fgsrc]scale=1920:1080:force_original_aspect_ratio=decrease:out_range=tv[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p')
+                # overlay ends one frame early at EOF; clone the last frame so
+                # frame-exact trims below still get every frame.
+                normalize+=f',tpad=stop_mode=clone:stop_duration={(outgoing[i]/30 if media["type"]=="video" and not loop else 0)+.1:.6f}'
             motion=slot['editing']['motion']
             if not smart and media['type']=='image' and motion in ('slow_zoom','ken_burns','pan'):
                 if 'zoompan' not in self.tools['filters']:self.warnings.append('Görsel hareketi desteklenmiyor; durağan görsel kullanıldı.')

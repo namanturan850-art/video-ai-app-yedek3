@@ -77,6 +77,8 @@ class QualityService:
 
     def start(self, project_id, kind, payload):
         expected = {'provider', 'cost_confirmed', 'confirm_replace_plan'} if kind == 'visual' else {'provider', 'cost_confirmed'}
+        if kind == 'visual' and type(payload.get('director')) is bool:
+            expected = expected | {'director'}  # the AI director asks for its richer scene notes
         if kind not in KINDS or set(payload) != expected or type(payload['cost_confirmed']) is not bool or kind == 'visual' and type(payload['confirm_replace_plan']) is not bool:
             raise ScriptError('Geçerli bir analiz aracı ve sağlayıcı seçin.')
         return self._enqueue(project_id, kind, payload)
@@ -140,6 +142,7 @@ class QualityService:
             if payload['provider'] != 'ollama' and not payload['cost_confirmed']:
                 raise ScriptError('Bu AI işlemi API kotası veya ücret kullanabilir. İşlemi başlatmadan önce onay verin.', 409)
             inputs = {'version_id': current['id'], 'text': current['text'], 'content_type': current['content_type'], 'selected': selected, 'confirm_replace_plan': payload.get('confirm_replace_plan', False)}
+            if payload.get('director'): inputs['director'] = True
             saved_options=dict(current['options'])
             if kind in ('visual','visual_scene'):
                 saved_options['language']=self.projects.get(project_id)['language']
@@ -273,7 +276,7 @@ class QualityService:
         """One job-wide repair budget; persist consent/attempt before any extra call."""
         units=data['narration_units'];index=data['segment_index']
         instructions=self._instructions('visual').replace('"first supplied unit_id"',json.dumps(units[0]['unit_id']))
-        if job['provider']=='claude':instructions+=' '+CLAUDE_DIRECTOR_VISUAL
+        if job['provider']=='claude' or json.loads(job['input_json']).get('director'):instructions+=' '+CLAUDE_DIRECTOR_VISUAL
         instructions+=' Use the actual IDs in narration_units; the example shows the response shape, not the complete scene plan.'
         if single: instructions+=' Return EXACTLY ONE scene containing all supplied unit IDs.'
         def ask(payload, *, repair=False):

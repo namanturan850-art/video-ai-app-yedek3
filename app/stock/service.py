@@ -166,7 +166,8 @@ class StockService:
             used={s['slot_id']:s['duration'] for s in timing.get('stock_slots',[])}
             for slot in public['slots']:
                 repeated=media_duplicate(slot['selected_media'],[x['selected_media'] for x in public['slots'] if x['slot_id']!=slot['slot_id']])
-                slot['repeat_status']='Manuel tekrar kullanım' if repeated and slot.get('manual_reuse') else 'Daha önce kullanılmış' if repeated else 'Benzersiz'
+                slot['repeat_status']=('Komşu çekimin devamı' if slot.get('continuation_of') else 'Aynı klibin farklı bölümü' if repeated and slot.get('segment_start') is not None
+                                       else 'Manuel tekrar kullanım' if repeated and slot.get('manual_reuse') else 'Daha önce kullanılmış' if repeated else 'Benzersiz')
                 scene=next(s for s in handoff['scenes'] if s['scene_id']==slot['scene_id'])
                 current_profile=relevance.profile(scene,slot)
                 slot['subject_anchor']=current_profile['subject_anchor']
@@ -201,12 +202,16 @@ class StockService:
             media = [s['selected_media'] for s in public['slots'] if s['status']=='complete' and s['selected_media']]
             public['media_mix'] = {'total_slots':len(public['slots']),
                                    'selected_videos':sum(m['media_type']=='video' for m in media),
-                                   'selected_images':sum(m['media_type']=='image' for m in media),
+                                   'selected_images':sum(m['media_type']=='image' and m['provider']!='generated' for m in media),
+                                   'generated_cards':sum(m['provider']=='generated' for m in media),
                                    'unresolved_slots':len(public['slots'])-len(media)}
             public['media_mix']['video_ratio_percent']=round(100*public['media_mix']['selected_videos']/len(media)) if media else 0
             public['media_mix']['video_target_range']=[80,95]
             from app.stock.recovery import report
+            from app.stock.director_media import summary as media_summary
             public['missing_media_diagnostics']=report(public['slots'])
+            public['media_summary']=media_summary(public['slots'])
+            public['ai_engine']=self.settings.ai_engine()
             public['media_mix'].update(average_used_duration=round(sum(s['used_duration'] for s in public['slots'])/max(1,len(public['slots'])),2),
                 maximum_used_duration=round(max((s['used_duration'] for s in public['slots']),default=0),2),
                 portrait_videos=sum(m['media_type']=='video' and m.get('width',1)<=m.get('height',0) for m in media),
@@ -217,7 +222,8 @@ class StockService:
             duplicates = sum(media_duplicate(m,media[:i]) for i,m in enumerate(media))
             locked=[s['selected_media'] for s in public['slots'] if s['locked'] and s['selected_media']]
             if any(media_duplicate(m,locked[:i]) for i,m in enumerate(locked)):public['warnings'].append('Aynı medya birden fazla kilitli alanda kullanılıyor.')
-            if duplicates: public['warnings'].append('Aynı stok medya birden fazla yuvada kullanılıyor. İsterseniz Değiştir ile çeşitlendirin.')
+            duplicates-=sum(bool(s.get('continuation_of') or s.get('segment_start') is not None) for s in public['slots'] if s['status']=='complete' and s['selected_media'])
+            if duplicates>0: public['warnings'].append('Aynı stok medya birden fazla yuvada kullanılıyor. İsterseniz Değiştir ile çeşitlendirin.')
             if len(media)>=3 and any(all(m['media_type']=='image' for m in media[i:i+3]) for i in range(len(media)-2)):
                 public['warnings'].append('Art arda durağan görseller var. Uygun video adaylarını kontrol edin.')
             if len(public['slots'])>=3 and any(all(s['composition']==public['slots'][i]['composition'] for s in public['slots'][i:i+3]) for i in range(len(public['slots'])-2)):
@@ -265,8 +271,10 @@ class StockService:
             if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds'}:
                 raise StockError('invalid_input','Medya işlemini kontrol edin.',422)
             action = payload.get('action')
-            if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
-            if (action in ('search','select','search_videos')) != bool(slot_id): raise StockError('invalid_input','Geçerli medya yuvasını seçin.',422)
+            if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery','complete_media','reselect'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
+            if (action in ('search','select','search_videos','reselect')) != bool(slot_id): raise StockError('invalid_input','Geçerli medya yuvasını seçin.',422)
+            if action in ('complete_media','reselect') and not self.settings.ai_engine():
+                raise StockError('ai_required','Medyayı Tamamla, stok medyayı yapay zekânın onayıyla seçer. Ayarlar → Gemini bölümünde ücretsiz API anahtarınızı kaydedip Modelleri Getir ile bir model seçin.',422)
             tolerance = payload.get('video_duration_tolerance_seconds',state.get('search_options',{}).get('video_duration_tolerance_seconds',DEFAULT_VIDEO_TOLERANCE))
             if type(tolerance) not in (int,float) or not math.isfinite(tolerance) or not 0<=tolerance<=1.5:
                 raise StockError('invalid_input','Kısa video toleransı 0 ile 1,5 saniye arasında olmalı.',422)
@@ -292,7 +300,7 @@ class StockService:
             if action=='replace_images' and not any(self._replaceable(s) for s in state['slots']):
                 raise StockError('no_selection','Video tercihli, kilitsiz görsel yuvası bulunamadı.',422)
             bridge=getattr(self,'openmontage',None)
-            if not any(self.settings.stock_config(name).get('api_key') for name in ('pexels','pixabay')) and action not in ('select','smart_recovery') and not (bridge and bridge.config().get('media_search')):
+            if not any(self.settings.stock_config(name).get('api_key') for name in ('pexels','pixabay')) and action not in ('select','smart_recovery','complete_media','reselect') and not (bridge and bridge.config().get('media_search')):
                 raise StockError('missing_key','Ayarlar → Pexels veya Pixabay bölümünde API anahtarını kaydedin ya da OpenMontage medya aramasını açın.',422)
             if 'video_duration_tolerance_seconds' in payload:
                 state['search_options']={'video_duration_tolerance_seconds':tolerance}
@@ -472,6 +480,9 @@ class StockService:
             if job['action']=='smart_recovery':
                 from app.stock.recovery import run
                 run(self,job);return
+            if job['action'] in ('complete_media','reselect'):
+                from app.stock.director_media import MediaDirector
+                MediaDirector(self,job).run();return
             slots = [deepcopy(s) for s in state['slots'] if not job['slot_id'] or s['slot_id']==job['slot_id']]
             if job['action']=='replace_images': slots = [s for s in slots if self._replaceable(s)]
             selections={s['slot_id']:s['selected_media'] for s in state['slots'] if s['selected_media']}

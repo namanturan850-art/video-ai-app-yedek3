@@ -1,4 +1,4 @@
-/* Claude director panel on the script page: purpose → script → approval → edit plan. */
+/* AI director panel (Gemini free tier by default, Claude only if chosen) on the script page: purpose → script → approval → edit plan. */
 if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
   const id = window.location.pathname.split('/')[2];
   const api = `/api/projects/${id}/director`;
@@ -18,7 +18,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
     return json;
   }
   const panel = node('section', '', 'settings-panel'); panel.id = 'director-panel';
-  panel.append(node('h2', 'Claude Yönetmen'), node('p', 'Yalnızca konu, dil ve hedef süre yeterli. Claude sırayla videonun amacını belirler, senaryoyu yazar, kurgu planını (sahneler, görsel türü, arama sözcükleri, “mutlaka göster / gösterme” notları) çıkarır.', 'note'));
+  panel.append(node('h2', 'AI Yönetmen'), node('p', 'Yalnızca konu, dil ve hedef süre yeterli. Yapay zekâ sırayla videonun amacını belirler, senaryoyu yazar, kurgu planını (sahneler, görsel türü, arama sözcükleri, “mutlaka göster / gösterme” notları) çıkarır.', 'note'));
   const status = node('p', '', 'provider-status'); status.id = 'director-status'; status.setAttribute('role', 'status');
   const steps = node('ol'); steps.id = 'director-steps';
   const autoLabel = node('label', ' Senaryoyu otomatik onayla (kapatırsanız senaryoyu okuyup siz onaylarsınız)');
@@ -44,7 +44,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
   function render(view) {
     data = view; const state = view.state || {status: 'idle'};
     const busy = ['queued', 'running'].includes(state.status);
-    status.textContent = state.status === 'idle' ? (view.options.claude_ready ? 'Hazır. Yönetmeni Başlat deyin.' : 'Önce Ayarlar → Claude bölümünde API anahtarını kaydedin.')
+    status.textContent = state.status === 'idle' ? (view.options.engine ? `Hazır · Motor: ${view.options.engine_label}. Yönetmeni Başlat deyin.` : 'Önce Ayarlar → Gemini bölümünde ücretsiz API anahtarınızı kaydedip Modelleri Getir ile bir model seçin.')
       : `${state.message || ''}`;
     steps.replaceChildren();
     const current = order.indexOf(state.step);
@@ -54,18 +54,18 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
       steps.append(node('li', `${mark} ${view.steps[key]}`));
     }
     run.textContent = state.status === 'error' || state.status === 'waiting' ? 'Yönetmeni Devam Ettir' : state.status === 'done' ? 'Yönetmeni Yeniden Çalıştır' : 'Yönetmeni Başlat';
-    run.disabled = busy || !view.options.claude_ready && !(state.provider && state.provider !== 'claude');
+    run.disabled = busy || !view.options.engine && !state.provider;
     savePurpose.disabled = busy;
     if (view.purpose) for (const [name] of fields) { const control = purposeForm.elements.namedItem(name); if (document.activeElement !== control) control.value = view.purpose[name] || ''; }
     purpose.hidden = !view.purpose;
     backups.replaceChildren();
     const offer = state.status === 'error' && state.offer_backup ? view.options.backup_providers : [];
     backups.hidden = !offer.length;
-    if (offer.length) backups.append(node('p', 'Claude bu adımı tamamlayamadı. İsterseniz yedek motorla devam edebilirsiniz (kendiliğinden geçilmez):'));
+    if (offer.length) backups.append(node('p', `${state.provider === 'claude' ? 'Claude' : 'Gemini'} bu adımı tamamlayamadı. İsterseniz yedek motorla devam edebilirsiniz (kendiliğinden geçilmez):`));
     for (const name of offer) {
       const b = node('button', `${names[name]} ile devam et`); b.type = 'button';
       b.addEventListener('click', () => {
-        if (window.confirm(`Claude yerine ${names[name]} kullanılsın mı? ${name === 'ollama' ? 'Yerel çalışır.' : 'API kotası veya ücret kullanabilir.'}`)) start(name);
+        if (window.confirm(`${names[name]} kullanılsın mı? ${name === 'ollama' ? 'Yerel çalışır.' : 'API kotası veya ücret kullanabilir.'}`)) start(name);
       });
       backups.append(b);
     }
@@ -75,10 +75,11 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
   async function load() {
     try { render(await request(api)); } catch (error) { status.textContent = error.message; }
   }
-  async function start(provider = 'claude') {
+  async function start(provider) {
+    provider = provider || data?.options?.engine;
     const state = data?.state || {};
     const resuming = ['error', 'waiting'].includes(state.status);
-    if (provider !== 'ollama' && !window.confirm('Yönetmen Claude API’sini kullanır ve ücretlidir (3 dakikalık video için tahmini birkaç kuruş–1 dolar arası; kesin tutar bu sayfada gösterilir). Devam edilsin mi?')) return;
+    if (['claude', 'openai'].includes(provider) && !window.confirm('Bu motor ücretli API kullanır (3 dakikalık video için Claude ile tahmini 0,35–0,75 $; kesin tutar bu sayfada gösterilir). Devam edilsin mi?')) return;
     let replace = false;
     if (!resuming && document.querySelector('#script-versions option')) {
       if (!window.confirm('Bu projede senaryo var. Yönetmen yeni bir sürüm yazar; eski sürümler silinmez. Devam edilsin mi?')) return;
@@ -90,7 +91,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
       await load();
     } catch (error) { status.textContent = error.message; run.disabled = false; }
   }
-  run.addEventListener('click', () => start(data?.state?.provider && data.state.status !== 'done' && data.state.provider !== 'claude' ? data.state.provider : 'claude'));
+  run.addEventListener('click', () => start(['error', 'waiting'].includes(data?.state?.status) ? data.state.provider : data?.options?.engine));
   savePurpose.addEventListener('click', async () => {
     const body = {}; for (const [name] of fields) body[name] = purposeForm.elements.namedItem(name).value;
     try { const r = await request(`${api}/purpose`, 'PUT', body); status.textContent = r.message; await load(); }

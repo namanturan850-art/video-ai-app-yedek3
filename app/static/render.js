@@ -20,7 +20,8 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   let variationSeed='';try{variationSeed=localStorage.getItem(`render-variation-${pid}`)||'';}catch{}
   // One-click look (colours, fonts, motion rhythm) for motion graphics, text graphics and subtitles.
   const lookLabel=el('label','Video görünümü (renk, yazı tipi, animasyon ritmi)'),look=el('select');look.id='render-look';lookLabel.append(look);const lookNote=el('p','');lookNote.className='note';form.append(lookLabel,lookNote);
-  fetch(`/api/projects/${pid}/look`,{cache:'no-store'}).then(r=>r.json()).then(d=>{look.replaceChildren(...[['','Varsayılan (sade)'],...d.looks.map(l=>[l.id,l.label])].map(([v,t])=>{const o=el('option',t);o.value=v;return o;}));look.value=d.look||'';}).catch(()=>{});
+  // Loaded once, after the first video-state request (see poll below).
+  const loadLook=()=>fetch(`/api/projects/${pid}/look`,{cache:'no-store'}).then(r=>r.json()).then(d=>{look.replaceChildren(...[['','Varsayılan (sade)'],...d.looks.map(l=>[l.id,l.label])].map(([v,t])=>{const o=el('option',t);o.value=v;return o;}));look.value=d.look||'';}).catch(()=>{});let lookLoaded=false;
   look.addEventListener('change',async()=>{if(!look.value)return;lookNote.textContent='Görünüm kaydediliyor…';try{const r=await fetch(`/api/projects/${pid}/look`,{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json','X-AI-Video-Studio':'projects'},body:JSON.stringify({look:look.value})});const d=await r.json();if(!r.ok)throw new Error(d.message||'Görünüm kaydedilemedi.');lookNote.textContent='✓ Görünüm kaydedildi. Yeni motion grafikler ve bir sonraki video bu görünümle oluşur.';}catch(e){lookNote.textContent=e.message;}});
   // Background music under the narration: always visible, not hidden in a fold.
   const musicDetails=el('section');musicDetails.id='render-music';musicDetails.className='music-panel';musicDetails.append(el('h3','🎵 Arka plan müziği (konuşmanın altında çalar)'),el('p','Kendi müzik dosyanızı ekleyin (MP3, WAV, M4A, OGG, FLAC). Konuşma sırasında müzik otomatik kısılır, başta yavaşça açılır, sonda yavaşça kapanır.'));form.append(musicDetails);
@@ -96,6 +97,6 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   }
   async function load(refreshTools=false){try{const selectedEngine=montageEngine.value,chosen=editingStyle.value,selectedSeed=variationSeed,selectedMode=subtitles.value;const loaded=await request(`${base}?montage_engine=${montageEngine.value}&editing_style=${encodeURIComponent(chosen)}${variationSeed?'&edit_variation_seed='+encodeURIComponent(variationSeed):''}&subtitle_display=${subtitles.value}${refreshTools?'&refresh_tools=true':''}`);if(selectedEngine!==montageEngine.value||chosen!==editingStyle.value||selectedSeed!==variationSeed||selectedMode!==subtitles.value)return;state=loaded;render();status.textContent=activeJob()?'Video yerel olarak oluşturuluyor. Bu sayfayı açık tutabilirsiniz.':state.job?.status==='completed'?'Tamamlandı. Videonun başlangıcını, ortasını ve sonunu kontrol edin.':'Yerel video ayarlarını kontrol edin.';}catch(e){status.textContent=e.message;}}
   updateButtons();blockers.append(el('p','Video kaynakları kontrol ediliyor…'));
-  async function poll(){if(stopped)return;await load();if(!stopped)setTimeout(poll,2000);}
+  async function poll(){if(stopped)return;await load();if(!lookLoaded){lookLoaded=true;loadLook();}if(!stopped)setTimeout(poll,2000);}
   window.addEventListener('pagehide',()=>{stopped=true;});poll();
 }

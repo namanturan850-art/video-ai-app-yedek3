@@ -184,7 +184,20 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
         items.append({'slot_id':slot['slot_id'],'scene_id':slot['scene_id'],'start':slot['start'],'end':slot['end'],'media_type':slot['selected_media_local_identity']['media_type'],
                       'motion_effect':effect,'motion_strength':round(strength,4),'segments':segments,'transition_out':transition,'transition_in':'hard_cut',
                       'transition_duration':round(seconds,6),'visual_variant':scene.get('composition','medium'),'reason':reason})
-    for previous,current in zip(items,items[1:]):current['transition_in']=previous['transition_out'] if previous['scene_id']!=current['scene_id'] else 'hard_cut'
+    continuing={s['slot_id']:s.get('continuation_of') for s in t['slots'] if s.get('continuation_of')}
+    for previous,current in zip(items,items[1:]):
+        if continuing.get(current['slot_id']) or continuing.get(previous['slot_id']):
+            # The same take continues: a blend would ghost it over itself.
+            previous.update(transition_out='hard_cut',transition_duration=0.)
+        current['transition_in']=previous['transition_out'] if previous['scene_id']!=current['scene_id'] else 'hard_cut'
+    for item in items:
+        if continuing.get(item['slot_id']) and style!='basic':
+            for segment in item['segments']:
+                segment['base_zoom']=round(segment.get('base_zoom',0.)+.12,4)
+                segment['camera_curve']='eased'
+                if segment['motion_effect']=='none':segment.update(motion_effect='push_in',motion_strength=.03)
+            item['reason']='Önceki çekimin kesintisiz devamı (yakın kadraj)'
+        if continuing.get(item['slot_id']):item['continuation_of']=continuing[item['slot_id']]
     texts=emphasis(t,h,style)
     for previous in items[:-1]:
         if previous['transition_out'] in ('none','hard_cut'):continue
@@ -208,10 +221,22 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
         plan['fingerprint']=digest({k:v for k,v in plan.items() if k!='fingerprint'})
     if media_details:
         from app.rendering.windows import source_window
-        for item in plan['slots']:
-            media=media_details.get(item['slot_id'],{})
-            if media.get('type')=='video':item.update(source_window(media.get('duration'),item['end']-item['start'],media.get('sha256',item['slot_id'])+item['slot_id']))
-            if media.get('type')=='image' and 0<media.get('width',0)<=media.get('height',0):item['fit']='contain'
+        roots={s['slot_id']:s.get('continuation_of') or s['slot_id'] for s in t['slots']}
+        chains={}
+        for item in plan['slots']:chains.setdefault(roots[item['slot_id']],[]).append(item)
+        for root,items in chains.items():
+            media=media_details.get(items[0]['slot_id'],{})
+            if media.get('type')=='video':
+                # One continuous take: consecutive parts of a single source window.
+                window=source_window(media.get('duration'),sum(i['end']-i['start'] for i in items),media.get('sha256',root)+root)
+                cursor=window['source_in']
+                for item in items:
+                    used=item['end']-item['start']
+                    item.update(source_duration=window['source_duration'],source_in=round(cursor,6),source_out=round(min(window['source_duration'],cursor+used),6),
+                                source_trim_start=round(cursor,6),source_trim_end=round(min(window['source_duration'],cursor+used),6),used_duration=used)
+                    cursor+=used
+            for item in items:
+                if media.get('type')=='image' and 0<media.get('width',0)<=media.get('height',0):item['fit']='contain'
         plan['fingerprint']=digest({k:v for k,v in plan.items() if k!='fingerprint'})
     return plan
 

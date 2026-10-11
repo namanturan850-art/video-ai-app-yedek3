@@ -11,6 +11,14 @@ from app.stock.models import StockError,rejection_reason
 from app.stock.download import asset_path
 from app.scripts.models import ScriptError
 
+# One click keeps working while it makes progress (several rounds), within a
+# budget that respects the Pexels hourly request limit (200/h) across both
+# providers. Earlier attempts are remembered, so nothing is re-requested.
+JOB_CALLS=120
+SLOT_CALLS=12
+JOB_DOWNLOADS=40
+ROUNDS=3
+
 LABELS={
  'no_provider_results':'Sağlayıcı sonuç döndürmedi.',
  'all_candidates_irrelevant':'Adaylar sahnenin konusuyla uyumlu değil.',
@@ -81,7 +89,7 @@ def search(service,pid,slot,used,progress,job):
     for kind,tier,q,name,page in work:
         key=json.dumps([name,kind,q[:100] if name=='pixabay' else q,page],ensure_ascii=False)
         if key in attempts:continue
-        if calls>=8 or progress.get('recovery_calls',0)>=48:
+        if calls>=SLOT_CALLS or progress.get('recovery_calls',0)>=JOB_CALLS:
             reasons.add('search_budget_reached');break
         if name in progress.setdefault('limited_providers',[]):continue
         calls+=1;progress['recovery_calls']=progress.get('recovery_calls',0)+1
@@ -119,7 +127,7 @@ def search(service,pid,slot,used,progress,job):
             downloaded=[]
             for m in sorted(eligible,key=lambda m:relevance.rank(m,slot),reverse=True)[:4]:
                 try:
-                    if progress.get('recovery_downloads',0)>=16:
+                    if progress.get('recovery_downloads',0)>=JOB_DOWNLOADS:
                         reasons.add('search_budget_reached');break
                     progress['recovery_downloads']=progress.get('recovery_downloads',0)+1
                     saved=service.downloader.download(pid,m)
@@ -222,20 +230,24 @@ def run(service,job):
                     for s in batch:
                         if not s['locked']:s['visual_check']={'verdict':'error'};service._checkpoint(job,progress,slot=s)
     used=set().union(*(identity_keys(s['selected_media']) for s in slots if valid(service,pid,s)))
-    for index,slot in enumerate(slots):
+    for round_number in range(ROUNDS):
+      calls_before=progress.get('recovery_calls',0)
+      for index,slot in enumerate(slots):
         if service.closed:raise StockError('interrupted','İşlem durdu; mevcut dosyalar korundu.')
         progress['percent']=int(index/max(1,len(slots))*90)
         if valid(service,pid,slot):continue
         if slot['locked']:
             slot['missing_reasons']=['locked_or_stale_selection'];continue
-        if slot['slot_id'] in progress['completed']:continue
-        progress.update(slot_id=slot['slot_id'],message='Eksik medya güvenli biçimde inceleniyor.')
+        if round_number==0 and slot['slot_id'] in progress['completed']:continue
+        # Later rounds revisit only slots that stopped at a search limit.
+        if round_number and 'search_budget_reached' not in slot.get('missing_reasons',[]):continue
+        progress.update(slot_id=slot['slot_id'],message='Eksik medya güvenli biçimde inceleniyor.' if not round_number else f'Eksik medya araması sürüyor · tur {round_number+1}/{ROUNDS}')
         try:
             candidates,_=search(service,pid,slot,used,progress,job)
             chosen=relevance.choose(candidates,used,slot)
             if chosen:
                 if not chosen.get('local_path'):
-                    if progress.get('recovery_downloads',0)>=16:raise StockError('search_budget_reached',LABELS['search_budget_reached'])
+                    if progress.get('recovery_downloads',0)>=JOB_DOWNLOADS:raise StockError('search_budget_reached',LABELS['search_budget_reached'])
                     progress['recovery_downloads']=progress.get('recovery_downloads',0)+1
                 chosen=service.downloader.download(pid,chosen)
                 if identity_keys(chosen)&used:slot.setdefault('missing_reasons',[]).append('all_candidates_duplicates')
@@ -250,7 +262,9 @@ def run(service,job):
             slot.setdefault('missing_reasons',[]).append('provider_rate_limited' if error.category=='rate_limit' else 'search_budget_reached' if error.category=='search_budget_reached' else 'download_failed')
             slot['message']='Bu alan tamamlanamadı; mevcut dosyalar korundu.'
         service._checkpoint(job,progress,slot=slot)
-        progress['completed'].append(slot['slot_id']);service._checkpoint(job,progress)
+        if slot['slot_id'] not in progress['completed']:progress['completed'].append(slot['slot_id'])
+        service._checkpoint(job,progress)
+      if progress.get('recovery_calls',0)==calls_before or progress.get('recovery_calls',0)>=JOB_CALLS:break
     with service.projects.lock,closing(service.projects._connection()) as c,c:
         state=service._load(c,pid,job['plan_id'])
         for s in state['slots']:

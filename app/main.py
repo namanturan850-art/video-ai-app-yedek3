@@ -127,6 +127,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     rendering=RenderService(subtitles,production,settings)
     rendering.channels=channels
     narration.channels=channels
+    stock.channels=channels
     application.state.rendering=rendering
     stock.openmontage=rendering.openmontage
     from app.integrations.openmontage.routes import router as openmontage_router

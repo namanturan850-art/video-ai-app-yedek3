@@ -58,6 +58,48 @@ class RenderService:
         row=c.execute('SELECT metadata_json FROM render_music WHERE project_id=?',(pid,)).fetchone()
         return json.loads(row[0]) if row else None
 
+    def _motion(self,pid,t,h,selected,media,originals,kit,force):
+        """Re-anchor motion clips to the real narration timing and collect the
+        kit's sound effects (absolute times) for the final audio mix."""
+        from app.motion.clips import is_motion,render_clip
+        from app.motion import templates
+        from app.stock.download import directory
+        events=[];volume=float((kit or {}).get('sfx_volume',.18))
+        if not kit:return {'events':[],'volume':volume}
+        chains={}
+        for slot in t['slots']:
+            owner=slot.get('continuation_of') or slot['slot_id']
+            m=selected.get(owner,{}).get('selected_media')
+            if is_motion(m):chains.setdefault(owner,[]).append(slot)
+        cues=h.get('subtitles',[])
+        for owner,parts in chains.items():
+            m=selected[owner]['selected_media'];spec=m['source_metadata']['motion']
+            start=parts[0]['start'];duration=round(parts[-1]['end']-start,3)
+            target=(spec.get('emphasis') or '').casefold();spoken=None
+            for cue in cues:
+                if cue['end']<start-1 or cue['start']>start+duration+1:continue
+                index=cue['text'].casefold().find(target) if target else -1
+                if index>=0:
+                    spoken=cue['start']+(cue['end']-cue['start'])*index/max(1,len(cue['text']));break
+            original=m['source_metadata'].get('emphasis_time',duration*.6)
+            offset=spoken-start if spoken is not None else original*duration/max(.001,float(m.get('duration') or duration))
+            scene=templates.build(spec,kit,duration,offset,h.get('target_language','de'))
+            if abs(float(m.get('duration') or 0)-duration)>1/30 or abs(original-scene['emphasis_time'])>.04:
+                try:
+                    path,_,_=render_clip(directory(self.projects,pid),spec,kit,duration,offset,language=h.get('target_language','de'),bridge=getattr(self,'openmontage',None))
+                    digest=self._hash(path,force);originals[str(path)]=digest
+                    for slot in parts:media[slot['slot_id']].update(path=path,duration=duration,sha256=digest,segment_start=0.)
+                except Exception:
+                    scene=templates.build(spec,kit,float(m.get('duration') or duration),original,h.get('target_language','de'))  # keep the prepared clip
+            for slot in parts:media[slot['slot_id']]['segment_start']=0.  # animation always starts at its first frame
+            channels=getattr(self,'channels',None)
+            channel=channels.for_project(pid) if channels else None
+            for item in scene['sfx']:
+                path=channels.sfx_path(channel['id'],kit['sfx'].get(item['sound'],'none')) if channel else None
+                if path and 0<=start+item['t']<h.get('audio_duration',1e9):
+                    events.append({'t':round(start+item['t'],3),'sound':item['sound'],'path':str(path)})
+        return {'events':sorted(events,key=lambda e:e['t'])[:80],'volume':volume}
+
     def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None):
         try:
             h=self.subtitles.handoff(pid);p=self.production.handoff(pid)
@@ -99,10 +141,13 @@ class RenderService:
                 music_hash=self._hash(music_file,force)
                 if music_hash!=music['sha256']:raise RenderError('music_invalid','Müzik dosyası değişmiş. Yeniden ekleyin.')
                 music_identity={'local_path':music['local_path'],'sha256':music_hash};originals[str(music_file)]=music_hash
-            fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
             channels=getattr(self,'channels',None)
             kit=channels.for_project(pid)['style'] if channels else None
+            sfx=self._motion(pid,t,h,selected,media,originals,kit,force)
+            fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
             from app.channels import DEFAULT_STYLE
+            if sfx['events']:  # absent for videos without motion: old fingerprints kept
+                fingerprint_data['motion_sfx']={'events':[{k:e[k] for k in ('t','sound')} for e in sfx['events']],'volume':sfx['volume'],'sources':kit['sfx']}
             if kit and kit['subtitle']!=DEFAULT_STYLE['subtitle']:
                 fingerprint_data['subtitle_style']=kit['subtitle']  # default kit keeps old fingerprints
             # All contract values are local identities and safe scene/subtitle text, not URLs or secrets.
@@ -127,7 +172,7 @@ class RenderService:
                     plan=smart_edit.build(t,h,opts['editing_style'],fingerprint,seed=seed,subtitle_mode=opts.get('subtitle_display') or ('emphasis' if opts['editing_style']=='adaptive' else 'full' if opts['subtitle_burned'] else 'none'),media_details=media)
                 self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
-            inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit}
+            inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit,'sfx':sfx}
             reflow.apply_graphics(inputs)
             if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})
             return inputs

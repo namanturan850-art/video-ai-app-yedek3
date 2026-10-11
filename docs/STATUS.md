@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Aşama 2: Motion grafik şablonları ve ses efektleri
+
+- 6 parametreli şablon: büyüyen sayı, harita + işaret, başlık/alıntı (kelime kelime), zaman çizelgesi, karşılaştırma (karşı karşıya / çubuk), madde listesi. Kanalın Tarzım kitini kullanır. Yapay zekâ yalnız alanları doldurur; sayı/tarih/yer/alıntı anlatımda geçmiyorsa reddedilir. [Ayrıntı](MOTION.md)
+- Kurgu planında yeni alan `motion_spec`; yönetmen sahne başına stok/motion kararı verir (hedef %15–25 motion). Eski “kart” planları otomatik olarak motion şablonuna çevrilir.
+- **Medyayı Tamamla**: planlı motion sahneleri doğrudan çizilir; son basamak basit kart yerine anlatımdan motion şablonu (asla başarısız olmaz). Yuvada: Motion’a çevir / Stok videoyla değiştir / Motion metnini düzenle / önizleme.
+- Render: vurgu anı gerçek altyazı zamanına oturtulur; vurguda kitin ses efekti seslendirmenin altında düşük seviyede çalar. Motion önce OpenMontage (Remotion) ile, yoksa/hata verirse yerel Pillow + FFmpeg ile çizilir.
+- Testler: 20 yeni (uydurma bilgi reddi, sayaç biçimi, 6 şablonun gerçek yerel render'ı, OpenMontage hatasında yerel yedek, Remotion ile aynı kare karşılaştırması, gerçek render'da vurgu zamanı + ses efekti seviyesi). Altı konu kabul testi motion ile: eksik yuva 0.
+
 ## 2026-10-11 — Aşama 1: Kanallar ve “Tarzım” kiti
 
 - **Kanallar** sayfası: kanal adı, dil, varsayılan AI33 sesi ve hızı, hedef süre, konu/niş. Her proje bir kanala bağlı; mevcut bütün projeler otomatik olarak **Varsayılan kanal**a bağlandı (SQLite **şema 12**, yalnız ekleme; hiçbir proje verisi değişmez). Yeni projede kanal seçilince dil ve süre kanaldan gelir; seslendirme ekranında kanalın sesi seçili açılır.

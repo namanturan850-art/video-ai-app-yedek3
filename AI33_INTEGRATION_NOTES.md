@@ -40,6 +40,8 @@ Metadata: `v3:object`, `data:object`, `query:object`, `voice_id:string`, **audio
 - İsteğe bağlı progress yalnız sonlu 0–100 sayıysa korunur; geçersiz değer None olur ve tamamlanmış sesi engellemez.
 - Yanıt uyuşmazlığı safe `unexpected_task_schema` ve yalnız alan adı/türü tanısı döndürür. Anahtar, URL, provider text/full metadata/başlık döndürülmez.
 
+**Gecikmiş oluşturma yanıtı:** `POST /v3/text-to-speech` okuma bekleme süresi 240 sn. Bağlantı hiç kurulamazsa (`ConnectError`) istek gitmemiştir: hata, kredi yok. İstek gittikten sonra yanıt gelmezse durum `creation_unconfirmed` → **Doğrulanıyor**: doğrulanmış `GET /v1/tasks` kaydında `metadata.voice_id`, `text`/`text_length`/`text_truncated` ve `created_at` (gönderim saatinin −2 dk/+20 dk aralığı) ile, yerel bir sürüme bağlı olmayan görev aranır; bulunan kimlik normal `GET /v1/task/{id}` polling'ine geçer. Sonraki sayfalar `?page=N` ile istenir (yanıt `page/limit` taşıdığı için); AI33 parametreyi yok sayarsa tekrar eden sayfa taramayı bitirir. Geçmişteki metin/URL yalnız bellekte karşılaştırılır; loglanmaz, kaydedilmez. Yeni ücretli görevden önce aynı karşılaştırma son 15 dakika için yapılır.
+
 Polling 3 saniye aralıklı, deneme başına 30 dakika sınırındadır. App restart/ağ kesintisi/polling veya ses indirme hatası sonrasında **Devam Et**, yalnız kayıtlı aynı görev için GET yapar; ikinci ücretli POST oluşturmaz. Yeniden üretim ancak ayrı kullanıcı onayıyla yeni sürüm/yeni görevdir.
 
 ## Ses indirme ve yerel oynatma

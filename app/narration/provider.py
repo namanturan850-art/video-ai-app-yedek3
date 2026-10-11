@@ -3,6 +3,7 @@
 Owner-live verification: completed TTS has status=done, type=tts and
 metadata.audio_url. Creation remains the exact verified multipart contract.
 """
+from datetime import datetime,timezone
 import json
 import math
 import time
@@ -18,11 +19,67 @@ from app.narration.voices import normalize_voices
 from app.narration.audio import audio_url_host
 
 
+CREATE_READ_SECONDS=240
+CREATION_UNCONFIRMED='AI33 isteği aldı ancak yanıtı gecikti. Görev AI33 görev geçmişinde doğrulanıyor; yeni kredi harcanmaz.'
+
+
+def parse_time(value):
+    if not isinstance(value,str) or len(value)>64:return None
+    try:
+        stamp=datetime.fromisoformat(value.strip().replace('Z','+00:00'))
+    except ValueError:return None
+    return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+
+
+def text_matches(item,text):
+    """Exact narration text; a truncated history copy must be an exact prefix
+    of the same total length. Never a fuzzy match (wrong audio is worse)."""
+    stored=item.get('text')
+    if not stored:return False
+    if stored==text:return True
+    return bool(item.get('text_truncated') and item.get('text_length')==len(text) and len(stored)>=50 and text.startswith(stored))
+
+
 @runtime_checkable
 class TTSProvider(Protocol):
     contract_ready: bool
     def list_voices(self,provider,search='',page=1,page_size=30): ...
     def synthesize(self,text,voice,options): ...
+    def task_history(self,max_pages=3):
+        """Recent TTS tasks from the verified GET /v1/tasks record.
+
+        Only verified fields are read (id, created_at, status, type, text,
+        text_length, text_truncated, metadata.voice_id, error_message). The
+        response carries page/limit, so later pages are requested with
+        ?page=N; if AI33 ignored it, a repeated page simply ends the scan.
+        Text and URLs are compared in memory only, never returned or logged.
+        """
+        seen=set();items=[]
+        for page in range(1,max_pages+1):
+            data,status=self._request('tasks','/v1/tasks',params={'page':page} if page>1 else None)
+            records=data.get('data') if isinstance(data,dict) else None
+            if not isinstance(records,list):
+                raise NarrationError('unexpected_task_schema',SCHEMA_MESSAGE,502,shape_diagnostic(data,'tasks',status,self.secrets))
+            fresh=0
+            for record in records:
+                if not isinstance(record,dict):continue
+                try:task_id=safe_task_id(record.get('id'))
+                except NarrationError:continue
+                if task_id in seen:continue
+                seen.add(task_id);fresh+=1
+                if record.get('type') not in (None,'tts'):continue
+                metadata=record.get('metadata') if isinstance(record.get('metadata'),dict) else {}
+                error=record.get('error_message')
+                state='failed' if (isinstance(error,str) and error.strip()) else 'complete' if record.get('status')=='done' else 'pending'
+                items.append({'task_id':task_id,'created_at':parse_time(record.get('created_at')),'state':state,
+                              'voice_id':metadata.get('voice_id') if isinstance(metadata.get('voice_id'),str) else None,
+                              'text':record.get('text') if isinstance(record.get('text'),str) else None,
+                              'text_length':record.get('text_length') if type(record.get('text_length')) is int else None,
+                              'text_truncated':record.get('text_truncated') is True})
+            if not fresh:break
+        LOG.info('narration operation=tasks result=history count=%s',len(items))
+        return items
+
     def get_job_status(self,task_id): ...
 
 
@@ -31,7 +88,7 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
     contract_ready=True
     output_hosts=frozenset()
 
-    def _request(self,operation,path,*,method='GET',params=None,form=None):
+    def _request(self,operation,path,*,method='GET',params=None,form=None,timeout=None):
         key=self.key.get_secret_value()
         if not key:raise NarrationError('missing_key','Önce Ayarlar → AI33 / OpenSpeaker API anahtarını kaydedin.',422)
         if not key.isascii() or any(ord(c)<33 or ord(c)==127 for c in key):
@@ -41,7 +98,7 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
             # No filenames: these are FormData text fields, not uploaded files.
             # httpx owns Content-Type and the multipart boundary.
             multipart={'files':[(name,(None,str(value))) for name,value in form.items()]} if form is not None else {}
-            with httpx.Client(timeout=httpx.Timeout(60,connect=10),transport=self.transport,follow_redirects=False) as client:
+            with httpx.Client(timeout=timeout or httpx.Timeout(60,connect=10),transport=self.transport,follow_redirects=False) as client:
                 with client.stream(method,OFFICIAL_BASE+path,params=params,headers={'xi-api-key':key},**multipart) as response:
                     status=response.status_code
                     if status!=200:
@@ -57,12 +114,21 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
                         raw.extend(chunk)
                         if len(raw)>4_000_000:raise ValueError()
             return json.loads(raw),status
+        except (httpx.ConnectError,httpx.ConnectTimeout):
+            # The request never reached AI33: no task exists and no credit was used.
+            category='connection_error'
+            raise NarrationError(category,'API bağlantısı kurulamadı. İnternet bağlantısını kontrol edin.') from None
         except httpx.TimeoutException:
+            if method=='POST':
+                # Sent but unanswered: AI33 may already be working on it. Never
+                # treat this as a failure; the service verifies via task history.
+                category='creation_unconfirmed'
+                raise NarrationError(category,CREATION_UNCONFIRMED) from None
             category='timeout'
             raise NarrationError(category,'API zaman aşımına uğradı. Görev varsa korunur; internet bağlantısını kontrol edin.') from None
         except httpx.HTTPError:
-            category='connection_error'
-            raise NarrationError(category,'API bağlantısı kurulamadı. İnternet bağlantısını kontrol edin.') from None
+            category='creation_unconfirmed' if method=='POST' else 'connection_error'
+            raise NarrationError(category,CREATION_UNCONFIRMED if method=='POST' else 'API bağlantısı kurulamadı. İnternet bağlantısını kontrol edin.') from None
         except (ValueError,TypeError):
             category='unexpected_task_schema'
             raise NarrationError(category,SCHEMA_MESSAGE,502,shape_diagnostic(None,operation,status,(key,))) from None
@@ -106,7 +172,9 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
         if not any(voice.startswith(prefix) and len(voice)>len(prefix) for prefix in VOICE_ID_PREFIXES) or any(c.isspace() for c in voice):
             raise NarrationError('invalid_voice','Ses kimliği belgelenmiş sağlayıcı önekiyle başlamalı. Ses yanıt belgesi doğrulanınca listeden bir ses seçin.',422)
         SecretGuard(self.secrets).validate((text,voice))
-        data,status=self._request('create','/v3/text-to-speech',method='POST',form={'text':text,'voice_id':voice,'speed':speed,'with_transcript':'false'})
+        # AI33 can take minutes to answer the create call for long texts.
+        data,status=self._request('create','/v3/text-to-speech',method='POST',form={'text':text,'voice_id':voice,'speed':speed,'with_transcript':'false'},
+                                  timeout=httpx.Timeout(connect=10,read=CREATE_READ_SECONDS,write=60,pool=10))
         task_id=None
         if isinstance(data,dict) and 'task_id' in data:
             try:
@@ -120,6 +188,41 @@ class OpenSpeakerProvider(OpenSpeakerReadClient):
         if task_id is None:
             raise NarrationError('unexpected_task_schema',SCHEMA_MESSAGE,502,shape_diagnostic(data,'create',status,self.secrets)) from None
         return {'task_id':task_id}
+
+    def task_history(self,max_pages=3):
+        """Recent TTS tasks from the verified GET /v1/tasks record.
+
+        Only verified fields are read (id, created_at, status, type, text,
+        text_length, text_truncated, metadata.voice_id, error_message). The
+        response carries page/limit, so later pages are requested with
+        ?page=N; if AI33 ignored it, a repeated page simply ends the scan.
+        Text and URLs are compared in memory only, never returned or logged.
+        """
+        seen=set();items=[]
+        for page in range(1,max_pages+1):
+            data,status=self._request('tasks','/v1/tasks',params={'page':page} if page>1 else None)
+            records=data.get('data') if isinstance(data,dict) else None
+            if not isinstance(records,list):
+                raise NarrationError('unexpected_task_schema',SCHEMA_MESSAGE,502,shape_diagnostic(data,'tasks',status,self.secrets))
+            fresh=0
+            for record in records:
+                if not isinstance(record,dict):continue
+                try:task_id=safe_task_id(record.get('id'))
+                except NarrationError:continue
+                if task_id in seen:continue
+                seen.add(task_id);fresh+=1
+                if record.get('type') not in (None,'tts'):continue
+                metadata=record.get('metadata') if isinstance(record.get('metadata'),dict) else {}
+                error=record.get('error_message')
+                state='failed' if (isinstance(error,str) and error.strip()) else 'complete' if record.get('status')=='done' else 'pending'
+                items.append({'task_id':task_id,'created_at':parse_time(record.get('created_at')),'state':state,
+                              'voice_id':metadata.get('voice_id') if isinstance(metadata.get('voice_id'),str) else None,
+                              'text':record.get('text') if isinstance(record.get('text'),str) else None,
+                              'text_length':record.get('text_length') if type(record.get('text_length')) is int else None,
+                              'text_truncated':record.get('text_truncated') is True})
+            if not fresh:break
+        LOG.info('narration operation=tasks result=history count=%s',len(items))
+        return items
 
     def get_job_status(self,task_id):
         task_id=safe_task_id(task_id)

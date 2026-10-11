@@ -204,8 +204,13 @@ def test_creation_timeout_never_retries_paid_request_without_remote_id(narration
     st=narration_studio;st[5].fail='create';state=start(st)
     assert state['job']['status']=='error' and state['versions'][0]['metadata']['creation_attempted']
     assert len(st[5].creations)==1
+    # Devam Et now only searches AI33 task history for the lost id; it never
+    # sends a second paid request. This fake has no history, so it stops safely.
     r=st[0].post(base(st)+f'/jobs/{state["job"]["id"]}/resume',json={})
-    assert r.status_code==409 and r.json()['category']=='task_create_failed' and len(st[5].creations)==1
+    assert r.status_code==202
+    st[0].app.state.narration.futures[r.json()['job_id']].result(timeout=10)
+    after=st[0].get(base(st)).json()
+    assert after['job']['status']=='error' and after['job']['progress']['category']=='task_history_unavailable' and len(st[5].creations)==1
 
 
 def test_regeneration_new_version_preserves_old_audio_and_explicit_active_selection(narration_studio):

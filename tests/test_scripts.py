@@ -93,7 +93,7 @@ def test_generic_architecture_and_complete_original_pipeline(studio):
     assert view['current']['content_type'] == 'Technologievergleich'
     assert view['current']['version'] == 1
     assert view['current']['report']['word_count'] == 270
-    assert view['current']['estimated_minutes'] == 2
+    assert view['current']['estimated_minutes'] == 2.08  # 270 words at the measured German pace (130 wpm)
     assert [task for task, _, _ in fake.calls] == ['concept', 'plan', 'section', 'continuity', 'review']
     folder = data / 'projects' / project['id'] / 'script'
     for file in ('concept_blueprint.json', 'script_plan.json', 'generation_progress.json', 'script_v1.txt', 'script_v1.json', 'current_script.json'):
@@ -179,7 +179,7 @@ def test_long_sections_have_continuity_and_bounded_prompts(studio):
     assert all(data['section']['target_words'] <= 900 for data in sections)
     assert all(data['continuity'] for data in sections[1:])
     assert view['current']['word_count'] == 2700
-    assert view['current']['estimated_minutes'] == 20
+    assert view['current']['estimated_minutes'] == 20.77  # measured German pace (130 wpm)
     assert all(len(prompt) < 100000 for _, _, prompt in fake.calls)
 
 
@@ -290,7 +290,7 @@ def test_repetition_check_and_target_duration():
     assert not repetition_warnings(paragraph)
     options = {'words_per_minute_min': 125, 'words_per_minute_max': 145}
     result = duration_metrics(' '.join(['Wort'] * 2700), 20, options)
-    assert result == {'word_count': 2700, 'target_minutes': 20, 'target_word_min': 2500, 'target_word_max': 2900, 'estimated_minutes': 20, 'estimated_min_minutes': 18.62, 'estimated_max_minutes': 21.6}
+    assert result == {'word_count': 2700, 'target_minutes': 20, 'target_word_min': 2500, 'target_word_max': 2900, 'estimated_minutes': 20, 'spoken_rate': 135.0, 'estimated_min_minutes': 18.62, 'estimated_max_minutes': 21.6}
     assert word_count('Straße weiß für E-Auto YouTube’s Test') == 6
 
 

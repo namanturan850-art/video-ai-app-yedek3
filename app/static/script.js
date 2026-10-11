@@ -183,11 +183,12 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
     for (const item of toolResults.querySelectorAll('button,input,select')) item.disabled = Boolean(working);
   }
   function updateMetrics() {
-    const options = view?.current?.options || view?.job?.options || {words_per_minute_min: Number(form.elements.words_per_minute_min.value), words_per_minute_max: Number(form.elements.words_per_minute_max.value)};
+    const options = {language: form.elements.language.value, ...(view?.current?.options || view?.job?.options || {words_per_minute_min: Number(form.elements.words_per_minute_min.value), words_per_minute_max: Number(form.elements.words_per_minute_max.value)})};
     const minutes = view?.current?.report?.target_minutes ?? view?.target_minutes ?? 0;
     const measured = scriptDurationMetrics(editor.value, minutes, options);
     if (!dirty && view?.current?.report?.word_count === measured.word_count) measured.estimated_minutes = view.current.report.estimated_minutes;
-    metrics.textContent = `${measured.word_count} kelime · Tahmini seslendirme: ${measured.estimated_minutes.toFixed(2)} dakika · Hedef: ${minutes} dakika (${measured.target_word_min}–${measured.target_word_max} kelime)`;
+    const real = !dirty && view?.narration?.duration && view.narration.version_id === view?.current?.id ? view.narration.duration : null;
+    metrics.textContent = `${measured.word_count} kelime · Tahmini seslendirme: ${scriptClock(measured.estimated_minutes * 60)} dk (~${measured.spoken_rate} kelime/dk)${real ? ` · Gerçek seslendirme: ${scriptClock(real)} dk` : ''} · Hedef: ${minutes} dakika (${measured.target_word_min}–${measured.target_word_max} kelime)`;
     warnings.replaceChildren();
     if (view?.current) {
       const messages = dirty ? ['Elle düzenlenen metni onaylamadan önce tutarlılık ve gerçek bilgiler açısından inceleyin.'] : view.current.report.review_messages;

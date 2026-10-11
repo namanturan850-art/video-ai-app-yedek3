@@ -1,5 +1,12 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Aşama 4: Süre tahmini, Motor Durumu, lisanslar
+
+- **Süre tahmini düzeltildi**: tahmin artık dilin ölçülmüş konuşma hızıyla yapılır (Almanca ~130, İngilizce ~150, Türkçe ~115 kelime/dk). 385 kelimelik Almanca metin ~2:58 dk gösterir (önceden 1,4 dk görülmüştü). Seslendirme oluşturulduktan sonra senaryo ekranında **gerçek seslendirme süresi** de yazar.
+- **Ayarlar → Motor Durumu**: Python, FFmpeg (7+ gerekli), yerel motion çizici, Git, Node.js, OpenMontage ve Remotion için ✓/✗, sürüm ve eksikse Türkçe ne yapılacağı. Git ve Node.js varsa **“Eksikleri kur”** düğmesi OpenMontage'ı onayla, arka planda ve ayrı klasöre kurar; ilerleme mesajları ekranda görünür.
+- **Lisanslar**: [LICENSES.md](LICENSES.md) — OpenMontage (AGPL v3, ayrı kurulum, gömülü değil), Remotion (kendi lisansı; büyük şirketler için ücretli olabilir), OFL fontlar, projenin ürettiği ses efektleri, Natural Earth haritası, Pexels/Pixabay.
+- Testler: 7 yeni (385 kelime Almanca ≈ 3 dk, bilinmeyen dilde eski aralık, gerçek seslendirme süresi, bileşen listesi ve eski FFmpeg uyarısı, arka plan kurulum + adres gizleme, onaysız kurulum reddi). Gerçek OpenMontage kurulumu bu ortamda düğmeyle denenmedi.
+
 ## 2026-10-11 — Aşama 3: YouTube başlık, açıklama ve kapak
 
 - Projede **YouTube** sekmesi (yalnızca hazırlık; otomatik yükleme yok). Gemini (varsayılan) videonun dilinde **5 başlık** (merak uyandıran, abartısız, 55–70 karakter; karakter sayısı gösterilir), **açıklama** (2 satırlık kanca, kısa içerik, kurgu planı + gerçek altyazı zamanlarından **bölüm zaman damgaları** — 0:00 ile başlar, en az 3 bölüm, her biri ≥10 sn), **10–15 etiket**, 3 hashtag ve kullanılan stok medya için **kaynak teşekkürü** (Pexels/Pixabay + yapımcı) önerir. Hepsi tek tıkla kopyalanır; başlık/açıklama/etiketler düzenlenip kaydedilir.

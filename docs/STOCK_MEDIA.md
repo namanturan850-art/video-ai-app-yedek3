@@ -1,6 +1,20 @@
-# Stok Medya — Aşama 6 + 6.5
+# Stok Medya — Aşama 6 + 6.5 + V4
 
 Güncel ve **Hazır** sahne planını açın: **Proje → Görsel / Kurgu Planı**. Her sahnenin altında **Medya Yuvaları** görünür. Bir sahne birden fazla video veya görsel taşıyabilir. Onaylı anlatım ve plan sürümleri değiştirilmez.
+
+## Media Relevance V4 — Bağlamsal görüntü ve hızlı arama
+
+**Eksik yuvaların takılmasının kod nedeni:** Özel isimli sahnelerde (ör. *Bermuda Üçgeni*) yalnız açıklamasında o isim geçen medya kabul ediliyordu. Pexels/Pixabay bu isimleri neredeyse hiç etiketlemediği için “fırtınada gemi”, “eski harita ve pusula” gibi tam istenen görüntüler bile reddediliyordu; birkaç isimli klip kullanıldıktan sonra kalan yuvalar her denemede boş kalıyordu. Ayrıca sahnede hem gemi hem uçak geçtiğinde sahne yalnız “havacılık” sayılıp bütün gemi görüntüleri reddediliyordu.
+
+**Şimdi:**
+
+- Sahnenin bağlamından **en az iki somut kavram** (gemi + okyanus, harita + pusula, uçak + okyanus…) içeren ve konu dışı bir özne (köpek, yemek, şehir…) taşımayan medya **İlgili** sayılır ve ekranda **“bağlamsal görüntü — olayın kendisi değil”** diye işaretlenir.
+- Tek ve genel bir kavram (yalnız “deniz”, “plaj”, “şehir”) **hâlâ reddedilir**. Köpek / berber / trende oturan yolcu gibi ilgisiz görüntüler uçak-navigasyon sahnelerine atanmaz (testlerle sabitlendi).
+- Adında gerçekten “Bermuda Triangle” geçen medya her zaman bağlamsal görüntüden üstte sıralanır.
+- Arama sırasında her sorguda bütün planın yeniden doğrulanıp diske yazılması kaldırıldı (plan en fazla 2 sn'de bir doğrulanır, ilerleme saniyede bir yazılır, kayıt dosyası iş sonunda yansıtılır). Sağlayıcı beklemesi hariç iç yük ~10 kat azaldı.
+- Sahne planı istemi artık kameranın çekebileceği somut İngilizce sorgular ister (ör. “pilot hands cockpit instruments”); soyut kavram, diyagram veya tek başına isim sorgusu istemez.
+
+Bu bir metadata (etiket) değerlendirmesidir; görüntünün gerçek içeriğini kesin olarak görmez. CLIP görsel kontrolü yalnız ayrıca kurulduğunda çalışır.
 
 ## Media Relevance V3
 

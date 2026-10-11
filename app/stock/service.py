@@ -211,6 +211,7 @@ class StockService:
             from app.stock.director_media import summary as media_summary
             public['missing_media_diagnostics']=report(public['slots'])
             public['media_summary']=media_summary(public['slots'])
+            public['ai_engine']=self.settings.ai_engine()
             public['media_mix'].update(average_used_duration=round(sum(s['used_duration'] for s in public['slots'])/max(1,len(public['slots'])),2),
                 maximum_used_duration=round(max((s['used_duration'] for s in public['slots']),default=0),2),
                 portrait_videos=sum(m['media_type']=='video' and m.get('width',1)<=m.get('height',0) for m in media),
@@ -272,8 +273,8 @@ class StockService:
             action = payload.get('action')
             if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery','complete_media','reselect'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
             if (action in ('search','select','search_videos','reselect')) != bool(slot_id): raise StockError('invalid_input','Geçerli medya yuvasını seçin.',422)
-            if action in ('complete_media','reselect') and not self.settings.safe_view()['claude']['has_api_key']:
-                raise StockError('claude_required','Medyayı Tamamla, stok medyayı Claude’un onayıyla seçer. Ayarlar → Claude bölümünde API anahtarını kaydedin.',422)
+            if action in ('complete_media','reselect') and not self.settings.ai_engine():
+                raise StockError('ai_required','Medyayı Tamamla, stok medyayı yapay zekânın onayıyla seçer. Ayarlar → Gemini bölümünde ücretsiz API anahtarınızı kaydedip Modelleri Getir ile bir model seçin.',422)
             tolerance = payload.get('video_duration_tolerance_seconds',state.get('search_options',{}).get('video_duration_tolerance_seconds',DEFAULT_VIDEO_TOLERANCE))
             if type(tolerance) not in (int,float) or not math.isfinite(tolerance) or not 0<=tolerance<=1.5:
                 raise StockError('invalid_input','Kısa video toleransı 0 ile 1,5 saniye arasında olmalı.',422)

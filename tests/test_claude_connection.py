@@ -112,8 +112,21 @@ def test_cost_estimate_uses_list_prices():
     assert estimate('claude-opus-5-5', 0, 0, cache_read=1_000_000) == pytest.approx(.4)
 
 
-def test_claude_script_job_end_to_end_with_project_cost(app_client, monkeypatch):
+def test_saving_a_claude_key_alone_never_makes_the_paid_engine_default(app_client):
     client, _ = app_client; save_claude(client)
+    project = client.post('/api/projects', json={'name': 'P', 'topic': 'Rom', 'target_duration_minutes': 2}).json()
+    director = client.get(f'/api/projects/{project["id"]}/script').json()['director']
+    assert not director['claude_default'] and director['engine'] is None and not director['engine_paid']
+    settings = client.app.state.settings
+    settings.save('gemini', {'api_key': 'synthetic-gemini-key-5555'}); settings.record_gemini_models(settings.gemini_config(), ['gemini-x']); settings.save('gemini', {'model': 'gemini-x'})
+    director = client.get(f'/api/projects/{project["id"]}/script').json()['director']
+    assert director['engine'] == 'gemini' and not director['engine_paid']
+    save_claude(client, default_engine=True)
+    assert client.get(f'/api/projects/{project["id"]}/script').json()['director']['engine'] == 'claude'
+
+
+def test_claude_script_job_end_to_end_with_project_cost(app_client, monkeypatch):
+    client, _ = app_client; save_claude(client, default_engine=True)
     script = FakeProvider()
     fake = FakeAnthropic(lambda request: message(script.generate_script(request['messages'][0]['content']), input_tokens=3000, output_tokens=800))
     monkeypatch.setattr('app.providers.claude._client', lambda key: fake)

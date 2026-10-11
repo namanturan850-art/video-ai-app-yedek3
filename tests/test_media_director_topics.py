@@ -253,20 +253,76 @@ class Director:
         return message(json.dumps({'queries': [theme[3], theme[3].split()[-1] + ' closeup', must + ' cinematic']}))
 
 
-def build(tmp_path, monkeypatch, key):
+class FakeGemini:
+    """Gemini generateContent over httpx.MockTransport, answered by the same
+    fake director so both engines face identical decisions."""
+    def __init__(self, director):
+        self.director, self.requests, self.fail = director, [], None
+
+    def handler(self, request):
+        body = json.loads(request.content)
+        self.requests.append(body)
+        if self.fail:
+            failure = self.fail(len(self.requests))
+            if failure: return failure
+        parts = body['contents'][0]['parts']
+        last = parts[-1]['text']
+        if 'generationConfig' in body:
+            prompt, schema = last.split('\n\nReturn ONLY one JSON object (no Markdown) that matches this JSON Schema: ')
+            schema = json.loads(schema)
+            blocks = [{'type': 'image'} if 'inlineData' in p else {'type': 'text', 'text': p['text']} for p in parts[:-1]]
+            props = schema['properties']
+            if 'verdicts' in props or 'replace' in props:
+                content = blocks + [{'type': 'text', 'text': prompt}]
+            else:
+                content = prompt
+            fake = {'messages': [{'content': content}], 'output_config': {'format': {'schema': schema}}}
+        else:
+            fake = {'messages': [{'content': last}], 'output_config': {}}
+        text = self.director(fake).content[-1].text
+        return httpx.Response(200, json={'candidates': [{'content': {'role': 'model', 'parts': [{'text': text}]}, 'finishReason': 'STOP'}]})
+
+
+def gemini_429(free=False):
+    violation = {'quotaId': 'GenerateRequestsPerDayPerProjectPerModel-FreeTier' if free else 'GenerateRequestsPerMinutePerProjectPerModel-FreeTier'}
+    return httpx.Response(429, headers={'Retry-After': '7'}, json={'error': {'code': 429, 'details': [
+        {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [violation]}]}})
+
+
+def build(tmp_path, monkeypatch, key, engine='gemini'):
     data = TOPICS[key]
     world, claude = World(key, data), Director(data)
-    fake = FakeAnthropic(claude)
-    monkeypatch.setattr('app.providers.claude._client', lambda k: fake)
+    if engine == 'claude':
+        fake = FakeAnthropic(claude)
+        monkeypatch.setattr('app.providers.claude._client', lambda k: fake)
+    else:
+        fake = FakeGemini(claude)
+        from app.providers import gemini
+        class Patched(gemini.GeminiScriptProvider):
+            def __init__(self, api_key, model='', *, transport=None):
+                super().__init__(api_key, model, transport=httpx.MockTransport(fake.handler))
+        monkeypatch.setattr('app.providers.factory.GeminiScriptProvider', Patched)
     client = TestClient(create_app(tmp_path / key), headers=HEADERS).__enter__()
     s = client.app.state.settings
-    for name, value in (('claude', 'sk-ant-synthetic-topic-key-0001'), ('pexels', 'synthetic-pexels-key-1111'), ('pixabay', 'synthetic-pixabay-key-2222')):
+    for name, value in (('pexels', 'synthetic-pexels-key-1111'), ('pixabay', 'synthetic-pixabay-key-2222')):
         assert client.put(f'/api/settings/{name}', json={'api_key': value}, headers=SETTINGS).status_code == 200
+    if engine == 'claude':
+        assert client.put('/api/settings/claude', json={'api_key': 'sk-ant-synthetic-topic-key-0001', 'default_engine': True}, headers=SETTINGS).status_code == 200
+    else:
+        s.save('gemini', {'api_key': 'synthetic-gemini-key-3333'})
+        s.record_gemini_models(s.gemini_config(), ['gemini-test-model'])
+        s.save('gemini', {'model': 'gemini-test-model'})
+    assert s.ai_engine() == engine
+    client.app.state.stock.ai_sleep = lambda seconds, service: client.app.state.stock.__dict__.setdefault('slept', []).append(seconds)
     pid = client.post('/api/projects', json={'name': key, 'topic': data['topic'], 'language': 'de', 'target_duration_minutes': 3}).json()['id']
     r = client.post(f'/api/projects/{pid}/director/run', json={'cost_confirmed': True})
     assert r.status_code == 202, r.text
     client.app.state.director.futures[pid].result(timeout=60)
-    assert client.get(f'/api/projects/{pid}/director').json()['state']['status'] == 'done'
+    state = client.get(f'/api/projects/{pid}/director').json()['state']
+    assert state['status'] == 'done' and state['provider'] == engine, state
+    if engine == 'gemini':  # the director's scene notes are requested from Gemini too
+        visual = [r['contents'][0]['parts'][-1]['text'] for r in fake.requests if r['contents'][0]['parts'][-1]['text'].startswith('TASK: visual')]
+        assert visual and all('must_show' in text for text in visual)
     stock = client.app.state.stock
     from app.stock import providers
     stock.factory = lambda name, settings: {'pexels': providers.PexelsStockProvider, 'pixabay': providers.PixabayStockProvider}[name](
@@ -300,7 +356,7 @@ def check(client, pid, claude, view):
         assert s['status'] == 'complete' and m, s
         if m['provider'] == 'generated' or s.get('continuation_of'):
             continue
-        assert s['claude_review']['approved'] and m['description'] in claude.approved_tags, (s['order'], m['description'])  # (2)
+        assert s['ai_review']['approved'] and m['description'] in claude.approved_tags, (s['order'], m['description'])  # (2)
         usage.setdefault((m['provider'], m['media_type'], m['media_id']), []).append(s)
     for k, group in usage.items():                                                   # (3)
         if len(group) > 1:
@@ -310,9 +366,10 @@ def check(client, pid, claude, view):
     return summary
 
 
+@pytest.mark.parametrize('engine', ['gemini', 'claude'])
 @pytest.mark.parametrize('key', list(TOPICS))
-def test_three_minute_topic_fills_every_slot_with_approved_or_generated_media(key, tmp_path, monkeypatch):
-    client, pid, world, claude, fake = build(tmp_path, monkeypatch, key)
+def test_three_minute_topic_fills_every_slot_with_approved_or_generated_media(key, engine, tmp_path, monkeypatch):
+    client, pid, world, claude, fake = build(tmp_path, monkeypatch, key, engine)
     try:
         with closing(sqlite3_connect(client)) as c:
             before = (c.execute('SELECT text FROM script_versions WHERE project_id=?', (pid,)).fetchall(),
@@ -335,7 +392,9 @@ def test_three_minute_topic_fills_every_slot_with_approved_or_generated_media(ke
         diag = client.get(f'/api/projects/{pid}/production/stock/diagnostics')
         assert diag.status_code == 200 and 'attachment' in diag.headers['content-disposition']
         assert 'synthetic-pexels-key' not in diag.text and 'sk-ant' not in diag.text
-        print(f'\nRESULT {key}: {summary["text"]} · Claude calls {usage["total_calls"]} · ${usage["total_cost_usd"]:.4f}')
+        calls = len(fake.requests)
+        print(f'\nRESULT {engine} {key}: {summary["text"]} · AI calls {calls} · paid ${usage["total_cost_usd"]:.4f}')
+        if engine == 'gemini': assert usage['total_cost_usd'] == 0  # nothing billed through Claude
     finally:
         client.__exit__(None, None, None)
 
@@ -348,7 +407,7 @@ def sqlite3_connect(client):
 def test_claude_outage_still_fills_every_slot_and_next_press_upgrades_cards(tmp_path, monkeypatch):
     import anthropic
     from fake_anthropic import api_error
-    client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'deepsea')
+    client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'deepsea', 'claude')
     try:
         healthy = fake.responder
         fake.responder = lambda request: api_error(anthropic.APIConnectionError, 0)
@@ -356,8 +415,8 @@ def test_claude_outage_still_fills_every_slot_and_next_press_upgrades_cards(tmp_
         assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
         # Nothing unapproved: during the outage only generated cards are used.
         assert all(s['selected_media']['provider'] == 'generated' for s in view['slots'])
-        assert 'Claude’a ulaşılamadı' in view['job']['progress']['message']
-        assert all('Claude’a ulaşılamadı' in s['message'] or s.get('continuation_of') for s in view['slots'])
+        assert 'Yapay zekâya ulaşılamadı (Claude)' in view['job']['progress']['message']
+        assert all('Yapay zekâya ulaşılamadı' in s['message'] or s.get('continuation_of') for s in view['slots'])
         fake.responder = healthy
         view = complete(client, pid)
         summary = check(client, pid, claude, view)
@@ -366,14 +425,39 @@ def test_claude_outage_still_fills_every_slot_and_next_press_upgrades_cards(tmp_
         client.__exit__(None, None, None)
 
 
-def test_without_claude_key_the_button_explains_instead_of_failing(tmp_path, monkeypatch):
+def test_gemini_daily_free_quota_fills_with_cards_then_upgrades_next_day(tmp_path, monkeypatch):
+    client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'bermuda')
+    try:
+        fake.fail = lambda n: gemini_429(free=True)
+        view = complete(client, pid)
+        assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
+        assert all(s['selected_media']['provider'] == 'generated' for s in view['slots'])
+        assert 'ücretsiz API kotası' in view['job']['progress']['message']
+        fake.fail = None
+        summary = check(client, pid, claude, complete(client, pid))
+        assert summary['videos'] + summary['images'] > 0
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_gemini_per_minute_limit_waits_and_still_chooses_stock(tmp_path, monkeypatch):
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'rome')
     try:
-        settings = client.app.state.settings
-        real = settings.safe_view
-        monkeypatch.setattr(settings, 'safe_view', lambda: {**real(), 'claude': {**real()['claude'], 'has_api_key': False}})
+        fake.fail = lambda n: gemini_429() if n % 3 == 0 else None  # every third request hits the minute limit
+        view = complete(client, pid)
+        summary = check(client, pid, claude, view)
+        assert summary['videos'] > 0 and summary['cards'] == 0
+        assert client.app.state.stock.slept and set(client.app.state.stock.slept) == {7}  # waited Retry-After, then retried
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_without_any_ai_engine_the_button_explains_instead_of_failing(tmp_path, monkeypatch):
+    client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'rome')
+    try:
+        monkeypatch.setattr(client.app.state.settings, 'ai_engine', lambda: None)
         view = client.get(f'/api/projects/{pid}/production/stock').json()
         r = client.post(f'/api/projects/{pid}/production/stock/jobs', json={'plan_id': view['plan_id'], 'revision': view['revision'], 'action': 'complete_media'})
-        assert r.status_code == 422 and 'Ayarlar → Claude' in r.json()['message']
+        assert r.status_code == 422 and 'Ayarlar → Gemini' in r.json()['message']
     finally:
         client.__exit__(None, None, None)

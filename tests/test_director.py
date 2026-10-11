@@ -46,7 +46,7 @@ def director(tmp_path, monkeypatch):
     fake = FakeAnthropic(claude_responder(requests))
     monkeypatch.setattr('app.providers.claude._client', lambda key: fake)
     with TestClient(create_app(tmp_path / 'data'), headers=HEADERS) as client:
-        assert client.put('/api/settings/claude', json={'api_key': CLAUDE_KEY}, headers=SETTINGS_HEADERS).status_code == 200
+        assert client.put('/api/settings/claude', json={'api_key': CLAUDE_KEY, 'default_engine': True}, headers=SETTINGS_HEADERS).status_code == 200
         project = client.post('/api/projects', json={'name': 'Bermuda', 'topic': 'Bermuda-Dreieck', 'language': 'de', 'target_duration_minutes': 2}).json()
         yield client, project['id'], fake, requests
 

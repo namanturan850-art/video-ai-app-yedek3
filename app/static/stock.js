@@ -6,14 +6,14 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   // Contextual = scene concepts matched (e.g. ship+ocean), not footage of the named event itself.
   const relevanceText=media=>media.relevance_basis==='contextual'?`${media.relevance_label} (bağlamsal görüntü — olayın kendisi değil)`:media.relevance_basis==='visual'?`${media.relevance_label} (görsel kontrol)`:media.relevance_label;
   const section=node('section','','settings-panel stock-controls');section.id='stock-controls';
-  section.append(node('h2','Stok Medya — Claude seçer, her yuva dolar'),node('p','Medyayı Tamamla: her boş yuva için sırayla (1) planlanan sorguyla stok video, (2) Claude’un yazdığı yeni sorgularla video, (3) stok görsel + hafif kamera hareketi, (4) daha geniş konu medyası denenir — her aday, Claude önizleme karelerine bakıp onaylamadan kullanılmaz. Hiçbiri olmazsa çok kısa yuvada komşu çekim devam eder, yoksa anlatımdan alınan yazıyla kart üretilir (internet gerekmez). Seslendirme ve altyazılar değişmez. Claude çağrıları ücretlidir; tutar Senaryo sayfasında görünür.'));
+  section.append(node('h2','Stok Medya — yapay zekâ seçer, her yuva dolar'),node('p','Medyayı Tamamla: her boş yuva için sırayla (1) planlanan sorguyla stok video, (2) yapay zekânın yazdığı yeni sorgularla video, (3) stok görsel + hafif kamera hareketi, (4) daha geniş konu medyası denenir — her aday, yapay zekâ (varsayılan: Gemini, ücretsiz kota) önizleme karelerine bakıp onaylamadan kullanılmaz. Hiçbiri olmazsa çok kısa yuvada komşu çekim devam eder, yoksa anlatımdan alınan yazıyla kart üretilir (internet gerekmez). Seslendirme ve altyazılar değişmez.'));
   const message=node('p','Güncel sahne planı kontrol ediliyor…');message.setAttribute('role','status');
   const controls=node('div','','settings-actions'),warningList=node('ul');section.append(message,controls,warningList);root.insertBefore(section,blocks);
   const recovery=node('section');recovery.id='stock-recovery-report';section.append(recovery);const mix=node('p'),recent=node('details');recent.append(node('summary','Son arama tanısı'));section.append(mix,recent);
   let state=null,pending=false,timer=null,loading=false,candidateSlot=null,previewSlot=null;
   const active=()=>pending||['queued','running'].includes(state?.job?.status);
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.disabled=disabled;b.addEventListener('click',fn);parent.append(b);return b;}
-  const complete=button(controls,'Medyayı Tamamla',()=>{if(window.confirm('Boş ve Claude onayı olmayan yuvalar doldurulacak. Kilitli ve onaylı seçimler korunur, eski dosyalar silinmez. Claude çağrıları ücretlidir. Devam edilsin mi?'))start('complete_media');});complete.id='stock-complete';
+  const complete=button(controls,'Medyayı Tamamla',()=>{if(window.confirm(`Boş ve yapay zekâ onayı olmayan yuvalar doldurulacak. Kilitli ve onaylı seçimler korunur, eski dosyalar silinmez.${state?.ai_engine==='claude'?' Claude çağrıları ücretlidir.':' Gemini ücretsiz kotası kullanılır; hız sınırında kısa beklemeler olabilir.'} Devam edilsin mi?`))start('complete_media');},true);complete.id='stock-complete';
   const download=node('a','Tanılama dosyası indir');download.href=`${base}/diagnostics`;download.id='stock-diagnostics';download.setAttribute('download','');
   const resume=button(controls,'Devam Et',()=>operate(()=>request(`${base}/jobs/${state.job.id}/resume`,'POST',stamp())));resume.hidden=true;
   button(controls,'Medya Durumunu Yenile',load);controls.append(download);
@@ -28,7 +28,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     return result;
   }
   function sync(){complete.disabled=active()||!state;resume.hidden=state?.job?.status!=='error';resume.disabled=active();}
-  async function operate(fn){if(active())return;pending=true;sync();try{await fn();await load();}catch(error){message.textContent=error.message;}finally{pending=false;render();}}
+  async function operate(fn){if(active()||!state)return;pending=true;sync();try{await fn();await load();}catch(error){message.textContent=error.message;}finally{pending=false;render();}}
   function start(action){return operate(()=>request(base+'/jobs','POST',{...stamp(),action}));}
   function slotJob(slot,action,extra={}){return operate(()=>request(`${base}/slots/${slot.slot_id}/jobs`,'POST',{...stamp(),action,...extra}));}
   function slotAction(slot,action){return operate(()=>request(`${base}/slots/${slot.slot_id}/actions`,'POST',{...stamp(),action}));}
@@ -63,17 +63,17 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     let card=node('article','','stock-slot');card.dataset.slotId=slot.slot_id;
     const media=slot.selected_media;
     card.append(node('h4',`Medya ${slot.order}${slot.locked?' · Kilitli':''} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
-    const stage=slot.director?.stage_label||(slot.locked&&media?'Kilitli (sizin seçiminiz)':media?(slot.claude_review?.approved?'Claude onayladı':'Claude onayı bekliyor — Medyayı Tamamla deyin'):'Boş — Medyayı Tamamla deyin');
+    const stage=slot.director?.stage_label||(slot.locked&&media?'Kilitli (sizin seçiminiz)':media?(slot.ai_review?.approved?'Yapay zekâ onayladı':'Yapay zekâ onayı bekliyor — Medyayı Tamamla deyin'):'Boş — Medyayı Tamamla deyin');
     const stageLine=node('p',`Aşama: ${stage}`,'provider-status');stageLine.className+=' stock-stage';card.append(stageLine);
     if(slot.message)card.append(node('p',`Neden: ${slot.message}`));
     if(media)card.append(thumbnail(media));
     const top=node('div','','settings-actions');card.append(top);
-    button(top,'Claude’a yeniden seçtir',()=>{if(window.confirm('Bu yuva için Claude yeniden aday arar ve seçer (ücretli). Uygun stok bulunamazsa kart üretilir; yuva boş kalmaz. Devam edilsin mi?'))slotJob(slot,'reselect');},active()||slot.locked).className='stock-reselect';
+    button(top,'Yeniden seçtir',()=>{if(window.confirm('Bu yuva için yapay zekâ yeniden aday arar ve seçer. Uygun stok bulunamazsa kart üretilir; yuva boş kalmaz. Devam edilsin mi?'))slotJob(slot,'reselect');},active()||slot.locked).className='stock-reselect';
     const more=node('details','','stock-slot-details');more.append(node('summary','Ayrıntılar'));card.append(more);
     const keep=card;card=more;
     card.append(node('p',`${slot.status_label} · ${slot.duration.toFixed(1)} sn`),node('p',`Görsel amaç: ${slot.visual_goal}`),node('p',`Planlanan arama: ${slot.search_query}`));
-    for(const step of slot.director?.steps||[]){card.append(node('p',`${step.label}: ${step.queries?.length?'“'+step.queries.join('”, “')+'” · ':''}${{chosen:'seçildi',no_approved_candidate:'onaylanan aday yok',claude_unavailable:'Claude’a ulaşılamadı',kept:'korundu',kept_no_better_option:'daha iyisi yok, korundu'}[step.result]||step.result||''}`));
-      for(const j of step.judged||[])card.append(node('p',`· ${j.provider} ${j.media_type==='video'?'video':'görsel'} ${j.media_id} — Claude ${j.score}/10 ${j.approved?'✓':'✗'} ${j.reason}`,'note'));}
+    for(const step of slot.director?.steps||[]){card.append(node('p',`${step.label}: ${step.queries?.length?'“'+step.queries.join('”, “')+'” · ':''}${{chosen:'seçildi',no_approved_candidate:'onaylanan aday yok',ai_unavailable:'Yapay zekâya ulaşılamadı',kept:'korundu',kept_no_better_option:'daha iyisi yok, korundu'}[step.result]||step.result||''}`));
+      for(const j of step.judged||[])card.append(node('p',`· ${j.provider} ${j.media_type==='video'?'video':'görsel'} ${j.media_id} — AI ${j.score}/10 ${j.approved?'✓':'✗'} ${j.reason}`,'note'));}
     for(const s of (slot.director?.searches||[]).filter(s=>s.error))card.append(node('p',`${s.provider} “${s.query}”: ${s.error_text}`,'note'));
     card.append(node('p',`Tekrar durumu: ${slot.repeat_status||'Benzersiz'}`));
     if(slot.subject_anchor)card.append(node('p',`Ana konu: ${slot.subject_anchor}`));

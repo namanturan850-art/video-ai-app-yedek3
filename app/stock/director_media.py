@@ -1,11 +1,12 @@
-"""“Medyayı Tamamla”: Claude chooses stock media and every slot gets filled.
+"""“Medyayı Tamamla”: the AI (Gemini free tier by default, Claude if chosen)
+chooses stock media and every slot gets filled.
 
-Chain per slot (each stock step needs Claude's approval after it has looked
+Chain per slot (each stock step needs the AI's approval after it has looked
 at the candidates' preview frames; irrelevant media is never used to fill):
   1. stock video with the planned queries
-  2. stock video with queries Claude rewrites for this slot
+  2. stock video with queries the AI rewrites for this slot
   3. stock image (rendered with light camera motion)
-  4. media for the broader topic (still approved by Claude)
+  4. media for the broader topic (still approved by the AI)
   6. very short slots (<1.5 s): continue the neighbouring shot
   5. code-generated card (title/quote, number, simple location map) — local,
      cannot fail, text always taken from the narration
@@ -34,13 +35,15 @@ from app.stock.identities import identity_keys
 from app.stock.models import StockError
 
 LOG = logging.getLogger('uvicorn.error.stock')
-STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · Claude onayladı',
-          'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (Claude’un yeni sorgusu)',
+STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
+          'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
           'merged': '6 · Komşu çekimin devamı (çok kısa yuva)', 'card': '5 · Üretilmiş kart'}
-CANDIDATES = 5          # per Claude look
+CANDIDATES = 5          # per AI look
 APPROVE_SCORE = 6       # 0-10
 MERGE_SECONDS = 1.5
+WAIT_BUDGET = 900       # seconds of rate-limit waiting per job (free tier)
+UNREACHABLE = 'Yapay zekâya ulaşılamadı'
 REVIEW_MAX = 8
 PROVIDER_DOWN = {'rate_limit', 'key_rejected', 'missing_key', 'timeout', 'connection_error', 'upstream_error', 'invalid_request', 'invalid_response'}
 ERROR_TEXT = {'rate_limit': 'kullanım sınırı', 'key_rejected': 'anahtar kabul edilmedi', 'missing_key': 'anahtar yok',
@@ -72,7 +75,7 @@ def is_card(media):
 
 
 def technical(media, need):
-    """Hard limits only; content is Claude's call. Portrait/square is allowed
+    """Hard limits only; content is the AI's call. Portrait/square is allowed
     (rendered on a blurred background) but ranked after landscape."""
     short = min(media['width'], media['height'])
     if media['media_type'] == 'video':
@@ -123,34 +126,49 @@ class MediaDirector:
     def __init__(self, service, job):
         self.service, self.job, self.pid = service, job, job['project_id']
         self.progress = job['progress']
-        self.claude, self.claude_error = None, ''
+        self.ai, self.ai_error, self.waited = None, '', 0
         self.unavailable = dict(self.progress.get('unavailable_providers', {}))
 
-    # ---- Claude ----------------------------------------------------------
+    # ---- AI engine---------------------------------------------------------
     def connect(self):
+        engine = self.service.settings.ai_engine()
+        self.engine = engine or 'gemini'
+        self.label = 'Claude' if engine == 'claude' else 'Gemini'
         try:
-            factory = getattr(self.service, 'claude_factory', None)
+            factory = getattr(self.service, 'ai_factory', None)
             if factory is None:
                 from app.providers.factory import make_script_provider
-                factory = lambda: make_script_provider('claude', self.service.settings)
-            self.claude = factory()
+                factory = lambda: make_script_provider(self.engine, self.service.settings)
+            self.ai = factory()
         except ScriptProviderError as error:
-            self._claude_failed(error)
+            self._ai_failed(error)
 
-    def _claude_failed(self, error):
-        self.claude = None
-        self.claude_error = str(error)
-        self.progress['claude_error'] = self.claude_error
+    def _ai_failed(self, error):
+        self.ai = None
+        self.ai_error = str(error)
+        self.progress['ai_error'] = self.ai_error
 
     def _ask(self, purpose, prompt, schema, images=(), max_tokens=2000):
-        if not self.claude: return None
-        try:
-            return self.claude.complete_json(purpose, prompt, schema, images=list(images), effort='low', max_tokens=max_tokens)
-        except ScriptProviderError as error:
-            if getattr(error, 'category', '') in ('invalid_response', 'incomplete_response'):
-                return None  # this one answer is unusable; Claude itself still works
-            self._claude_failed(error)
-            return None
+        if not self.ai: return None
+        for attempt in range(5):
+            try:
+                return self.ai.complete_json(purpose, prompt, schema, images=list(images), effort='low', max_tokens=max_tokens)
+            except ScriptProviderError as error:
+                category = getattr(error, 'category', '')
+                if category in ('invalid_response', 'incomplete_response', 'response_schema_mismatch', 'empty_response',
+                                'thought_only_response', 'output_limit', 'unexpected_finish_reason', 'blocked_response'):
+                    return None  # this one answer is unusable; the engine itself still works
+                # Free-tier per-minute limit: wait and retry (bounded per job).
+                if category in ('rate_limit', 'quota_limit', 'upstream_error', 'gemini_timeout') and attempt < 4 and self.waited < WAIT_BUDGET:
+                    pause = min(60, max(5, int(getattr(error, 'retry_after', 0) or 20)))
+                    self.progress['message'] = f'{self.label} hız sınırı: {pause} sn bekleniyor, sonra devam edilecek'
+                    self.service._checkpoint(self.job, self.progress, light=True)
+                    getattr(self.service, 'ai_sleep', _sleep)(pause, self.service)
+                    self.waited += pause
+                    continue
+                self._ai_failed(error)
+                return None
+        return None
 
     # ---- previews ----------------------------------------------------------
     def frame_urls(self, media):
@@ -192,7 +210,7 @@ class MediaDirector:
                 f'Shot length: {used_seconds(slot):.1f} s. Mood: {scene.get("mood", "")}.')
 
     def judge(self, slot, scene, pool):
-        """Claude looks at up to five candidates; returns verdicts by key."""
+        """The AI looks at up to five candidates; returns verdicts by key."""
         blocks, listed = [], []
         for index, media in enumerate(pool, 1):
             frames = [b for b in (self.thumbnail(u, media['provider']) for u in self.frame_urls(media)) if b]
@@ -283,7 +301,7 @@ class MediaDirector:
             seen.add(k)
             reason = technical(media, need)
             if reason is None and self.segment(media, need) is None: reason = 'used_elsewhere'
-            if reason is None and k in log['judged'] and not log['judged'][k]['approved']: reason = 'claude_rejected_before'
+            if reason is None and k in log['judged'] and not log['judged'][k]['approved']: reason = 'ai_rejected_before'
             if reason:
                 rejected[reason] = rejected.get(reason, 0) + 1
                 continue
@@ -294,14 +312,14 @@ class MediaDirector:
     def try_step(self, slot, scene, stage, kinds, queries, log, exclude):
         step = {'stage': stage, 'label': STAGES[stage], 'queries': list(queries), 'judged': []}
         log['steps'].append(step)
-        if not self.claude:
-            step['result'] = 'claude_unavailable'
+        if not self.ai:
+            step['result'] = 'ai_unavailable'
             return None
         waiting = []
         for index, query in enumerate(queries):
             waiting.extend(self.search(slot, kinds, query, log))
             pool = self.pool(slot, waiting, log, exclude)
-            # Claude already approved these for this scene (another slot):
+            # The AI already approved these for this scene (another slot):
             # reuse the verdict instead of paying for the same look again.
             known = sorted((m for m in pool if log['judged'].get(key(m), {}).get('approved') and log['judged'][key(m)]['score'] >= APPROVE_SCORE),
                            key=lambda m: (log['judged'][key(m)]['score'], m['width'] > m['height'], key(m) not in self.usage), reverse=True)
@@ -317,7 +335,7 @@ class MediaDirector:
             pool = fresh[:CANDIDATES]
             if not pool:
                 continue
-            self.progress['message'] = f'Yuva {slot["order"]} · Claude {len(pool)} adaya bakıyor'
+            self.progress['message'] = f'Yuva {slot["order"]} · {self.label} {len(pool)} adaya bakıyor'
             self.service._checkpoint(self.job, self.progress, light=True)
             verdicts = self.judge(slot, scene, pool)
             for media in pool:
@@ -333,7 +351,7 @@ class MediaDirector:
                 chosen = self.take(slot, media, verdicts[key(media)], stage, log)
                 if chosen: return chosen
             waiting = [m for m in waiting if key(m) not in log['judged']]
-            if not self.claude:
+            if not self.ai:
                 break
         step['result'] = step.get('result') or 'no_approved_candidate'
         return None
@@ -353,7 +371,7 @@ class MediaDirector:
         self.register(slot['slot_id'], saved, segment or 0., need)
         slot.update(selected_media=saved, status='complete', missing_reasons=[], warnings=[], local_validation={},
                     segment_start=segment, continuation_of=None,
-                    claude_review={'approved': True, 'score': verdict['score'], 'reason': verdict['reason'], 'reviewed_at': now()},
+                    ai_review={'approved': True, 'score': verdict['score'], 'reason': verdict['reason'], 'reviewed_at': now()},
                     message=verdict['reason'])
         if saved['width'] <= saved['height']:
             slot['warnings'].append('Dikey/kare kaynak: yatay videoda bulanık arka planla gösterilir.')
@@ -377,7 +395,7 @@ class MediaDirector:
             chain = used_seconds(neighbour) + used_seconds(slot)
             if chain + .6 > float(media.get('duration') or 0): continue
             slot.update(selected_media=deepcopy(media), status='complete', continuation_of=neighbour['slot_id'], segment_start=None,
-                        missing_reasons=[], warnings=[], claude_review=deepcopy(neighbour.get('claude_review')),
+                        missing_reasons=[], warnings=[], ai_review=deepcopy(neighbour.get('ai_review')),
                         message='Çok kısa yuva: komşu çekim kesintisiz devam ediyor.')
             log['steps'].append({'stage': 'merged', 'label': STAGES['merged'], 'result': 'chosen', 'neighbour': neighbour['order']})
             return True
@@ -400,18 +418,18 @@ class MediaDirector:
                  'local_path': 'stock/' + name, 'file_size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
                  'downloaded_at': now(), 'content_type': 'image/png'}
         names = {'map': 'Konum kartı', 'number': 'Sayı kartı', 'quote': 'Alıntı kartı', 'title': 'Başlık kartı'}
-        why = 'Claude’a ulaşılamadı' if not self.claude else 'onaylanan stok medya bulunamadı'
+        why = UNREACHABLE if not self.ai else 'onaylanan stok medya bulunamadı'
         slot.update(selected_media=media, status='complete', continuation_of=None, segment_start=None, missing_reasons=[],
-                    warnings=[] if drawn == 'drawn' else ['Yazı tipi bulunamadı; kart yazısız çizildi.'], claude_review=None,
+                    warnings=[] if drawn == 'drawn' else ['Yazı tipi bulunamadı; kart yazısız çizildi.'], ai_review=None,
                     message=f'{names[kind]}: “{text}” ({why}).')
         log['steps'].append({'stage': 'card', 'label': STAGES['card'], 'result': 'chosen', 'card_kind': kind, 'card_text': text,
-                             'because': 'claude_unavailable' if not self.claude else 'no_approved_stock'})
+                             'because': 'ai_unavailable' if not self.ai else 'no_approved_stock'})
         return True
 
     # ---- per slot ----------------------------------------------------------
     def fill(self, slot, scene, exclude=frozenset(), *, keep_if_only_card=False):
         slot['relevance_profile'] = relevance.profile(scene, slot)
-        # Slots of one scene share Claude's verdicts and rewritten queries.
+        # Slots of one scene share the AI's verdicts and rewritten queries.
         memo = self.memo.setdefault(slot['scene_id'], {'judged': {}})
         log = {'started_at': now(), 'steps': [], 'searches': [], 'judged': memo['judged'], 'rejected': {}}
         planned = list(dict.fromkeys(q for q in [slot.get('search_query'), *slot.get('fallback_queries', []),
@@ -419,14 +437,14 @@ class MediaDirector:
         video_first = ['video'] if slot.get('preferred_type') != 'stock_image' else ['image', 'video']
         chosen = self.try_step(slot, scene, 'stock_video', video_first, planned, log, exclude)
         rewritten = []
-        if not chosen and self.claude:
+        if not chosen and self.ai:
             if 'rewritten' not in memo: memo['rewritten'] = self.rewrite(slot, scene, planned)
             rewritten = memo['rewritten']
             log['rewritten_queries'] = rewritten
             if rewritten: chosen = self.try_step(slot, scene, 'rewritten_video', ['video'], rewritten, log, exclude)
         if not chosen:
             chosen = self.try_step(slot, scene, 'stock_image', ['image'], (rewritten + planned)[:5], log, exclude)
-        if not chosen and self.claude:
+        if not chosen and self.ai:
             if 'broader' not in memo: memo['broader'] = self.rewrite(slot, scene, planned + rewritten, broader=True)
             broader = memo['broader']
             log['broader_queries'] = broader
@@ -461,7 +479,7 @@ class MediaDirector:
         chain = sum(used_seconds(s) for s in ordered if s['slot_id'] == root or s.get('continuation_of') == root)
         if chain + used_seconds(slot) > 10: return False
         slot.update(selected_media=deepcopy(media), status='complete', continuation_of=root, segment_start=None, missing_reasons=[],
-                    warnings=[], claude_review=None, message='Önceki kart devam ediyor (aynı cümle).')
+                    warnings=[], ai_review=None, message='Önceki kart devam ediyor (aynı cümle).')
         log['steps'].append({'stage': 'card', 'label': STAGES['card'], 'result': 'chosen', 'card_kind': media['source_metadata'].get('card_kind'),
                              'card_text': text, 'continued': True})
         return True
@@ -505,8 +523,8 @@ class MediaDirector:
             self.register(slot['slot_id'], media, float(slot.get('segment_start') or 0), used_seconds(slot))
             if single or slot['locked']: continue
             if is_card(media):
-                if 'Claude’a ulaşılamadı' in slot.get('message', ''): targets.append((slot, 'retry_card'))
-            elif not (slot.get('claude_review') or {}).get('approved'):
+                if UNREACHABLE in slot.get('message', ''): targets.append((slot, 'retry_card'))
+            elif not (slot.get('ai_review') or {}).get('approved'):
                 targets.append((slot, 'unreviewed'))
         total = max(1, len(targets))
         for done, (slot, why) in enumerate(targets):
@@ -522,24 +540,24 @@ class MediaDirector:
                 log = {'steps': [], 'searches': [], 'judged': {}, 'error': error.category}
                 self.card(slot, scene, log)
             self.finish_slot(slot, log)
-        if targets and not single and self.claude:  # nothing new chosen: nothing to re-review
+        if targets and not single and self.ai:  # nothing new chosen: nothing to re-review
             self.review(scenes)
         self.finalize()
 
     def handle(self, slot, scene, why):
         if why == 'unreviewed':
-            # An earlier automatic pick: Claude looks at it before it may stay.
+            # An earlier automatic pick: the AI looks at it before it may stay.
             slot['relevance_profile'] = relevance.profile(scene, slot)
             media = slot['selected_media']
             log = {'steps': [{'stage': 'kept', 'label': STAGES['kept'], 'judged': []}], 'searches': [], 'judged': {}}
-            verdict = self.judge(slot, scene, [media]).get(key(media)) if self.claude else None
+            verdict = self.judge(slot, scene, [media]).get(key(media)) if self.ai else None
             if verdict and verdict['approved'] and verdict['score'] >= APPROVE_SCORE:
-                slot.update(claude_review={'approved': True, **verdict, 'reviewed_at': now()}, message=verdict['reason'])
+                slot.update(ai_review={'approved': True, **verdict, 'reviewed_at': now()}, message=verdict['reason'])
                 log['steps'][0]['result'] = 'kept'
                 return log
-            if not self.claude:
+            if not self.ai:
                 log['steps'][0]['result'] = 'kept_no_better_option'
-                slot['message'] = 'Claude’a ulaşılamadı; mevcut seçim henüz onaylanmadı.'
+                slot['message'] = UNREACHABLE + '; mevcut seçim henüz onaylanmadı.'
                 return log
             self._release(slot)
             log2 = self.fill(slot, scene, exclude={key(media)})
@@ -559,7 +577,7 @@ class MediaDirector:
         if media and key(media) in self.usage:
             self.usage[key(media)] = [u for u in self.usage[key(media)] if u[0] != slot['slot_id']]
             if not self.usage[key(media)]: del self.usage[key(media)]
-        slot.update(selected_media=None, status='pending', claude_review=None, segment_start=None, continuation_of=None)
+        slot.update(selected_media=None, status='pending', ai_review=None, segment_start=None, continuation_of=None)
 
     def review(self, scenes):
         """Whole-video look: repeated or too similar shots, tone breaks."""
@@ -574,7 +592,7 @@ class MediaDirector:
                 blocks += [{'type': 'text', 'text': f'Slot {s["order"]} (scene {scenes[s["scene_id"]]["order"]}): '
                                                     f'{scenes[s["scene_id"]].get("visual_intent", "")[:80]}'}, frame]
         if len(blocks) < 8: return
-        self.progress.update(percent=88, message='Claude videonun bütününe bakıyor (tekrar, benzer çekim, ton)')
+        self.progress.update(percent=88, message=f'{self.label} videonun bütününe bakıyor (tekrar, benzer çekim, ton)')
         self.service._checkpoint(self.job, self.progress)
         prompt = ('These are the chosen shots of one documentary video in order (one frame each). List at most '
                   f'{REVIEW_MAX} slots that should be REPLACED because they repeat or look almost the same as a nearby '
@@ -594,7 +612,7 @@ class MediaDirector:
             if slot.get('status') != 'complete':  # nothing better: keep the approved shot
                 slot.clear(); slot.update(backup)
                 self.register(slot['slot_id'], old, float(slot.get('segment_start') or 0), used_seconds(slot))
-                slot['message'] = f'Claude değiştirmeyi önerdi ({reason}); daha iyi aday bulunamadı, mevcut çekim korundu.'
+                slot['message'] = f'{self.label} değiştirmeyi önerdi ({reason}); daha iyi aday bulunamadı, mevcut çekim korundu.'
             else:
                 slot['message'] = f'Bütün video incelemesi: {reason} → {slot.get("message", "")}'
             log['review_reason'] = reason
@@ -612,7 +630,7 @@ class MediaDirector:
             service._mirror(state)
         result = state['media_summary']
         self.progress.update(percent=100, category='none', media_summary=result,
-                             message=result['text'] + (' · Claude’a ulaşılamadı: ' + self.claude_error if self.claude_error else ''))
+                             message=result['text'] + (f' · {UNREACHABLE} ({self.label}): ' + self.ai_error if self.ai_error else ''))
         service._checkpoint(job, self.progress, status='completed')
 
 
@@ -629,11 +647,11 @@ def summary(slots):
     if missing: text += f' · {len(missing)} eksik ({seconds} sn)'
     return {'total': len(slots), 'filled': len(filled), 'videos': videos, 'images': images, 'cards': cards, 'merged': merged,
             'missing': len(missing), 'missing_seconds': seconds, 'text': text,
-            'claude_approved': sum(bool((s.get('claude_review') or {}).get('approved')) for s in filled if not is_card(s['selected_media']))}
+            'ai_approved': sum(bool((s.get('ai_review') or {}).get('approved')) for s in filled if not is_card(s['selected_media']))}
 
 
 def shrink(data, width=640):
-    """Claude bills images by pixels: a 640 px preview is plenty to judge
+    """Vision APIs bill images by size: a 640 px preview is plenty to judge
     content and costs about a third of a 1280x720 cover. Unchanged on error."""
     try:
         from io import BytesIO
@@ -645,6 +663,13 @@ def shrink(data, width=640):
         return out.getvalue()
     except Exception:
         return data
+
+
+def _sleep(seconds, service):
+    import time
+    for _ in range(int(seconds * 2)):
+        if service.closed: return
+        time.sleep(.5)
 
 
 def fetch_thumbnail(url):
@@ -666,7 +691,7 @@ def diagnostics(service, project_id):
         media = s.get('selected_media') or {}
         slots.append({'order': s['order'], 'scene_id': s['scene_id'], 'start': s['estimated_start'], 'end': s['estimated_end'],
                       'duration': s['duration'], 'status': s['status'], 'locked': s['locked'], 'message': s.get('message', ''),
-                      'stage': (s.get('director') or {}).get('stage_label'), 'claude_review': s.get('claude_review'),
+                      'stage': (s.get('director') or {}).get('stage_label'), 'ai_review': s.get('ai_review'),
                       'media': {k: media.get(k) for k in ('provider', 'media_type', 'media_id', 'width', 'height', 'duration', 'page_url', 'local_path')} if media else None,
                       'segment_start': s.get('segment_start'), 'continuation_of': s.get('continuation_of'),
                       'planned_query': s.get('search_query'), 'fallback_queries': s.get('fallback_queries'),
@@ -674,7 +699,7 @@ def diagnostics(service, project_id):
                       'missing_reasons': s.get('missing_reason_messages', [])})
     with closing(service.projects._connection()) as c:
         jobs = [{'id': r['id'], 'action': r['action'], 'status': r['status'], 'error': r['error_message'], 'created_at': r['created_at'],
-                 'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'claude_error', 'unavailable_providers', 'review', 'media_summary')}}
+                 'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'ai_error', 'unavailable_providers', 'review', 'media_summary')}}
                 for r in c.execute('SELECT * FROM stock_jobs WHERE project_id=? ORDER BY created_at DESC LIMIT 10', (project_id,))]
     return {'generated_at': now(), 'project_id': project_id, 'plan_id': state['plan_id'], 'summary': state.get('media_summary'),
             'providers_configured': state['providers'], 'warnings': state['warnings'], 'jobs': jobs, 'slots': slots}

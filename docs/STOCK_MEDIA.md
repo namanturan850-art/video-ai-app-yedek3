@@ -2,7 +2,9 @@
 
 Güncel ve **Hazır** sahne planını açın: **Proje → Görsel / Kurgu Planı**. Her sahnenin altında **Medya Yuvaları** görünür. Bir sahne birden fazla video veya görsel taşıyabilir. Onaylı anlatım ve plan sürümleri değiştirilmez.
 
-## Medyayı Tamamla — Claude seçer, her yuva dolar (PR-C)
+## Medyayı Tamamla — yapay zekâ seçer, her yuva dolar (PR-C)
+
+> Varsayılan motor **Gemini** (ücretsiz kota). Claude yalnızca Ayarlar'da açıkça seçilirse kullanılır. Aşağıda “Claude” geçen yerler seçilen motor için geçerlidir.
 
 ### Eksik medya neden kalıyordu? (eski düğmeler tek tek)
 

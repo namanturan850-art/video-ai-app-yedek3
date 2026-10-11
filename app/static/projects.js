@@ -211,6 +211,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         if (stage.name === 'Senaryo') item.append(link('Senaryoyu Aç', `/projects/${id}/script`, 'action-link'));
         if(stage.name==='Seslendirme')item.append(link('Seslendirmeyi Aç',`/projects/${id}/narration`,'action-link'));
         if(stage.name==='Render')item.append(link('Video Oluştur / Render',`/projects/${id}/render`,'action-link'));
+        if(stage.name==='Render')item.append(link('YouTube hazırlığı (başlık, açıklama, kapak)',`/projects/${id}/youtube`,'action-link'));
         if(stage.name==='Altyazı')item.append(link('Altyazı ve Zamanlama',`/projects/${id}/subtitles`,'action-link'));
         pipeline.append(item);
       }

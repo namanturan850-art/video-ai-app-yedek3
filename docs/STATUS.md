@@ -1,5 +1,27 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Aşama 4: Süre tahmini, Motor Durumu, lisanslar
+
+- **Süre tahmini düzeltildi**: tahmin artık dilin ölçülmüş konuşma hızıyla yapılır (Almanca ~130, İngilizce ~150, Türkçe ~115 kelime/dk). 385 kelimelik Almanca metin ~2:58 dk gösterir (önceden 1,4 dk görülmüştü). Seslendirme oluşturulduktan sonra senaryo ekranında **gerçek seslendirme süresi** de yazar.
+- **Ayarlar → Motor Durumu**: Python, FFmpeg (7+ gerekli), yerel motion çizici, Git, Node.js, OpenMontage ve Remotion için ✓/✗, sürüm ve eksikse Türkçe ne yapılacağı. Git ve Node.js varsa **“Eksikleri kur”** düğmesi OpenMontage'ı onayla, arka planda ve ayrı klasöre kurar; ilerleme mesajları ekranda görünür.
+- **Lisanslar**: [LICENSES.md](LICENSES.md) — OpenMontage (AGPL v3, ayrı kurulum, gömülü değil), Remotion (kendi lisansı; büyük şirketler için ücretli olabilir), OFL fontlar, projenin ürettiği ses efektleri, Natural Earth haritası, Pexels/Pixabay.
+- Testler: 7 yeni (385 kelime Almanca ≈ 3 dk, bilinmeyen dilde eski aralık, gerçek seslendirme süresi, bileşen listesi ve eski FFmpeg uyarısı, arka plan kurulum + adres gizleme, onaysız kurulum reddi). Gerçek OpenMontage kurulumu bu ortamda düğmeyle denenmedi.
+
+## 2026-10-11 — Aşama 3: YouTube başlık, açıklama ve kapak
+
+- Projede **YouTube** sekmesi (yalnızca hazırlık; otomatik yükleme yok). Gemini (varsayılan) videonun dilinde **5 başlık** (merak uyandıran, abartısız, 55–70 karakter; karakter sayısı gösterilir), **açıklama** (2 satırlık kanca, kısa içerik, kurgu planı + gerçek altyazı zamanlarından **bölüm zaman damgaları** — 0:00 ile başlar, en az 3 bölüm, her biri ≥10 sn), **10–15 etiket**, 3 hashtag ve kullanılan stok medya için **kaynak teşekkürü** (Pexels/Pixabay + yapımcı) önerir. Hepsi tek tıkla kopyalanır; başlık/açıklama/etiketler düzenlenip kaydedilir.
+- **Kapak (1280×720)** — Yöntem A (ücretsiz, varsayılan): render edilmiş videodan keskinlik, renk ve ışığa göre en etkileyici 3–5 kare; seçilen kareye kanalın Tarzım fontu/renkleriyle 2–4 kelimelik büyük yazı ve vurgu öğeleri (ok, daire, çerçeve) — **3 yerleşim**. Kapak yazısı başlığı tekrar ederse uyarır. PNG indirme ve telefon boyutu önizlemesi.
+- Yöntem B (isteğe bağlı): Ayarlar → Görsel’de “YouTube kapağı için Gemini ile arka plan” açılırsa, açık onayla Gemini görsel modeli arka plan üretir; kota/ücret notu gösterilir. Varsayılan kapalıdır.
+- Testler: 3 yeni (başlık/açıklama/bölüm/etiket/kaynak, gerçek render'dan kare + 3 yerleşim PNG, isteğe bağlı Gemini arka planı ayar + onay). Gerçek Gemini çağrısı yapılmadı.
+
+## 2026-10-11 — Aşama 2: Motion grafik şablonları ve ses efektleri
+
+- 6 parametreli şablon: büyüyen sayı, harita + işaret, başlık/alıntı (kelime kelime), zaman çizelgesi, karşılaştırma (karşı karşıya / çubuk), madde listesi. Kanalın Tarzım kitini kullanır. Yapay zekâ yalnız alanları doldurur; sayı/tarih/yer/alıntı anlatımda geçmiyorsa reddedilir. [Ayrıntı](MOTION.md)
+- Kurgu planında yeni alan `motion_spec`; yönetmen sahne başına stok/motion kararı verir (hedef %15–25 motion). Eski “kart” planları otomatik olarak motion şablonuna çevrilir.
+- **Medyayı Tamamla**: planlı motion sahneleri doğrudan çizilir; son basamak basit kart yerine anlatımdan motion şablonu (asla başarısız olmaz). Yuvada: Motion’a çevir / Stok videoyla değiştir / Motion metnini düzenle / önizleme.
+- Render: vurgu anı gerçek altyazı zamanına oturtulur; vurguda kitin ses efekti seslendirmenin altında düşük seviyede çalar. Motion önce OpenMontage (Remotion) ile, yoksa/hata verirse yerel Pillow + FFmpeg ile çizilir.
+- Testler: 20 yeni (uydurma bilgi reddi, sayaç biçimi, 6 şablonun gerçek yerel render'ı, OpenMontage hatasında yerel yedek, Remotion ile aynı kare karşılaştırması, gerçek render'da vurgu zamanı + ses efekti seviyesi). Altı konu kabul testi motion ile: eksik yuva 0.
+
 ## 2026-10-11 — Aşama 1: Kanallar ve “Tarzım” kiti
 
 - **Kanallar** sayfası: kanal adı, dil, varsayılan AI33 sesi ve hızı, hedef süre, konu/niş. Her proje bir kanala bağlı; mevcut bütün projeler otomatik olarak **Varsayılan kanal**a bağlandı (SQLite **şema 12**, yalnız ekleme; hiçbir proje verisi değişmez). Yeni projede kanal seçilince dil ve süre kanaldan gelir; seslendirme ekranında kanalın sesi seçili açılır.

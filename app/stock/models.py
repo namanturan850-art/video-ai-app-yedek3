@@ -65,6 +65,10 @@ def make_slots(scene):
         # footage) and more for well-covered ones; still 2.5-10 s per shot.
         count = max(math.ceil(duration/10), min(hint, max(1, math.floor(duration/2.5))))
         longest = max(5.5, min(10., duration/count + 1.5))
+    if scene.get('motion_spec'):
+        # One animation per motion scene (split only beyond 12 s).
+        count = max(1, math.ceil(duration/12))
+        longest = max(5.5, min(12., duration/count + 1.5))
     # Sentence / deterministic narration-unit boundaries influence visual timing.
     units = narration_units(scene['narration_text'])
     total = word_count(scene['narration_text'])

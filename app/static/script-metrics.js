@@ -8,11 +8,15 @@ function scriptSpeechRate(language) { return SCRIPT_SPEECH_RATES[language] || [1
 function scriptWordCount(text) {
   return (text.match(/[\p{L}\p{N}]+(?:['’\-][\p{L}\p{N}]+)*/gu) || []).length;
 }
+/* Measured pace per language (mirrors SPOKEN_RATE in app/scripts/models.py). */
+const SCRIPT_SPOKEN_RATE = {de: 130, en: 150, es: 155, fr: 150, tr: 115};
 function scriptDurationMetrics(text, minutes, options) {
   const count = scriptWordCount(text), low = options.words_per_minute_min, high = options.words_per_minute_max;
+  const rate = SCRIPT_SPOKEN_RATE[options.language] || (low + high) / 2;
   return {word_count: count, target_word_min: Math.ceil(minutes * low), target_word_max: Math.floor(minutes * high),
-    target_minutes: minutes, estimated_minutes: Math.round(count / ((low + high) / 2) * 100) / 100};
+    target_minutes: minutes, estimated_minutes: Math.round(count / rate * 100) / 100, spoken_rate: rate};
 }
+function scriptClock(seconds) { const s = Math.round(seconds); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
 function scriptReviewMessages(messages, metrics) {
   const allowed = new Set([
     '✓ Yapı ve konu tutarlı.', '⚠ Konu ve anlatım tutarlılığını kontrol edin.',

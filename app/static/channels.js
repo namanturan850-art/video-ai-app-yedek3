@@ -7,7 +7,7 @@ if (window.location.pathname === '/channels') {
   const add = node('button', '＋ Yeni kanal'); add.type = 'button'; add.id = 'channel-add';
   const editor = node('section', '', 'settings-panel'); editor.id = 'channel-editor'; editor.hidden = true;
   root.append(status, add, list, editor);
-  let data = null, current = null, voices = [], draft = null, playing = null;
+  let data = null, current = null, voices = [], draft = null, playing = null, pendingWizard = null;
   const LANGS = [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']];
   const EASE = {smooth: t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2, snappy: t => 1 - Math.pow(1 - t, 3),
     bounce: t => { const n = 7.5625, d = 2.75; if (t < 1 / d) return n * t * t; if (t < 2 / d) return n * (t -= 1.5 / d) * t + .75; if (t < 2.5 / d) return n * (t -= 2.25 / d) * t + .9375; return n * (t -= 2.625 / d) * t + .984375; }, linear: t => t};
@@ -49,13 +49,22 @@ if (window.location.pathname === '/channels') {
 
     // ---- Tarzım ----
     editor.append(node('h3', 'Tarzım kiti'));
-    const wizard = node('details', '', 'settings-panel'); wizard.id = 'style-wizard'; wizard.append(node('summary', '✨ Tarzımı oluştur (yapay zekâ önerir, siz düzenlersiniz)'));
+    // A real button (not a collapsible line): it visibly opens the questions,
+    // scrolls to them and puts the cursor in the first one.
+    const openWizard = node('button', '✨ Tarzımı oluştur'); openWizard.type = 'button'; openWizard.id = 'style-wizard-open';
+    editor.append(openWizard, node('p', 'Birkaç soru sorulur; yapay zekâ renk, font ve hareket önerir, siz düzenleyip kaydedersiniz.', 'note'));
+    const wizard = node('section', '', 'settings-panel wizard-panel'); wizard.id = 'style-wizard'; wizard.hidden = true;
+    wizard.append(node('h4', 'Tarzımı oluştur — 3 kısa soru'));
     const wz = node('div', '', 'kit-grid'); wizard.append(wz);
     const topic = field(wz, 'Kanal ne anlatıyor?', input('text', channel.niche || ''), 'wizard-topic');
     const audience = field(wz, 'İzleyici kim?', input('text', ''), 'wizard-audience');
     const feeling = field(wz, 'Nasıl bir his?', select(data.options.feelings.map(f => [f, f[0].toUpperCase() + f.slice(1)]), draft.feeling || 'ciddi'), 'wizard-feeling');
     const notes = field(wz, 'Ek not (isteğe bağlı)', input('text', ''), 'wizard-notes');
-    const ask = node('button', 'Öneri al'); ask.type = 'button'; ask.id = 'wizard-run'; const why = node('p', '', 'note'); why.id = 'wizard-reason'; wizard.append(ask, why); editor.append(wizard);
+    const ask = node('button', 'Öneri al'); ask.type = 'button'; ask.id = 'wizard-run'; const why = node('p', '', 'wizard-result'); why.id = 'wizard-reason'; why.setAttribute('role', 'status'); why.hidden = true;
+    wizard.append(ask, why); editor.append(wizard);
+    const tell = text => { why.hidden = false; why.textContent = text; };
+    openWizard.addEventListener('click', () => { wizard.hidden = !wizard.hidden; openWizard.textContent = wizard.hidden ? '✨ Tarzımı oluştur' : '✕ Soruları kapat';
+      if (!wizard.hidden) { wizard.scrollIntoView({behavior: 'smooth', block: 'start'}); topic.focus({preventScroll: true}); } });
     const kit = node('div', '', 'kit-grid'); editor.append(kit);
     const colors = {};
     for (const [k, label] of [['background', 'Arka plan'], ['primary', 'Ana renk'], ['accent', 'Vurgu rengi'], ['text', 'Yazı rengi']]) colors[k] = field(kit, label, input('color', draft.palette[k]), 'kit-' + k);
@@ -123,14 +132,20 @@ if (window.location.pathname === '/channels') {
     editor.querySelectorAll('input,select').forEach(el => el.addEventListener('input', paint));
     replay.addEventListener('click', animate);
     ask.addEventListener('click', async () => {
-      if (!channel.id) { why.textContent = 'Önce kanalı kaydedin.'; return; }
-      ask.disabled = true; why.textContent = 'Öneri hazırlanıyor…';
+      const answers = {topic: topic.value, audience: audience.value, feeling: feeling.value, notes: notes.value};
+      if (!channel.id) {  // new channel: save it first, then continue automatically
+        if (!name.value.trim()) { tell('Önce yukarıdaki “Kanal adı” kutusuna bir ad yazın; kanal otomatik kaydedilip öneri hazırlanır.'); name.focus(); return; }
+        pendingWizard = answers; save.click(); return;
+      }
+      ask.disabled = true; tell('Öneri hazırlanıyor… (yapay zekâ ile 10–30 saniye sürebilir)');
       try {
-        const r = await request(`/api/channels/${channel.id}/style/suggest`, 'POST', {topic: topic.value, audience: audience.value, feeling: feeling.value, notes: notes.value});
+        const r = await request(`/api/channels/${channel.id}/style/suggest`, 'POST', answers);
         const s = r.style; for (const k in colors) colors[k].value = s.palette[k]; heading.value = s.heading_font; body.value = s.body_font; motion.value = s.motion_duration; easing.value = s.easing;
         sFont.value = s.subtitle.font; sPos.value = s.subtitle.position; draft.feeling = s.feeling;
-        why.textContent = `${r.source === 'preset' ? 'Hazır öneri' : 'Yapay zekâ önerisi'}: ${r.reason} Beğendiyseniz Kaydet deyin.`; paint(); animate();
-      } catch (e) { why.textContent = e.message; } finally { ask.disabled = false; }
+        tell(`✓ ${r.source === 'preset' ? 'Hazır öneri' : 'Yapay zekâ önerisi'} uygulandı: ${r.reason} Aşağıdaki renkler, fontlar ve önizleme güncellendi. Beğendiyseniz en alttaki “Kaydet” düğmesine basın.`);
+        status.textContent = 'Tarzım önerisi hazır — önizlemeye bakıp Kaydet deyin.';
+        paint(); preview.scrollIntoView({behavior: 'smooth', block: 'center'}); preview.classList.add('kit-flash'); setTimeout(() => preview.classList.remove('kit-flash'), 1600); animate();
+      } catch (e) { tell(e.message); } finally { ask.disabled = false; }
     });
     save.addEventListener('click', async () => {
       const [vp, vid, vname] = voice.value ? voice.value.split('|') : ['', '', ''];
@@ -142,6 +157,8 @@ if (window.location.pathname === '/channels') {
     });
     del.addEventListener('click', async () => { if (!window.confirm('Bu kanal silinsin mi? Bağlı proje varsa silinmez.')) return; try { await request(`/api/channels/${channel.id}`, 'DELETE'); editor.hidden = true; await load(); } catch (e) { status.textContent = e.message; } });
     paint();
+    if (pendingWizard && channel.id) { const a = pendingWizard; pendingWizard = null; wizard.hidden = false; openWizard.textContent = '✕ Soruları kapat';
+      topic.value = a.topic; audience.value = a.audience; feeling.value = a.feeling; notes.value = a.notes; ask.click(); }
   }
 
   add.addEventListener('click', () => open({name: '', language: 'de', target_duration_minutes: 5, niche: '', voice_speed: 1, style: JSON.parse(JSON.stringify(data.channels[0].style)), avatar: {}}));

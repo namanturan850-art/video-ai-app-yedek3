@@ -232,6 +232,19 @@ class FFmpegRenderProvider:
                 if opts['music_ducking']:self.warnings.append('Ducking desteklenmiyor; düşük ses seviyeli müzik karışımı kullanıldı.')
                 graph+='[nar][music]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.98:level=false[a]'
         else:graph+=';\n[nar]anull[a]'
+        events=[e for e in (plan.get('sfx') or {}).get('events',[]) if 0<=e['t']<duration]
+        if events:
+            # Kit sound effects at the motion emphasis moments: added UNDER the
+            # narration at a low, fixed level (normalize=0 never lowers the voice).
+            graph=graph[::-1].replace(']a[',']0a[',1)[::-1]
+            first=len([a for a in args if a=='-i'])
+            volume=min(.5,max(0.,float(plan['sfx'].get('volume',.18))))
+            for k,e in enumerate(events):
+                args+=['-i',e['path']];delay=int(round(e['t']*1000))
+                graph+=f';\n[{first+k}:a]aresample=48000,aformat=channel_layouts=stereo,volume={volume:.3f},adelay={delay}|{delay}[fx{k}]'
+            graph+=';\n'+''.join(f'[fx{k}]' for k in range(len(events)))+(f'amix=inputs={len(events)}:duration=longest:normalize=0' if len(events)>1 else 'anull')+'[fxall]'
+            graph+=';\n[a0]aformat=channel_layouts=stereo[a1];[a1][fxall]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.98:level=false[a]'
+            applied['sound_effects']=len(events)
         args+=self.graph(folder,graph)+['-map','[v]','-map','[a]',*self.codec(encoder),'-frames:v',str(timeline['frames']),
             '-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-t',f'{duration:.6f}','-movflags','+faststart','output.mp4']
         self.progress('rendering',75,encoder,self.warnings)

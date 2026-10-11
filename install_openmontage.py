@@ -85,6 +85,7 @@ def install(root,git,node,npm):
     run([node,str(cli),'versions'],root/'remotion-composer',30)
     print('5/5 Yerel render tarayıcısı hazırlanıyor…')
     run([node,str(cli),'browser','ensure'],root/'remotion-composer',600)
+    if '--yes' in sys.argv:return  # one-click install from the app: base engine only
     if input('İsteğe bağlı büyük CLIP/semantik paketleri de kurulsun mu? (E/H; varsayılan H): ').strip().lower()=='e':
         semantic(root,python)
 
@@ -113,7 +114,8 @@ def main():
     print('Resmi kaynak: '+OFFICIAL+'\nSabit sürüm: '+PIN)
     print('Ayrı Python/Node bağımlılıkları ve render tarayıcısı indirilir. Uygulamanın ortamı değişmez.')
     print('Remotion kendi lisans koşullarına tabidir: https://www.remotion.dev/docs/license')
-    if input('Bu isteğe bağlı kurulumu başlatmak istiyor musunuz? (E/H): ').strip().lower()!='e':
+    # --yes: started by the owner's click on “Eksikleri kur” in Motor Durumu.
+    if '--yes' not in sys.argv and input('Bu isteğe bağlı kurulumu başlatmak istiyor musunuz? (E/H): ').strip().lower()!='e':
         print('Kurulum yapılmadı. Yerel Adaptif motoru kullanılabilir.');return 0
     try:
         git,node,npm,ffmpeg=dependencies();root=target()

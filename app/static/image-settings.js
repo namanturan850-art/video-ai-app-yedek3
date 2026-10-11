@@ -1,7 +1,7 @@
 /* Connection/configuration only; no automatic model downloads or image execution. */
 if (window.location.pathname === '/settings') {
   const panel = document.createElement('form'); panel.id = 'settings-images'; panel.className = 'settings-panel';
-  const fieldNames = ['engine', 'paid_usage', 'local_enabled', 'local_url', 'local_model', 'workflow', 'license_confirmed', 'gemini_model', 'openai_model'];
+  const fieldNames = ['engine', 'paid_usage', 'local_enabled', 'local_url', 'local_model', 'workflow', 'license_confirmed', 'gemini_model', 'openai_model', 'thumbnail_ai'];
   function node(tag, text) { const item = document.createElement(tag); if (text) item.textContent = text; return item; }
   panel.append(node('h2', 'Görsel Üretimi'), node('p', 'Ayarlar ve bağlantı testleri çalışır. Görsel çalıştırması daha sonraki aşama için hazırlandı. RTX 5070, yerel ComfyUI üzerinden kullanılabilir; model indirilmez. Cloud anahtarları mevcut Gemini/OpenAI bölümlerinden güvenle kullanılır.'));
   const status = node('p', 'Yükleniyor…'); status.id = 'image-settings-status'; status.setAttribute('role', 'status'); panel.append(status);
@@ -21,6 +21,7 @@ if (window.location.pathname === '/settings') {
   field('license_confirmed', 'Seçilen yerel modelin ticari YouTube kullanım lisansını kontrol ettim', 'checkbox');
   field('resolution', 'YouTube hedef çözünürlüğü — 16:9', 'select', [['1920x1080','1920 × 1080'],['1280x720','1280 × 720'],['1024x576','1024 × 576']]);
   field('gemini_model', 'Gemini görsel modeli (API listesi; görsel yeteneğini resmi belgede kontrol edin)', 'select', [['','Model seçin']]);
+  field('thumbnail_ai', 'YouTube kapağı için Gemini ile arka plan üretebilsin (isteğe bağlı; her üretim kotanızdan düşer veya ücretli olabilir)', 'checkbox');
   field('openai_model', 'OpenAI görsel modeli (hesabınızın resmi API model adı)', 'text');
   panel.append(node('p', 'Model erişimi, görsel üretme yeteneğini veya lisans uygunluğunu tek başına doğrulamaz. Bulut görsel API’leri ücret/kota kullanabilir; web aboneliği API erişimi sağlamaz.'));
   const actions = node('div'); actions.className = 'settings-actions'; panel.append(actions);

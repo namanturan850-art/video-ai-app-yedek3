@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Claude bağlantısı (Yönetmen, PR-A)
+
+- Ayarlar'a **Claude (Anthropic)** bölümü: şifreli/maskeli anahtar, model seçimi (Opus 5.5 / Sonnet 5.5 / Haiku 5.5), ücretsiz **Bağlantıyı Test Et** (Models API), “varsayılan yönetmen” seçeneği.
+- Resmî `anthropic` Python SDK 1.8.0 (sabitlendi; başlatıcı otomatik kurar). Reddedilen istekler sunucu tarafında önerilen yedek Claude modeline gider (`fallbacks: "default"`).
+- Claude senaryo motoru olarak mevcut senaryo/sahne akışına bağlandı. Başarısızlıkta senaryo ekranı yalnız yapılandırılmış yedekleri (Gemini/Ollama/OpenAI) **onayla** önerir; sessiz geçiş yok.
+- Maliyet kaydı: SQLite **şema 11** (yalnız yeni `ai_usage` tablosu eklenir; mevcut tablolar değişmez). Proje başına toplam: `/api/projects/<id>/ai-usage` ve senaryo ekranı.
+- Testler: 20 yeni (sahte Anthropic istemcisi; gerçek API çağrısı yok) + ilgili 397 mevcut test ve frontend geçti. Gerçek Chromium'da Claude ayar bölümü denendi.
+
 ## 2026-10-11 — AI33 kredi kaybı koruması
 
 - **Sorun (sahibin raporu):** Seslendirme Sürüm 1 (11:19:07) ve Sürüm 2 (11:20:34) uygulamada “Hata · Görev henüz oluşturulmadı”, AI33 panelinde “Done”; her yeniden deneme ~2.942 kredi.

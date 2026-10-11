@@ -112,6 +112,24 @@ class GeminiSettings(KeySettings):
         return value
 
 
+CLAUDE_MODELS = {'claude-opus-5-5': 'Claude Opus 5.5 — en iyi kalite (önerilen)',
+                 'claude-sonnet-5-5': 'Claude Sonnet 5.5 — daha ucuz, hızlı',
+                 'claude-haiku-5-5': 'Claude Haiku 5.5 — en ucuz, basit işler'}
+
+
+class ClaudeSettings(KeySettings):
+    model: Literal['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] = 'claude-opus-5-5'
+    # Claude becomes the script/scene "director" for every project when ready.
+    default_engine: bool = True
+
+    @field_validator('api_key')
+    @classmethod
+    def header_key(cls, value):
+        if value is not None and not value.get_secret_value().isascii():
+            raise ValueError('API anahtarını olduğu gibi, boşluksuz girin.')
+        return value
+
+
 class AI33Settings(KeySettings):
     base_url: str = Field(default=OFFICIAL_BASE, max_length=500)
     voice_id: str = Field(default="", max_length=150)
@@ -133,8 +151,9 @@ class AI33Settings(KeySettings):
 
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
-          "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings}
-PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33")
+          "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings,
+          "claude": ClaudeSettings}
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude")
 
 
 def stored_secrets(values):
@@ -216,6 +235,8 @@ class SettingsService:
                     configured = public['model_verified']
                 if name == "openai":
                     configured = configured and config['enabled'] and bool(public['model'])
+                if name == "claude":
+                    public['models'] = [{'id': key, 'label': label} for key, label in CLAUDE_MODELS.items()]
                 status = "Hazır" if configured else "Yapılandırılmadı"
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
                 if name == "ai33":
@@ -238,7 +259,7 @@ class SettingsService:
                         status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result["youtube"] = {"status": "Daha sonra", "message": "YouTube bağlantısı bu aşamada kullanılamaz."}
@@ -258,7 +279,7 @@ class SettingsService:
             hints = []
             for item in error.errors(include_input=False, include_context=False):
                 field = str(item["loc"][0]) if item["loc"] else "alan"
-                labels = {"api_key": "API anahtarı", "base_url": "Adres", "model": "Model",
+                labels = {"api_key": "API anahtarı", "base_url": "Adres", "model": "Model", "default_engine": "Varsayılan motor",
                           "voice_id": "Ses kimliği", "voice_provider":"Ses sağlayıcısı", "speed":"Hız", "enabled": "OpenAI seçimi", "content_language": "Dil"}
                 hints.append(labels.get(field, "Ayar alanı"))
             detail = 'API anahtarını eksiksiz, boşluksuz ve maskesiz girin (en az 8 karakter).' if 'API anahtarı' in hints else 'Hız 0,5–1,5 arasında olmalı.' if 'Hız' in hints else 'Model adını boşluksuz girin.' if 'Model' in hints else 'Adres http:// veya https:// ile başlamalı; anahtar veya parola içermemeli.' if 'Adres' in hints else 'Seçimi ekrandaki seçeneklerle yapın; yalnızca bu bölümün alanlarını kaydedin.'
@@ -327,7 +348,7 @@ class SettingsService:
 
     def script_config(self, provider: str) -> dict:
         """Private backend credentials, never returned by a route."""
-        if provider not in ('gemini', 'ollama', 'openai'):
+        if provider not in ('gemini', 'ollama', 'openai', 'claude'):
             raise SettingsInputError('Geçerli bir senaryo motoru seçin.')
         with self.store.lock:
             return self._values()[provider].copy()
@@ -427,6 +448,21 @@ class SettingsService:
             values['openai']['last_test'] = {key: outcome[key] for key in ('status', 'message')}
             self.store.write(values)
             return self.safe_view()
+
+    def record_claude_test(self, tested: dict, outcome: dict) -> dict:
+        with self.store.lock:
+            values = self._values()
+            if any(values['claude'].get(key) != tested.get(key) for key in ('api_key', 'model')):
+                raise SettingsInputError('Claude ayarları test sırasında değişti. Yeniden test edin.')
+            values['claude']['last_test'] = {key: outcome[key] for key in ('status', 'message')}
+            self.store.write(values)
+            return self.safe_view()
+
+    def claude_director(self) -> bool:
+        """True when Claude is configured and chosen as the default director."""
+        with self.store.lock:
+            config = self._values()['claude']
+        return bool(config.get('api_key')) and bool(config.get('default_engine'))
 
     def image_config(self):
         from app.production_settings import ImageSettings

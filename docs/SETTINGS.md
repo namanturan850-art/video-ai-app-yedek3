@@ -56,3 +56,17 @@ Gemini kontrolü resmi Google Gemini Developer API `GET /v1beta/models` işlemin
 - `POST /api/settings/{section}/test`: Ollama, Gemini, OpenAI ve FFmpeg kontrolü; AI33 salt okunur kredi erişimi kontrolü. Stok ayrıntıları için Part 6 rehberine bakın.
 - `POST /api/settings/gemini/models`: kayıtlı anahtarla resmi API'nin desteklediği metin üretim modellerini listeler; anahtarı döndürmez.
 - Değiştirme/test istekleri `X-AI-Video-Studio: settings` başlığı gerektirir. API, gizli alanları hiçbir yanıtta geri döndürmez.
+
+## Claude (Anthropic) — Yönetmen
+
+Claude; senaryoyu, kurgu planını ve medya seçimini yapar. Kurulum:
+
+1. https://console.anthropic.com adresinde oturum açın → **API Keys** → **Create Key**. Anahtarı kopyalayın.
+2. Uygulamada **Ayarlar → Claude (Anthropic) — Yönetmen** bölümüne yapıştırın, **Kaydet** deyin. Anahtar şifreli saklanır; ekranda yalnız son 4 karakteri görünür.
+3. **Bağlantıyı Test Et**: ücretsizdir (metin üretmez), anahtar ve model erişimini kontrol eder.
+4. **Model**: Opus 5.5 (en iyi kalite, önerilen), Sonnet 5.5 (daha ucuz), Haiku 5.5 (en ucuz).
+5. **Tüm projelerde varsayılan yönetmen olsun** açıksa senaryo ekranı Claude ile açılır.
+
+Claude bir isteği güvenlik nedeniyle reddederse, aynı istek Anthropic'in önerdiği yedek Claude modelinde otomatik yeniden denenir (`fallbacks: "default"`). Claude hiç çalışmazsa (anahtar, kredi, internet, yoğunluk) senaryo ekranı **Gemini / Ollama ile devam et** düğmelerini gösterir; yedeğe **siz onaylamadan geçilmez**.
+
+**Maliyet:** her Claude çağrısının token sayısı ve tahmini maliyeti (liste fiyatı) kaydedilir. Senaryo ekranında “Bu projede Claude/AI tahmini maliyeti” satırı görünür. Fatura değildir; kesin tutar Anthropic konsolundadır.

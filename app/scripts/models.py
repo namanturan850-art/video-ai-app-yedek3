@@ -15,7 +15,7 @@ class ScriptError(Exception):
 
 class ScriptOptions(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True)
-    provider: Literal['gemini', 'ollama', 'openai'] = 'gemini'
+    provider: Literal['gemini', 'ollama', 'openai', 'claude'] = 'gemini'
     mode: Literal['original', 'translate_owned'] = 'original'
     language: str = 'de'
     _language = field_validator('language')(validate_language)

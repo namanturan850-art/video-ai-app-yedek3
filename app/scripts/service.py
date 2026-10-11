@@ -107,6 +107,8 @@ class ScriptService:
         started = time.monotonic()
         job = self.repository.job(job_id)
         options, project, progress = (json.loads(job[name]) for name in ('options_json', 'input_json', 'progress_json'))
+        from app.ai_usage import CURRENT_PROJECT
+        CURRENT_PROJECT.set(job['project_id'])  # AI cost ledger attribution
         engine = YouTubeScriptEngine(provider, guard)
 
         def save(status, phase, percent):

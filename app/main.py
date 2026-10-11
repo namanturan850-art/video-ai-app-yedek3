@@ -97,6 +97,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application.state.ai_diagnostics = ai_diagnostics
     projects = ProjectService(storage)
     application.state.projects = projects
+    from app.ai_usage import UsageLedger
+    settings.usage_ledger = UsageLedger(projects)
+    application.state.usage = settings.usage_ledger
     scripts = ScriptService(projects, settings)
     application.state.scripts = scripts
     quality = QualityService(scripts)
@@ -237,9 +240,18 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         from app.scripts.engine import SecretGuard
         return JSONResponse(status_code=error.status_code,content=SecretGuard(settings.secret_values()).clean({'message':str(error),'category':error.category}))
 
+    def director_options():
+        """Claude as default director when chosen; configured backups to offer on failure."""
+        view = settings.safe_view()
+        backups = [name for name in ('gemini', 'ollama', 'openai') if view[name]['status'] != 'Yapılandırılmadı']
+        return {'claude_ready': view['claude']['has_api_key'], 'claude_default': settings.claude_director(), 'backup_providers': backups}
+
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):
-        return {**scripts.repository.view(project_id), 'artifacts': quality.results(project_id)}
+        result = {**scripts.repository.view(project_id), 'artifacts': quality.results(project_id), 'director': director_options()}
+        if result['director']['claude_default']:
+            result['default_provider'] = 'claude'
+        return result
 
     @application.get('/api/languages')
     def languages():
@@ -377,6 +389,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def read_settings():
         return settings.safe_view()
 
+    @application.get('/api/projects/{project_id}/ai-usage')
+    def project_ai_usage(project_id: str):
+        projects.get(project_id)
+        return settings.usage_ledger.project_summary(project_id)
+
     @application.get('/api/settings/ai-diagnostics')
     def read_ai_diagnostics():
         return ai_diagnostics.view()
@@ -406,6 +423,15 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 outcome = {'status': 'Hata', 'message': str(error), 'category': error.category}
             logging.getLogger('uvicorn.error.providers').info('provider=openai operation=test category=%s elapsed_ms=%.0f', outcome.get('category', 'success'), (time.monotonic() - started) * 1000)
             return {'result': outcome, 'settings': settings.record_openai_test(config, outcome)}
+        if section == 'claude':
+            config = settings.script_config('claude')
+            started = time.monotonic()
+            try:
+                outcome = make_script_provider('claude', settings).test_connection()
+            except ScriptProviderError as error:
+                outcome = {'status': 'Hata', 'message': str(error), 'category': error.category}
+            logging.getLogger('uvicorn.error.providers').info('provider=claude operation=test category=%s elapsed_ms=%.0f', outcome.get('category', 'success'), (time.monotonic() - started) * 1000)
+            return {'result': outcome, 'settings': settings.record_claude_test(config, outcome)}
         if section == "gemini":
             config = settings.gemini_config()
             try:

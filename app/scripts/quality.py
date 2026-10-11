@@ -149,6 +149,8 @@ class QualityService:
         started, category = time.monotonic(), 'success'
         failed_field=None
         job = self.repo.job(job_id)
+        from app.ai_usage import CURRENT_PROJECT
+        CURRENT_PROJECT.set(job['project_id'])  # AI cost ledger attribution
         inputs, options, progress = (json.loads(job[key]) for key in ('input_json', 'options_json', 'progress_json'))
         engine = YouTubeScriptEngine(provider, guard)
         kind = job['action']

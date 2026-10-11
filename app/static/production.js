@@ -11,7 +11,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   root.append(node('p','Yukarı/Aşağı taşı yalnızca görsel tasarımı taşır; onaylı anlatım aynı sırada kalır. Kilitli sahneler yeniden planlamada korunur.','note'));
   const status=node('p','Yükleniyor…');status.id='production-status';status.setAttribute('role','status');root.append(status);
   const provider=node('select');provider.id='production-provider';
-  for(const name of ['ollama','gemini','openai']){const option=node('option',name==='ollama'?'Ollama — yerel':name==='gemini'?'Gemini':'OpenAI');option.value=name;provider.append(option);}
+  for(const name of ['claude','ollama','gemini','openai']){const option=node('option',name==='claude'?'Claude — yönetmen':name==='ollama'?'Ollama — yerel':name==='gemini'?'Gemini':'OpenAI');option.value=name;provider.append(option);}
   const label=node('label','Planlama AI sağlayıcısı');label.htmlFor=provider.id;root.append(label,provider);
   const actions=node('div','','settings-actions');root.append(actions);
   const planButton=button(actions,'Görsel / Kurgu Planını Hazırla',generate);

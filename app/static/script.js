@@ -9,6 +9,29 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
   function node(tag, text, className) { const item = document.createElement(tag); if (text) item.textContent = text; if (className) item.className = className; return item; }
   const back = node('a', '← Projeye dön', 'back'); back.href = `/projects/${id}`; root.append(back);
   const feedback = node('p', 'Senaryo yükleniyor…', 'provider-status'); feedback.id = 'script-feedback'; feedback.setAttribute('role', 'status'); root.append(feedback);
+  // Claude failed: offer configured backups, never switch silently.
+  const fallback = node('div', '', 'settings-actions'); fallback.id = 'script-fallback'; fallback.hidden = true; root.append(fallback);
+  const usage = node('p', '', 'note'); usage.id = 'script-ai-usage'; root.append(usage);
+  const engineNames = {gemini: 'Gemini', ollama: 'Ollama', openai: 'OpenAI'};
+  function renderFallback(data) {
+    const job = data.job; fallback.replaceChildren();
+    const offer = job?.status === 'error' && job.provider === 'claude' ? (data.director?.backup_providers || []) : [];
+    fallback.hidden = !offer.length;
+    if (!offer.length) return;
+    fallback.append(node('p', 'Claude bu işlemi tamamlayamadı. İsterseniz aynı işlemi yedek motorla yeniden başlatabilirsiniz:'));
+    for (const name of offer) {
+      const b = node('button', `${engineNames[name]} ile devam et`); b.type = 'button';
+      b.addEventListener('click', () => {
+        if (!window.confirm(`Claude yerine ${engineNames[name]} kullanılsın mı? Aynı işlem baştan başlar; ${name === 'ollama' ? 'yerel çalışır' : 'API kotası veya ücret kullanabilir'}.`)) return;
+        form.elements.provider.value = name; start(job.action === 'analyze' ? 'analyze' : 'generate');
+      });
+      fallback.append(b);
+    }
+  }
+  async function loadUsage() {
+    try { const u = await request(`/api/projects/${id}/ai-usage`); usage.textContent = u.total_calls ? `Bu projede Claude/AI tahmini maliyeti: $${u.total_cost_usd.toFixed(4)} · ${u.total_calls} çağrı` : ''; }
+    catch { usage.textContent = ''; }
+  }
   const form = node('form', '', 'settings-panel script-form'); form.id = 'script-options'; form.noValidate = true;
   function field(name, label, type, value, choices = []) {
     const group = node('div', '', 'setting-field'); const caption = node('label', label); caption.htmlFor = `script-${name}`;
@@ -21,7 +44,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
     if (type === 'text') control.maxLength = name === 'audience' ? 500 : 150;
     group.append(caption, control); form.append(group); return control;
   }
-  field('provider', 'Senaryo Motoru', 'select', 'gemini', [['gemini', 'Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI']]);
+  field('provider', 'Senaryo Motoru', 'select', 'gemini', [['claude', 'Claude (yönetmen)'], ['gemini', 'Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI']]);
   field('mode', 'Çalışma modu', 'select', 'original', [['original', 'Konseptten Özgün Senaryo'], ['translate_owned', 'Kendi Metnimi Seçili Dile Çevir']]);
   field('language', 'Hedef Dil', 'select', 'de', [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']]);
   const target = node('p', '', 'note'); form.append(target);
@@ -195,7 +218,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
       const list = node('ol'); for (const section of job.progress.plan?.sections || []) list.append(node('li', `${section.title}${section.target_words ? ` — yaklaşık ${section.target_words} kelime` : ''}`)); analysisBody.append(list);
     }
     feedback.textContent = job?.status === 'error' ? `${job.error_message}${job.progress.section_index ? ` Kesilen bölüm: ${job.progress.section_index}.` : ''}` : job && active.includes(job.status) ? 'İşlem sürüyor. Mevcut senaryo ve sürümler korunuyor.' : data.current ? 'Senaryo sürümünüz hazır. Metni inceleyip düzenleyebilir ve onaylayabilirsiniz.' : job?.status_label || 'Konuya uygun analiz veya senaryo oluşturma ile başlayın.';
-    renderTools(); modeFields(); updateMetrics(); syncButtons();
+    renderTools(); modeFields(); updateMetrics(); syncButtons(); renderFallback(data); loadUsage();
     clearTimeout(timer);
     if (job && active.includes(job.status)) timer = setTimeout(() => load(), 1500);
   }

@@ -3,7 +3,7 @@ from app.providers.base import ScriptProvider, ScriptProviderError
 from app.providers.gemini import GeminiScriptProvider
 from app.providers.text_api import OllamaScriptProvider, OpenAIScriptProvider
 
-SCRIPT_ENGINE_LABELS = {'ollama': 'Ollama', 'openai': 'OpenAI', 'gemini': 'Gemini'}
+SCRIPT_ENGINE_LABELS = {'ollama': 'Ollama', 'openai': 'OpenAI', 'gemini': 'Gemini', 'claude': 'Claude'}
 
 
 def safe_model(config, settings):
@@ -26,4 +26,8 @@ def make_script_provider(engine: str, settings, *, discovery: bool = False) -> S
             raise ScriptProviderError('OpenAI kapalı. Ayarlar → OpenAI bölümünde Etkinleştir seçimini açıp Kaydet deyin.', 422, category='provider_disabled')
         safe_model(config, settings)
         return OpenAIScriptProvider(config.get('api_key', ''), config['model'])
+    if engine == 'claude':
+        from app.providers.claude import ClaudeProvider
+        config = settings.script_config(engine)
+        return ClaudeProvider(config.get('api_key', ''), config['model'], ledger=getattr(settings, 'usage_ledger', None))
     raise ScriptProviderError('Geçerli bir senaryo motoru seçin.', 422)

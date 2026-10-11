@@ -40,7 +40,8 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
           'merged': '6 · Komşu çekimin devamı (çok kısa yuva)', 'card': '5 · Üretilmiş kart',
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
-          'motion_edit': 'Motion grafik (sizin düzenlemeniz)'}
+          'motion_edit': 'Motion grafik (sizin düzenlemeniz)', 'motion_balance': 'Motion grafik (dengeli kurgu: %40 motion)'}
+MOTION_SHARE = .40      # owner's target: ~40% motion graphics, ~60% stock footage
 CANDIDATES = 5          # per AI look
 APPROVE_SCORE = 6       # 0-10
 MERGE_SECONDS = 1.5
@@ -464,7 +465,8 @@ class MediaDirector:
             return self.card(slot, scene, log)  # extreme fallback (e.g. FFmpeg missing): still a picture
         media = media_record(path, spec, scene_data, engine)
         from app.motion.templates import TEMPLATES
-        why = {'motion_planned': 'yönetmen bu sahneyi motion grafik olarak planladı', 'motion_edit': 'sizin düzenlediğiniz motion grafik'}.get(
+        why = {'motion_planned': 'yönetmen bu sahneyi motion grafik olarak planladı', 'motion_edit': 'sizin düzenlediğiniz motion grafik',
+               'motion_balance': 'videonun %40’ı motion grafik olsun diye seçildi'}.get(
             stage, UNREACHABLE if not self.ai else 'onaylanan stok medya bulunamadı')
         slot.update(selected_media=media, status='complete', continuation_of=None, segment_start=None, missing_reasons=[], warnings=[],
                     ai_review=None, message=f'{TEMPLATES[spec["template"]]}: “{media["description"][:80]}” ({why}).')
@@ -623,9 +625,52 @@ class MediaDirector:
                 log = {'steps': [], 'searches': [], 'judged': {}, 'error': error.category}
                 self.motion(slot, scene, log)
             self.finish_slot(slot, log)
+        if not single:
+            for slot in self.balance_motion([s for s, w in targets if w == 'missing'], scenes):
+                self.progress.update(message=f'Yuva {slot["order"]} · dengeli kurgu için motion grafik')
+                service._checkpoint(self.job, self.progress)
+                self._release(slot); log = {'steps': [], 'searches': [], 'judged': {}}
+                self.motion(slot, scenes[slot['scene_id']], log, None, 'motion_balance'); self.finish_slot(slot, log)
         if targets and not single and self.ai:  # nothing new chosen: nothing to re-review
             self.review(scenes)
         self.finalize()
+
+    def balance_motion(self, filled, scenes):
+        """Bring motion graphics to ~40% of the running time (owner's target).
+        Runs after the stock search, so slots that had to become motion
+        already count; only slots filled with stock in this run are converted,
+        spread out (never three in a row), preferring a number, date or place."""
+        span = lambda s: max(0., s['estimated_end'] - s['estimated_start'])
+        ordered = sorted(self.slots, key=lambda s: s['estimated_start'])
+        total = sum(span(s) for s in ordered)
+        if not total: return []
+        index = {s['slot_id']: i for i, s in enumerate(ordered)}
+        def is_motion(s):
+            m = s.get('selected_media')
+            return is_generated(m) and (m.get('source_metadata') or {}).get('kind') == 'motion'
+        motion = {index[s['slot_id']] for s in ordered if is_motion(s)}
+        share = sum(span(ordered[i]) for i in motion) / total
+        if share >= MOTION_SHARE - .02: return []
+        planned = {ordered[i]['scene_id'] for i in motion}
+        candidates = []
+        for s in filled:
+            if is_generated(s.get('selected_media')) or not self.valid(s) or s['locked'] or s.get('manual_stock') or s.get('continuation_of') \
+                    or any(o.get('continuation_of') == s['slot_id'] for o in ordered) or span(s) > 12 or s['scene_id'] in planned: continue
+            try: template = self.motion_spec(s, scenes[s['scene_id']])['template']
+            except Exception: continue
+            candidates.append((s, 2 if template != 'quote' else 1))
+        chosen = []
+        while share < MOTION_SHARE and candidates:
+            def score(item):
+                i = index[item[0]['slot_id']]
+                return (min(min((abs(i - j) for j in motion), default=99), 4), item[1], -i)
+            def crowded(i):
+                return {i - 1, i - 2} <= motion or {i + 1, i + 2} <= motion or {i - 1, i + 1} <= motion
+            allowed = [c for c in candidates if not crowded(index[c[0]['slot_id']])]
+            if not allowed: break
+            best = max(allowed, key=score)
+            candidates.remove(best); motion.add(index[best[0]['slot_id']]); chosen.append(best[0]); share += span(best[0]) / total
+        return sorted(chosen, key=lambda s: s['estimated_start'])
 
     def handle(self, slot, scene, why):
         empty = lambda: {'steps': [], 'searches': [], 'judged': {}}

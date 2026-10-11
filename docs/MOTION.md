@@ -17,7 +17,7 @@ Yapay zekâ yalnızca alanları doldurur; uygulama doğrular. **Sayı, tarih, ye
 Harita verisi: Natural Earth 1:110m kara poligonları (kamu malı).
 
 ## Nerede kullanılır?
-- **Yönetmen** (kurgu planı) her sahne için stok mu motion mı karar verir; hedef kabaca %75–85 stok, %15–25 motion (rakam, tarih, yer, liste, karşılaştırma, önemli cümle).
+- **Yönetmen** (kurgu planı) her sahne için stok mu motion mı karar verir; hedef %60 stok, %40 motion; az planlanırsa uygulama aralıklı motion ekleyip %40’a tamamlar (rakam, tarih, yer, liste, karşılaştırma, önemli cümle).
 - **Medyayı Tamamla**: planlanmış motion sahneleri doğrudan çizilir. Zincirin son basamağı artık basit kart değil, anlatımdan seçilen motion şablonudur (dış servise bağlı değildir, başarısız olmaz).
 - Medya ekranında her yuvada: **Yeniden seçtir**, **Motion’a çevir** / **Stok videoyla değiştir**, motion önizlemesi ve **Motion metnini düzenle**.
 

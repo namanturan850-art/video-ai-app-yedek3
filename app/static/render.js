@@ -18,17 +18,24 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   editingStyle.addEventListener('change',()=>{subtitleProfile.textContent=subtitleProfiles[editingStyle.value];if(!subtitleModeChosen)subtitles.value=editingStyle.value==='adaptive'?'emphasis':'full';return load();});
   const subtitles=el('select');subtitles.id='render-subtitles';const subtitleLabel=el('label','Altyazı Gösterimi');for(const [value,text] of [['full','Tam altyazı'],['emphasis','Sadece önemli vurgular'],['none','Altyazı yok']]){const o=el('option',text);o.value=value;subtitles.append(o);}subtitles.value='emphasis';subtitleLabel.append(subtitles);form.append(subtitleLabel);let subtitleModeChosen=false;subtitles.addEventListener('change',()=>{subtitleModeChosen=true;return load();});
   let variationSeed='';try{variationSeed=localStorage.getItem(`render-variation-${pid}`)||'';}catch{}
-  const music=field('Arka plan müziği açık','checkbox',false),musicDetails=el('details');musicDetails.append(el('summary','Müzik dosyası ve ayrıntıları'));form.append(musicDetails);const file=field('Arka plan müziği ekle (en fazla 100 MB)','file','',musicDetails);file.accept='.mp3,.wav,.m4a,.ogg,.flac';
-  const license=field('Bu müziği kullanma hakkına sahibim.','checkbox',false,musicDetails);
+  // One-click look (colours, fonts, motion rhythm) for motion graphics, text graphics and subtitles.
+  const lookLabel=el('label','Video görünümü (renk, yazı tipi, animasyon ritmi)'),look=el('select');look.id='render-look';lookLabel.append(look);const lookNote=el('p','');lookNote.className='note';form.append(lookLabel,lookNote);
+  // Loaded once, after the first video-state request (see poll below).
+  const loadLook=()=>fetch(`/api/projects/${pid}/look`,{cache:'no-store'}).then(r=>r.json()).then(d=>{look.replaceChildren(...[['','Varsayılan (sade)'],...d.looks.map(l=>[l.id,l.label])].map(([v,t])=>{const o=el('option',t);o.value=v;return o;}));look.value=d.look||'';}).catch(()=>{});let lookLoaded=false;
+  look.addEventListener('change',async()=>{if(!look.value)return;lookNote.textContent='Görünüm kaydediliyor…';try{const r=await fetch(`/api/projects/${pid}/look`,{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json','X-AI-Video-Studio':'projects'},body:JSON.stringify({look:look.value})});const d=await r.json();if(!r.ok)throw new Error(d.message||'Görünüm kaydedilemedi.');lookNote.textContent='✓ Görünüm kaydedildi. Yeni motion grafikler ve bir sonraki video bu görünümle oluşur.';}catch(e){lookNote.textContent=e.message;}});
+  // Background music under the narration: always visible, not hidden in a fold.
+  const musicDetails=el('section');musicDetails.id='render-music';musicDetails.className='music-panel';musicDetails.append(el('h3','🎵 Arka plan müziği (konuşmanın altında çalar)'),el('p','Kendi müzik dosyanızı ekleyin (MP3, WAV, M4A, OGG, FLAC). Konuşma sırasında müzik otomatik kısılır, başta yavaşça açılır, sonda yavaşça kapanır.'));form.append(musicDetails);
+  const music=field('Bu videoda arka plan müziği kullan','checkbox',false,musicDetails);music.id='render-music-enabled';const file=field('1) Müzik dosyasını seçin (en fazla 100 MB)','file','',musicDetails);file.accept='.mp3,.wav,.m4a,.ogg,.flac';file.id='render-music-file';
+  const license=field('2) Bu müziği kullanma hakkına sahibim (telifsiz veya lisanslı).','checkbox',false,musicDetails);license.id='render-music-license';
   const volume=field('Müzik seviyesi (0–0,30)','number',.12,musicDetails);volume.min=0;volume.max=.3;volume.step=.01;
   const fadeIn=field('Müzik başlangıç geçişi (saniye)','number',2,musicDetails),fadeOut=field('Müzik bitiş geçişi (saniye)','number',3,musicDetails);for(const n of [fadeIn,fadeOut]){n.min=0;n.max=30;n.step=.1;}
-  const duck=field('Konuşma sırasında müziği kıs','checkbox',true,musicDetails),musicStatus=el('p');form.append(musicStatus);
+  const duck=field('Konuşma sırasında müziği kıs','checkbox',true,musicDetails),musicStatus=el('p');musicStatus.id='render-music-status';musicDetails.append(musicStatus);let musicTouched=false;music.addEventListener('change',()=>{musicTouched=true;});
   let state=null,pending=false,lastVersionKey='',stopped=false;
   const button=(parent,text,fn)=>{const n=el('button',text);n.type='button';n.addEventListener('click',fn);parent.append(n);return n;};
-  const upload=button(musicDetails,'Müziği Kaydet',async()=>{
+  const upload=button(musicDetails,'3) Müziği Ekle',async()=>{
     if(!file.files[0]||!license.checked){status.textContent='Müzik dosyasını seçin ve kullanma hakkınızı onaylayın.';return;}
     const f=file.files[0];if(f.size>100000000){status.textContent='Müzik dosyası 100 MB sınırını aşıyor.';return;}
-    await action(async()=>{await request(base+'/music','POST',f,{'X-Music-Format':f.name.split('.').pop().toLowerCase(),'X-Music-License':'confirmed'});file.value='';});
+    await action(async()=>{await request(base+'/music','POST',f,{'X-Music-Format':f.name.split('.').pop().toLowerCase(),'X-Music-License':'confirmed'});file.value='';music.checked=true;});
   });
   const variationNote=el('p');variationNote.id='render-variation-feedback';form.append(variationNote);
   const variation=button(form,'Yeni Kurgu Varyasyonu',async()=>{variationSeed=String(Number(variationSeed||0)+1);try{localStorage.setItem(`render-variation-${pid}`,variationSeed);}catch{}await load();const missing=state?.ready?0:state?.readiness?.unresolved_stock_slots||0;variationNote.textContent=missing?`Kurgu varyasyonu hazırlandı ancak ${missing} medya alanı tamamlanmadan render başlatılamaz.`:state?.ready?'Yeni kurgu varyasyonu hazırlandı. API veya TTS çağrısı yapılmadı.':'Varyasyon seçildi. Render için aşağıdaki eksikleri tamamlayın.';});variation.id='render-variation';
@@ -67,7 +74,8 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
     summary.append(el('p',`Seslendirme: ${(state.readiness?.narration_ready??state.source_ready)?'Hazır':'Kontrol gerekli'} · Altyazı: ${(state.readiness?.subtitles_ready??state.source_ready)?'Hazır':'Kontrol gerekli'} · Stok medya: ${(state.readiness?.stock_ready??state.source_ready)?'Hazır':'Kontrol gerekli'}`),el('p',`FFmpeg: ${state.ffmpeg.status} · Çözünürlük: 1920×1080 · FPS: 30`));
     if(s)summary.append(el('p',`Süre: ${clock(s.duration)} · ${s.scenes} sahne · ${s.slots} medya yuvası · ${s.videos} video · ${s.images} görsel · ${s.subtitles} altyazı · ${s.overlays} mevcut sahne vurgusu`));
     if(!state.source_ready)summary.append(el('p',state.source_message));if(!state.ffmpeg.found)summary.append(el('p',state.ffmpeg.message));
-    musicStatus.textContent=state.music?'Yerel müzik kaydedildi. Kullanmak için arka plan müziğini açın.':'Müzik yok. Video yalnız seslendirme ile oluşturulabilir.';
+    if(state.music&&!musicTouched)music.checked=true;  // an added track is used unless the owner turns it off
+    musicStatus.textContent=state.music?(music.checked?'✓ Müzik eklendi ve bu videoda kullanılacak (konuşmada otomatik kısılır).':'Müzik eklendi ama şu an kapalı. Kullanmak için “Bu videoda arka plan müziği kullan” kutusunu işaretleyin.'):'Henüz müzik yok. Video yalnız seslendirme ile oluşturulur; isterseniz yukarıdan müzik ekleyin.';
     jobs.replaceChildren();const j=state.job;
     if(j){jobs.append(el('h2',j.status_label));const p=el('progress');p.max=100;p.value=j.progress.percent;jobs.append(p,el('p',`%${j.progress.percent} · Geçen süre: ${clock(j.progress.elapsed_seconds)} · Kullanılan encoder: ${j.encoder_label}`));
       if(j.error_message)jobs.append(el('p',j.error_message));for(const w of j.progress.warnings||[])jobs.append(el('p',w));
@@ -89,6 +97,6 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   }
   async function load(refreshTools=false){try{const selectedEngine=montageEngine.value,chosen=editingStyle.value,selectedSeed=variationSeed,selectedMode=subtitles.value;const loaded=await request(`${base}?montage_engine=${montageEngine.value}&editing_style=${encodeURIComponent(chosen)}${variationSeed?'&edit_variation_seed='+encodeURIComponent(variationSeed):''}&subtitle_display=${subtitles.value}${refreshTools?'&refresh_tools=true':''}`);if(selectedEngine!==montageEngine.value||chosen!==editingStyle.value||selectedSeed!==variationSeed||selectedMode!==subtitles.value)return;state=loaded;render();status.textContent=activeJob()?'Video yerel olarak oluşturuluyor. Bu sayfayı açık tutabilirsiniz.':state.job?.status==='completed'?'Tamamlandı. Videonun başlangıcını, ortasını ve sonunu kontrol edin.':'Yerel video ayarlarını kontrol edin.';}catch(e){status.textContent=e.message;}}
   updateButtons();blockers.append(el('p','Video kaynakları kontrol ediliyor…'));
-  async function poll(){if(stopped)return;await load();if(!stopped)setTimeout(poll,2000);}
+  async function poll(){if(stopped)return;await load();if(!lookLoaded){lookLoaded=true;loadLook();}if(!stopped)setTimeout(poll,2000);}
   window.addEventListener('pagehide',()=>{stopped=true;});poll();
 }

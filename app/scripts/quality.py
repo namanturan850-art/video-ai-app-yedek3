@@ -30,8 +30,8 @@ CLAUDE_DIRECTOR_VISUAL = (
     '{"text": EXACT phrase from the narration, max 14 words}; timeline {"events": [{"date": spoken date, "label": '
     'short}] 2-5}; compare {"title": short, "items": [{"label": short, "value": spoken number or ""}] 2-5}; '
     'list {"title": short, "items": 2-4 short items}. Every number, date, place and quote MUST appear in that '
-    'scene narration; never invent facts. Give motion_graphic scenes shot_count 1. Aim for roughly 15-25% '
-    'motion scenes over the whole video (75-85% stock). stock_query and 2-3 alternative_stock_queries: English, concrete, filmable '
+    'scene narration; never invent facts. Give motion_graphic scenes shot_count 1. Aim for roughly 40% '
+    'motion scenes over the whole video (60% stock footage), spread out, never three motion scenes in a row. stock_query and 2-3 alternative_stock_queries: English, concrete, filmable '
     '(e.g. "airplane cockpit night", "ancient roman forum ruins"), each a DIFFERENT angle: specific, '
     'synonym, and broader context.')
 RATINGS = ('Güçlü', 'Orta', 'Geliştirilebilir')

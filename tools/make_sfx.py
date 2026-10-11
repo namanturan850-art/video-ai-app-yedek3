@@ -1,4 +1,4 @@
-"""Generate the bundled sound effects (click, rise, hit) from math only.
+"""Generate the bundled sound effects (click, rise, hit, whoosh) from math only.
 
 No samples or third-party recordings are used, so the files belong to this
 project (see docs/LICENSES.md). Run: python tools/make_sfx.py
@@ -46,8 +46,25 @@ def hit():
     return out
 
 
+def whoosh():
+    # Air rushing past: noise through a resonant band-pass whose centre sweeps
+    # up then down, with a swell-and-fade envelope (scene transitions).
+    n, rnd, out = int(.6 * RATE), random.Random(23), []
+    low = band = 0.0
+    for t in range(n):
+        x = t / n
+        centre = 300 + 2600 * math.sin(math.pi * min(1, x * 1.15)) ** 2
+        f = 2 * math.sin(math.pi * centre / RATE)
+        noise = rnd.uniform(-1, 1)
+        high = noise - low - .35 * band
+        band += f * high; low += f * band
+        env = math.sin(math.pi * x) ** 1.4 * (1 - .4 * x)
+        out.append(env * band)
+    return out
+
+
 if __name__ == '__main__':
     OUT.mkdir(parents=True, exist_ok=True)
-    for name, make in (('click', click), ('rise', rise), ('hit', hit)):
+    for name, make in (('click', click), ('rise', rise), ('hit', hit), ('whoosh', whoosh)):
         write(name, make())
         print(name, (OUT / f'{name}.wav').stat().st_size)

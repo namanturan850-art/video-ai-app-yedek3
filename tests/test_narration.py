@@ -163,7 +163,9 @@ def test_one_full_request_exact_approved_text_speed_download_and_handoff(narrati
     assert 'text' not in meta and KEY not in json.dumps(result)
     audio=st[0].get(base(st)+f'/versions/{result["active"]["id"]}/audio')
     assert audio.status_code==200 and audio.content==wav_data()
-    assert st[0].get(f'/api/projects/{st[1]["id"]}/script').json()==before
+    after=st[0].get(f'/api/projects/{st[1]["id"]}/script').json()
+    assert {k:v for k,v in after.items() if k!='narration'}=={k:v for k,v in before.items() if k!='narration'}
+    assert after['narration']['duration']==1  # the script screen now shows the real narration length
     handoff=st[0].get(base(st)+'/handoff').json()
     assert handoff['ready'] and handoff['audio_duration']==1 and handoff['source_script_version_id']==st[4]['id']
     assert handoff['transcript'] is None and handoff['scene_timing_source']=='estimated'

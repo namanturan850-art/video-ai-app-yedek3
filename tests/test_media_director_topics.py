@@ -420,6 +420,10 @@ def test_three_minute_topic_fills_every_slot_with_approved_or_generated_media(ke
         assert 'synthetic-pexels-key' not in diag.text and 'sk-ant' not in diag.text
         calls = len(fake.requests)
         print(f'\nRESULT {engine} {key}: {summary["text"]} · motion {summary["motion_percent"]}% of time · AI calls {calls} · paid ${usage["total_cost_usd"]:.4f}')
+        # Owner's target ~40% motion / 60% stock: met wherever stock exists;
+        # stock-scarce topics go higher only because no slot may stay empty.
+        assert summary['motion_percent'] >= 36
+        if key in ('bermuda', 'rome'): assert summary['motion_percent'] <= 46
         planned = [s for s in again['slots'] if (s.get('director') or {}).get('stage') == 'motion_planned']
         assert planned and all(s['selected_media']['media_type'] == 'video' for s in planned)
         if engine == 'gemini': assert usage['total_cost_usd'] == 0  # nothing billed through Claude
@@ -444,7 +448,8 @@ def test_claude_outage_still_fills_every_slot_and_next_press_upgrades_cards(tmp_
         # Nothing unapproved: during the outage only generated cards are used.
         assert all(s['selected_media']['provider'] == 'generated' for s in view['slots'])
         assert 'Yapay zekâya ulaşılamadı (Claude)' in view['job']['progress']['message']
-        assert all('Yapay zekâya ulaşılamadı' in s['message'] or s.get('continuation_of') for s in view['slots'])
+        # Director-planned motion graphics need no AI, so they are drawn as planned.
+        assert all('Yapay zekâya ulaşılamadı' in s['message'] or s.get('continuation_of') or s['director']['stage'] == 'motion_planned' for s in view['slots'])
         fake.responder = healthy
         view = complete(client, pid)
         summary = check(client, pid, claude, view)

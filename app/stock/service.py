@@ -268,12 +268,12 @@ class StockService:
         with self.projects.lock, closing(self.projects._connection()) as connection, connection:
             handoff = self._handoff(project_id);state = self._ensure(connection,handoff)
             self._stamp(state,payload);self._idle(connection,project_id)
-            if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds'}:
+            if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds','motion'}:
                 raise StockError('invalid_input','Medya işlemini kontrol edin.',422)
             action = payload.get('action')
-            if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery','complete_media','reselect'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
-            if (action in ('search','select','search_videos','reselect')) != bool(slot_id): raise StockError('invalid_input','Geçerli medya yuvasını seçin.',422)
-            if action in ('complete_media','reselect') and not self.settings.ai_engine():
+            if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery','complete_media','reselect','to_motion','to_stock','motion_edit'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
+            if (action in ('search','select','search_videos','reselect','to_motion','to_stock','motion_edit')) != bool(slot_id): raise StockError('invalid_input','Geçerli medya yuvasını seçin.',422)
+            if action in ('complete_media','reselect','to_stock') and not self.settings.ai_engine():
                 raise StockError('ai_required','Medyayı Tamamla, stok medyayı yapay zekânın onayıyla seçer. Ayarlar → Gemini bölümünde ücretsiz API anahtarınızı kaydedip Modelleri Getir ile bir model seçin.',422)
             tolerance = payload.get('video_duration_tolerance_seconds',state.get('search_options',{}).get('video_duration_tolerance_seconds',DEFAULT_VIDEO_TOLERANCE))
             if type(tolerance) not in (int,float) or not math.isfinite(tolerance) or not 0<=tolerance<=1.5:
@@ -284,6 +284,11 @@ class StockService:
             if slot_id:
                 slot = self._slot(state,slot_id)
                 if slot['locked']: raise StockError('locked','Önce medya kilidini açın.',409)
+                if action=='motion_edit':
+                    from app.motion.templates import validate as motion_validate,MotionError
+                    scene=next(sc for sc in handoff['scenes'] if sc['scene_id']==slot['scene_id'])
+                    try: progress['motion']=motion_validate(payload.get('motion'),scene['narration_text'],scene.get('entities',[]))
+                    except MotionError: raise StockError('invalid_input','Motion bilgisini kontrol edin: sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmeli; liste 2–4, zaman çizelgesi 2–5 öğe.',422) from None
                 if action=='search_videos' and (not slot['selected_media'] or slot['selected_media']['media_type']!='image'):
                     raise StockError('invalid_input','Videoyla değiştirmek için bir görsel yuvası seçin.',422)
                 if action=='select':
@@ -300,7 +305,7 @@ class StockService:
             if action=='replace_images' and not any(self._replaceable(s) for s in state['slots']):
                 raise StockError('no_selection','Video tercihli, kilitsiz görsel yuvası bulunamadı.',422)
             bridge=getattr(self,'openmontage',None)
-            if not any(self.settings.stock_config(name).get('api_key') for name in ('pexels','pixabay')) and action not in ('select','smart_recovery','complete_media','reselect') and not (bridge and bridge.config().get('media_search')):
+            if not any(self.settings.stock_config(name).get('api_key') for name in ('pexels','pixabay')) and action not in ('select','smart_recovery','complete_media','reselect','to_motion','motion_edit') and not (bridge and bridge.config().get('media_search')):
                 raise StockError('missing_key','Ayarlar → Pexels veya Pixabay bölümünde API anahtarını kaydedin ya da OpenMontage medya aramasını açın.',422)
             if 'video_duration_tolerance_seconds' in payload:
                 state['search_options']={'video_duration_tolerance_seconds':tolerance}
@@ -480,7 +485,7 @@ class StockService:
             if job['action']=='smart_recovery':
                 from app.stock.recovery import run
                 run(self,job);return
-            if job['action'] in ('complete_media','reselect'):
+            if job['action'] in ('complete_media','reselect','to_motion','to_stock','motion_edit'):
                 from app.stock.director_media import MediaDirector
                 MediaDirector(self,job).run();return
             slots = [deepcopy(s) for s in state['slots'] if not job['slot_id'] or s['slot_id']==job['slot_id']]

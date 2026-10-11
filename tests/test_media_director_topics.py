@@ -219,11 +219,20 @@ class Director:
             ids = [u['unit_id'] for u in data['narration_units']]
             groups = data.get('metadata_repair', {}).get('required_unit_groups') or [ids[i:i + 3] for i in range(0, len(ids), 3)]
             scenes = []
-            for g in groups:
+            texts = {u['unit_id']: u['text'] for u in data['narration_units']}
+            for n, g in enumerate(groups):
                 index = int(re.sub(r'\D', '', g[0].split('U')[-1]) or 0)
                 query, alts, must, _ = self.data['themes'][index % 6]
-                scenes.append({**base_scene(g), 'stock_query': query, 'alternative_stock_queries': alts, 'visual_intent': must,
-                               'must_show': must, 'must_not_show': 'logos, text', 'shot_count': self.data['shots']})
+                item = {**base_scene(g), 'stock_query': query, 'alternative_stock_queries': alts, 'visual_intent': must,
+                        'must_show': must, 'must_not_show': 'logos, text', 'shot_count': self.data['shots']}
+                narration = ' '.join(texts[u] for u in g)
+                number = re.search(r'\b\d[\d.,]*\b', narration)
+                if n % 5 == 2:  # the director picks roughly every fifth scene for a motion graphic
+                    first = narration.split('. ')[0].rstrip('.').split()
+                    item.update(media_type='motion_graphic', shot_count=1, motion_spec=
+                        {'template': 'stat', 'data': {'value': number.group(0).rstrip('.,'), 'label': must}, 'emphasis': number.group(0).rstrip('.,')} if number else
+                        {'template': 'quote', 'data': {'text': ' '.join(first[:12])}, 'emphasis': first[min(3, len(first) - 1)]})
+                scenes.append(item)
             return message(json.dumps({'scenes': scenes}))
         return message(self.script.generate_script(content))
 
@@ -289,7 +298,14 @@ def gemini_429(free=False):
         {'@type': 'type.googleapis.com/google.rpc.QuotaFailure', 'violations': [violation]}]}})
 
 
+def fast_motion(scene, output, ffmpeg):
+    import subprocess
+    subprocess.run([ffmpeg, '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color=c=0x101823:s=1920x1080:r=30:d={scene["duration"]}',
+                    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', str(output)], check=True)
+
+
 def build(tmp_path, monkeypatch, key, engine='gemini'):
+    monkeypatch.setattr('app.motion.clips.raster_render', fast_motion)
     data = TOPICS[key]
     world, claude = World(key, data), Director(data)
     if engine == 'claude':
@@ -393,7 +409,9 @@ def test_three_minute_topic_fills_every_slot_with_approved_or_generated_media(ke
         assert diag.status_code == 200 and 'attachment' in diag.headers['content-disposition']
         assert 'synthetic-pexels-key' not in diag.text and 'sk-ant' not in diag.text
         calls = len(fake.requests)
-        print(f'\nRESULT {engine} {key}: {summary["text"]} · AI calls {calls} · paid ${usage["total_cost_usd"]:.4f}')
+        print(f'\nRESULT {engine} {key}: {summary["text"]} · motion {summary["motion_percent"]}% of time · AI calls {calls} · paid ${usage["total_cost_usd"]:.4f}')
+        planned = [s for s in again['slots'] if (s.get('director') or {}).get('stage') == 'motion_planned']
+        assert planned and all(s['selected_media']['media_type'] == 'video' for s in planned)
         if engine == 'gemini': assert usage['total_cost_usd'] == 0  # nothing billed through Claude
     finally:
         client.__exit__(None, None, None)

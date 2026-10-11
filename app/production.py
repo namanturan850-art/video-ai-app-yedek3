@@ -90,6 +90,8 @@ class VisualBlock(BaseModel):
     shot_count: int = Field(default=0,ge=0,le=12)
     card_kind: Literal['', 'map', 'number', 'title', 'quote'] = ''
     card_text: str = Field(default='',max_length=150)
+    # Motion-graphic template (app/motion/templates.py) for motion_graphic scenes.
+    motion_spec: dict | None = None
 
     @model_validator(mode='after')
     def semantic_queries(self):
@@ -213,7 +215,25 @@ def scene_metadata(scene, narration):
         value=scene['shot_count']
         if type(value) is int and 1<=value<=12:block['shot_count']=value
         else:warnings.append('Çekim sayısı önerisi kullanılamadı; süreye göre otomatik bölünecek.')
+    spec=scene.get('motion_spec')
+    if spec is not None:
+        from app.motion.templates import validate as motion_validate,MotionError
+        try:
+            block['motion_spec']=motion_validate(spec,narration,safe_entities)
+            block['media_type']='motion_graphic'
+        except MotionError:
+            warnings.append('Motion grafik bilgisi anlatımla doğrulanamadı; sahne stok görüntüyle planlandı.')
+            if block['media_type']=='motion_graphic' and not scene.get('card_kind'):block['media_type']='stock_video'
     card=card_fields(scene,narration,safe_entities)
+    if card and not block.get('motion_spec'):
+        # Older “card” plans become a motion template with the same spoken text.
+        block.update(card)
+        block['motion_spec']={'template':'stat','data':{'value':card['card_text'],'label':''},'emphasis':''} if card['card_kind']=='number' and re.search(r'\d',card['card_text']) else {'template':'quote','data':{'text':card['card_text']},'emphasis':''}
+        try:
+            from app.motion.templates import validate as motion_validate
+            block['motion_spec']=motion_validate(block['motion_spec'],narration,safe_entities)
+        except ValueError:
+            block.pop('motion_spec',None)
     if card:
         block.update(card)
         if block['media_type'] not in ('motion_graphic',):block['media_type']='motion_graphic'
@@ -787,7 +807,7 @@ class ProductionService:
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
                 'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
                 'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query','semantic_descriptor',
-                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text') if b.get(key)}} for b in plan['blocks']]}
+                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

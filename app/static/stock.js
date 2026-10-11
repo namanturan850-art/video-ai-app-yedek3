@@ -43,7 +43,32 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const img=node('img');img.className='stock-thumbnail';img.alt=`${media.provider} ${media.media_type==='video'?'video':'görsel'} önizlemesi`;
     img.src=media.preview_url;img.loading='lazy';img.referrerPolicy='no-referrer';return img;
   }
-  function mediaInfo(media){if(media.provider==='generated')return `Üretilmiş kart · ${{map:'Konum',number:'Sayı',quote:'Alıntı',title:'Başlık'}[media.source_metadata?.card_kind]||'Başlık'} · 1920×1080`;return `${media.provider==='pexels'?'Pexels':media.provider==='openmontage'?'OpenMontage':'Pixabay'} · ${media.media_type==='video'?'Video':'Görsel'} · ${media.width}×${media.height}${media.width>media.height?' · Yatay'+(Math.abs(media.width/media.height-16/9)<.06?' · 16:9':''):' · Dikey/kare'}`;}
+  const TEMPLATE_LABELS={stat:'Büyüyen sayı',map:'Harita + işaret',quote:'Başlık / alıntı',timeline:'Zaman çizelgesi',compare:'Karşılaştırma',list:'Madde listesi'};
+  function motionForm(slot){
+    const spec=slot.selected_media?.source_metadata?.motion||{template:'quote',data:{text:''},emphasis:''};
+    const form=node('form','','settings-panel stock-motion-form');form.noValidate=true;
+    const row=(label,el)=>{const g=node('div','','setting-field');const l=node('label',label);g.append(l,el);form.append(g);return el;};
+    const sel=row('Şablon',node('select'));for(const [k,v] of Object.entries(TEMPLATE_LABELS)){const o=node('option',v);o.value=k;sel.append(o);}sel.value=spec.template;
+    const fields=node('div');form.append(fields);const emphasis=row('Vurgu kelimesi (seslendirmede söylendiği an)',node('input'));emphasis.value=spec.emphasis||'';
+    const d=spec.data||{};let inputs={};
+    const lines=list=>list.map(e=>typeof e==='string'?e:[e.date??e.label,e.label??e.value].filter(x=>x!==undefined).join(' | ')).join('\n');
+    function draw(){fields.replaceChildren();inputs={};const t=sel.value;
+      const add=(key,label,value,area)=>{const el=node(area?'textarea':'input');el.value=value??'';if(area)el.rows=4;const g=node('div','','setting-field');const l=node('label',label);g.append(l,el);fields.append(g);inputs[key]=el;};
+      if(t==='stat'){add('value','Sayı (anlatımda geçmeli)',d.value);add('label','Açıklama',d.label);}
+      if(t==='map'){add('place','Yer adı (anlatımda geçmeli)',d.place);add('lat','Enlem',d.lat);add('lon','Boylam',d.lon);add('label','Etiket',d.label);}
+      if(t==='quote')add('text','Metin (anlatımdan birebir)',d.text,true);
+      if(t==='timeline')add('events','Her satıra: tarih | açıklama (2–5 satır)',d.events?d.events.map(e=>`${e.date} | ${e.label}`).join('\n'):'',true);
+      if(t==='compare'){add('title','Başlık',d.title);add('items','Her satıra: ad | değer (değer isteğe bağlı)',d.items?d.items.map(e=>`${e.label} | ${e.value||''}`).join('\n'):'',true);}
+      if(t==='list'){add('title','Başlık',d.title);add('items','Her satıra bir madde (2–4)',d.items?d.items.join('\n'):'',true);}}
+    sel.addEventListener('change',draw);draw();
+    const save=node('button','Motion metnini kaydet ve yeniden çiz');save.type='submit';form.append(save,node('p','Sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmelidir; uydurma bilgi kabul edilmez.','note'));
+    form.addEventListener('submit',event=>{event.preventDefault();const t=sel.value,v=k=>inputs[k]?.value.trim()||'';const rows=k=>v(k).split('\n').map(x=>x.split('|').map(y=>y.trim())).filter(x=>x[0]);
+      const data=t==='stat'?{value:v('value'),label:v('label')}:t==='map'?{place:v('place'),lat:Number(v('lat')),lon:Number(v('lon')),label:v('label')}:t==='quote'?{text:v('text')}
+        :t==='timeline'?{events:rows('events').map(x=>({date:x[0],label:x[1]||''}))}:t==='compare'?{title:v('title'),items:rows('items').map(x=>({label:x[0],value:x[1]||''}))}:{title:v('title'),items:rows('items').map(x=>x[0])};
+      slotJob(slot,'motion_edit',{motion:{template:t,data,emphasis:emphasis.value.trim()}});});
+    return form;
+  }
+  function mediaInfo(media){if(media.provider==='generated'&&media.media_type==='video')return `Motion grafik · ${TEMPLATE_LABELS[media.source_metadata?.motion?.template]||''} · 1920×1080 · ${media.source_metadata?.engine==='openmontage'?'OpenMontage':'yerel çizim'}`;if(media.provider==='generated')return `Üretilmiş kart · ${{map:'Konum',number:'Sayı',quote:'Alıntı',title:'Başlık'}[media.source_metadata?.card_kind]||'Başlık'} · 1920×1080`;return `${media.provider==='pexels'?'Pexels':media.provider==='openmontage'?'OpenMontage':'Pixabay'} · ${media.media_type==='video'?'Video':'Görsel'} · ${media.width}×${media.height}${media.width>media.height?' · Yatay'+(Math.abs(media.width/media.height-16/9)<.06?' · 16:9':''):' · Dikey/kare'}`;}
   function sourceInfo(media){
     if(media.provider==='generated'){const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`Uygulama tarafından üretildi. Yazı anlatımdan alındı: “${media.source_metadata?.card_text||''}”`));return info;}
     const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`${media.provider} · Medya ID: ${media.media_id} · Oluşturan: ${media.creator_name||'Belirtilmedi'}`));
@@ -66,9 +91,14 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const stage=slot.director?.stage_label||(slot.locked&&media?'Kilitli (sizin seçiminiz)':media?(slot.ai_review?.approved?'Yapay zekâ onayladı':'Yapay zekâ onayı bekliyor — Medyayı Tamamla deyin'):'Boş — Medyayı Tamamla deyin');
     const stageLine=node('p',`Aşama: ${stage}`,'provider-status');stageLine.className+=' stock-stage';card.append(stageLine);
     if(slot.message)card.append(node('p',`Neden: ${slot.message}`));
-    if(media)card.append(thumbnail(media));
+    if(media&&!(media.provider==='generated'&&media.media_type==='video'))card.append(thumbnail(media));
     const top=node('div','','settings-actions');card.append(top);
-    button(top,'Yeniden seçtir',()=>{if(window.confirm('Bu yuva için yapay zekâ yeniden aday arar ve seçer. Uygun stok bulunamazsa kart üretilir; yuva boş kalmaz. Devam edilsin mi?'))slotJob(slot,'reselect');},active()||slot.locked).className='stock-reselect';
+    button(top,'Yeniden seçtir',()=>{if(window.confirm('Bu yuva için yapay zekâ yeniden aday arar ve seçer. Uygun stok bulunamazsa motion grafik üretilir; yuva boş kalmaz. Devam edilsin mi?'))slotJob(slot,'reselect');},active()||slot.locked).className='stock-reselect';
+    const isMotion=media?.provider==='generated'&&media?.media_type==='video';
+    if(isMotion)button(top,'Stok videoyla değiştir',()=>slotJob(slot,'to_stock'),active()||slot.locked).className='stock-to-stock';
+    else button(top,'Motion’a çevir',()=>slotJob(slot,'to_motion'),active()||slot.locked).className='stock-to-motion';
+    if(isMotion){const preview=node('video');preview.className='stock-preview';preview.src=`${base}/slots/${slot.slot_id}/preview`;preview.controls=true;preview.preload='metadata';preview.muted=true;card.append(preview);
+      const edit=node('details');edit.append(node('summary','Motion metnini düzenle'),motionForm(slot));card.append(edit);}
     const more=node('details','','stock-slot-details');more.append(node('summary','Ayrıntılar'));card.append(more);
     const keep=card;card=more;
     card.append(node('p',`${slot.status_label} · ${slot.duration.toFixed(1)} sn`),node('p',`Görsel amaç: ${slot.visual_goal}`),node('p',`Planlanan arama: ${slot.search_query}`));

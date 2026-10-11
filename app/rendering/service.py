@@ -85,6 +85,7 @@ class RenderService:
                 if not m or any(m.get(k)!=v for k,v in identity.items()):raise RenderError('source_stale',SOURCE_MESSAGE)
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
                 originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest}
+                if selected.get(owner,{}).get('segment_start') is not None:media[slot['slot_id']]['segment_start']=float(selected[owner]['segment_start'])
                 if recovery:
                     proof=selected[owner].get('local_validation',{})
                     media[slot['slot_id']].update({k:proof[k] for k in ('duration','width','height') if k in proof})

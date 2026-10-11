@@ -1,5 +1,34 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Ücretli kısımlar Gemini'ye taşındı (PR-D)
+
+- **Sahibin isteği:** claude.ai aboneliği API'yi kapsamadığı için ücretli adımlar Gemini'nin ücretsiz kotasıyla çalışsın.
+- Yönetmen (amaç, senaryo, kurgu planı) ve **Medyayı Tamamla** (aday görsellere bakma/onaylama, yeni sorgular, bütün video kontrolü) artık varsayılan olarak **Gemini** kullanır. Claude yalnızca Ayarlar'da “Gemini yerine Claude kullan (ücretli)” işaretlenirse kullanılır; anahtarı kaydetmek tek başına ücretli motoru açmaz.
+- Gemini'ye görsel (resmî `Part.inlineData`) ve JSON yanıt (`GenerationConfig.responseMimeType`) desteği eklendi; yanıt yerelde doğrulanır. Kaynak: googleapis `generativelanguage/v1beta` proto dosyaları (docs/GEMINI.md'deki bağlantılar).
+- Ücretsiz kota: dakika sınırında `Retry-After` kadar beklenip yeniden denenir (iş başına en fazla 15 dk bekleme); günlük kota dolarsa yuvalar kartla dolar ve sonraki basışta yeniden denenir. Kurgu planındaki tek otomatik düzeltme yönetmen çalışmasında Gemini için de onay beklemeden yapılır.
+- Testler: altı konu hem Gemini hem Claude ile (12 çalışma) — hepsinde eksik yuva 0, onaysız stok 0, çakışan klip 0; Gemini ile Claude ücreti 0 $. Ek: Gemini dakika sınırı, günlük kota, Claude kesintisi, motor yok durumları. Normal (yönetmen dışı) Gemini planları eskisi gibi kısa istemle çalışır; zengin sahne notları yalnız yönetmen çalıştırmasında istenir. Tam paket: 1730 başarılı + bu nedenle düzeltilen 2 test (ilgili dosyalar yeniden: 189/189), 4 atlama; frontend 6/6. Gerçek Chromium'da Gemini ile yönetmen ve Medyayı Tamamla uçtan uca denendi. Gerçek Gemini çağrısı yapılmadı (sahte Gemini sunucusu). **Live provider test must be run by owner on Windows.**
+
+## 2026-10-11 — Medyayı Tamamla: Claude seçer, her yuva dolar (PR-C)
+
+- **Kök neden (eski düğmeler):** seçim görüntüye bakmadan etiket kelimeleriyle yapılıyordu; dikey/kare, yuvadan kısa ve başka yuvada kullanılmış klipler kesin eleniyordu; her şey tükenince yuvayı kesin dolduracak son adım yoktu; Akıllı Tamamla'nın tıklama başına istek bütçesi “44 → 47 → 51 → 52” adım adım ilerlemeye yol açıyordu. [Düğme düğme açıklama](STOCK_MEDIA.md#medyayı-tamamla--yapay-zekâ-seçer-her-yuva-dolar-pr-c)
+- **Yeni tek düğme “Medyayı Tamamla”** ve yuva başına **“Claude'a yeniden seçtir”**. Zincir: planlanan sorguyla video → Claude'un yeni sorgularıyla video → görsel (+hafif hareket) → daha geniş konu → (çok kısa yuvada komşu çekimin devamı) → anlatımdan yazılı **üretilmiş kart** (yerel, başarısız olamaz). 1–4. adımlarda her stok aday Claude'a önizleme kareleriyle gösterilir; **onaysız stok medya kullanılmaz**. Bitince Claude bütün videoya bir kez bakar (tekrar/benzer çekim/ton).
+- Aynı klip iki yuvada yok; yalnız uzun klibin çakışmayan bölümleri. Dikey/kare medya **bulanık arka planla** (yerel FFmpeg + OpenMontage). Sağlayıcı hatası/zaman aşımı yalnız o sağlayıcıyı atlar. Claude'a ulaşılamazsa kartla dolar, sonra yeniden denenir.
+- Ekran: tek özet satırı (“51/51 yuva dolu · 33 video · 9 görsel · 9 üretilmiş kart”), yuva başına aşama + neden, katlanır ayrıntılar, **Tanılama dosyası indir**.
+- Yeni bağımlılık: `pillow==12.3.0` (kart çizimi; yoksa yazısız düz kart). Şema değişmedi; mevcut seçimler, kilitler ve dosyalar korunur.
+- **Kabul testi (6 konu × 3 dk, gerçekçi sahte Pexels/Pixabay + sahte Claude):** hepsinde eksik yuva 0, eksik süre 0, onaysız stok 0, çakışan klip 0, iş hatası 0, senaryo/plan metni değişmedi. Ayrıca Claude kesintisi ve anahtarsız durum testleri, gerçek FFmpeg render testi (dikey klip bulanık arka plan, aynı klibin iki bölümü, kart ve devamı; basit ve uyarlanabilir stil).
+- **Doğrulanamayan:** gerçek Pexels/Pixabay yanıtları ve gerçek Claude görsel değerlendirmesi (ücretli; anahtar yok). **Live provider test must be run by owner on Windows.**
+
+## 2026-10-11 — Claude Yönetmen: amaç → senaryo → kurgu planı (PR-B)
+
+- Senaryo sayfasına **Claude Yönetmen** paneli: sahip yalnız konu/dil/süre girer; Claude sırayla **amaç özeti** (hedef kitle, ana mesaj, ton, açılış kancası — Türkçe, düzenlenebilir), dile uygun hızda **senaryo** (Almanca 125–135 ≈ 130 kelime/dk), **otomatik onay** (kapatılabilir) ve **kurgu planı** üretir. Mevcut senaryo/sahne motorları kullanıldığı için seslendirme ve altyazı akışı değişmedi.
+- Kurgu planı sahne alanları (isteğe bağlı, eski planlar etkilenmez): `must_show`, `must_not_show`, `shot_count` (1–12), `card_kind` (map/number/title/quote) + `card_text`. Kart yazısı anlatımdan birebir değilse kart düşürülür ve sahne stok videoya döner (uydurma bilgi yok). `shot_count` yuva sayısını belirler: niş konuda az ve uzun (≤10 sn), zengin konuda çok ve kısa (≥2,5 sn).
+- Claude ile plan şemaya uymazsa **bir kez otomatik düzeltme** yapılır (diğer bulut motorlarında eskisi gibi onay istenir).
+- Hata olursa tamamlanan adımlar korunur, **Yönetmeni Devam Ettir** kaldığı yerden sürer; Claude çalışmazsa yapılandırılmış yedek motor yalnız sahibin seçimiyle kullanılır. Amaç/durum dosyaları: `projects/<id>/script/director_purpose.json`, `director_state.json`. Şema değişmedi (11).
+- Testler: 17 yeni (sahte Claude; uçtan uca amaç→senaryo→onay→plan, sahibin amaç düzenlemesi, otomatik onay kapalı, maliyet/üzerine yazma onayı, hata+yedek önerisi, sahibin seçtiği yedekle tamamlama, kart doğrulama, çekim sayısı). Gerçek Chromium'da panel uçtan uca denendi, JS hatası yok. Gerçek Claude çağrısı yapılmadı.
+- Ayrıca: `requirements.txt` içinde `anyio` 4.15.1'e sabitlendi (Claude SDK'sının kullandığı `httpx2`'nin yeni sürümleri anyio ≥ 4.10 istiyor; testler bu kombinasyonla çalıştı).
+- Tam paket: 1712 başarılı + düzeltilen 1 test (eski planlardaki “motion_graphic” türü artık değiştirilmiyor), 4 atlama; frontend 6/6.
+- **Henüz yok (PR-C):** Claude'un aday medyaya bakarak seçmesi ve eksik medya zincirinin kesin çözümü.
+
 ## 2026-10-11 — Claude bağlantısı (Yönetmen, PR-A)
 
 - Ayarlar'a **Claude (Anthropic)** bölümü: şifreli/maskeli anahtar, model seçimi (Opus 5.5 / Sonnet 5.5 / Haiku 5.5), ücretsiz **Bağlantıyı Test Et** (Models API), “varsayılan yönetmen” seçeneği.

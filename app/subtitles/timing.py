@@ -174,6 +174,10 @@ def project_slots(scenes, slots):
                            'start':round(cursor,6), 'end':round(end,6), 'duration':round(end-cursor,6),
                            'estimated_start':slot['estimated_start'], 'estimated_end':slot['estimated_end'],
                            'locked':slot['locked'], 'status':slot['status'],
-                           'selected_media_local_identity':identity, 'timing_source':'approximate_audio_duration'})
+                           'selected_media_local_identity':identity, 'timing_source':'approximate_audio_duration',
+                           # Director media: a very short slot continuing its neighbour's
+                           # take, or a different part of the same long clip.
+                           **({'continuation_of':slot['continuation_of']} if slot.get('continuation_of') else {}),
+                           **({'segment_start':slot['segment_start']} if slot.get('segment_start') is not None else {})})
             cursor=end
     return result

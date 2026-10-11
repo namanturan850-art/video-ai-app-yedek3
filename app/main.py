@@ -88,6 +88,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             narration.close()
             stock.close()
             ai_diagnostics.close()
+            director.close()
             scripts.close()
 
     application = FastAPI(title="AI Video Studio", version=__version__, lifespan=lifespan)
@@ -107,6 +108,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     production = ProductionService(scripts)
     quality.production = production
     application.state.production = production
+    from app.director import DirectorService
+    director = DirectorService(scripts, quality, production, settings)
+    application.state.director = director
     stock = StockService(production,settings)
     application.state.stock = stock
     application.include_router(stock_router(stock))
@@ -137,7 +141,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
-            script_route = any(part in request.url.path for part in ('/script', '/production','/narration','/subtitles','/render')) and request.url.path.startswith('/api/projects/')
+            script_route = any(part in request.url.path for part in ('/script', '/director', '/production','/narration','/subtitles','/render')) and request.url.path.startswith('/api/projects/')
             stock_route = '/production/stock' in request.url.path
             settings_route = request.url.path.startswith('/api/settings')
             started = time.monotonic()
@@ -243,8 +247,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def director_options():
         """Claude as default director when chosen; configured backups to offer on failure."""
         view = settings.safe_view()
-        backups = [name for name in ('gemini', 'ollama', 'openai') if view[name]['status'] != 'Yapılandırılmadı']
-        return {'claude_ready': view['claude']['has_api_key'], 'claude_default': settings.claude_director(), 'backup_providers': backups}
+        engine = settings.ai_engine()
+        backups = [name for name in ('gemini', 'ollama', 'openai') if view[name]['status'] != 'Yapılandırılmadı' and name != engine]
+        return {'claude_ready': view['claude']['has_api_key'], 'claude_default': settings.claude_director(), 'backup_providers': backups,
+                'engine': engine, 'engine_label': {'claude': 'Claude (ücretli)', 'gemini': 'Gemini (ücretsiz kota)'}.get(engine, ''),
+                'engine_paid': engine == 'claude'}
 
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):
@@ -388,6 +395,18 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get("/api/settings")
     def read_settings():
         return settings.safe_view()
+
+    @application.get('/api/projects/{project_id}/director')
+    def director_view(project_id: str):
+        return {**director.view(project_id), 'options': director_options()}
+
+    @application.post('/api/projects/{project_id}/director/run', status_code=202)
+    def director_run(project_id: str, payload: dict):
+        return director.start(project_id, payload)
+
+    @application.put('/api/projects/{project_id}/director/purpose')
+    def director_purpose(project_id: str, payload: dict):
+        return {'purpose': director.save_purpose(project_id, payload), 'message': 'Amaç özeti kaydedildi. Senaryo bir sonraki yönetmen çalıştırmasında bu özete göre yazılır.'}
 
     @application.get('/api/projects/{project_id}/ai-usage')
     def project_ai_usage(project_id: str):

@@ -57,7 +57,13 @@ Gemini kontrolü resmi Google Gemini Developer API `GET /v1beta/models` işlemin
 - `POST /api/settings/gemini/models`: kayıtlı anahtarla resmi API'nin desteklediği metin üretim modellerini listeler; anahtarı döndürmez.
 - Değiştirme/test istekleri `X-AI-Video-Studio: settings` başlığı gerektirir. API, gizli alanları hiçbir yanıtta geri döndürmez.
 
-## Claude (Anthropic) — Yönetmen
+## Hangi yapay zekâ kullanılır? (ücret)
+
+- **Varsayılan: Gemini.** Yönetmen (amaç, senaryo, kurgu planı) ve **Medyayı Tamamla** (aday görsellere bakıp onaylama, yeni arama kelimeleri, bütün video kontrolü) Gemini ile çalışır. Ayarlar → Gemini bölümüne aistudio.google.com'dan aldığınız ücretsiz anahtarı yapıştırın, **Modelleri Getir** ile bir model seçip **Kaydet** deyin.
+- Gemini ücretsiz kotasının dakika ve gün sınırı vardır. Dakika sınırında uygulama kısa süre bekleyip devam eder. Günlük kota dolarsa boş yuvalar anlatımdan kartla doldurulur; ertesi gün **Medyayı Tamamla**'ya tekrar basınca bu kartlar stok medyayla değiştirilmeye çalışılır. Bir 3 dakikalık video yaklaşık 45–90 Gemini isteği kullanır (sahte testlerdeki ölçüm); günlük sınırınız AI Studio'da görünür.
+- **Claude isteğe bağlıdır ve ücretlidir.** Claude API, claude.ai aboneliğinden (Pro/Max) ayrı ücretlendirilir. Yalnızca Ayarlar → Claude bölümünde **Gemini yerine Claude kullan (ücretli)** kutusunu işaretlerseniz kullanılır.
+
+## Claude (Anthropic) — isteğe bağlı, ücretli
 
 Claude; senaryoyu, kurgu planını ve medya seçimini yapar. Kurulum:
 
@@ -65,8 +71,19 @@ Claude; senaryoyu, kurgu planını ve medya seçimini yapar. Kurulum:
 2. Uygulamada **Ayarlar → Claude (Anthropic) — Yönetmen** bölümüne yapıştırın, **Kaydet** deyin. Anahtar şifreli saklanır; ekranda yalnız son 4 karakteri görünür.
 3. **Bağlantıyı Test Et**: ücretsizdir (metin üretmez), anahtar ve model erişimini kontrol eder.
 4. **Model**: Opus 5.5 (en iyi kalite, önerilen), Sonnet 5.5 (daha ucuz), Haiku 5.5 (en ucuz).
-5. **Tüm projelerde varsayılan yönetmen olsun** açıksa senaryo ekranı Claude ile açılır.
+5. **Gemini yerine Claude kullan (ücretli)** kutusunu işaretlemezseniz Claude hiç kullanılmaz. Varsayılan motor Gemini'dir (ücretsiz kota).
 
 Claude bir isteği güvenlik nedeniyle reddederse, aynı istek Anthropic'in önerdiği yedek Claude modelinde otomatik yeniden denenir (`fallbacks: "default"`). Claude hiç çalışmazsa (anahtar, kredi, internet, yoğunluk) senaryo ekranı **Gemini / Ollama ile devam et** düğmelerini gösterir; yedeğe **siz onaylamadan geçilmez**.
 
 **Maliyet:** her Claude çağrısının token sayısı ve tahmini maliyeti (liste fiyatı) kaydedilir. Senaryo ekranında “Bu projede Claude/AI tahmini maliyeti” satırı görünür. Fatura değildir; kesin tutar Anthropic konsolundadır.
+
+### Claude Yönetmen'i kullanmak (senaryo sayfası)
+
+1. Projeyi açın → **Senaryo**. En üstte **Claude Yönetmen** paneli vardır.
+2. **Yönetmeni Başlat** deyin ve ücret onayını verin. Başka bir şey girmeniz gerekmez (konu, dil ve süre projeden alınır).
+3. Panel adım adım ilerler: **Amaç belirleniyor → Senaryo yazılıyor → Senaryo onaylanıyor → Kurgu planı hazırlanıyor**.
+4. **Videonun amacı** bölümünü açıp hedef kitle, ana mesaj, ton ve açılış kancasını değiştirebilir, **Amacı Kaydet** diyebilirsiniz. Sonraki çalıştırmada senaryo bu özete göre yazılır.
+5. **Senaryoyu otomatik onayla** kutusunu kaldırırsanız yönetmen senaryodan sonra durur; metni okuyup **Onayla** dedikten sonra **Yönetmeni Devam Ettir** deyin.
+6. Bir adım hata verirse tamamlanan adımlar korunur; **Yönetmeni Devam Ettir** kaldığı yerden sürer. Claude hiç çalışmıyorsa panel **Gemini/Ollama ile devam et** düğmelerini gösterir (yalnız siz seçerseniz).
+
+Kurgu planında her sahne için: görsel türü (stok video / stok görsel / üretilmiş kart: harita, sayı, başlık/alıntı), İngilizce somut arama sözcükleri + 2–3 yedek, **mutlaka göster / gösterme** notları ve çekim sayısı vardır. Az stok bulunan konularda daha az ama daha uzun çekim planlanır (çekim başına 2,5–10 sn). Kart yazısı yalnızca anlatımda geçen bir ifade olabilir; uydurma sayı veya alıntı kabul edilmez. Plan şemaya uymazsa Claude bir kez otomatik düzeltir.

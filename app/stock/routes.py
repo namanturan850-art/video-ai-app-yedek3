@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
@@ -31,6 +32,17 @@ def stock_router(service):
         if not media: raise StockError('missing_media','Önce medya seçip indirin.',404)
         path = asset_path(service.projects,project_id,media)
         return FileResponse(path,media_type=media['content_type'],headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
+
+    @router.get('/diagnostics')
+    def diagnostics(project_id: str):
+        from datetime import datetime
+        from fastapi.responses import Response
+        from app.stock.director_media import diagnostics as build
+        data = build(service, project_id)
+        service._guard(data)
+        name = f'medya-tanilama-{datetime.now():%Y%m%d-%H%M}.json'
+        return Response(json.dumps(data, ensure_ascii=False, indent=2), media_type='application/json',
+                        headers={'Content-Disposition': f'attachment; filename="{name}"', 'Cache-Control': 'no-store'})
 
     @router.get('/handoff')
     def handoff(project_id: str): return service.handoff(project_id)

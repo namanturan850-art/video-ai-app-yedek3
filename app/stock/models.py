@@ -19,7 +19,7 @@ class StockError(ScriptError):
 
 class Media(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
-    provider: Literal['pexels', 'pixabay', 'openmontage']
+    provider: Literal['pexels', 'pixabay', 'openmontage', 'generated']
     media_id: str = Field(min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
     media_type: Literal['video', 'image']
     source_url: str = Field(max_length=2000)
@@ -58,6 +58,13 @@ def make_slots(scene):
     importance=scene.get('importance',50)
     target=4.5 if importance>=85 else 3.1 if importance<40 else 3.7
     count = max(1, min(max(1,math.floor(duration/2.5)),max(round(duration/target),math.ceil(duration/4.5))))
+    longest = 5.5
+    hint = scene.get('shot_count')
+    if type(hint) is int and hint >= 1:
+        # The director plans fewer, longer shots for niche topics (little stock
+        # footage) and more for well-covered ones; still 2.5-10 s per shot.
+        count = max(math.ceil(duration/10), min(hint, max(1, math.floor(duration/2.5))))
+        longest = max(5.5, min(10., duration/count + 1.5))
     # Sentence / deterministic narration-unit boundaries influence visual timing.
     units = narration_units(scene['narration_text'])
     total = word_count(scene['narration_text'])
@@ -70,8 +77,8 @@ def make_slots(scene):
     cuts = [start]
     for index in range(1, count):
         ideal = start + duration*index/count + (.28,-.22,.15,-.18)[(index-1)%4]
-        low=max(cuts[-1]+2.5,end-(count-index)*5.5)
-        high=min(cuts[-1]+5.5,end-(count-index)*2.5)
+        low=max(cuts[-1]+2.5,end-(count-index)*longest)
+        high=min(cuts[-1]+longest,end-(count-index)*2.5)
         ideal=min(high,max(low,ideal))
         useful = [b for b in boundaries if low<=b<=high and abs(b-ideal)<=.65]
         cuts.append(min(useful, key=lambda b: abs(b-ideal)) if useful else ideal)

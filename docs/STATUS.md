@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — AI33 kredi kaybı koruması
+
+- **Sorun (sahibin raporu):** Seslendirme Sürüm 1 (11:19:07) ve Sürüm 2 (11:20:34) uygulamada “Hata · Görev henüz oluşturulmadı”, AI33 panelinde “Done”; her yeniden deneme ~2.942 kredi.
+- **Kod nedeni:** oluşturma isteğinin 60 sn okuma sınırı aşılınca hata yazılıyor, görev kimliği hiç öğrenilemiyordu; **Devam Et** kimlik olmadan çalışmıyordu; yeni üretim öncesinde AI33'te aynı görev kontrol edilmiyordu.
+- **Düzeltme:** 240 sn bekleme; gönderilmiş ama yanıtsız istek **Doğrulanıyor** olur ve doğrulanmış görev geçmişinden (aynı metin+ses+saat, bağlanmamış) kimlik kurtarılır; bağlantı hiç kurulamadıysa kredi harcanmadığı söylenir. Yeni görevden önce 15 dk kopya kontrolü (bağlanmamışsa yeniden kullanılır, bağlıysa açık “kredi harcanır” onayı). Hatalı sürümlerde **AI33’ten kurtar** ve **Sesi elle yükle** (MP3/WAV/FLAC/OGG/M4A imza kontrolü). Şema değişmedi.
+- **Testler:** 14 yeni AI33 kurtarma testi (sahibin iki-sürüm durumu dahil) + mevcut 133 seslendirme testi geçti. Gerçek Chromium'da hatalı sürüm kartı, iki düğme ve elle yükleme denendi; JS hatası yok. Gerçek AI33 çağrısı yapılmadı.
+- **Sınır:** AI33 görev geçmişinin kaç görev döndürdüğü ve `?page=` parametresini destekleyip desteklemediği canlı doğrulanmadı; çok sayıda yeni görevden sonra eski görev ilk sayfalarda yoksa **Sesi elle yükle** kullanılır. **Live provider test must be run by owner on Windows.** [Adımlar](NARRATION.md#kredi-kaybı-koruması-doğrulanıyor--ai33ten-kurtar--sesi-elle-yükle)
+
 ## 2026-10-11 — Part 9.9: Medya alakası V4, pürüzsüz kamera, konuya göre kurgu, OpenMontage kurgu eşitliği
 
 - **Taban/kapsam:** `main` `bb71e4c` (birleşmiş PR #30) üzerine dal **claude/new-session-m49nr9**. ChatGPT/Codex'ten devralındı; önce Öncelik 1 denetimi yapıldı (PR #21, #22, #27–#30 birleşmiş, açık PR yok). **Part 10 başlamadı.** SQLite şeması, mevcut projeler, kasa/API anahtarları, ses, altyazı, medya ve eski MP4'ler değişmedi; yeni bağımlılık yok (yalnız geliştirici testleri için `numpy`).

@@ -18,7 +18,8 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
   const versions=node('section');versions.id='narration-versions';root.append(intro,status,diagnostic,source,docs,form,controls,versions);
   let state=null,pending=false,timer=null,loading=false,initialized=false;
   function button(parent,text,fn){const b=node('button',text);b.type='button';b.addEventListener('click',fn);parent.append(b);return b;}
-  const active=()=>pending||['queued','running'].includes(state?.job?.status);
+  const RUNNING=['queued','running','verifying'];
+  const active=()=>pending||RUNNING.includes(state?.job?.status);
   async function request(url,method='GET',body){
     let response;
     try{response=await fetch(url,{method,cache:'no-store',signal:AbortSignal.timeout(15000),headers:{'X-AI-Video-Studio':'projects','Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});}
@@ -26,15 +27,29 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
     let result;try{result=await response.json();}catch{throw new Error('Seslendirme yanıtı okunamadı. Sayfayı yenileyip tekrar deneyin.');}if(!response.ok)throw new Error(result.message||'Seslendirme işlemi tamamlanamadı.');return result;
   }
   async function operate(fn){if(active())return;pending=true;sync();try{await fn();await load();}catch(error){status.textContent=error.message;}finally{pending=false;sync();}}
-  function generate(kind='narration',regenerate=false){
+  function generate(kind='narration',regenerate=false,force=false){
     if(!state?.approved_script)return;
-    const warning=kind==='preview'?'Bu işlem AI33 kredisi kullanabilir. Devam edilsin mi?':regenerate?'Yeni bir AI33 görevi oluşturulacak ve ek kredi kullanabilir. Mevcut seslendirme korunacak. Devam edilsin mi?':'AI33/OpenSpeaker seslendirmesi kredi kullanabilir. Devam edilsin mi?';
+    const warning=force?'Aynı metin ve sesle yakın zamanda oluşturulmuş bir AI33 görevi var. YENİ bir görev oluşturulacak ve tekrar kredi harcanacak. Emin misiniz?':kind==='preview'?'Bu işlem AI33 kredisi kullanabilir. Devam edilsin mi?':regenerate?'Yeni bir AI33 görevi oluşturulacak ve ek kredi kullanabilir. Mevcut seslendirme korunacak. Devam edilsin mi?':'AI33/OpenSpeaker seslendirmesi kredi kullanabilir. Devam edilsin mi?';
     if(!window.confirm(warning))return;
-    return operate(()=>request(base+'/jobs','POST',{source_script_version_id:state.approved_script.id,voice_provider:provider.value,voice_id:voice.value,speed:Number(speed.value),kind,cost_confirmed:true,regenerate_confirmed:regenerate}));
+    return operate(()=>request(base+'/jobs','POST',{source_script_version_id:state.approved_script.id,voice_provider:provider.value,voice_id:voice.value,speed:Number(speed.value),kind,cost_confirmed:true,regenerate_confirmed:regenerate,force_new_task:force}));
+  }
+  const AUDIO_FORMATS={mp3:'mp3',wav:'wav',flac:'flac',ogg:'ogg',m4a:'m4a'};
+  async function upload(version,file){
+    const format=AUDIO_FORMATS[(file?.name||'').split('.').pop().toLowerCase()];
+    if(!format){status.textContent='Desteklenen ses biçimleri: MP3, WAV, FLAC, OGG, M4A.';return;}
+    if(!window.confirm(`“${file.name}” dosyası Sürüm ${version.version} için ses olarak kaydedilsin mi? Kredi harcanmaz.`))return;
+    return operate(async()=>{
+      let response;
+      try{response=await fetch(`${base}/versions/${version.id}/upload`,{method:'POST',cache:'no-store',headers:{'X-AI-Video-Studio':'projects','X-Audio-Format':format,'Content-Type':'application/octet-stream'},body:file});}
+      catch{throw new Error('Ses dosyası yüklenemedi. Uygulama penceresini kontrol edip tekrar deneyin.');}
+      let result;try{result=await response.json();}catch{throw new Error('Yükleme yanıtı okunamadı.');}
+      if(!response.ok)throw new Error(result.message||'Ses dosyası yüklenemedi.');
+    });
   }
   const create=button(controls,'Seslendirmeyi Oluştur',()=>generate()),sample=button(controls,'Kısa TTS Testi (kredi kullanır)',()=>generate('preview'));sample.className='secondary';
   const regenerate=button(controls,'Yeniden Oluştur',()=>generate('narration',true));
   const resume=button(controls,'Devam Et',()=>operate(()=>request(`${base}/jobs/${state.job.id}/resume`,'POST',{})));
+  const forceNew=button(controls,'Yeni görev oluştur (kredi harcanır)',()=>generate('narration',true,true));forceNew.className='secondary';
   button(controls,'Yenile',load);
   function voiceChoices(){
     const selected=voice.value;voice.replaceChildren();const empty=node('option','Ayarlar ekranından sesleri getirin');empty.value='';voice.append(empty);
@@ -48,7 +63,8 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
     const usable=state?.settings.contract_ready&&state.settings.has_api_key&&state.approved_script&&chosen&&/^(elevenlabs|minimax|clone|edge|kokoro|vbee|fishaudio)_\S+$/.test(voice.value)&&Number.isFinite(rate)&&rate>=.5&&rate<=1.5;
     create.disabled=sample.disabled=regenerate.disabled=active()||!usable;
     create.hidden=!!state?.versions.some(v=>v.kind==='narration');regenerate.hidden=!create.hidden;
-    resume.hidden=state?.job?.status!=='error';resume.disabled=active()||!state?.job?.progress.task_id;
+    resume.hidden=state?.job?.status!=='error'||state?.job?.progress.category==='recent_duplicate';resume.disabled=active();
+    forceNew.hidden=!(state?.job?.status==='error'&&state.job.progress.category==='recent_duplicate');forceNew.disabled=active()||!usable;
     provider.disabled=voice.disabled=speed.disabled=active()||!state;
   }
   function render(){
@@ -57,10 +73,20 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
     versions.replaceChildren();versions.append(node('h2','Seslendirme sürümleri'));
     for(const v of state?.versions||[]){
       const m=v.metadata,card=node('article');card.className='settings-panel';
-      card.append(node('h3',`${v.kind==='preview'?'Kısa TTS Testi':'Seslendirme'} Sürümü ${v.version}${state.active?.id===v.id?' · Aktif seslendirme':''}`),node('p',`${m.provider} · ${m.voice_provider} · ${m.voice_name||m.voice_id} · Hız: ${m.speed}`),node('p',`Dil: ${languageName(m.target_language)} · ${m.character_count} karakter · ${new Date(v.created_at).toLocaleString('tr-TR')}`),node('p',`Kaynak senaryo: ${m.source_script_version?'Sürüm '+m.source_script_version:v.source_script_version_id}`),node('p',`Görev: ${m.task_id||'Henüz oluşturulmadı'}`));
-      card.append(node('p',`Durum: ${{queued:'Görev oluşturuluyor',running:'Görev bekleniyor',completed:'Tamamlandı',error:'Hata'}[m.status]||'Bekliyor'}`));
+      card.append(node('h3',`${v.kind==='preview'?'Kısa TTS Testi':'Seslendirme'} Sürümü ${v.version}${state.active?.id===v.id?' · Aktif seslendirme':''}`),node('p',`${m.provider} · ${m.voice_provider} · ${m.voice_name||m.voice_id} · Hız: ${m.speed}`),node('p',`Dil: ${languageName(m.target_language)} · ${m.character_count} karakter · ${new Date(v.created_at).toLocaleString('tr-TR')}`),node('p',`Kaynak senaryo: ${m.source_script_version?'Sürüm '+m.source_script_version:v.source_script_version_id}`));
+      card.append(node('p',`Durum: ${{queued:'Görev oluşturuluyor',running:'Görev bekleniyor',verifying:'Doğrulanıyor (AI33 görev geçmişinde aranıyor)',completed:'Tamamlandı',error:'Hata'}[m.status]||'Bekliyor'}`));
+      card.append(node('p',m.task_id?`AI33 görevi: ${m.task_id}${m.recovered_from_history?' (görev geçmişinden kurtarıldı)':''}${m.reused_existing_task?' (mevcut görev kullanıldı, yeni kredi harcanmadı)':''}`:m.audio_source==='manual_upload'?'AI33 görevi: bağlanmadı (ses elle yüklendi)':m.creation_attempted?'AI33 görevi: istek gönderildi, kimlik henüz doğrulanmadı':'AI33 görevi: henüz gönderilmedi'));
+      if(m.audio_source==='manual_upload')card.append(node('p','Ses dosyası elle yüklendi.'));
       if(v.stale)card.append(node('p','Eski senaryo sürümüne ait'));
       if(!m.audio)card.append(node('p','Ses dosyası henüz hazır değil.'));
+      if((!m.audio||v.audio_missing)&&!RUNNING.includes(m.status)){
+        const tools=node('div');tools.className='settings-actions';
+        if(m.status==='error'&&(m.task_id||m.creation_attempted)){const rescue=button(tools,'AI33’ten kurtar',()=>operate(()=>request(`${base}/versions/${v.id}/recover`,'POST',{})));rescue.disabled=active();rescue.title='AI33 görev geçmişinde bu sürümün görevini bulur ve sesi indirir. Yeni kredi harcanmaz.';}
+        const picker=node('input');picker.type='file';picker.accept='.mp3,.wav,.flac,.ogg,.m4a,audio/*';picker.hidden=true;
+        picker.addEventListener('change',()=>{const file=picker.files?.[0];picker.value='';if(file)upload(v,file);});
+        const manual=button(tools,'Sesi elle yükle',()=>picker.click());manual.className='secondary';manual.disabled=active();manual.title='AI33 panelinden indirdiğiniz ses dosyasını bu sürüme bağlar.';
+        tools.append(picker);card.append(tools);
+      }
       if(v.audio_missing)card.append(node('p','Yerel ses dosyası eksik; görev kimliği korundu.'));
       if(m.audio&&!v.audio_missing){
         card.append(node('p',m.audio.duration===null?'Ses süresi daha sonra hesaplanacak.':`Gerçek ses süresi: ${m.audio.duration.toFixed(1)} saniye`));
@@ -78,7 +104,7 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
       const job=state.job;status.textContent=job?job.status==='error'?`${job.error_message} · Tanı: ${job.progress.category}`:job.progress.message:'Seslendirme bilgileri hazır.';
       diagnostic.textContent=job?.progress?.diagnostic?JSON.stringify(job.progress.diagnostic,null,2):'';
       render();
-    }catch(error){status.textContent=error.message;}finally{loading=false;clearTimeout(timer);if(['queued','running'].includes(state?.job?.status))timer=setTimeout(load,1200);}
+    }catch(error){status.textContent=error.message;}finally{loading=false;clearTimeout(timer);if(RUNNING.includes(state?.job?.status))timer=setTimeout(load,1200);}
   }
   window.addEventListener('pagehide',()=>clearTimeout(timer));load();
 }

@@ -49,6 +49,7 @@ class NarrationInput(BaseModel):
     cost_confirmed: bool = False
     kind: Literal['narration','preview'] = 'narration'
     regenerate_confirmed: bool = False
+    force_new_task: bool = False
 
 
 def validate_input(payload):

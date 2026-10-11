@@ -40,6 +40,28 @@ Yeni ayarlarda varsayılan sağlayıcı ElevenLabs. Kayıtlı diğer sağlayıc�
 
 **Önizlemeyi Dinle** varsa önce bu ücretsiz hazır örneği kullanabilirsiniz. Anahtar/Authorization/çerez/referrer örnek adresine gönderilmez. Ses bilgileri eksik olabilir; bu listeyi bozmaz.
 
+## Kredi kaybı koruması (Doğrulanıyor · AI33’ten kurtar · Sesi elle yükle)
+
+**Sorun:** AI33 uzun metinlerde seslendirme isteğine geç yanıt verebiliyor. Önceden uygulama 60 saniye sonra “Hata” yazıp görev kimliğini kaydedemiyordu; AI33'te ise iş “Done” oluyordu. Tekrar denemek ikinci kez kredi harcatıyordu.
+
+**Şimdi:**
+
+- İstek gönderildikten sonra yanıt gecikirse durum **Doğrulanıyor** olur (Hata değil). Uygulama AI33 görev geçmişinde **aynı metin + aynı ses + gönderim saatine yakın** görevi arar (yaklaşık 15 dakika boyunca), bulunca görev kimliğini kaydeder ve tamamlanınca sesi indirir. Yeni kredi harcanmaz. Bekleme süresi de 4 dakikaya çıkarıldı.
+- **Hata** yalnız AI33 açıkça hata döndürürse, bağlantı hiç kurulamadıysa (istek gitmedi, kredi harcanmadı) veya geçmişte eşleşen görev hiç yoksa gösterilir. Son durumda ekranda “büyük olasılıkla kredi harcanmadı” yazar.
+- **Yeni seslendirmeden önce** son 15 dakikada AI33'te aynı metin ve sesle görev var mı bakılır. Hiçbir sürüme bağlı değilse o görev kullanılır (kredi harcanmaz). Zaten bir sürüme bağlıysa yeni görev gönderilmez; **Yeni görev oluştur (kredi harcanır)** düğmesi ve açık onay istenir.
+- Hata durumundaki sürümlerde **AI33’ten kurtar**: o sürümün görevini geçmişte bulur (aynı metinli iki sürüm varsa her birine saatine en yakın, henüz bağlanmamış görevi verir) ve sesi indirir.
+- **Sesi elle yükle**: AI33 panelinden indirdiğiniz MP3/WAV/FLAC/OGG/M4A dosyasını o sürüme bağlar. Dosya gerçekten ses dosyası mı diye kontrol edilir; mevcut hazır ses üzerine yazılmaz.
+- Eşleştirme tam metinle yapılır (geçmişte kısaltılmış metin varsa aynı uzunlukta ve birebir başlangıç olmalı). Benzer ama farklı metin asla eşlenmez.
+
+### Bugünkü iki sürümü kurtarma (11.10.2026 11:19:07 ve 11:20:34)
+
+1. Güncellemeyi alıp uygulamayı yeniden başlatın.
+2. Projeyi açın → **Seslendirmeyi Aç**.
+3. **Seslendirme Sürümü 1** kartında **AI33’ten kurtar**'a basın. Durum önce “Doğrulanıyor”, sonra “Tamamlandı” olmalı; “AI33 görevi: … (görev geçmişinden kurtarıldı)” yazmalı. Ses oynatıcısı çıkar.
+4. Aynısını **Sürüm 2** için yapın. İki sürüm farklı görevlere bağlanmalı (süreleri yaklaşık 2:43 ve 2:52).
+5. AI33 panelinde **yeni görev oluşmadığını** (kredi düşmediğini) kontrol edin.
+6. “Görev bulunamadı” derse: AI33 panelinden sesi indirip kartta **Sesi elle yükle** ile seçin.
+
 ## Hata ve devam etme
 
 - **Anahtar reddedildi:** Ayarlar'dan doğru AI33 anahtarını kaydedin; sonra aynı görev için Devam Et kullanın.

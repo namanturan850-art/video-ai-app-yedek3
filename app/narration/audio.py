@@ -181,3 +181,34 @@ class AudioDownloader:
         finally:
             AUDIO_REQUEST_ACTIVE.reset(logging_token)
             temporary.unlink(missing_ok=True)
+
+
+UPLOAD_FORMATS={'mp3':('.mp3','audio/mpeg'),'wav':('.wav','audio/wav'),'flac':('.flac','audio/flac'),
+                'ogg':('.ogg','audio/ogg'),'m4a':('.m4a','audio/mp4')}
+
+
+def store_upload(projects,project_id,format,data):
+    """Owner-supplied audio (e.g. downloaded from the AI33 panel): same signature,
+    size, atomic-write and duration rules as a provider download."""
+    if format not in UPLOAD_FORMATS:
+        raise NarrationError('invalid_audio','Desteklenen ses biçimleri: MP3, WAV, FLAC, OGG, M4A.',422)
+    head=bytes(data[:32]);size=len(data)
+    incomplete_wav=format=='wav' and (size<44 or int.from_bytes(head[4:8],'little')+8>size)
+    if not 12<=size<=LIMIT or incomplete_wav or not valid_signature(head,format):
+        raise NarrationError('invalid_audio','Dosya seçilen biçimde geçerli bir ses dosyası değil. AI33 panelinden indirdiğiniz dosyayı seçin.',422)
+    suffix,mime=UPLOAD_FORMATS[format]
+    with projects.lock,closing(projects._connection()) as connection:
+        projects._row(connection,project_id);folder=directory(projects,project_id)
+    temporary=folder/('.audio-'+uuid4().hex)
+    try:
+        with temporary.open('xb') as stream:
+            stream.write(data);stream.flush();os.fsync(stream.fileno())
+        with projects.lock:
+            directory(projects,project_id);path=folder/(uuid4().hex+suffix);os.replace(temporary,path)
+    except OSError:
+        raise NarrationError('local_storage','Ses kaydedilemedi. Veri klasörünün yazılabilir olduğunu ve boş alanı kontrol edin.') from None
+    finally:temporary.unlink(missing_ok=True)
+    duration=probe_duration(path)
+    return {'local_path':'voice/'+path.name,'format':format,'content_type':mime,'file_size':size,
+            'sha256':hashlib.sha256(data).hexdigest(),'duration':duration,
+            'duration_message':'' if duration is not None else 'Ses süresi daha sonra hesaplanacak.'}

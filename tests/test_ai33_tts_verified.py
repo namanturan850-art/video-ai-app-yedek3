@@ -134,7 +134,7 @@ def test_unsafe_redirect_never_followed(audio_project,redirect):
 
 class ExternalFixture:
     """Production adapter + downloader, synthetic official-shaped responses."""
-    def __init__(self):self.calls=[];self.fail_poll=False;self.fail_audio=False;self.waiting=None;self.release=None;self.next=0
+    def __init__(self):self.calls=[];self.fail_poll=False;self.fail_audio=False;self.waiting=None;self.release=None;self.next=0;self.history=[]
     def serve(self,request):
         self.calls.append(request)
         if request.url.host=='api.ai33.pro':
@@ -142,6 +142,9 @@ class ExternalFixture:
             if request.method=='POST':
                 assert request.url.path=='/v3/text-to-speech'
                 self.next+=1;return httpx.Response(200,json={'success':True,'task_id':f'fixture-tts-task-{self.next}'})
+            if request.method=='GET' and request.url.path=='/v1/tasks':
+                # Verified history record; empty unless a test adds tasks.
+                return httpx.Response(200,json={'success':True,'data':self.history,'page':1,'limit':20,'total':str(len(self.history))})
             assert request.method=='GET' and request.url.path.startswith('/v1/task/')
             if self.waiting:self.waiting.set();assert self.release.wait(8)
             if self.fail_poll:return httpx.Response(503,text=KEY+AUDIO)

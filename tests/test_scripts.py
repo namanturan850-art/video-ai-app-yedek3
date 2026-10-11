@@ -588,3 +588,11 @@ def test_part4_schema_upgrade_failure_rolls_back(tmp_path):
         assert connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == '3'
         assert connection.execute('SELECT legacy FROM script_versions').fetchone()[0] == 'keep'
         assert not connection.execute("SELECT name FROM sqlite_master WHERE name='script_jobs'").fetchone()
+
+
+def test_section_role_guides_opening_middle_final_and_visual_writing():
+    from app.scripts.engine import YouTubeScriptEngine as E
+    first, middle, last, single = E.section_role(0, 3), E.section_role(1, 3), E.section_role(2, 3), E.section_role(0, 1)
+    assert 'OPENING' in first and 'Never greet' in first and 'FINAL' not in first
+    assert 'MIDDLE' in middle and 'FINAL' in last and 'pays off' in single
+    assert all('concrete places, objects' in role for role in (first, middle, last, single))

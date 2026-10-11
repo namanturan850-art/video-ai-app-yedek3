@@ -79,26 +79,84 @@ def motion(scene,index,style,opening):
     return sequence[index%len(sequence)],strength,'Açılış temposu' if opening else 'Dengeli görsel çeşitlilik'
 
 
+# Multilingual mood words (de/en/es/fr/tr). Free-text scene moods drive the
+# project's edit rhythm instead of one fixed template for every topic.
+CALM=re.compile(r'ruhig|nachdenk|geheimnis|mysteri|myst|melanchol|traurig|ernst|sakin|gizem|huzur|duygusal|hüzün|calm|quiet|reflect|sad|serious|somber|tranquil|tranquilo|misterio|triste|serio|calme|mystère|mystere|triste|grave|sérieux|serieux',re.I)
+ENERGETIC=re.compile(r'spannend|aufregend|dramat|energ|schnell|intens|action|heyecan|dinamik|hızlı|hizli|gerilim|exciting|upbeat|fast|thrill|tense|urgent|emocionante|rápido|rapido|tenso|excitant|rapide|tendu|urgent',re.I)
+PROFILES={
+ 'calm':{'video':.035,'image':.06,'split':6.5,'transition_every':2,'transition_seconds':.6,'transitions':('crossfade','crossfade','fade_dark'),'label':'Sakin belgesel ritmi'},
+ 'balanced':{'video':.045,'image':.075,'split':5.5,'transition_every':3,'transition_seconds':.45,'transitions':('crossfade','fade_dark','crossfade'),'label':'Dengeli anlatım ritmi'},
+ 'energetic':{'video':.055,'image':.09,'split':4.5,'transition_every':4,'transition_seconds':.3,'transitions':('crossfade','dip_black'),'label':'Hızlı ve enerjik ritim'},
+}
+
+
+def edit_profile(t):
+    """Project-level rhythm from the actual scene moods and narration pace."""
+    calm=energetic=0
+    for scene in t['editing_scenes']:
+        mood=str(scene.get('mood',''))
+        calm+=bool(CALM.search(mood));energetic+=bool(ENERGETIC.search(mood))
+    total=max(1,len(t['editing_scenes']))
+    name='energetic' if energetic>calm and energetic/total>=.3 else 'calm' if calm>energetic and calm/total>=.3 else 'balanced'
+    return name
+
+
+def adaptive_motion(scene,slot,index,profile,seed,previous):
+    """Every shot gets a gentle, varied operator move; stills move more than
+    video. Fast-moving footage and tight compositions stay restrained."""
+    settings=PROFILES[profile];image=slot['selected_media_local_identity']['media_type']=='image'
+    if slot['selected_media_local_identity'].get('graphic'):return 'push_in',.015,'Metin kartında çok hafif yaklaşma'
+    strength=settings['image' if image else 'video'];composition=scene.get('composition','medium')
+    importance=scene.get('importance',50);mood=str(scene.get('mood',''))
+    moving=composition=='movement' or bool(re.search(r'\b(?:running|driving|flying|racing|laufen|fahren|fliegen|koşu|hareket|vuelo|correr|voler|courir)\b',str(scene.get('action','')).casefold()))
+    if moving and not image:return 'subtle_reframe',.012,'Hareketli çekimde sakin kadraj'
+    if composition in ('close','detail','person') and not image:return 'push_in',min(strength,.025),'Yakın kadrajda hafif yaklaşma'
+    if importance>=75 or ENERGETIC.search(mood):strength*=1.15
+    if importance<40:strength*=.8
+    explicit=scene.get('motion','none')
+    if explicit in ('slow_zoom','ken_burns'):options=('push_in','push_out') if image else ('push_in',)
+    elif explicit=='pan':options=('pan_right','pan_left')
+    elif profile=='calm':options=('push_in','push_in','pan_right','push_out','pan_left')
+    elif profile=='energetic':options=('pan_right','push_in','pan_left','pan_up','push_out','pan_down')
+    else:options=('push_in','pan_right','push_out','pan_left','pan_up','push_in')
+    pick=int(hashlib.sha256(f'{seed}:motion:{slot["slot_id"]}'.encode()).hexdigest()[:8],16)%len(options)
+    effect=options[pick]
+    if effect==previous and len(set(options))>1:effect=next(o for o in options[pick+1:]+options[:pick] if o!=previous)
+    return effect,round(strength,4),settings['label']
+
+
 def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_details=None):
     meta={s['scene_id']:s for s in t['editing_scenes']};items=[];boundary=0
+    profile=edit_profile(t) if style=='adaptive' else None;motion_seed=seed or source_fingerprint[:16];previous_effect=None
     for i,slot in enumerate(t['slots']):
         scene=meta[slot['scene_id']];duration=slot['frames']/30;opening=slot['start']<15
         if style=='basic':
             hint=scene.get('motion');image=slot['selected_media_local_identity']['media_type']=='image'
             effect=('pan_right' if hint=='pan' else 'push_in') if image and hint in ('pan','slow_zoom','ken_burns') else 'none'
             strength=.04 if effect!='none' else 0.;reason='Mevcut Part 9 kurgu';count=1
+        elif style=='adaptive':
+            effect,strength,reason=adaptive_motion(scene,slot,i,profile,motion_seed,previous_effect);previous_effect=effect
+            # Long single shots are split by a clear punch-in cut on the same
+            # source (a deliberate reframe, never a small accidental jump).
+            split=PROFILES[profile]['split'];count=1 if effect=='subtle_reframe' else 3 if duration>split*2.2 else 2 if duration>split else 1
+            count=min(count,max(1,slot['frames']//60))
         else:
-            effect,strength,reason=motion(scene,i,'balanced' if style=='adaptive' else style,opening)
-            if style=='adaptive' and (slot['selected_media_local_identity']['media_type']=='video' and scene.get('motion') not in ('pan','slow_zoom','ken_burns') or i%3):effect,strength,reason='none',0.,'Sakin B-roll'
+            effect,strength,reason=motion(scene,i,style,opening)
             count=3 if duration>(11 if style=='balanced' else 10) else 2 if duration>(7 if style=='balanced' else 6) or (opening and duration>5.5) else 1
             count=min(count,max(1,slot['frames']//75))
             if effect=='none' and scene.get('composition') in ('movement','close','detail','graphic','person'):count=1
             if reason=='Hareketli sahne korunur':count=1
-        if style=='adaptive' and effect=='none':count=1
         segments=[]
         for j in range(count):
             a=round(j*slot['frames']/count);b=round((j+1)*slot['frames']/count)
             current=effect
+            if style=='adaptive':
+                # Alternate wide → tighter → wide framing; each piece moves on its own.
+                punch=(.12 if j%2 else 0.) if count>1 else 0.
+                current=effect if j%2==0 else ('push_out' if effect=='push_in' else 'push_in' if effect in ('push_out','subtle_reframe') else effect)
+                segments.append({'start_frame':a,'end_frame':b,'frames':b-a,'start':(slot['start_frame']+a)/30,'end':(slot['start_frame']+b)/30,
+                                 'motion_effect':current,'motion_strength':round(strength,4),'base_zoom':punch,'camera_curve':'eased'})
+                continue
             if j and effect!='none':
                 if scene.get('motion')=='pan':current='pan_left' if effect=='pan_right' else 'pan_right'
                 elif scene.get('motion') in ('slow_zoom','ken_burns'):current='push_in'
@@ -113,6 +171,10 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
         if i<len(t['slots'])-1 and slot['scene_id']!=t['slots'][i+1]['scene_id']:
             original=scene.get('transition','none');boundary+=1
             if style=='basic':transition=original if original in ('crossfade','fade') else 'hard_cut';seconds=1/3 if transition=='crossfade' else .3 if transition=='fade' else 0.
+            elif style=='adaptive':
+                settings=PROFILES[profile]
+                if original in ('crossfade','fade') or boundary%settings['transition_every']==1:
+                    transition='fade_dark' if original=='fade' else 'crossfade';seconds=settings['transition_seconds']
             elif original in ('crossfade','fade') or boundary%(3 if style=='balanced' else 2)==1 or (opening and boundary==1):
                 transition='fade_dark' if original=='fade' else 'crossfade' if original=='crossfade' or boundary%3 else 'dip_black'
                 seconds=(12 if style=='balanced' else 14)/30
@@ -131,6 +193,7 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
             if item['punch_in'] and item['start']<b and item['end']>a:
                 item['punch_in']=False;item['punch_suppressed']='transition'
     plan={'contract_version':1,'algorithm_version':'smart_edit_v3','editing_style':style,'style_label':STYLES[style],
+          **({'edit_profile':profile,'edit_profile_label':PROFILES[profile]['label']} if profile else {}),
           'source_fingerprint':source_fingerprint,'slots':items,'emphasis':texts}
     plan['summary']={'slots':len(items),'scenes':len(t['scenes']),
                      'motion_effects':sum(any(s['motion_effect']!='none' for s in item['segments']) for item in items) if style!='basic' else sum(s['editing'].get('motion') in ('slow_zoom','pan','ken_burns') and s['selected_media_local_identity']['media_type']=='image' for s in t['slots']),
@@ -153,13 +216,45 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
     return plan
 
 
-def camera(segment,extra_frames=0,punches=(),*,head_hold=0,tail_hold=0):
+def _perspective(zoom,fx,fy):
+    """Sub-pixel crop+scale. zoompan rounds its window to whole pixels, which
+    shows as visible stepping/jitter on slow pushes; perspective resamples the
+    exact fractional window (measured ~6x lower frame-to-frame jitter)."""
+    w=f'(W/({zoom}))';h=f'(H/({zoom}))';left=f'((W-{w})*({fx}))';top=f'((H-{h})*({fy}))'
+    return (f",perspective=x0='{left}':y0='{top}':x1='{left}+{w}':y1='{top}':x2='{left}':y2='{top}+{h}'"
+            f":x3='{left}+{w}':y3='{top}+{h}':interpolation=cubic:eval=frame,setsar=1")
+
+
+def _punch(punches,envelope='1'):
+    bonus=[f'max(0,min(min((on-{a})/6,({b}-on)/6),1))' for a,b in punches]
+    value=bonus[0]
+    for item in bonus[1:]:value=f'max({value},{item})'
+    return f'0.01*({value})*({envelope})'
+
+
+def camera(segment,extra_frames=0,punches=(),*,head_hold=0,tail_hold=0,length=None):
     """One output frame per moving input frame: video never becomes a still."""
     effect=segment['motion_effect'];strength=segment['motion_strength']
     if effect=='none':return ''
+    if segment.get('camera_curve')=='eased':
+        # One direction per shot with soft start/stop (half linear, half
+        # cosine ease): reads as a steady operator move, never a "breathing"
+        # in-out cycle. Clamped, so it holds on the final frame.
+        n=max(2,length or segment['frames']);p=f'min(max(on/{n-1},0),1)'
+        e=f'(0.5*{p}+0.25*(1-cos(PI*{p})))'
+        base=1+segment.get('base_zoom',0.);fx=fy='0.5'
+        if effect=='push_in':zoom=f'{base}+{strength}*{e}'
+        elif effect=='push_out':zoom=f'{base}+{strength}*(1-{e})'
+        else:
+            zoom=f'{base+strength}'
+            if effect in ('pan_left','pan_right'):fx=f'(0.5+{.35 if effect=="pan_right" else -.35}*(2*{e}-1))'
+            elif effect in ('pan_up','pan_down'):fy=f'(0.5+{.35 if effect=="pan_down" else -.35}*(2*{e}-1))'
+            else:zoom=f'{base}+{strength}*(0.5+0.5*{e})';fx=f'(0.42+0.16*{e})'
+        if punches and strength>=.02:zoom=f'({zoom})+{_punch(punches)}'
+        return _perspective(zoom,fx,fy)
     if segment.get('camera_curve')=='neutral_cycle':
         # Shared neutral framing at every treatment boundary. Both sides of a
-        # transition hold this state; the input video itself keeps moving (d=1).
+        # transition hold this state; the input video itself keeps moving.
         start=max(0,head_hold);end=max(start+1,segment['frames']-1-max(0,tail_hold))
         p=f'max(0,min((on-{start})/{max(1,end-start)},1))'
         peak=.35 if effect=='push_out' else .65 if effect=='push_in' else .5
@@ -169,30 +264,20 @@ def camera(segment,extra_frames=0,punches=(),*,head_hold=0,tail_hold=0):
         zoom=f'1+{strength}*({envelope})'
         if punches and strength>=.02:
             # No punch may escape the neutral endpoint/hold envelope.
-            bonus=[]
-            for a,b in punches:bonus.append(f'max(0,min(min((on-{a})/6,({b}-on)/6),1))')
-            punch=bonus[0]
-            for value in bonus[1:]:punch=f'max({punch},{value})'
-            zoom=f'min({max(1.05,1+strength):.4f},({zoom})+0.01*({punch})*({envelope}))'
-        x='(iw-iw/zoom)/2'
-        y='(ih-ih/zoom)/2'
+            zoom=f'min({max(1.05,1+strength):.4f},({zoom})+{_punch(punches,envelope)})'
+        fx=fy='0.5'
         if effect in ('pan_left','pan_right','subtle_reframe'):
             sign=-1 if effect=='pan_left' else 1;amount=.1 if effect=='subtle_reframe' else .35
-            x=f'(iw-iw/zoom)*(0.5+({sign*amount})*({envelope}))'
+            fx=f'(0.5+({sign*amount})*({envelope}))'
         elif effect in ('pan_up','pan_down'):
-            sign=-1 if effect=='pan_up' else 1;y=f'(ih-ih/zoom)*(0.5+({sign*.35})*({envelope}))'
-        x=f'2*floor(({x})/2)';y=f'2*floor(({y})/2)'
-        return f",scale=3840:2160,zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s=1920x1080:fps=30,setsar=1"
+            sign=-1 if effect=='pan_up' else 1;fy=f'(0.5+({sign*.35})*({envelope}))'
+        return _perspective(zoom,fx,fy)
     p=f'min(on/{max(segment["frames"]-1,1)},1)'
     zoom=f'1+{strength}*({p})' if effect=='push_in' else f'1+{strength}*(1-({p}))' if effect=='push_out' else str(1+strength)
     if punches and strength>=.02:
-        bonus=[]
-        for start,end in punches:bonus.append(f'max(0,min(min((on-{start})/6,({end}-on)/6),1))')
-        envelope=bonus[0]
-        for value in bonus[1:]:envelope=f'max({envelope},{value})'
-        zoom=f'min({max(1.05,1+strength):.4f},({zoom})+0.01*({envelope}))'
-    x='(iw-iw/zoom)/2';y='(ih-ih/zoom)/2'
-    if effect in ('pan_left','pan_right'):x=f'(iw-iw/zoom)*({p})' if effect=='pan_right' else f'(iw-iw/zoom)*(1-({p}))'
-    elif effect in ('pan_up','pan_down'):y=f'(ih-ih/zoom)*({p})' if effect=='pan_down' else f'(ih-ih/zoom)*(1-({p}))'
-    elif effect=='subtle_reframe':x=f'(iw-iw/zoom)*(0.4+0.2*({p}))'
-    return f",scale=2304:1296,zoompan=z='{zoom}':x='{x}':y='{y}':d=1:s=1920x1080:fps=30,setsar=1"
+        zoom=f'min({max(1.05,1+strength):.4f},({zoom})+{_punch(punches)})'
+    fx=fy='0.5'
+    if effect in ('pan_left','pan_right'):fx=f'({p})' if effect=='pan_right' else f'(1-({p}))'
+    elif effect in ('pan_up','pan_down'):fy=f'({p})' if effect=='pan_down' else f'(1-({p}))'
+    elif effect=='subtle_reframe':fx=f'(0.4+0.2*({p}))'
+    return _perspective(zoom,fx,fy)

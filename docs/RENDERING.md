@@ -1,7 +1,31 @@
-# Video Oluştur / Render — Part 9–9.8
+# Video Oluştur / Render — Part 9–9.9
 
 Mevcut proje → **Video Oluştur / Render**. Bu işlem tamamen yereldir; AI33, Gemini, OpenAI, Ollama, Pexels veya Pixabay çağrısı yapmaz ve API kredisi kullanmaz. Part 10 başlamadı.
 
+
+## Part 9.9 — Pürüzsüz kamera ve konuya göre kurgu ritmi
+
+**Ne değişti?**
+
+- **Kamera titremesi giderildi.** Yakınlaşma/kaydırma artık FFmpeg `perspective` filtresiyle piksel altı hassasiyette çizilir. Eski `zoompan` pencereyi tam piksele yuvarlıyordu; aynı hareket için ölçülen kareden kareye sarsıntı ~0,76 pikselden ~0,13 piksele indi (hız aynı).
+- **Uyarlanabilir YouTube artık slayt gösterisi değil.** Önceden B-roll videoların çoğu tamamen sabitti. Şimdi her çekim tek yönlü, yavaş başlayıp yavaş biten bir kamera hareketi alır (fotoğraflar videodan biraz daha fazla; hızlı hareketli ve yakın çekimler çok az). Aynı hareket art arda gelmez.
+- **Kurgu ritmi konudan seçilir.** Sahne duyguları (Almanca/İngilizce/İspanyolca/Fransızca/Türkçe) okunur: *gizemli/sakin* → **Sakin belgesel ritmi** (daha sık yumuşak geçiş, yavaş yaklaşma); *heyecanlı/dramatik* → **Hızlı ve enerjik ritim** (daha çok kesme, kaydırma); diğerleri → **Dengeli anlatım ritmi**. Render ekranında “Kurgu ritmi” satırında görünür.
+- **Uzun çekimler bölünür.** 5–6 saniyeden uzun tek çekim, aynı klipte belirgin bir yakına geçiş kesmesiyle (punch-in) ikiye/üçe ayrılır. Küçük, kaza gibi görünen zıplama yapılmaz.
+- **Yazı kartları:** kart yazısı sabit ve net kalır, arkadaki görüntü hafifçe hareket eder. Bir geçiş, kart yazısıyla çakışacaksa yapılmaz ve bir sonraki uygun sahne sınırına taşınır (yazı geçişte asla “parlamaz”).
+- **OpenMontage (ana motor) artık aynı kurguyu uygular.** Önceden OpenMontage yolu her çekimi sabit ve sert kesmeyle gösteriyordu. Kompozisyon artık aynı kamera hesaplarını, yumuşak geçişleri, koyu geçişleri, punch-in kesmeleri ve vurgu yazılarını çizer. Burada gerçek bir Remotion 4.0 render'ı ile doğrulandı (sizin Windows kurulumunuzda değil).
+
+Ses, altyazı zamanları, sahne sınırları ve kare sayıları değişmez; kaynak dosyalara dokunulmaz. Eski videolar korunur.
+
+### Part 9.9 Windows kontrolü
+
+1. GitHub Desktop'ta **Fetch origin** → **Pull origin** yapın (PR birleştikten sonra).
+2. Açık uygulama penceresini kapatın, `START_AI_VIDEO_STUDIO.bat` dosyasına çift tıklayın.
+3. Medyası tamamlanmış bir projeyi açın → **Video Oluştur / Render**.
+4. Kurgu stili **Uyarlanabilir YouTube (önerilen)** olsun. Kurgu özetinde **Kurgu ritmi: …** satırını görün.
+5. Önce motor olarak **Yerel Adaptif — FFmpeg / NVIDIA** seçip **Render Başlat**'a basın. Bitince önizlemede: çekimlerin yavaşça yaklaştığını/kaydığını, sarsılma olmadığını, uzun çekimlerin bir yakın kesmeyle bölündüğünü kontrol edin.
+6. OpenMontage kuruluysa motoru **OpenMontage — Ana Motor** yapıp tekrar render alın; aynı hareketleri ve yumuşak geçişleri görmelisiniz. Kurulu değilse ekranda açıkça “kurulmamış” yazar.
+7. Kart yazısı olan anlarda yazının geçiş sırasında bir kare bile parlamadığını kontrol edin.
+8. Sorun görürseniz videonun hangi dakikasında olduğunu ve Kurgu özetindeki sayıları bana yazın.
 
 ## Part 9.8 — Ana motor ve etkin kapsama
 

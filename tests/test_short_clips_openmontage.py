@@ -335,7 +335,9 @@ def test_mock_trim_compose_projection_preserves_timing_without_cycles(tmp_path,m
     assert [c[0] for c in calls]==['trim','trim','compose']
     for (_,request),item,slot in zip(calls,edit['slots'],t['slots']):
         assert request['start_seconds']==item['source_in']
-        assert request['end_seconds']-request['start_seconds']==pytest.approx(slot['frames']/30)
+        # Only a crossfade adds its blend handle; never loops or speed changes.
+        handle=round(item['transition_duration']*30) if item['transition_out']=='crossfade' else 0
+        assert request['end_seconds']-request['start_seconds']==pytest.approx((slot['frames']+handle)/30)
         assert 'speed' not in request and request['codec']=='libx264'
     assert source.read_bytes()==b'unchanged' and voice.read_bytes()==b'voice'
     assert result['metadata']['montage_engine']=='openmontage'

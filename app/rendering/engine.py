@@ -130,7 +130,7 @@ class FFmpegRenderProvider:
             if outgoing[i]:parts.append(('tail',count,total))
             smart_slot=edits.get(slot['slot_id']) if smart else None
             decorate=True
-            if smart_slot and any(x['motion_effect']!='none' for x in smart_slot['segments']) and 'zoompan' not in self.tools['filters']:
+            if smart_slot and any(x['motion_effect']!='none' for x in smart_slot['segments']) and 'perspective' not in self.tools['filters']:
                 decorate=False;self.decorative('smart_motion_failed',**context)
                 self.warnings.append('Akıllı kamera hareketi bu FFmpeg sürümünde desteklenmiyor; normal kadraj kullanıldı.')
             layout_graph=None

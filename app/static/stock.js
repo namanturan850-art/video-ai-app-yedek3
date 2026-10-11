@@ -3,6 +3,8 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const project=window.location.pathname.split('/')[2],base=`/api/projects/${project}/production/stock`;
   const root=document.querySelector('#production-content'),blocks=document.querySelector('#visual-blocks');
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
+  // Contextual = scene concepts matched (e.g. ship+ocean), not footage of the named event itself.
+  const relevanceText=media=>media.relevance_basis==='contextual'?`${media.relevance_label} (bağlamsal görüntü — olayın kendisi değil)`:media.relevance_basis==='visual'?`${media.relevance_label} (görsel kontrol)`:media.relevance_label;
   const section=node('section','','settings-panel stock-controls');section.id='stock-controls';
   section.append(node('h2','Stok Medya — video ve görsel seçimi'),node('p','Alaka konu ve metadata ile değerlendirilir. Ayarlar’da açıkça etkinleştirilmiş yerel CLIP modeli varsa gerçek video kareleri de incelenir; bu tarihsel gerçeklik doğrulaması değildir. Önce ilgili video aranır, bulunamazsa ilgili görsel denenir. Yeterli ilgili video varsa hedef yaklaşık %80–95 videodur; ilgisiz medya oran için seçilmez. Seslendirme ve altyazılar değiştirilmez.'));
   const message=node('p','Güncel sahne planı kontrol ediliyor…');message.setAttribute('role','status');
@@ -50,7 +52,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   function mediaInfo(media){return `${media.provider==='pexels'?'Pexels':media.provider==='openmontage'?'OpenMontage':'Pixabay'} · ${media.media_type==='video'?'Video':'Görsel'} · ${media.width}×${media.height}${media.width>media.height?' · Yatay'+(Math.abs(media.width/media.height-16/9)<.06?' · 16:9':''):' · Dikey/kare'}`;}
   function sourceInfo(media){
     const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`${media.provider} · Medya ID: ${media.media_id} · Oluşturan: ${media.creator_name||'Belirtilmedi'}`));
-    if(media.relevance_label)info.append(node('p',`Alaka: ${media.relevance_label} · Arama kademesi: ${media.search_tier||'—'} · Sorgu: ${media.query_used}`));
+    if(media.relevance_label)info.append(node('p',`Alaka: ${relevanceText(media)} · Arama kademesi: ${media.search_tier||'—'} · Sorgu: ${media.query_used}`));
     if(media.provider_query)info.append(node('p',`Sağlayıcı sorgusu: ${media.provider_query}`));
     const link=node('a','Sağlayıcıdaki kaynak sayfası');link.href=media.page_url;link.target='_blank';link.rel='noopener noreferrer';info.append(link);
     if(media.downloaded_at)info.append(node('p',`İndirildi: ${new Date(media.downloaded_at).toLocaleString('tr-TR')} · Yerel dosya: ${media.local_path}`));
@@ -59,7 +61,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   function candidateBrowser(slot){
     const browser=node('div','','stock-candidates');browser.append(node('h5','Alternatif medya adayları'));
     if(!slot.candidates.length)browser.append(node('p','Henüz aday yok. Yeniden Ara düğmesine basın.'));
-    for(const media of slot.candidates){const card=node('article','','stock-candidate');card.append(thumbnail(media),node('p',mediaInfo(media)),node('p',`Arama: ${media.query_used}`),node('p',`Alaka: ${media.relevance_label||'Henüz değerlendirilmedi'}`),sourceInfo(media));button(card,'Bu Medyayı Seç',()=>select(slot,media),active()||slot.locked);browser.append(card);}
+    for(const media of slot.candidates){const card=node('article','','stock-candidate');card.append(thumbnail(media),node('p',mediaInfo(media)),node('p',`Arama: ${media.query_used}`),node('p',`Alaka: ${media.relevance_label?relevanceText(media):'Henüz değerlendirilmedi'}`),sourceInfo(media));button(card,'Bu Medyayı Seç',()=>select(slot,media),active()||slot.locked);browser.append(card);}
     button(browser,'Adayları Kapat',()=>{candidateSlot=null;render();});return browser;
   }
   function slotCard(slot){
@@ -70,7 +72,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     if(slot.subject_anchor)card.append(node('p',`Ana konu: ${slot.subject_anchor}`));
     if(media)card.append(thumbnail(media),node('p',mediaInfo(media)),sourceInfo(media));
     if(media)card.append(node('p',`Kaynak süre: ${slot.source_duration??media.duration??'—'} sn · Kullanılan: ${slot.used_duration??slot.duration} sn${slot.trim_needed?' · Yerel kesme uygulanacak':''}${slot.portrait_warning?' · Dikey/kare kaynak: çerçeveli kullanım veya manuel kontrol gerekli':''}`));
-    if(media?.relevance_label)card.append(node('p',`Alaka: ${media.relevance_label} · Arama kademesi: ${media.search_tier||'—'}`));
+    if(media?.relevance_label)card.append(node('p',`Alaka: ${relevanceText(media)} · Arama kademesi: ${media.search_tier||'—'}`));
     for(const reason of slot.missing_reason_messages||[])card.append(node('p',reason));if(slot.visual_check)card.append(node('p',`Yerel kare analizi: ${{match:'Görsel bağlam uyumlu',mismatch:'Görsel özne uyumsuz',uncertain:'Elle kontrol gerekli',not_available:'Kurulum gerekli; yalnız metadata',error:'Hata; doğrulama yapılmadı'}[slot.visual_check.verdict]||'Kontrol gerekli'}`));if(media?.source_metadata?.footage_role)card.append(node('p',`Görüntü niteliği: ${{direct_factual:'Doğrudan doğrulanmış kayıt',contextual_broll:'Bağlamsal B-roll; tarihsel gerçeklik kanıtı değildir',illustrative:'Temsili görüntü'}[media.source_metadata.footage_role]||'Elle kontrol gerekli'}`));if(slot.message)card.append(node('p',slot.message));for(const warning of slot.warnings)card.append(node('p',warning,'note'));
     if(slot.coverage_warning)card.append(node('p',slot.coverage_warning,'note'));
     if(slot.search_diagnostics?.length){const diag=node('details');diag.append(node('summary','Arama Tanısı'));for(const d of slot.search_diagnostics)diag.append(node('p',`${d.query} · ${d.summary}`));card.append(diag);}

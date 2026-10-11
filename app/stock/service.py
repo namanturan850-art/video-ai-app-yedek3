@@ -22,6 +22,8 @@ from app.stock.diagnostics import REASONS, CATEGORIES, normalization_counts, saf
 from app.stock.providers import make_stock_provider
 
 LOG = logging.getLogger('uvicorn.error.stock')
+PLAN_CHECK_SECONDS = 2.0
+PROGRESS_WRITE_SECONDS = 1.0
 PLAN_REQUIRED = 'Önce güncel Görsel / Kurgu Planını hazırlayın.'
 ACTIVE = ('queued','running')
 STATUSES = {'pending':'Bekliyor','searching':'Aranıyor','candidates':'Adaylar hazır',
@@ -69,11 +71,19 @@ class StockService:
         return json.loads(row[0]) if row else None
 
     def _save(self, connection, state):
-        self._guard(state)
+        # Same guarantee as SecretGuard.validate (raw, URL-quoted and
+        # JSON-escaped forms of every stored key), checked once on the
+        # serialized text instead of walking the large state in Python.
+        secrets = SecretGuard(self.settings.secret_values()).secrets
+        previous = state['revision'], state.get('updated_at')
         state['revision'] += 1
         state['updated_at'] = now()
+        text = json.dumps(state,ensure_ascii=False)
+        if any(key in text for key in secrets):
+            state['revision'], state['updated_at'] = previous
+            raise ScriptError('Metin veya model alanına API anahtarı eklemeyin. Anahtarlar yalnızca Ayarlar ekranında saklanır.')
         connection.execute('INSERT INTO stock_plans VALUES (?,?,?,?,?) ON CONFLICT(project_id,plan_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at',
-                           (state['project_id'],state['plan_id'],state['source_version_id'],json.dumps(state,ensure_ascii=False),state['updated_at']))
+                           (state['project_id'],state['plan_id'],state['source_version_id'],text,state['updated_at']))
 
     def _mirror(self, state):
         # SQLite is authoritative. A mirror failure never invalidates downloads.
@@ -320,21 +330,36 @@ class StockService:
         self.futures[job_id] = self.executor.submit(self._run,job_id)
         return {'job_id':job_id}
 
-    def _checkpoint(self, job, progress, *, slot=None, status='running', error=''):
+    def _checkpoint(self, job, progress, *, slot=None, status='running', error='', light=False):
+        # light=True marks frequent search-progress writes. SQLite stays the
+        # authoritative, always-written record; the expensive active-plan
+        # revalidation runs at most every PLAN_CHECK_SECONDS and the JSON
+        # mirror is deferred to the next full checkpoint or job end.
         project_id = job['project_id']
+        if light and status=='running' and time.monotonic()-job.get('_written_at',-PROGRESS_WRITE_SECONDS)<PROGRESS_WRITE_SECONDS:
+            # In-memory slot/progress are carried into the next full write.
+            if slot: job['_mirror_pending'] = True
+            return
         with self.projects.lock, closing(self.projects._connection()) as connection, connection:
-            handoff = self._handoff(project_id)
             state = self._load(connection,project_id,job['plan_id'])
-            if (not state or handoff['plan_id']!=job['plan_id'] or state['handoff_fingerprint']!=fingerprint(handoff)
-                    or progress.get('handoff_fingerprint')!=state['handoff_fingerprint']):
+            checked = job.get('_plan_checked_at')
+            if not (light and checked is not None and time.monotonic()-checked<PLAN_CHECK_SECONDS):
+                handoff = self._handoff(project_id)
+                if not state or handoff['plan_id']!=job['plan_id'] or state['handoff_fingerprint']!=fingerprint(handoff):
+                    raise StockError('stale_plan','Aktif sahne planı değişti. Tamamlanan dosyalar korundu; güncel planda Eksik Medyaları Tamamla deyin.',409)
+                job['_plan_checked_at'] = time.monotonic()
+            if not state or progress.get('handoff_fingerprint')!=state['handoff_fingerprint']:
                 raise StockError('stale_plan','Aktif sahne planı değişti. Tamamlanan dosyalar korundu; güncel planda Eksik Medyaları Tamamla deyin.',409)
             if slot:
                 current = self._slot(state,slot['slot_id'])
                 if current['locked']: raise StockError('locked','Kilitli medya değiştirilmedi.',409)
-                current.update(slot);self._save(connection,state);self._mirror(state)
+                current.update(slot);self._save(connection,state)
+                if light: job['_mirror_pending'] = True
+                else: job['_mirror_pending'] = False;self._mirror(state)
             self._guard(progress)
             connection.execute('UPDATE stock_jobs SET status=?,progress_json=?,error_message=?,updated_at=? WHERE id=?',
                                (status,json.dumps(progress,ensure_ascii=False),error,now(),job['id']))
+        job['_written_at'] = time.monotonic()
 
     def _cache_search(self, project_id, name, kind, query, *, page=1):
         canonical = query[:100] if name=='pixabay' else query
@@ -405,13 +430,13 @@ class StockService:
                 for name in names:
                     if name in unavailable or (name!='openmontage' and not self.settings.stock_config(name).get('api_key')): continue
                     progress['message']=f"Sahne medyası aranıyor · {name.title()} {'video' if kind=='video' else 'görsel'}"
-                    self._checkpoint(job,progress)
+                    self._checkpoint(job,progress,light=True)
                     rejected = {reason:0 for reason in REASONS[:4]}
                     try: results,counts,cached = self._cache_search(project_id,name,kind,query)
                     except StockError as error:
                         counts = getattr(error,'search_diagnostic',normalization_counts(None,0))
                         self._record_diagnostic(name,kind,query,counts,[],used,rejected,False,error.category,slot,progress)
-                        self._checkpoint(job,progress,slot=slot)
+                        self._checkpoint(job,progress,slot=slot,light=True)
                         failures.append(error);unavailable.add(name)
                         continue
                     eligible = []
@@ -426,7 +451,7 @@ class StockService:
                             if previous is None or relevance.rank(rated,slot)>relevance.rank(previous,slot):candidates[identity(rated)]=rated
                     ranked = sorted(eligible,key=lambda m:relevance.rank(m,slot),reverse=True)
                     self._record_diagnostic(name,kind,query,counts,ranked,used,rejected,cached,'none',slot,progress)
-                    self._checkpoint(job,progress,slot=slot)
+                    self._checkpoint(job,progress,slot=slot,light=True)
                 # Exhaust specific/context VIDEO before IMAGE. A related video
                 # already satisfies the soft video-first goal; never chase images
                 # merely for a few extra points. Weak video cannot pass this gate.
@@ -496,7 +521,7 @@ class StockService:
                         if failures: raise failures[-1]
                         if job['action']=='relevance_research' and slot['selected_media'] and (not relevance.acceptable(relevance.evaluate(slot['selected_media'],slot['relevance_profile']),slot['relevance_profile']) or bool(identity_keys(slot['selected_media'])&used)):
                             slot['selected_media']=None;selections.pop(slot['slot_id'],None)
-                            for key in ('search_tier','query_used','relevance_score','relevance_label'):slot.pop(key,None)
+                            for key in ('search_tier','query_used','relevance_score','relevance_label','relevance_basis'):slot.pop(key,None)
                         if not slot['selected_media']: slot['status']='ai_needed'
                         slot['message']=('Uygun video bulunamadı. Mevcut görsel korundu.' if job['action']=='replace_images' else 'Uygun ve kullanılmamış stok medya bulunamadı.')
                         self._checkpoint(job,progress,slot=slot)
@@ -519,7 +544,7 @@ class StockService:
                             raise StockError('duplicate','Bu medya başka yuvada kullanılıyor. Tekrar kullanımını onaylayın.',409)
                         self._guard(chosen)
                         slot.update(manual_reuse=job['action']=='select' and bool(identity_keys(chosen)&used),selected_media=chosen,status='complete',message='İndirildi. Anlatıma uygunluğu Önizle ile kontrol edin.',warnings=[])
-                        slot.update({key:chosen.get(key) for key in ('search_tier','query_used','provider_query','relevance_score','relevance_label')})
+                        slot.update({key:chosen.get(key) for key in ('search_tier','query_used','provider_query','relevance_score','relevance_label','relevance_basis')})
                         if job['action']!='select' and slot['preferred_type']=='stock_video' and chosen['media_type']=='image':
                             slot['warnings'].append('Daha ilgili görsel seçildi. Render sırasında yerel kamera hareketi kullanılabilir.')
                         if duplicate or progress.get('duplicate'): slot['warnings'].append('Bu medya projede tekrar kullanılıyor. Değiştir ile başka aday seçebilirsiniz.')
@@ -546,6 +571,12 @@ class StockService:
                     connection.execute("UPDATE stock_jobs SET status='error',progress_json=?,error_message=?,updated_at=? WHERE id=?",
                                        (json.dumps(progress,ensure_ascii=False),safe_message,now(),job_id))
         finally:
+            if job and job.get('_mirror_pending'):
+                try:
+                    with self.projects.lock, closing(self.projects._connection()) as connection:
+                        state = self._load(connection,job['project_id'],job['plan_id'])
+                    if state: self._mirror(state)
+                except Exception: LOG.warning('stock operation=mirror category=local_storage')
             LOG.info('stock operation=job result=%s category=%s elapsed_ms=%.0f',
                      'success' if category=='success' else 'failure',category,(time.monotonic()-started)*1000)
 

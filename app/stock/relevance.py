@@ -13,6 +13,8 @@ STRONG=60
 RELATED=25
 VIDEO_TOLERANCE=16
 MODIFIERS={'new','old','black','white','north','south','east','west','mount','world','war','triangle','ii','iii'}
+# Concepts too broad to certify a named scene on their own or as a pair-lead.
+WEAK_CONTEXT={'ocean','urban','forest','beach','snow','mountain','storm','history','fatigue'}
 CONTEXT_GROUPS=({'ocean','ship','aircraft','storm','map','compass'},{'mountain','snow'},{'car','charging'})
 STOP=set('the a an and or of in on at with for to from into by is are this that de der die das ein eine und im am mit von zu des den el la los las un una y en del le les une et du au aux sur dans il que bir ve ile bu da de için'.split())
 GENERIC=set('world people city nature video background view travel beautiful general footage aerial panorama landscape scene context show showing modern wide close detail slow cinematic environment dunya insanlar sehir doga goruntu seyahat guzel genel welt menschen stadt natur hintergrund ansicht reise schon allgemein mundo gente ciudad naturaleza fondo vista viaje hermoso general monde personnes ville fond voyage beau'.split())
@@ -135,8 +137,9 @@ def profile(scene,slot=None):
              if canonical(q)&base or not base or any(canonical(q)&group and base&group for group in CONTEXT_GROUPS)]
     core=canonical(anchor)&set(WORDS)
     expected=domains(core or base)
-    if 'aviation' in expected:expected={'aviation'}
-    elif expected-{'technology'}:expected.discard('technology')
+    # Aviation absorbs only technology (cockpit screens). A mixed subject such as
+    # ships AND aircraft keeps both domains instead of rejecting every ship.
+    if expected-{'technology'}:expected.discard('technology')
     compatible=set().union(*(DOMAINS[name] for name in expected)) if expected else set()
     if 'marine' in expected:compatible|={'map','compass','aircraft'}
     if 'aviation' in expected:compatible|={'navigation','instrument','computer','map','compass'}
@@ -205,7 +208,7 @@ def evaluate(media,profile):
     if analysis.get('verdict')=='match':
         # Actual frame support certifies contextual visuals, NEVER named-event
         # authenticity. The adapter labels this as contextual/illustrative.
-        return {'relevance_score':RELATED+8,'relevance_label':LABELS[2]}
+        return {'relevance_score':RELATED+8,'relevance_label':LABELS[2],'relevance_basis':'visual'}
     desc=media.get('description','');actual=canonical(desc)
     protected=profile.get('protected_name','')
     if protected and not re.search(r'(?<!\w)'+re.escape(normalized(protected))+r'(?!\w)',normalized(desc)):return {'relevance_score':0,'relevance_label':LABELS[0]}
@@ -222,6 +225,17 @@ def evaluate(media,profile):
             supported=bool(actual&DOMAINS['aviation']) or ({'navigation','instrument'}<=actual and not actual_domains-{'technology'})
         elif 'marine' in expected:supported=supported or bool(actual&{'map','compass'})
         if not supported:return {'relevance_score':0,'relevance_label':LABELS[0]}
+    # Named places/events are almost never tagged by stock providers. Two or
+    # more concrete scene concepts (e.g. ship+ocean, map+compass) certify
+    # contextual B-roll; one weak concept ("sea") or any off-topic subject
+    # (dog, food, city...) never does. This is labelled as contextual, not as
+    # footage of the named event itself.
+    if profile.get('specificity')=='named_specific' and not named_match:
+        scene_concepts=(context|anchor)&set(WORDS)
+        shared=scene_concepts&actual
+        off_topic=domains(actual-scene_concepts)-expected-{'technology'}
+        if len(shared)>=2 and shared-WEAK_CONTEXT and not off_topic:
+            return {'relevance_score':RELATED+2*min(len(shared),4),'relevance_label':LABELS[2],'relevance_basis':'contextual'}
     full=bool(anchor and re.search(r'(?<!\w)'+re.escape(normalized(profile['subject_anchor']))+r'(?!\w)',normalized(desc)))
     value=sum(2 if w in MODIFIERS else 6 if w in WORDS else 12 for w in matches)+4*len(context_matches)+(52 if full else 0)
     if anchor and matches==anchor:value+=12
@@ -234,7 +248,7 @@ def evaluate(media,profile):
         if expected in context|anchor and wrong in actual and expected not in actual and not matches:value-=20
     value=max(0,min(300,value))
     label=LABELS[3] if value>=STRONG else LABELS[2] if value>=25 else LABELS[1] if value>=MINIMUM else LABELS[0]
-    return {'relevance_score':value,'relevance_label':label}
+    return {'relevance_score':value,'relevance_label':label,'relevance_basis':'direct'}
 
 
 def annotate(media,profile,tier,query):

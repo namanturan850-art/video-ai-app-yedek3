@@ -136,10 +136,27 @@ class YouTubeScriptEngine:
             raise ScriptError('Plan hedef süreye uygun bölüm uzunlukları içermiyor. Plan hazırlanmasını yeniden deneyin.')
         return result
 
+    @staticmethod
+    def section_role(index, count):
+        # Position-specific craft: a cold open that earns the click, a payoff
+        # ending; middle sections keep momentum. No greeting/channel filler.
+        if index == 0:
+            role = ('OPENING: start with the most surprising concrete fact, question or image of the topic in the first '
+                    'two sentences, then state what the viewer will understand by the end. Never greet, never say '
+                    '"in this video" or introduce the channel. ')
+            if count == 1: role += 'End with a clear conclusion that pays off that promise. '
+        elif index == count - 1:
+            role = ('FINAL: pay off the opening promise with a clear conclusion, then at most one short natural call to action. ')
+        else:
+            role = 'MIDDLE: open with a short bridge from the previous point and end with a reason to keep watching. '
+        return role + ('Write visually: prefer concrete places, objects, people and actions a viewer can see, so each '
+                       'sentence can be illustrated with real footage. Vary sentence length, mostly 8–20 words. ')
+
     def section(self, blueprint, plan, index, context, options):
         return self.ask('section', {'blueprint': blueprint, 'section': plan['sections'][index], 'index': index + 1,
                                    'section_count': len(plan['sections']), 'continuity': context,
                                    'language': options['language'], 'instructions': options['instructions']},
+            self.section_role(index, len(plan['sections'])) +
             'Write only this section in natural native-sounding target-language narration. Use original '
             'explanations/examples/phrasing. The section target_words is a required length target, '
             'not a summary limit: aim within 5% of that count, never return a half-length summary. '

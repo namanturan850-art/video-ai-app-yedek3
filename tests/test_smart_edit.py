@@ -261,7 +261,7 @@ def test_real_decorative_failure_falls_back_with_applied_counts(tmp_path,stage,b
                     for file in Path(cwd).glob('captions-*.ass'):file.write_text('invalid local ASS fixture')
                 else:
                     file=Path(cwd)/args[args.index('-/filter_complex')+1]
-                    file.write_text(file.read_text().replace('zoompan','nonexistent_motion') if stage=='slot_render' else file.read_text().replace('xfade','nonexistent_transition'))
+                    file.write_text(file.read_text().replace('perspective','nonexistent_motion') if stage=='slot_render' else file.read_text().replace('xfade','nonexistent_transition'))
             return super().run(args,cwd,*a,**context)
     runner=FailOnce();engine=FFmpegRenderProvider(tools.discover(),runner)
     result=engine.render({'temporary':folder,'timeline':t,'handoff':h,'smart_edit_plan':edit,'options':options({'encoder':'cpu','subtitle_burned':burn}),

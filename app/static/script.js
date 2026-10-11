@@ -38,6 +38,11 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
   const ownership = field('owns_text', 'Bu metnin bana ait olduğunu ve seçili dile çevrilmesini istediğimi onaylıyorum', 'checkbox', false);
   field('words_per_minute_min', 'Minimum konuşma hızı (kelime/dakika)', 'number', 125);
   field('words_per_minute_max', 'Maksimum konuşma hızı (kelime/dakika)', 'number', 145);
+  // Language default speech rate until the user edits a rate field.
+  let rateEdited = false;
+  for (const name of ['words_per_minute_min', 'words_per_minute_max']) form.elements[name].addEventListener('input', () => { rateEdited = true; });
+  function applyLanguageRate() { if (rateEdited) return; const [low, high] = scriptSpeechRate(form.elements.language.value); form.elements.words_per_minute_min.value = low; form.elements.words_per_minute_max.value = high; }
+  form.elements.language.addEventListener('change', applyLanguageRate);
   const generateActions = node('div', '', 'settings-actions'); const buttons = {};
   function button(label, callback, where = generateActions) { const item = node('button', label); item.type = 'button'; item.addEventListener('click', callback); where.append(item); buttons[label] = item; return item; }
   button('Analiz Et', () => start('analyze')); button('Senaryo Oluştur', () => start('generate')); button('Yeniden Oluştur', () => start('generate'));
@@ -172,7 +177,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
     if (restoreForm) {
       const saved = data.job && (active.includes(data.job.status) || ['error', 'analyzed'].includes(data.job.status)) ? data.job.options : data.current?.options || data.job?.options;
       if (saved) for (const [name, value] of Object.entries(saved)) { const element = form.elements.namedItem(name); if (element) { if (element.type === 'checkbox') element.checked = value; else element.value = value; } }
-      else { form.elements.provider.value = data.default_provider; form.elements.language.value = project.language; }
+      else { form.elements.provider.value = data.default_provider; form.elements.language.value = project.language; applyLanguageRate(); }
     }
     if (!dirty && (changed || restoreForm || !editing)) editor.value = data.current?.text || data.job?.partial_text || '';
     if (changed) { editing = false; dirty = false; }

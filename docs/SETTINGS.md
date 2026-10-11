@@ -70,3 +70,14 @@ Claude; senaryoyu, kurgu planını ve medya seçimini yapar. Kurulum:
 Claude bir isteği güvenlik nedeniyle reddederse, aynı istek Anthropic'in önerdiği yedek Claude modelinde otomatik yeniden denenir (`fallbacks: "default"`). Claude hiç çalışmazsa (anahtar, kredi, internet, yoğunluk) senaryo ekranı **Gemini / Ollama ile devam et** düğmelerini gösterir; yedeğe **siz onaylamadan geçilmez**.
 
 **Maliyet:** her Claude çağrısının token sayısı ve tahmini maliyeti (liste fiyatı) kaydedilir. Senaryo ekranında “Bu projede Claude/AI tahmini maliyeti” satırı görünür. Fatura değildir; kesin tutar Anthropic konsolundadır.
+
+### Claude Yönetmen'i kullanmak (senaryo sayfası)
+
+1. Projeyi açın → **Senaryo**. En üstte **Claude Yönetmen** paneli vardır.
+2. **Yönetmeni Başlat** deyin ve ücret onayını verin. Başka bir şey girmeniz gerekmez (konu, dil ve süre projeden alınır).
+3. Panel adım adım ilerler: **Amaç belirleniyor → Senaryo yazılıyor → Senaryo onaylanıyor → Kurgu planı hazırlanıyor**.
+4. **Videonun amacı** bölümünü açıp hedef kitle, ana mesaj, ton ve açılış kancasını değiştirebilir, **Amacı Kaydet** diyebilirsiniz. Sonraki çalıştırmada senaryo bu özete göre yazılır.
+5. **Senaryoyu otomatik onayla** kutusunu kaldırırsanız yönetmen senaryodan sonra durur; metni okuyup **Onayla** dedikten sonra **Yönetmeni Devam Ettir** deyin.
+6. Bir adım hata verirse tamamlanan adımlar korunur; **Yönetmeni Devam Ettir** kaldığı yerden sürer. Claude hiç çalışmıyorsa panel **Gemini/Ollama ile devam et** düğmelerini gösterir (yalnız siz seçerseniz).
+
+Kurgu planında her sahne için: görsel türü (stok video / stok görsel / üretilmiş kart: harita, sayı, başlık/alıntı), İngilizce somut arama sözcükleri + 2–3 yedek, **mutlaka göster / gösterme** notları ve çekim sayısı vardır. Az stok bulunan konularda daha az ama daha uzun çekim planlanır (çekim başına 2,5–10 sn). Kart yazısı yalnızca anlatımda geçen bir ifade olabilir; uydurma sayı veya alıntı kabul edilmez. Plan şemaya uymazsa Claude bir kez otomatik düzeltir.

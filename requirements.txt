@@ -1,6 +1,6 @@
 fastapi==0.115.12
 uvicorn==0.34.2
-anyio==4.9.0
+anyio==4.15.1
 httpx==0.28.1
 cryptography==46.0.3
 mutagen==1.47.0

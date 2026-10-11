@@ -1,5 +1,16 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Claude Yönetmen: amaç → senaryo → kurgu planı (PR-B)
+
+- Senaryo sayfasına **Claude Yönetmen** paneli: sahip yalnız konu/dil/süre girer; Claude sırayla **amaç özeti** (hedef kitle, ana mesaj, ton, açılış kancası — Türkçe, düzenlenebilir), dile uygun hızda **senaryo** (Almanca 125–135 ≈ 130 kelime/dk), **otomatik onay** (kapatılabilir) ve **kurgu planı** üretir. Mevcut senaryo/sahne motorları kullanıldığı için seslendirme ve altyazı akışı değişmedi.
+- Kurgu planı sahne alanları (isteğe bağlı, eski planlar etkilenmez): `must_show`, `must_not_show`, `shot_count` (1–12), `card_kind` (map/number/title/quote) + `card_text`. Kart yazısı anlatımdan birebir değilse kart düşürülür ve sahne stok videoya döner (uydurma bilgi yok). `shot_count` yuva sayısını belirler: niş konuda az ve uzun (≤10 sn), zengin konuda çok ve kısa (≥2,5 sn).
+- Claude ile plan şemaya uymazsa **bir kez otomatik düzeltme** yapılır (diğer bulut motorlarında eskisi gibi onay istenir).
+- Hata olursa tamamlanan adımlar korunur, **Yönetmeni Devam Ettir** kaldığı yerden sürer; Claude çalışmazsa yapılandırılmış yedek motor yalnız sahibin seçimiyle kullanılır. Amaç/durum dosyaları: `projects/<id>/script/director_purpose.json`, `director_state.json`. Şema değişmedi (11).
+- Testler: 17 yeni (sahte Claude; uçtan uca amaç→senaryo→onay→plan, sahibin amaç düzenlemesi, otomatik onay kapalı, maliyet/üzerine yazma onayı, hata+yedek önerisi, sahibin seçtiği yedekle tamamlama, kart doğrulama, çekim sayısı). Gerçek Chromium'da panel uçtan uca denendi, JS hatası yok. Gerçek Claude çağrısı yapılmadı.
+- Ayrıca: `requirements.txt` içinde `anyio` 4.15.1'e sabitlendi (Claude SDK'sının kullandığı `httpx2`'nin yeni sürümleri anyio ≥ 4.10 istiyor; testler bu kombinasyonla çalıştı).
+- Tam paket: 1712 başarılı + düzeltilen 1 test (eski planlardaki “motion_graphic” türü artık değiştirilmiyor), 4 atlama; frontend 6/6.
+- **Henüz yok (PR-C):** Claude'un aday medyaya bakarak seçmesi ve eksik medya zincirinin kesin çözümü.
+
 ## 2026-10-11 — Claude bağlantısı (Yönetmen, PR-A)
 
 - Ayarlar'a **Claude (Anthropic)** bölümü: şifreli/maskeli anahtar, model seçimi (Opus 5.5 / Sonnet 5.5 / Haiku 5.5), ücretsiz **Bağlantıyı Test Et** (Models API), “varsayılan yönetmen” seçeneği.

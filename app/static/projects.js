@@ -100,8 +100,6 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
   if (window.location.pathname === '/new-project') {
     const form = make('form', '', 'settings-panel project-form');
     form.id = 'new-project-form'; form.noValidate = true;
-    const channelSelect = field(form, 'channel_id', 'Kanal', 'select', '', {choices: [['', 'Varsayılan kanal']]});
-    form.append(make('p', 'Kanal seçince dil ve hedef süre kanaldan gelir; seslendirmede kanalın sesi seçili olur. Kanalları “Kanallar” sayfasından yönetin.', 'note'));
     field(form, 'name', 'Proje adı', 'text', '', {maxLength: 120, required: true});
     field(form, 'topic', 'Konu', 'textarea', '', {maxLength: 5000, required: true});
     field(form, 'reference_url', "Referans YouTube URL’si (isteğe bağlı)", 'url', '', {maxLength: 2000});
@@ -116,19 +114,6 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     field(form, 'background_music_enabled', 'Arka plan müziği planlansın', 'checkbox', false);
     field(form, 'thumbnail_planning_enabled', 'Küçük resim (thumbnail) planlansın', 'checkbox', true);
     form.append(make('p', 'Proje oluşturduktan sonra Senaryo aşamasını açabilirsiniz. Ses ve video üretimi daha sonra eklenecek.', 'note'));
-    let channelList = [];
-    request('/api/channels').then(result => {
-      channelList = result.channels; channelSelect.replaceChildren();
-      for (const c of channelList) { const o = make('option', c.name + (c.is_default ? ' (varsayılan)' : '')); o.value = c.id; channelSelect.append(o); }
-      const wanted = new URLSearchParams(window.location.search).get('channel');
-      channelSelect.value = channelList.some(c => c.id === wanted) ? wanted : channelList.find(c => c.is_default)?.id || '';
-      applyChannel();
-    }).catch(() => {});
-    function applyChannel() {
-      const c = channelList.find(item => item.id === channelSelect.value); if (!c) return;
-      form.elements.namedItem('language').value = c.language; form.elements.namedItem('target_duration_minutes').value = c.target_duration_minutes;
-    }
-    channelSelect.addEventListener('change', applyChannel);
     const submit = make('button', 'Proje Oluştur'); submit.type = 'submit';
     form.append(submit); container.append(form);
     form.addEventListener('submit', async event => {
@@ -182,7 +167,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       document.title = `${project.name} · AI Video Studio`;
       detail.append(information([
         ['Konu', project.topic], ['Referans YouTube URL’si', project.reference_url || 'Eklenmedi'],
-        ['Kanal', project.channel_name || 'Varsayılan kanal'], ['Dil', project.language_label], ['Hedef video süresi', `${project.target_duration_minutes} dakika`],
+['Dil', project.language_label], ['Hedef video süresi', `${project.target_duration_minutes} dakika`],
         ['Senaryo motoru', project.script_engine_label], ['İçerik türü / stil', project.content_style],
         ['Sahne süresi', `${project.min_scene_duration_seconds} – ${project.max_scene_duration_seconds} saniye`],
         ['Altyazı', project.subtitles_enabled ? 'Açık' : 'Kapalı'], ['Arka plan müziği', project.background_music_enabled ? 'Açık' : 'Kapalı'],
@@ -211,10 +196,15 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         if (stage.name === 'Senaryo') item.append(link('Senaryoyu Aç', `/projects/${id}/script`, 'action-link'));
         if(stage.name==='Seslendirme')item.append(link('Seslendirmeyi Aç',`/projects/${id}/narration`,'action-link'));
         if(stage.name==='Render')item.append(link('Video Oluştur / Render',`/projects/${id}/render`,'action-link'));
-        if(stage.name==='Render')item.append(link('YouTube hazırlığı (başlık, açıklama, kapak)',`/projects/${id}/youtube`,'action-link'));
         if(stage.name==='Altyazı')item.append(link('Altyazı ve Zamanlama',`/projects/${id}/subtitles`,'action-link'));
         pipeline.append(item);
       }
+      // Last step of every project: YouTube title, description, tags, thumbnail.
+      const youtube = make('li', '', 'pipeline-youtube'); youtube.id = 'project-youtube';
+      youtube.append(make('h3', 'YouTube'), make('span', 'Başlık · Açıklama · Kapak', 'badge'),
+        make('p', '5 başlık önerisi, bölüm zamanlı açıklama, etiketler ve 1280×720 kapak. Video oluşturulduktan sonra en iyi sonucu verir.', 'note'),
+        link('YouTube Başlık, Açıklama ve Kapak', `/projects/${id}/youtube`, 'action-link'));
+      pipeline.append(youtube);
       detail.append(pipeline);
       const removeButton = make('button', 'Projeyi Sil', 'danger'); removeButton.type = 'button';
       removeButton.addEventListener('click', () => remove(project, removeButton, async () => window.location.assign('/projects')));

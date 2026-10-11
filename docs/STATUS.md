@@ -1,5 +1,16 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Profesyonel kurgu: geçişler, yazı grafikleri, müzik, %40 motion
+
+- **Kanallar menüden kaldırıldı** (veriler silinmedi; tüm projeler varsayılan kanalı kullanır). Yerine **Video ekranında “Video görünümü”**: Belgesel, Gizem, Enerjik, Sakin, Eğlenceli, Bilim — tek seçimle renk, yazı tipi ve animasyon ritmi. Motion grafikler ve yazı grafikleri bu görünümle çizilir; görünüm değişince motion klipleri bir sonraki videoda yeniden çizilir.
+- **%40 motion / %60 stok video**: yönetmene %40 hedefi verilir; stok aramasından sonra oran düşük kalırsa uygulama, sayı/tarih/yer geçen cümleleri öncelikli ve aralıklı seçerek (asla üç motion üst üste değil) motion ekler. Stok bulunamayan yuvalar boş kalmasın diye motion olur; bu yüzden stoku az konularda oran %40'ın üstüne çıkabilir.
+- **Gelişmiş geçişler**: motion grafikler videoya yandan kayarak girer/çıkar; diğer sahne değişimlerinde yumuşak geçiş, yakınlaşma ve daire açılma dönüşümlü kullanılır (Temel stilde değişiklik yok). Hem yerel motorda hem OpenMontage'da.
+- **Geçiş ses efekti**: her hareketli geçişte konuşmanın altında hafif bir “whoosh” (projenin kendi ürettiği ses).
+- **Yazı grafikleri**: videodaki vurgu yazıları artık düz yazı değil; yarı saydam kutu kayarak gelir, görünüm renginde vurgu çizgisi büyür, yazı görünümün başlık fontuyla gelir (solda alt-bant veya ortada başlık + büyüyen alt çizgi).
+- **Arka plan müziği** Video ekranında açık bir bölüm: dosya seç → hakkım var → Müziği Ekle; eklenen müzik otomatik açılır, konuşmada kısılır.
+- **YouTube** proje sayfasında ayrı, belirgin bir kart: başlık, açıklama, etiket, kapak.
+- Testler: 6 yeni (geçiş stilleri, gerçek FFmpeg xfade adları, whoosh zamanları, yazı grafikleri + gerçek libass çizimi, görünüm seçimi, menü); altı konu testine %40 kontrolü. Önceden başarısız 3 test güncellendi (gerçek seslendirme süresi alanı, planlı motion'un yapay zekâ kesintisinde de çizilmesi).
+
 ## 2026-10-11 — Güncelleme sonrası eski ekran sorunu
 
 - Uygulama artık tarayıcıya ekran dosyalarını (sayfa, JS, CSS) her açılışta yeniden kontrol etmesini söyler. Böylece güncellemeden sonra eski düğmeler/ekranlar görünmez; Ctrl+F5 gerekmez. Test: 1 yeni.

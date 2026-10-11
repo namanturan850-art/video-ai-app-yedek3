@@ -9,6 +9,8 @@ from app.rendering.diagnostics import diagnostic
 from app.rendering.tools import select_encoder
 from app.rendering.files import write
 from app.rendering import ass,probe,smart_graph
+# Scene-change looks (FFmpeg xfade names); anything else falls back to fade.
+XFADE_STYLES=('fade','zoomin','smoothleft','smoothright','circleopen','wipeleft')
 
 
 class FFmpegRenderProvider:
@@ -57,18 +59,21 @@ class FFmpegRenderProvider:
         if opts['subtitle_burned'] and 'ass' not in self.tools['filters']:
             raise RenderError('subtitle_invalid','Bu FFmpeg sürümü altyazı yazmayı desteklemiyor. Altyazı seçimini kapatın veya libass destekli FFmpeg kullanın.',diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder))
         kit=plan.get('style_kit') or {};sub_style=kit.get('subtitle')
-        fontsdir=''
-        if sub_style and sub_style.get('font','arial')!='arial':
+        fontsdir='';graphic_style=None
+        from app.channels import FONTS
+        if kit.get('palette'):
+            # Emphasis texts drawn as graphics in the look's colours and heading font.
+            graphic_style={**{k:kit['palette'][k] for k in ('background','accent','primary')},'font':FONTS[kit.get('heading_font','arial')][0]}
+        for font in {f for f in ((sub_style or {}).get('font'),kit.get('heading_font') if graphic_style else None) if f and f!='arial'}:
             # Bundled OFL font next to the ASS file; libass reads it via fontsdir.
-            from app.channels import FONTS
             import shutil
             (folder/'fonts').mkdir(exist_ok=True)
-            shutil.copyfile(Path(__file__).resolve().parent.parent/'static'/'fonts'/FONTS[sub_style['font']][1],folder/'fonts'/FONTS[sub_style['font']][1])
+            shutil.copyfile(Path(__file__).resolve().parent.parent/'static'/'fonts'/FONTS[font][1],folder/'fonts'/FONTS[font][1])
             fontsdir=':fontsdir=fonts'
         assf=lambda name:f'ass=filename={name}{fontsdir}'
         timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]
         for scene,original in zip(timed,timeline['scenes']):scene.update(start=original['start'],end=original['end'])
-        try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,subtitle_style=sub_style,emphasis=emphasis)
+        try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,subtitle_style=sub_style,graphic_style=graphic_style,emphasis=emphasis)
         except RenderError as error:
             raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
         self.warnings+=warnings;caption_name=None
@@ -82,7 +87,7 @@ class FFmpegRenderProvider:
                 self.decorative('emphasis_render_failed',encoder=encoder)
                 self.warnings.append('Vurgu yazısı ön kontrolü başarısız; yalnız mevcut altyazılar kullanılıyor.')
                 emphasis=[]
-                content,_,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,subtitle_style=sub_style,emphasis=[])
+                content,_,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,subtitle_style=sub_style,graphic_style=graphic_style,emphasis=[])
                 self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
                 args[args.index('-vf')+1]=assf(caption_name)
                 if has_text:self.runner.run(args,folder,phase='subtitle_preflight')
@@ -201,7 +206,9 @@ class FFmpegRenderProvider:
                 # N frames occur at 0 .. (N-1)/30. Reach the second clip on the
                 # final handle frame, not one frame after the handle ends.
                 blend=(incoming[i]-1)/30 if smart else d
-                graph=f'[0:v]settb=1/30,setpts=N/(30*TB),fps=30[a];[1:v]settb=1/30,setpts=N/(30*TB),fps=30[b];[a][b]xfade=transition=fade:duration={blend:.6f}:offset=0,format=yuv420p,settb=1/30,setpts=N/(30*TB),fps=30[v]'
+                xstyle=edits[slots[i-1]['slot_id']].get('transition_style','fade') if smart else 'fade'
+                if xstyle not in XFADE_STYLES:xstyle='fade'
+                graph=f'[0:v]settb=1/30,setpts=N/(30*TB),fps=30[a];[1:v]settb=1/30,setpts=N/(30*TB),fps=30[b];[a][b]xfade=transition={xstyle}:duration={blend:.6f}:offset=0,format=yuv420p,settb=1/30,setpts=N/(30*TB),fps=30[v]'
                 args+=self.graph(folder,graph)+['-map','[v]','-an',*self.codec(encoder),'-frames:v',str(incoming[i]),transition]
                 try:
                     self.runner.run(args,folder,encoder=encoder,phase='crossfade',slot_index=i,slot_id=slot['slot_id'],slot_count=len(slots),media_type=plan['media'][slot['slot_id']]['type']);assembly.append(transition);transitions.add(i-1)
@@ -255,7 +262,7 @@ class FFmpegRenderProvider:
             self.decorative('emphasis_render_failed',encoder=encoder)
             self.warnings.append('Son birleştirmede vurgu yazısı atlandı; mevcut altyazı/ses zamanları korundu.')
             emphasis=[]
-            content,_,subtitles_remain=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,subtitle_style=sub_style,emphasis=[])
+            content,_,subtitles_remain=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,subtitle_style=sub_style,graphic_style=graphic_style,emphasis=[])
             previous_caption=caption_name
             self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
             graph=graph.replace(assf(previous_caption),assf(caption_name))

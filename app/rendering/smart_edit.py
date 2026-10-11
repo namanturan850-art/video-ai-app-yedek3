@@ -190,6 +190,21 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
             # The same take continues: a blend would ghost it over itself.
             previous.update(transition_out='hard_cut',transition_duration=0.)
         current['transition_in']=previous['transition_out'] if previous['scene_id']!=current['scene_id'] else 'hard_cut'
+    if style!='basic':
+        # Professional transition variety: motion graphics slide in/out with a
+        # push; other scene changes rotate subtle styles (fade stays dominant).
+        variety=('fade','zoomin','fade','smoothleft','fade','circleopen');k=0
+        for idx,(previous,current) in enumerate(zip(items,items[1:])):
+            if previous['scene_id']==current['scene_id'] or continuing.get(current['slot_id']) or continuing.get(previous['slot_id']):continue
+            motion_out=bool((media_details or {}).get(previous['slot_id'],{}).get('motion'))
+            motion_in=bool((media_details or {}).get(current['slot_id'],{}).get('motion'))
+            if motion_out or motion_in:
+                seconds=min(.4,t['slots'][idx]['frames']/120,t['slots'][idx+1]['frames']/120)
+                if seconds>=2/30:
+                    previous.update(transition_out='crossfade',transition_duration=round(seconds,6),transition_style='smoothleft' if motion_in else 'smoothright')
+                    current['transition_in']='crossfade'
+            elif previous['transition_out']=='crossfade':
+                previous['transition_style']=variety[k%len(variety)];k+=1
     for item in items:
         if continuing.get(item['slot_id']) and style!='basic':
             for segment in item['segments']:

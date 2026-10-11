@@ -103,6 +103,9 @@ PRESETS = {  # deterministic suggestions when no AI engine is configured
     'eğlenceli': {'palette': {'background': '#1B1340', 'primary': '#FFFFFF', 'accent': '#FFD23F', 'text': '#FFFFFF'}, 'heading_font': 'montserrat', 'body_font': 'inter', 'motion_duration': .5, 'easing': 'bounce'},
     'bilimsel': {'palette': {'background': '#0E1A2B', 'primary': '#E6F0FF', 'accent': '#3FA9F5', 'text': '#FFFFFF'}, 'heading_font': 'inter', 'body_font': 'inter', 'motion_duration': .6, 'easing': 'snappy'},
 }
+# One-click “Video görünümü” (Video screen) — the same presets, no wizard.
+LOOKS = {'ciddi': 'Belgesel (ciddi, altın vurgu)', 'gizemli': 'Gizem (koyu, turkuaz vurgu)', 'enerjik': 'Enerjik (hızlı, turuncu vurgu)',
+         'sakin': 'Sakin (yumuşak, yeşil vurgu)', 'eğlenceli': 'Eğlenceli (mor, sarı vurgu)', 'bilimsel': 'Bilim (mavi, keskin)'}
 SUGGEST_SCHEMA = {'type': 'object', 'additionalProperties': False,
                   'required': ['background', 'primary', 'accent', 'text', 'heading_font', 'body_font', 'motion_duration', 'easing', 'subtitle_font', 'subtitle_position', 'reason'],
                   'properties': {**{k: {'type': 'string'} for k in ('background', 'primary', 'accent', 'text', 'heading_font', 'body_font', 'easing', 'subtitle_font', 'subtitle_position', 'reason')},
@@ -178,6 +181,17 @@ class ChannelService:
             row = c.execute('SELECT c.* FROM channels c JOIN projects p ON p.channel_id=c.id WHERE p.id=?', (project_id,)).fetchone()
             row = row or c.execute('SELECT * FROM channels WHERE is_default=1').fetchone()
             return self._public(row)
+
+    def look(self, project_id):
+        style = self.for_project(project_id)['style']
+        return {'look': style.get('feeling') if style.get('feeling') in LOOKS else '', 'looks': [{'id': k, 'label': v, 'accent': PRESETS[k]['palette']['accent']} for k, v in LOOKS.items()]}
+
+    def set_look(self, project_id, name):
+        if name not in LOOKS:
+            raise ProjectError('Listeden bir görünüm seçin.')
+        channel = self.for_project(project_id)
+        self.update(channel['id'], {'style': {**PRESETS[name], 'palette': PRESETS[name]['palette'], 'feeling': name}})
+        return self.look(project_id)
 
     def _input(self, payload, partial=None):
         data = {**(partial or {}), **payload}

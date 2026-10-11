@@ -476,6 +476,16 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def create_channel(payload: dict):
         return channels.create(payload)
 
+    @application.get('/api/projects/{project_id}/look')
+    def get_look(project_id: str):
+        projects.get(project_id)
+        return channels.look(project_id)
+
+    @application.put('/api/projects/{project_id}/look')
+    def set_look(project_id: str, payload: dict):
+        projects.get(project_id)
+        return channels.set_look(project_id, payload.get('look') if isinstance(payload, dict) else None)
+
     @application.get('/api/channels/{channel_id}')
     def get_channel(channel_id: str):
         return channels.get(channel_id)

@@ -187,7 +187,9 @@ def test_real_adapter_creation_download_local_playback_handoff_preserves_part6(v
     handoff=st[0].get(base(st)+'/handoff').json()
     assert handoff['ready'] and handoff['transcript'] is None and handoff['timing_source']=='audio_duration'
     assert handoff['source_script_version_id']==st[4]['id'] and handoff['narration_version_id']==active['id']
-    assert st[0].get(f'/api/projects/{st[1]["id"]}/script').json()==script and stock.read_bytes()==b'OWNER_MEDIA_UNCHANGED'
+    after=st[0].get(f'/api/projects/{st[1]["id"]}/script').json()
+    assert {k:v for k,v in after.items() if k!='narration'}=={k:v for k,v in script.items() if k!='narration'} and stock.read_bytes()==b'OWNER_MEDIA_UNCHANGED'
+    assert after['narration']['duration']==1  # the script screen now shows the real narration length
     for private in (KEY,AUDIO,'SIGNED_AUDIO_FIXTURE','PRIVATE_FULL_SCRIPT'):
         assert private not in json.dumps(result) and private not in json.dumps(handoff) and private not in caplog.text
         assert private.encode() not in (st[3]/'app.db').read_bytes()

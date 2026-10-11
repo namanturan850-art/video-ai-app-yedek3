@@ -59,6 +59,12 @@ class OpenMontageProvider:
                 if FONTS[sub['font']][1]:
                     shutil.copyfile(Path(__file__).resolve().parent.parent.parent/'static'/'fonts'/FONTS[sub['font']][1],public/'kit-subtitle.ttf')
                     neutral['subtitle_style']['font_asset']='kit-subtitle.ttf'
+            if kit.get('palette'):  # emphasis texts as graphics (same look as the native engine)
+                neutral['graphic_style']={k:kit['palette'][k] for k in ('background','accent','primary')}
+                heading=FONTS[kit.get('heading_font','arial')][1]
+                if heading:
+                    shutil.copyfile(Path(__file__).resolve().parent.parent.parent/'static'/'fonts'/heading,public/'kit-heading.ttf')
+                    neutral['graphic_style']['font_asset']='kit-heading.ttf'
             neutral['avatar']=None  # layer reserved for a future channel avatar
             self.bridge.settings_guard(neutral)
             props=staging/'props.json';props.write_text(json.dumps(neutral,ensure_ascii=False),encoding='utf-8')

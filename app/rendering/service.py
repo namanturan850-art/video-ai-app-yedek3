@@ -84,14 +84,15 @@ class RenderService:
             original=m['source_metadata'].get('emphasis_time',duration*.6)
             offset=spoken-start if spoken is not None else original*duration/max(.001,float(m.get('duration') or duration))
             scene=templates.build(spec,kit,duration,offset,h.get('target_language','de'))
-            if abs(float(m.get('duration') or 0)-duration)>1/30 or abs(original-scene['emphasis_time'])>.04:
+            from app.motion.clips import scene_key
+            if abs(float(m.get('duration') or 0)-duration)>1/30 or abs(original-scene['emphasis_time'])>.04 or Path(m.get('local_path','')).stem!=scene_key(scene):
                 try:
                     path,_,_=render_clip(directory(self.projects,pid),spec,kit,duration,offset,language=h.get('target_language','de'),bridge=getattr(self,'openmontage',None))
                     digest=self._hash(path,force);originals[str(path)]=digest
                     for slot in parts:media[slot['slot_id']].update(path=path,duration=duration,sha256=digest,segment_start=0.)
                 except Exception:
                     scene=templates.build(spec,kit,float(m.get('duration') or duration),original,h.get('target_language','de'))  # keep the prepared clip
-            for slot in parts:media[slot['slot_id']]['segment_start']=0.  # animation always starts at its first frame
+            for slot in parts:media[slot['slot_id']].update(segment_start=0.,motion=True)  # animation always starts at its first frame
             channels=getattr(self,'channels',None)
             channel=channels.for_project(pid) if channels else None
             for item in scene['sfx']:
@@ -99,6 +100,19 @@ class RenderService:
                 if path and 0<=start+item['t']<h.get('audio_duration',1e9):
                     events.append({'t':round(start+item['t'],3),'sound':item['sound'],'path':str(path)})
         return {'events':sorted(events,key=lambda e:e['t'])[:80],'volume':volume}
+
+    def _transition_sfx(self,plan,sfx,kit,h):
+        """A soft whoosh under the narration at every styled scene change
+        (slide/zoom/circle). Part of the edit plan, so it is fingerprinted."""
+        if not kit or (kit.get('sfx') or {}).get('whoosh')=='none':return sfx
+        path=Path(__file__).resolve().parents[1]/'static'/'sfx'/'whoosh.wav'
+        if not path.is_file():return sfx
+        events=list(sfx['events'])
+        for item in plan.get('slots',[]):
+            if item.get('transition_out')=='crossfade' and item.get('transition_style') not in (None,'fade'):
+                t=round(item['end']-item.get('transition_duration',0)-.15,3)
+                if 0<=t<h.get('audio_duration',1e9) and not any(abs(e['t']-t)<.3 for e in events):events.append({'t':t,'sound':'whoosh','path':str(path)})
+        return {**sfx,'events':sorted(events,key=lambda e:e['t'])[:160]}
 
     def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None):
         try:
@@ -150,6 +164,8 @@ class RenderService:
                 fingerprint_data['motion_sfx']={'events':[{k:e[k] for k in ('t','sound')} for e in sfx['events']],'volume':sfx['volume'],'sources':kit['sfx']}
             if kit and kit['subtitle']!=DEFAULT_STYLE['subtitle']:
                 fingerprint_data['subtitle_style']=kit['subtitle']  # default kit keeps old fingerprints
+            if kit and (kit['palette'],kit['heading_font'])!=(DEFAULT_STYLE['palette'],DEFAULT_STYLE['heading_font']):
+                fingerprint_data['look']={'palette':kit['palette'],'heading_font':kit['heading_font']}  # text graphics colours
             # All contract values are local identities and safe scene/subtitle text, not URLs or secrets.
             self._guard(fingerprint_data)
             fingerprint=hashlib.sha256(json.dumps(fingerprint_data,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -172,6 +188,7 @@ class RenderService:
                     plan=smart_edit.build(t,h,opts['editing_style'],fingerprint,seed=seed,subtitle_mode=opts.get('subtitle_display') or ('emphasis' if opts['editing_style']=='adaptive' else 'full' if opts['subtitle_burned'] else 'none'),media_details=media)
                 self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
+                sfx=self._transition_sfx(plan,sfx,kit,h)
             inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit,'sfx':sfx}
             reflow.apply_graphics(inputs)
             if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})

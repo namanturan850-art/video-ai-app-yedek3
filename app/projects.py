@@ -36,7 +36,7 @@ class NewProject(BaseModel):
     reference_url: str = Field(default='', max_length=2000)
     language: str = 'de'
     _language = field_validator('language')(validate_language)
-    script_engine: Literal['ollama', 'openai', 'gemini'] = 'ollama'
+    script_engine: Literal['ollama', 'openai', 'gemini'] = 'gemini'  # free tier by default; Ollama stays the local backup
     target_duration_minutes: float = Field(default=5, ge=1, le=180)
     content_style: str = Field(default='Otomatik', max_length=120)
     min_scene_duration_seconds: float = Field(default=4, ge=1, le=120)

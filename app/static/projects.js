@@ -105,7 +105,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     field(form, 'reference_url', "Referans YouTube URL’si (isteğe bağlı)", 'url', '', {maxLength: 2000});
     form.append(make('p', 'Referans yalnızca kaydedilir. Video analiz edilmez, indirilmez veya kopyalanmaz.', 'note'));
     field(form, 'language', 'Hedef Dil', 'select', 'de', {choices: [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']]});
-    field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', 'ollama', {choices: [['ollama', 'Ollama'], ['openai', 'OpenAI'], ['gemini', 'Gemini']]});
+    field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', 'gemini', {choices: [['gemini', 'Gemini (ücretsiz kota — önerilen)'], ['ollama', 'Ollama (yerel yedek)'], ['openai', 'OpenAI']]});
     field(form, 'target_duration_minutes', 'Hedef video süresi (dakika)', 'number', 5, {min: 1, max: 180});
     field(form, 'content_style', 'İçerik türü / stil', 'text', 'Otomatik', {maxLength: 120, required: true});
     field(form, 'min_scene_duration_seconds', 'Minimum sahne süresi (saniye)', 'number', 4, {min: 1, max: 120});
@@ -180,7 +180,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       const form = make('form'); form.id = 'edit-project-form'; form.noValidate = true;
       field(form, 'name', 'Proje adı', 'text', project.name, {maxLength: 120, required: true});
       field(form, 'topic', 'Konu', 'textarea', project.topic, {maxLength: 5000, required: true});
-      field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', project.script_engine, {choices: [['ollama', 'Ollama'], ['openai', 'OpenAI'], ['gemini', 'Gemini']]});
+      field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', project.script_engine, {choices: [['gemini', 'Gemini (ücretsiz kota — önerilen)'], ['ollama', 'Ollama (yerel yedek)'], ['openai', 'OpenAI']]});
       const save = make('button', 'Bilgileri Kaydet'); save.type = 'submit'; form.append(save); edit.append(form); detail.append(edit);
       form.addEventListener('submit', async event => {
         event.preventDefault(); errors(form); busy(form, true); feedback.textContent = 'Proje bilgileri kaydediliyor…';

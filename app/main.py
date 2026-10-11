@@ -256,8 +256,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):
         result = {**scripts.repository.view(project_id), 'artifacts': quality.results(project_id), 'director': director_options()}
-        if result['director']['claude_default']:
-            result['default_provider'] = 'claude'
+        # Gemini (free tier) everywhere by default; Claude only when the owner
+        # ticked it in Settings. Without a configured engine the project's own
+        # choice (Ollama backup) is kept.
+        if result['director']['engine']:
+            result['default_provider'] = result['director']['engine']
         return result
 
     @application.get('/api/languages')

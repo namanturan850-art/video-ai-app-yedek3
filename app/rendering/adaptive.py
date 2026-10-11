@@ -70,20 +70,38 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
         item.update(layout=layout,layout_label=LAYOUTS[layout],texts=texts,layout_window={'start':start,'end':end},secondary_slot_id=secondary['slot_id'] if secondary and layout=='dual_media' else None)
         if layout=='big_number':item['number']=NUMBER.search(text).group()
         item['text_provenance']={'source':provenance,'cue_index':cue.get('index'),'start':cue['start'],'end':cue['end']}
-        # A graphic has its own subtle entrance; suppress camera/punch stacking.
+        # The card stays fixed while the media behind it keeps one slow, gentle
+        # move (no punch-in cut, no stacked zoom). Static cards read as slides.
         first=item['segments'][0];last=item['segments'][-1]
-        item['segments']=[{**first,'end_frame':last['end_frame'],'frames':last['end_frame']-first['start_frame'],'end':last['end'],'motion_effect':'none','motion_strength':0}]
-        item.update(motion_effect='none',motion_strength=0,reason='İçeriğe uygun yerel görsel düzen')
+        effect='push_in' if first['motion_effect'] in ('none','push_out') else first['motion_effect']
+        strength=round(min(first['motion_strength'] or .03,.03),4) if first.get('camera_curve')=='eased' else 0
+        item['segments']=[{**first,'end_frame':last['end_frame'],'frames':last['end_frame']-first['start_frame'],'end':last['end'],'base_zoom':0.,
+                           'motion_effect':effect if strength else 'none','motion_strength':strength}]
+        item.update(motion_effect=item['segments'][0]['motion_effect'],motion_strength=strength,reason='İçeriğe uygun yerel görsel düzen')
         special_seconds+=end-start;last_end=end
     # Preserve neutral endpoints. Cards near boundaries use a clean cut.
     last_transition=None
+    def clear(item,edge,seconds):
+        # A transition may border a card only if the card text stays fully
+        # outside the transition window (no text flashing through a blend).
+        window=item.get('layout_window')
+        if item['layout']=='full_broll' or not window:return True
+        return window['end']<=item['end']-seconds-.25 if edge=='end' else window['start']>=item['start']+seconds+.25
+    carried=None
     for boundary,(previous,current) in enumerate(zip(plan['slots'],plan['slots'][1:])):
-        if previous['layout']!='full_broll' or current['layout']!='full_broll':
+        if carried and previous['scene_id']!=current['scene_id'] and previous['transition_out'] in ('none','hard_cut'):
+            # A transition blocked by card text moves to the next scene boundary.
+            seconds=min(carried[1],previous['frames']/120 if 'frames' in previous else carried[1],(current['end']-current['start'])/4,(previous['end']-previous['start'])/4)
+            if seconds>=2/30:previous.update(transition_out=carried[0],transition_duration=round(seconds,6));carried=None
+        seconds=previous.get('transition_duration') or 0
+        if (previous['layout']!='full_broll' or current['layout']!='full_broll') and not (seconds and clear(previous,'end',seconds) and clear(current,'start',seconds)):
+            if previous['transition_out'] not in ('none','hard_cut'):carried=(previous['transition_out'],seconds)
             previous.update(transition_out='hard_cut',transition_duration=0)
         elif previous['transition_out'] not in ('none','hard_cut'):
-            styles=('crossfade','fade_dark','dip_black')
+            from app.rendering.smart_edit import PROFILES
+            styles=PROFILES.get(plan.get('edit_profile'),{}).get('transitions',('crossfade','fade_dark','dip_black'))
             selected=choice(seed,f'transition-{boundary}',len(styles))
-            if styles[selected]==last_transition:selected=(selected+1)%len(styles)
+            if styles[selected]==last_transition and styles[selected]!='crossfade':selected=(selected+1)%len(styles)
             previous['transition_out']=styles[selected]
         if previous['transition_out'] not in ('none','hard_cut'):last_transition=previous['transition_out']
         current['transition_in']=previous['transition_out']

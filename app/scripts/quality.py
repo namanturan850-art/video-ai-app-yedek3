@@ -306,16 +306,17 @@ class QualityService:
     @staticmethod
     def _instructions(kind):
         if kind=='visual':
-            return ('Group narration_units by meaning: topic changes, facts, examples, comparisons, lists, emotional beats and section transitions. '
+            return ('Group narration_units by meaning: topic changes, facts, examples, comparisons, lists, emotional beats, section transitions. '
                     'Use every unit_id exactly once in ordered contiguous groups. NEVER narration or narration_text; app owns exact text. '
                     'Adapt to content_type; never turn factual topics into stories. Prefer 3–7 opening / 5–12 main second beats; guidance ONLY. Avoid groups over 18 seconds. '
-                    'Use relevant ENGLISH primary stock queries and 1–5 DIFFERENT alternatives, each 2–12 words. Prefer stock_video; other types: stock_image, ai_image, motion_graphic, user_media. '
-                    'Avoid visual repetition using previous_visuals; invent no facts or media. '
+                    'stock_query + 1–5 DIFFERENT alternatives: ENGLISH 2–8 words, things a camera films '
+                    '(e.g. "pilot hands cockpit instruments"); no abstract ideas, diagrams or bare names. '
+                    'Prefer stock_video; other types: stock_image, ai_image, motion_graphic, user_media. '
+                    'Avoid repeating previous_visuals; invent no facts or media. '
                     'Only the seven example fields are required. Optional: overlay_text (project language, max 12 words), entities, location, action, shot_suggestion. '
                     'Optional search_anchor (exact subject/name), search_context (English visual context), search_alternatives '
                     '(up to 5 grounded English queries). Preserve multi-word names; omit uncertain hints. '
-                    'Optional provider_query: ENGLISH 2–6 subject concepts; preserve proper names. '
-                    'Optional semantic_descriptor: short grounded English visual subject/action/context; preserve proper names. '
+                    'Optional provider_query (2–6 English concepts), semantic_descriptor (short English subject/action/context); keep proper names. '
                     +QualityService._visual_example('first supplied unit_id')+' Return JSON only. Do not explain.')
         common = 'Use the selected target language for generated narration/titles/CTA; explanations to the user in Turkish. No invented facts, false promises or verification claims. '
         return common + {

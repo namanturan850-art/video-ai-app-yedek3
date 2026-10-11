@@ -53,6 +53,7 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   let planKey='';
   function showEditPlan(){const plan=state.smart_edit_plan,key=plan?.fingerprint||'';if(planKey===key)return;planKey=key;editSummary.replaceChildren();if(!plan)return;
     editSummary.append(el('h2',`Kurgu stili: ${plan.style_label}${plan.estimated?' · Tahmini plan':''}`),el('p','Yerel ve aynı kaynaklarda aynı plan. API kredisi kullanılmaz; yeni stok dosyası indirilmez.'));
+    if(plan.edit_profile_label)editSummary.append(el('p',`Kurgu ritmi (sahne duygularından seçildi): ${plan.edit_profile_label}`));
     if(plan.edit_variation_seed)editSummary.append(el('p',`Kurgu Varyasyonu: ${variationSeed||'Varsayılan'}`));editCounts(editSummary,plan.summary,'Planlanan kurgu');const details=el('details');details.append(el('summary','Kurgu Planını Gör'));
     const table=el('table'),thead=el('thead'),head=el('tr');for(const text of ['Zaman','Sahne','Düzen','Medya','Efekt','Geçiş','Metin'])head.append(el('th',text));thead.append(head);table.append(thead);
     const body=el('tbody');let sceneOrder=0,lastScene='';for(const item of plan.slots){if(lastScene!==item.scene_id){sceneOrder++;lastScene=item.scene_id;}

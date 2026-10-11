@@ -108,7 +108,7 @@ def test_mixed_actual_motion_failure_reports_only_successful_output_slots(tmp_pa
             if context.get('phase')=='slot_render' and context.get('slot_index')==1 and not self.failed:
                 self.failed=True
                 graph=folder/args[args.index('-/filter_complex')+1]
-                graph.write_text(graph.read_text().replace('zoompan','invalid_motion'))
+                graph.write_text(graph.read_text().replace('perspective','invalid_motion'))
             return super().run(args,cwd,*a,**context)
     runner=FailSecond();engine=FFmpegRenderProvider(tools.discover(),runner)
     result=engine.render({'temporary':folder,'timeline':t,'handoff':h,'smart_edit_plan':edit,'options':options({'encoder':'cpu','subtitle_burned':False}),

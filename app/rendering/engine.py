@@ -56,25 +56,35 @@ class FFmpegRenderProvider:
         self.progress('preparing',2,encoder,self.warnings)
         if opts['subtitle_burned'] and 'ass' not in self.tools['filters']:
             raise RenderError('subtitle_invalid','Bu FFmpeg sürümü altyazı yazmayı desteklemiyor. Altyazı seçimini kapatın veya libass destekli FFmpeg kullanın.',diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder))
+        kit=plan.get('style_kit') or {};sub_style=kit.get('subtitle')
+        fontsdir=''
+        if sub_style and sub_style.get('font','arial')!='arial':
+            # Bundled OFL font next to the ASS file; libass reads it via fontsdir.
+            from app.channels import FONTS
+            import shutil
+            (folder/'fonts').mkdir(exist_ok=True)
+            shutil.copyfile(Path(__file__).resolve().parent.parent/'static'/'fonts'/FONTS[sub_style['font']][1],folder/'fonts'/FONTS[sub_style['font']][1])
+            fontsdir=':fontsdir=fonts'
+        assf=lambda name:f'ass=filename={name}{fontsdir}'
         timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]
         for scene,original in zip(timed,timeline['scenes']):scene.update(start=original['start'],end=original['end'])
-        try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,emphasis=emphasis)
+        try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,subtitle_style=sub_style,emphasis=emphasis)
         except RenderError as error:
             raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
         self.warnings+=warnings;caption_name=None
         if has_text:
             self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
             # One local frame checks libass/file syntax before any expensive slot encode.
-            args=self.command()+['-f','lavfi','-i','color=s=1920x1080:r=30:d=0.04','-vf',f'ass=filename={caption_name}','-frames:v','1','-an','-f','null','-']
+            args=self.command()+['-f','lavfi','-i','color=s=1920x1080:r=30:d=0.04','-vf',assf(caption_name),'-frames:v','1','-an','-f','null','-']
             try:self.runner.run(args,folder,phase='subtitle_preflight')
             except RenderError as error:
                 if not smart or not emphasis or error.category!='render_failed':raise
                 self.decorative('emphasis_render_failed',encoder=encoder)
                 self.warnings.append('Vurgu yazısı ön kontrolü başarısız; yalnız mevcut altyazılar kullanılıyor.')
                 emphasis=[]
-                content,_,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,emphasis=[])
+                content,_,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,subtitle_style=sub_style,emphasis=[])
                 self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
-                args[args.index('-vf')+1]=f'ass=filename={caption_name}'
+                args[args.index('-vf')+1]=assf(caption_name)
                 if has_text:self.runner.run(args,folder,phase='subtitle_preflight')
         incoming=[0]*len(slots);outgoing=[0]*len(slots);fades=[0.]*len(slots)
         for i,slot in enumerate(slots[:-1]):
@@ -207,7 +217,7 @@ class FFmpegRenderProvider:
         args=self.command()+['-f','concat','-safe','1','-i',manifest,'-i',str(plan['audio'])]
         vf='[0:v]null'
         if has_text:
-            vf+=f",ass=filename={caption_name}"
+            vf+=','+assf(caption_name)
         graph=vf+'[v];\n'+f'[1:a]aresample=48000,apad,atrim=duration={duration:.6f},asetpts=PTS-STARTPTS[nar]'
         if opts['music_enabled']:
             args+=['-stream_loop','-1','-i',str(plan['music'])]
@@ -232,14 +242,14 @@ class FFmpegRenderProvider:
             self.decorative('emphasis_render_failed',encoder=encoder)
             self.warnings.append('Son birleştirmede vurgu yazısı atlandı; mevcut altyazı/ses zamanları korundu.')
             emphasis=[]
-            content,_,subtitles_remain=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,emphasis=[])
+            content,_,subtitles_remain=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none',editing_style=style,subtitle_style=sub_style,emphasis=[])
             previous_caption=caption_name
             self.counter+=1;caption_name=f'captions-{self.counter}.ass';write(folder/caption_name,content)
-            graph=graph.replace(f'ass=filename={previous_caption}',f'ass=filename={caption_name}')
+            graph=graph.replace(assf(previous_caption),assf(caption_name))
             if not subtitles_remain:
                 # The ASS file remains a valid empty track; removing only its node
                 # keeps the audio graph and all master timestamps unchanged.
-                graph=graph.replace(f',ass=filename={caption_name}','')
+                graph=graph.replace(','+assf(caption_name),'')
             graph_index=args.index('-/filter_complex');args[graph_index:graph_index+2]=self.graph(folder,graph)
             self.runner.run(args,folder,callback,encoder=encoder,phase='final_assembly')
         self.progress('validating',96,encoder,self.warnings)

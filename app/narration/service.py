@@ -89,6 +89,11 @@ class NarrationService:
             if job:
                 job=dict(job);job['progress']=json.loads(job.pop('progress_json'));job['status_label']=LABELS.get(job['status'],'Bekliyor')
             config=self.settings.safe_view()['ai33']
+            channels=getattr(self,'channels',None)
+            channel=channels.for_project(pid) if channels else None
+            if channel and channel.get('voice_id'):
+                # The channel's own voice/speed preselects the form (still changeable).
+                config={**config,'voice_provider':channel['voice_provider'] or config.get('voice_provider'),'voice_id':channel['voice_id'],'speed':channel['voice_speed'],'channel_voice':True}
             result={'project_id':pid,'target_language':project['language'],'approved_script':
                     {'id':current['id'],'version':current['version'],'character_count':len(current['text']),'language':current['language']}
                     if current and current['status']=='approved' else None,

@@ -164,7 +164,7 @@ def test_schema_11_migration_is_additive_and_keeps_projects(tmp_path):
         c.execute('DROP TABLE ai_usage'); c.execute("UPDATE app_metadata SET value='10' WHERE key='schema_version'")
     initialize_database(tmp_path / 'data')
     with closing(sqlite3.connect(database)) as c:
-        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION == '11'
+        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION == '12'
         assert c.execute('SELECT name FROM projects WHERE id=?', (pid,)).fetchone()[0] == 'Alt'
         assert c.execute("SELECT 1 FROM sqlite_master WHERE name='ai_usage'").fetchone()
 

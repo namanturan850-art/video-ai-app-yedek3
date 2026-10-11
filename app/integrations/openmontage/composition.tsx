@@ -1,8 +1,8 @@
 // Original AI Video Studio projection. No upstream source or template copied.
 // Camera math mirrors app/rendering/smart_edit.py (same eased/neutral curves,
 // zoom and focus values) so both engines show the same edit decisions.
-import React from 'react';
-import {AbsoluteFill,Composition,Img,OffthreadVideo,Sequence,registerRoot,staticFile,useCurrentFrame} from 'remotion';
+import React,{useEffect,useState} from 'react';
+import {AbsoluteFill,Composition,Img,OffthreadVideo,Sequence,continueRender,delayRender,registerRoot,staticFile,useCurrentFrame} from 'remotion';
 const W=1920,H=1080;
 const clamp=(v:number)=>Math.min(1,Math.max(0,v));
 const smooth=(t:number)=>t*t*(3-2*t);
@@ -69,14 +69,23 @@ const Slot:React.FC<any>=({clip,previous,theme})=>{
  if(['fade','fade_dark','dip_black'].includes(clip.transition_out)&&outN>=2)opacity=Math.min(opacity,clamp((len-frame)/Math.max(1,Math.round(outN/2))));
  return <AbsoluteFill style={{opacity}}><Scene clip={clip} theme={theme}/></AbsoluteFill>;
 };
+// Reserved for a future channel avatar window (no avatar is generated yet).
+const AvatarLayer:React.FC<any>=({avatar})=>avatar&&avatar.enabled&&avatar.asset?<Img src={staticFile(avatar.asset)} style={{position:'absolute',right:60,bottom:60,width:360}}/>:null;
 const Film:React.FC<any>=props=>{
- const frame=useCurrentFrame();const cue=props.subtitle_display==='full'?props.subtitles.find((c:any)=>frame>=Math.round(c.start*30)&&frame<Math.round(c.end*30)):null;
+ const frame=useCurrentFrame();
+ // Channel “Tarzım” subtitle style; the bundled OFL font is loaded before rendering.
+ const sub=props.subtitle_style||{};
+ const [handle]=useState(()=>sub.font_asset?delayRender('kit-font'):null);
+ useEffect(()=>{if(handle===null)return;new FontFace('KitSubtitle',`url(${staticFile(sub.font_asset)})`).load().then(f=>{(document as any).fonts.add(f);continueRender(handle);}).catch(()=>continueRender(handle));},[]);
+ const subFont=sub.font_asset?"'KitSubtitle',Arial,sans-serif":'Arial,sans-serif',subColor=sub.color||'white',subOutline=sub.outline||'black',subSize=sub.size?Math.round(sub.size*50/48):50;
+ const subPlace:any=sub.position==='top'?{top:72}:sub.position==='middle'?{top:500}:{bottom:72};const cue=props.subtitle_display==='full'?props.subtitles.find((c:any)=>frame>=Math.round(c.start*30)&&frame<Math.round(c.end*30)):null;
  const emphasis=props.subtitle_display!=='none'?(props.emphasis||[]).find((e:any)=>frame>=Math.round(e.start*30)&&frame<Math.round(e.end*30)):null;
  const emphasisOpacity=emphasis?Math.min(1,(frame-emphasis.start*30)/6,(emphasis.end*30-frame)/6):0;
  return <AbsoluteFill style={{background:'black'}}>
   {props.clips.map((c:any,i:number)=><Sequence key={c.slot_id} from={c.start_frame} durationInFrames={c.end_frame-c.start_frame+(c.transition_out==='crossfade'?(c.handle||0):0)}><Slot clip={c} previous={props.clips[i-1]} theme={props.theme}/></Sequence>)}
   {emphasis&&<div style={{position:'absolute',left:emphasis.style==='upper_left'?120:200,right:emphasis.style==='upper_left'?'auto':200,top:110,textAlign:emphasis.style==='upper_left'?'left':'center',color:'white',font:'bold 60px Arial,sans-serif',textShadow:'0 0 12px rgba(0,0,0,.85),2px 2px 2px black',opacity:emphasisOpacity}}>{emphasis.text}</div>}
-  {cue&&<div style={{position:'absolute',left:100,right:100,bottom:72,textAlign:'center',color:'white',font:'bold 50px Arial,sans-serif',textShadow:'-2px -2px 1px black,2px 2px 1px black'}}>{cue.text}</div>}
+  <AvatarLayer avatar={props.avatar}/>
+  {cue&&<div style={{position:'absolute',left:100,right:100,...subPlace,textAlign:'center',color:subColor,fontFamily:subFont,fontWeight:700,fontSize:subSize,textShadow:`-2px -2px 1px ${subOutline},2px 2px 1px ${subOutline}`}}>{cue.text}</div>}
  </AbsoluteFill>;
 };
 registerRoot(()=> <Composition id="AIVideoStudio" component={Film} width={1920} height={1080} fps={30} durationInFrames={30} calculateMetadata={({props}:any)=>({durationInFrames:props.frames})}/>);

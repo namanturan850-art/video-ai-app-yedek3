@@ -51,6 +51,15 @@ class OpenMontageProvider:
                      'subtitle_display':plan['options'].get('subtitle_display') or 'emphasis','subtitles':plan['handoff']['subtitles'],
                      'theme':edit.get('theme','minimal_dark'),'scenes':plan['timeline']['scenes'],'clips':clips,'emphasis':edit.get('emphasis',[]),
                      'layout_hints':edit['summary'],'music':str(plan['music']) if plan['music'] else None,'output_path':str(plan['temporary']/'om-output.mp4')}
+            kit=plan.get('style_kit') or {}
+            from app.channels import DEFAULT_STYLE,FONTS
+            sub=kit.get('subtitle')
+            if sub and sub!=DEFAULT_STYLE['subtitle']:
+                neutral['subtitle_style']={k:sub[k] for k in ('color','outline','position','size')}
+                if FONTS[sub['font']][1]:
+                    shutil.copyfile(Path(__file__).resolve().parent.parent.parent/'static'/'fonts'/FONTS[sub['font']][1],public/'kit-subtitle.ttf')
+                    neutral['subtitle_style']['font_asset']='kit-subtitle.ttf'
+            neutral['avatar']=None  # layer reserved for a future channel avatar
             self.bridge.settings_guard(neutral)
             props=staging/'props.json';props.write_text(json.dumps(neutral,ensure_ascii=False),encoding='utf-8')
             entry=staging/'index.tsx';shutil.copyfile(Path(__file__).with_name('composition.tsx'),entry)

@@ -14,7 +14,26 @@ def escape(text):
     return text.replace('\\','\\\\').replace('{',r'\{').replace('}',r'\}').replace('\r','').replace('\n',r'\N')
 
 
-def create(cues,scenes,duration,*,subtitles=True,overlays=True,editing_style='basic',emphasis=None):
+def ass_colour(hexcolor):
+    return '&H00'+hexcolor[5:7]+hexcolor[3:5]+hexcolor[1:3]
+
+
+def styled(header,style):
+    """Channel “Tarzım” subtitle style (font, colours, position, size).
+    The default kit (Arial/white/bottom/48) leaves the header unchanged."""
+    from app.channels import DEFAULT_STYLE,FONTS
+    if not style or style==DEFAULT_STYLE['subtitle']:return header
+    lines=header.split('\n')
+    for i,line in enumerate(lines):
+        if line.startswith('Style: Subtitle,'):
+            f=line[len('Style: '):].split(',')
+            f[1]=FONTS[style['font']][0];f[2]=str(style['size']);f[3]=f[4]=ass_colour(style['color']);f[5]=ass_colour(style['outline'])
+            f[18]={'bottom':'2','middle':'5','top':'8'}[style['position']]
+            lines[i]='Style: '+','.join(f)
+    return '\n'.join(lines)
+
+
+def create(cues,scenes,duration,*,subtitles=True,overlays=True,editing_style='basic',emphasis=None,subtitle_style=None):
     warnings=[]
     header='''[Script Info]
 ScriptType: v4.00+
@@ -42,6 +61,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         emphasis_size=68 if editing_style in ('balanced','adaptive') else 74
         styles=f'Style: EmphasisLeft,Arial,{emphasis_size},&H00FFFFFF,&H00FFFFFF,&H00101010,&H90000000,-1,0,0,0,100,100,0,0,1,4,1,7,110,110,120,1\nStyle: EmphasisCenter,Arial,{emphasis_size},&H00FFFFFF,&H00FFFFFF,&H00101010,&H90000000,-1,0,0,0,100,100,0,0,1,4,1,8,110,110,120,1\n\n'
         header=header.replace('[Events]',styles+'[Events]')
+    header=styled(header,subtitle_style)
     lines=[]
     if subtitles:
         try:valid=validate_cues([{k:c[k] for k in ('start','end','text')} for c in cues],duration)

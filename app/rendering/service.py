@@ -100,6 +100,11 @@ class RenderService:
                 if music_hash!=music['sha256']:raise RenderError('music_invalid','Müzik dosyası değişmiş. Yeniden ekleyin.')
                 music_identity={'local_path':music['local_path'],'sha256':music_hash};originals[str(music_file)]=music_hash
             fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
+            channels=getattr(self,'channels',None)
+            kit=channels.for_project(pid)['style'] if channels else None
+            from app.channels import DEFAULT_STYLE
+            if kit and kit['subtitle']!=DEFAULT_STYLE['subtitle']:
+                fingerprint_data['subtitle_style']=kit['subtitle']  # default kit keeps old fingerprints
             # All contract values are local identities and safe scene/subtitle text, not URLs or secrets.
             self._guard(fingerprint_data)
             fingerprint=hashlib.sha256(json.dumps(fingerprint_data,ensure_ascii=False,sort_keys=True,separators=(',',':')).encode()).hexdigest()
@@ -122,7 +127,7 @@ class RenderService:
                     plan=smart_edit.build(t,h,opts['editing_style'],fingerprint,seed=seed,subtitle_mode=opts.get('subtitle_display') or ('emphasis' if opts['editing_style']=='adaptive' else 'full' if opts['subtitle_burned'] else 'none'),media_details=media)
                 self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
-            inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery}
+            inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit}
             reflow.apply_graphics(inputs)
             if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})
             return inputs

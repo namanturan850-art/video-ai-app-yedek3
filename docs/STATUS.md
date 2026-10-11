@@ -1,5 +1,14 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Aşama 1: Kanallar ve “Tarzım” kiti
+
+- **Kanallar** sayfası: kanal adı, dil, varsayılan AI33 sesi ve hızı, hedef süre, konu/niş. Her proje bir kanala bağlı; mevcut bütün projeler otomatik olarak **Varsayılan kanal**a bağlandı (SQLite **şema 12**, yalnız ekleme; hiçbir proje verisi değişmez). Yeni projede kanal seçilince dil ve süre kanaldan gelir; seslendirme ekranında kanalın sesi seçili açılır.
+- **Tarzım kiti**: 4 renk (arka plan, ana, vurgu, yazı — okunabilirlik kontrolü), başlık/metin fontu (uygulamayla gelen OFL lisanslı Inter, Montserrat, Oswald, Bebas Neue, Lora + Arial), animasyon süresi ve yumuşama eğrisi, ses efektleri (tık, yükseliş, darbe — uygulama kendi ürettiği lisansı temiz set ile gelir; WAV/MP3/OGG yüklenebilir), efekt ses düzeyi, altyazı stili (font, renk, kenar, konum, boyut).
+- **Tarzımı oluştur** sihirbazı: konu, izleyici, his sorulur; Gemini (varsayılan) kiti önerir, siz düzenleyip kaydedersiniz. Yapay zekâ ayarlı değilse veya cevabı geçersizse hisse uygun hazır öneri gösterilir. **Canlı önizleme**: renkler, fontlar, örnek animasyon ve efekt sesi.
+- Altyazı stili render'a bağlandı (yerel FFmpeg + OpenMontage). Varsayılan kit bugünkü görünümün aynısıdır; mevcut videolar “eski” sayılmaz.
+- **Avatar**: kanalda yalnız not alanı ve kurguda boş katman yeri; avatar üretimi yok.
+- Testler: 8 yeni (şema geçişi ve veri koruma, kanal CRUD/proje bağlantısı, kit doğrulaması, ses efekti yükleme/çalma, sihirbaz: hazır/Gemini/geçersiz cevap, altyazı stili, seslendirme sesi, gerçek FFmpeg render'da kit altyazısı). Gerçek Chromium'da kanal oluşturma, sihirbaz, önizleme ve yeni proje formu denendi.
+
 ## 2026-10-11 — Aşama 0: Varsayılan motor her yerde Gemini
 
 - Yeni proje formu, normal senaryo ekranı, kurgu planı ekranı, AI Yönetmen ve Medyayı Tamamla varsayılan olarak **Gemini** (ücretsiz kota) ile açılır. Eski Ollama projelerinde de Gemini ayarlıysa ekran Gemini'yi seçili getirir; projenin kayıtlı değeri silinmez/değişmez. İstenirse açılır listeden başka motor seçilebilir.

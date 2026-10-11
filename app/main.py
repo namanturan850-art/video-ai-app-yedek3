@@ -262,6 +262,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):
         result = {**scripts.repository.view(project_id), 'artifacts': quality.results(project_id), 'director': director_options()}
+        # Real narration length once audio exists (beats any estimate).
+        try:
+            active = narration.view(project_id).get('active')
+            audio = (active or {}).get('metadata', {}).get('audio') or {}
+            result['narration'] = {'duration': audio.get('duration'), 'version_id': (active or {}).get('source_script_version_id')} if audio.get('duration') else None
+        except Exception:
+            result['narration'] = None
         # Gemini (free tier) everywhere by default; Claude only when the owner
         # ticked it in Settings. Without a configured engine the project's own
         # choice (Ollama backup) is kept.

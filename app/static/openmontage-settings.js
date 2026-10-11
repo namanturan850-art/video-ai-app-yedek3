@@ -25,3 +25,21 @@ if (window.location.pathname==='/settings') {
   form.addEventListener('submit',e=>{e.preventDefault();const body={visual_analysis:inputs.visual_analysis.checked,media_search:inputs.media_search.checked,reuse_stock_keys:inputs.reuse_stock_keys.checked,matching:matching.value};if(root.value.trim())body.root=root.value.trim();operate('POST',body);});
   reset.addEventListener('click',()=>operate('POST',{root:''}));refresh.addEventListener('click',()=>operate('GET'));operate('GET');
 }
+/* “Motor Durumu”: components, versions, missing pieces in Turkish, one-click install. */
+if (window.location.pathname==='/settings') {
+  const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
+  const panel=node('section','','settings-panel');panel.id='settings-engine';
+  const summary=node('p','Motorlar kontrol ediliyor…');summary.setAttribute('role','status');summary.setAttribute('aria-live','polite');
+  const list=node('ul');list.id='engine-components';const install=node('button','Eksikleri kur (OpenMontage)');install.type='button';install.id='engine-install';install.hidden=true;
+  const log=node('pre');log.id='engine-log';log.hidden=true;log.style.whiteSpace='pre-wrap';
+  const refresh=node('button','Yeniden kontrol et');refresh.type='button';
+  panel.append(node('h2','Motor Durumu'),summary,list,install,refresh,log);document.querySelector('#settings-content').append(panel);
+  let timer=null;
+  async function call(path='',body){const r=await fetch('/api/settings/openmontage/engine'+path,{method:body?'POST':'GET',cache:'no-store',signal:AbortSignal.timeout(60000),headers:{'Content-Type':'application/json','X-AI-Video-Studio':'settings'},...(body?{body:JSON.stringify(body)}:{})});const d=await r.json();if(!r.ok)throw new Error(d.message||'Motor durumu alınamadı.');return d;}
+  function show(d){summary.textContent=d.summary;list.replaceChildren(...d.components.map(c=>{const li=node('li');li.dataset.ok=c.ok;li.append(node('strong',`${c.ok?'✓':'✗'} ${c.name}`),` ${c.version?'('+c.version+') ':''}— ${c.message} `,node('span',`Gerekli: ${c.needed_for}`,'note'));return li;}));
+    const s=d.install||{};install.hidden=!(d.can_install||s.status==='running');install.disabled=s.status==='running';install.textContent=s.status==='running'?'Kuruluyor…':'Eksikleri kur (OpenMontage)';
+    log.hidden=!s.log?.length;log.textContent=(s.log||[]).join('\n');clearTimeout(timer);if(s.status==='running')timer=setTimeout(load,3000);}
+  async function load(){try{show(await call());}catch(e){summary.textContent=e instanceof TypeError||e.name==='TimeoutError'?'Motor durumu alınamadı. Uygulama penceresini kontrol edip Yeniden kontrol et deyin.':e.message;}}
+  install.addEventListener('click',async()=>{if(!window.confirm('OpenMontage ayrı bir klasöre kurulacak (internetten indirme yapılır, 5–20 dakika sürebilir). Mevcut projeleriniz etkilenmez. Devam edilsin mi?'))return;install.disabled=true;try{await call('/install',{confirm:true});await load();}catch(e){summary.textContent=e.message;install.disabled=false;}});
+  refresh.addEventListener('click',load);load();
+}

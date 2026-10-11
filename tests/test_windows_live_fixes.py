@@ -190,13 +190,13 @@ def test_385_words_in_375_435_range_has_no_duration_warning_or_extra_call(studio
     _,_,_,_=studio;fake=short_ollama(studio,initial=385)
     current=run(studio,{'provider':'ollama'})['current']
     assert current['word_count']==current['report']['word_count']==385
-    assert current['estimated_minutes']==2.85
+    assert current['estimated_minutes']==2.96
     assert SHORT_WARNING not in current['report']['issues']
     assert not any('hedef süre' in issue or 'Kelime sayısı' in issue for issue in current['report']['issues'])
     assert not any(task=='expand_duration' for task,_,_ in fake.calls)
 
 
-@pytest.mark.parametrize('expanded,estimated_minutes',[(400,2.96),(360,2.67)])
+@pytest.mark.parametrize('expanded,estimated_minutes',[(400,3.08),(360,2.77)])  # measured German pace (130 wpm)
 def test_340_words_always_expand_once_toward_midpoint_and_measure_final(studio,expanded,estimated_minutes):
     client,project,_,data=studio
     fake=short_ollama(studio,initial=340,expanded=expanded)

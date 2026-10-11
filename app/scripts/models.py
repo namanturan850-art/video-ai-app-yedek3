@@ -80,10 +80,17 @@ def word_count(text):
     return len(re.findall(r"[^\W_]+(?:['’\-][^\W_]+)*", text, re.UNICODE))
 
 
+# Measured narration pace per language (words/minute), e.g. German AI33
+# voices read ~130 wpm. The estimate uses this, not the editable target range,
+# so a mistyped range can no longer show 1.4 minutes for a 3-minute script.
+SPOKEN_RATE = {'de': 130, 'en': 150, 'es': 155, 'fr': 150, 'tr': 115}
+
+
 def duration_metrics(text, minutes, options):
     count = word_count(text)
     low, high = options['words_per_minute_min'], options['words_per_minute_max']
+    rate = SPOKEN_RATE.get(options.get('language'), (low + high) / 2)
     return {'word_count': count, 'target_minutes': minutes,
             'target_word_min': math.ceil(minutes * low), 'target_word_max': math.floor(minutes * high),
-            'estimated_minutes': round(count / ((low + high) / 2), 2),
+            'estimated_minutes': round(count / rate, 2), 'spoken_rate': rate,
             'estimated_min_minutes': round(count / high, 2), 'estimated_max_minutes': round(count / low, 2)}

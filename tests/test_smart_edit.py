@@ -224,7 +224,7 @@ def test_preview_styles_new_versions_and_legacy_fingerprint_survive(ready):
     with TestClient(create_app(st['storage']),headers=HEADERS) as other:
         assert other.get(url(st)).json()['active']['metadata']['editing_style']=='balanced'
     with closing(service.projects._connection()) as db:
-        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='11'
+        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='12'
 
 
 @pytest.mark.parametrize('effect',list(smart_edit.MOTIONS.keys())[1:])

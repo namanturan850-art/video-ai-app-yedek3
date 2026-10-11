@@ -44,6 +44,14 @@ class NewProject(BaseModel):
     subtitles_enabled: bool = True
     background_music_enabled: bool = False
     thumbnail_planning_enabled: bool = True
+    channel_id: str = Field(default='', max_length=32)
+
+    @field_validator('channel_id')
+    @classmethod
+    def channel_format(cls, value):
+        if value and not re.fullmatch(r'[0-9a-f]{32}', value):
+            raise ValueError('Geçerli bir kanal seçin.')
+        return value
 
     @field_validator('name', 'topic', 'content_style')
     @classmethod
@@ -212,6 +220,11 @@ class ProjectService:
                     owned = True
                     for folder in FOLDERS:
                         (path / folder).mkdir()
+                    channel = connection.execute('SELECT id FROM channels WHERE id=?', (values['channel_id'],)).fetchone() if values['channel_id'] else None
+                    if values['channel_id'] and channel is None:
+                        raise ProjectError('Seçilen kanal bulunamadı. Kanallar sayfasını kontrol edin.', 404)
+                    if not values['channel_id']:
+                        values['channel_id'] = connection.execute('SELECT id FROM channels WHERE is_default=1').fetchone()[0]
                     columns = ', '.join(values)
                     connection.execute(f"INSERT INTO projects ({columns}) VALUES ({', '.join('?' for _ in values)})", tuple(values.values()))
                     project = public_project(self._row(connection, project_id), detail=True)
@@ -238,7 +251,10 @@ class ProjectService:
     def get(self, project_id: str) -> dict:
         try:
             with closing(self._connection()) as connection:
-                return public_project(self._row(connection, project_id), detail=True)
+                project = public_project(self._row(connection, project_id), detail=True)
+                channel = connection.execute('SELECT name FROM channels WHERE id=?', (project.get('channel_id', ''),)).fetchone() if project.get('channel_id') else None
+                project['channel_name'] = channel[0] if channel else 'Varsayılan kanal'
+                return project
         except sqlite3.Error:
             raise ProjectError('Proje okunamadı. Uygulamayı kapatıp yeniden açın.', 503) from None
 
@@ -254,6 +270,8 @@ class ProjectService:
                     merged[key] = bool(merged[key])
                 model = validate_project({**merged, **payload})
                 values = {**model.model_dump(), 'updated_at': now()}
+                if not values['channel_id'] or not connection.execute('SELECT 1 FROM channels WHERE id=?', (values['channel_id'],)).fetchone():
+                    raise ProjectError('Seçilen kanal bulunamadı. Kanallar sayfasını kontrol edin.', 404)
                 assignments = ', '.join(f'{key} = ?' for key in values)
                 connection.execute(f'UPDATE projects SET {assignments} WHERE id = ?', (*values.values(), project_id))
                 return public_project(self._row(connection, project_id), detail=True)

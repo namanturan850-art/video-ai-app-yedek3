@@ -98,6 +98,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application.state.ai_diagnostics = ai_diagnostics
     projects = ProjectService(storage)
     application.state.projects = projects
+    from app.channels import ChannelService
     from app.ai_usage import UsageLedger
     settings.usage_ledger = UsageLedger(projects)
     application.state.usage = settings.usage_ledger
@@ -111,6 +112,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     from app.director import DirectorService
     director = DirectorService(scripts, quality, production, settings)
     application.state.director = director
+    channels = ChannelService(projects, settings)
+    application.state.channels = channels
     stock = StockService(production,settings)
     application.state.stock = stock
     application.include_router(stock_router(stock))
@@ -122,6 +125,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application.state.subtitles=subtitles
     application.include_router(subtitle_router(subtitles))
     rendering=RenderService(subtitles,production,settings)
+    rendering.channels=channels
+    narration.channels=channels
     application.state.rendering=rendering
     stock.openmontage=rendering.openmontage
     from app.integrations.openmontage.routes import router as openmontage_router
@@ -133,7 +138,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.middleware("http")
     async def protect_local_data(request: Request, call_next):
         scope = "settings" if request.url.path.startswith("/api/settings") else "projects"
-        if request.url.path.startswith(("/api/settings", "/api/projects")):
+        if request.url.path.startswith(("/api/settings", "/api/projects", "/api/channels")):
             origin = request.headers.get("origin")
             same_origin = not origin or origin == f"{request.url.scheme}://{request.url.netloc}"
             mutation = request.method not in ("GET", "HEAD")
@@ -411,6 +416,47 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def director_purpose(project_id: str, payload: dict):
         return {'purpose': director.save_purpose(project_id, payload), 'message': 'Amaç özeti kaydedildi. Senaryo bir sonraki yönetmen çalıştırmasında bu özete göre yazılır.'}
 
+    @application.get('/api/channels')
+    def list_channels():
+        return {'channels': channels.list(), 'options': channels.options(), 'engine': settings.ai_engine()}
+
+    @application.post('/api/channels', status_code=201)
+    def create_channel(payload: dict):
+        return channels.create(payload)
+
+    @application.get('/api/channels/{channel_id}')
+    def get_channel(channel_id: str):
+        return channels.get(channel_id)
+
+    @application.put('/api/channels/{channel_id}')
+    def update_channel(channel_id: str, payload: dict):
+        return channels.update(channel_id, payload)
+
+    @application.delete('/api/channels/{channel_id}')
+    def delete_channel(channel_id: str):
+        return channels.delete(channel_id)
+
+    @application.post('/api/channels/{channel_id}/style/suggest')
+    def suggest_style(channel_id: str, payload: dict):
+        return channels.suggest(channel_id, payload)
+
+    @application.post('/api/channels/{channel_id}/sfx/{name}')
+    async def upload_sfx(channel_id: str, name: str, request: Request):
+        data = bytearray()
+        async for chunk in request.stream():
+            data.extend(chunk)
+            if len(data) > 5_000_000: raise ProjectError('Ses efekti dosyası 5 MB’dan büyük.')
+        return channels.upload_sfx(channel_id, name, request.headers.get('x-file-name', ''), bytes(data))
+
+    @application.get('/api/channels/{channel_id}/sfx/{name}')
+    def play_sfx(channel_id: str, name: str):
+        from app.channels import SFX_NAMES, SFX_TYPES
+        channel = channels.get(channel_id)
+        if name not in SFX_NAMES: raise ProjectError('Ses efekti bulunamadı.', 404)
+        path = channels.sfx_path(channel_id, channel['style']['sfx'][name])
+        if path is None: raise ProjectError('Bu ses efekti kapalı.', 404)
+        return FileResponse(path, media_type=SFX_TYPES.get(path.suffix, (None, 'audio/wav'))[1], headers={'Cache-Control': 'no-store'})
+
     @application.get('/api/projects/{project_id}/ai-usage')
     def project_ai_usage(project_id: str):
         projects.get(project_id)
@@ -591,6 +637,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/projects/{project_id}/narration')
     @application.get('/projects/{project_id}/subtitles')
     @application.get('/projects/{project_id}/render')
+    @application.get('/channels')
     @application.get("/settings")
     @application.get('/settings/ai-diagnostics')
     @application.get("/diagnostics")

@@ -37,3 +37,22 @@
 #render-content label {display:block;margin:1rem 0;}
 #render-content input[type=checkbox] {margin-left:.6rem;}
 #render-content button {margin:.5rem .5rem .5rem 0;}
+
+/* Bundled OFL fonts for the channel style kit (licences in /static/fonts). */
+@font-face{font-family:'Inter';src:url('/static/fonts/Inter.ttf') format('truetype');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Montserrat';src:url('/static/fonts/Montserrat.ttf') format('truetype');font-weight:100 900;font-display:swap}
+@font-face{font-family:'Oswald';src:url('/static/fonts/Oswald.ttf') format('truetype');font-weight:200 700;font-display:swap}
+@font-face{font-family:'Bebas Neue';src:url('/static/fonts/BebasNeue-Regular.ttf') format('truetype');font-display:swap}
+@font-face{font-family:'Lora';src:url('/static/fonts/Lora.ttf') format('truetype');font-weight:400 700;font-display:swap}
+.channel-list{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.channel-card{border:1px solid #d7dee3;border-radius:12px;padding:12px;background:#fff;cursor:pointer}
+.channel-card.active{outline:3px solid #236f5c}
+.kit-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(200px,1fr))}
+.kit-preview{position:relative;width:100%;max-width:640px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;margin:12px 0}
+.kit-preview .kit-title{position:absolute;left:8%;top:18%;font-size:clamp(20px,5vw,40px);font-weight:700}
+.kit-preview .kit-bar{position:absolute;left:8%;top:38%;height:6px;width:0}
+.kit-preview .kit-number{position:absolute;right:8%;top:16%;font-size:clamp(28px,8vw,64px);font-weight:800}
+.kit-preview .kit-body{position:absolute;left:8%;top:46%;width:60%;font-size:clamp(12px,2.4vw,18px)}
+.kit-preview .kit-sub{position:absolute;left:0;right:0;text-align:center;font-weight:700;padding:0 8%}
+.swatch{display:inline-block;width:18px;height:18px;border-radius:4px;vertical-align:middle;margin-right:4px;border:1px solid #0002}
+.setting-field input[type=color]{height:44px;min-height:44px;padding:3px;cursor:pointer}

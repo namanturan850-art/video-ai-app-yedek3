@@ -1,6 +1,7 @@
 const pages = {
   '/new-project': ['Yeni Proje', 'Video fikrinizi ve tercihlerinizi kaydedin. Bu adım video veya senaryo üretmez.'],
   '/projects': ['Projeler', 'Kaydettiğiniz projeleri açın veya istemediklerinizi silin.'],
+  '/channels': ['Kanallar', 'Her YouTube kanalının dili, sesi, hedef süresi ve “Tarzım” kiti (renk, font, hareket, ses efekti, altyazı).'],
   '/settings': ['Ayarlar', 'Kullanmak istediğiniz hizmetlerin bilgilerini buradan kaydedin. İstemediğiniz bölümleri boş bırakabilirsiniz.'],
   '/settings/ai-diagnostics': ['AI Tanılama', 'Ayar kaydını, bağlantıyı, kısa üretimi, JSON biçimini ve tek senaryo bölümünü ayrı ayrı kontrol edin.'],
   '/diagnostics': ['Tanılama', 'Bilgisayarınızın ve uygulamanın durumunu buradan kontrol edebilirsiniz.']

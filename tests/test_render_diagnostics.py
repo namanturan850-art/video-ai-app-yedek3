@@ -113,7 +113,7 @@ def test_corrupt_real_slot_has_safe_persistent_diagnostic(ready):
     with TestClient(create_app(st['storage']),headers=HEADERS) as other:
         assert other.get(url(st)).json()['job']['progress']['diagnostic']==safe
     with closing(c.app.state.projects._connection()) as db:
-        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='11'
+        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='12'
 
 
 @pytest.mark.parametrize('phase,text,code',[

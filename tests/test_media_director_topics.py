@@ -202,6 +202,16 @@ class Director:
         if isinstance(content, list):
             return self.judge(content)
         fmt = request['output_config'].get('format')
+        if fmt and 'titles' in fmt['schema']['properties']:
+            chapters = len(re.findall(r'^\d+\. ', content.split('CHAPTERS:')[1].split('SCRIPT:')[0], re.M))
+            topic = self.data['topic']
+            return message(json.dumps({'titles': [f'{topic}: Was wirklich dahintersteckt – Fakten statt Mythen', f'{topic} erklärt: Die überraschende Wahrheit in Zahlen',
+                                                  f'Warum {topic} bis heute fasziniert und was wir wissen', f'{topic}: Die 5 wichtigsten Fakten in nur drei Minuten',
+                                                  f'Das Rätsel um {topic} – was die Wissenschaft heute sagt'],
+                                       'hook': 'Was steckt wirklich dahinter?\nDie Antwort überrascht.', 'summary': f'Ein kompakter Überblick über {topic}.',
+                                       'tags': [f'{topic}', 'Doku', 'Wissen', 'Fakten', 'Erklärung', 'Geschichte', 'Wissenschaft', 'Rätsel', 'Mythen', 'Deutsch', 'Video', 'Erklärvideo'],
+                                       'hashtags': ['#Doku', '#Wissen', '#Fakten'], 'chapter_titles': [f'Teil {i + 1}' for i in range(chapters)],
+                                       'thumbnail_texts': ['Niemand kam zurück', 'Die Wahrheit', 'Unglaublich', 'Endlich erklärt']}))
         if fmt and 'queries' in fmt['schema']['properties']:
             return self.queries(content)
         if fmt:  # purpose

@@ -1,5 +1,12 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Aşama 0: Varsayılan motor her yerde Gemini
+
+- Yeni proje formu, normal senaryo ekranı, kurgu planı ekranı, AI Yönetmen ve Medyayı Tamamla varsayılan olarak **Gemini** (ücretsiz kota) ile açılır. Eski Ollama projelerinde de Gemini ayarlıysa ekran Gemini'yi seçili getirir; projenin kayıtlı değeri silinmez/değişmez. İstenirse açılır listeden başka motor seçilebilir.
+- **Claude** yalnızca Ayarlar'da “Gemini yerine Claude kullan (ücretli)” işaretliyse varsayılan olur. **Ollama** yerel yedek olarak listede ve hata durumunda öneri olarak kalır.
+- Hiçbir motor ayarlanmamışsa projenin kendi seçimi kullanılır. Şema değişmedi.
+- Testler: 4 yeni (yeni proje Gemini, eski Ollama projesinde ekran Gemini, Claude yalnız işaretlenince, Ollama yedeği). Gerçek Chromium'da üç ekran kontrol edildi.
+
 ## 2026-10-11 — Ücretli kısımlar Gemini'ye taşındı (PR-D)
 
 - **Sahibin isteği:** claude.ai aboneliği API'yi kapsamadığı için ücretli adımlar Gemini'nin ücretsiz kotasıyla çalışsın.

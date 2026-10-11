@@ -44,7 +44,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
     if (type === 'text') control.maxLength = name === 'audience' ? 500 : 150;
     group.append(caption, control); form.append(group); return control;
   }
-  field('provider', 'Senaryo Motoru', 'select', 'gemini', [['claude', 'Claude (yönetmen)'], ['gemini', 'Gemini'], ['ollama', 'Ollama'], ['openai', 'OpenAI']]);
+  field('provider', 'Senaryo Motoru', 'select', 'gemini', [['gemini', 'Gemini (ücretsiz kota)'], ['ollama', 'Ollama (yerel yedek)'], ['openai', 'OpenAI'], ['claude', 'Claude (ücretli)']]);
   field('mode', 'Çalışma modu', 'select', 'original', [['original', 'Konseptten Özgün Senaryo'], ['translate_owned', 'Kendi Metnimi Seçili Dile Çevir']]);
   field('language', 'Hedef Dil', 'select', 'de', [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']]);
   const target = node('p', '', 'note'); form.append(target);

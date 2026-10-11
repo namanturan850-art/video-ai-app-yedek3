@@ -11,7 +11,8 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   root.append(node('p','Yukarı/Aşağı taşı yalnızca görsel tasarımı taşır; onaylı anlatım aynı sırada kalır. Kilitli sahneler yeniden planlamada korunur.','note'));
   const status=node('p','Yükleniyor…');status.id='production-status';status.setAttribute('role','status');root.append(status);
   const provider=node('select');provider.id='production-provider';
-  for(const name of ['claude','ollama','gemini','openai']){const option=node('option',name==='claude'?'Claude — yönetmen':name==='ollama'?'Ollama — yerel':name==='gemini'?'Gemini':'OpenAI');option.value=name;provider.append(option);}
+  for(const name of ['gemini','ollama','openai','claude']){const option=node('option',name==='claude'?'Claude (ücretli)':name==='ollama'?'Ollama — yerel yedek':name==='gemini'?'Gemini (ücretsiz kota)':'OpenAI');option.value=name;provider.append(option);}
+  let providerChosen=false;provider.addEventListener('change',()=>{providerChosen=true;});
   const label=node('label','Planlama AI sağlayıcısı');label.htmlFor=provider.id;root.append(label,provider);
   const actions=node('div','','settings-actions');root.append(actions);
   const planButton=button(actions,'Görsel / Kurgu Planını Hazırla',generate);
@@ -80,7 +81,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     form.append(select);const submit=node('button','Buradan böl');submit.type='submit';form.append(submit);button(form,'Vazgeç',cancelEditor);card.append(form);form.addEventListener('submit',event=>{event.preventDefault();action(block,'split',{split_at:Number(select.value)});});
   }
   async function load(){
-    try{[view,job]=await Promise.all([request(base),request(`/api/projects/${id}/script`).then(x=>x.job)]);
+    try{[view,job]=await Promise.all([request(base),request(`/api/projects/${id}/script`).then(x=>{if(!providerChosen&&x.default_provider)provider.value=x.default_provider;return x.job;})]);
       status.textContent=job&&['visual','visual_scene'].includes(job.action)&&['queued','analyzing','planning','generating','checking','error'].includes(job.status)?`${job.status_label} · ${job.progress.percent}% ${job.error_message||''}${job.status==='error'&&job.progress.error_category?' · Tanı: '+(job.progress.error_diagnostic||job.progress.error_category):''}`:view.state;
       warnings.replaceChildren();for(const text of view.scene_warnings)warnings.append(node('li',text));laterWarnings.replaceChildren();for(const text of view.warnings)laterWarnings.append(node('li',text));if(!view.approved_script)warnings.prepend(node('li','Önce senaryo sürümünü onaylayın.'));
       versions.replaceChildren();for(const v of view.versions){const option=node('option',`Plan Sürümü ${v.plan_version}${v.active?' · Aktif plan':''} · ${v.scene_count} sahne · ${v.status==='outdated'?'Eski plan':v.status==='approval_required'?'Onay gerekli':'Hazır'} · ${v.provider} · ${new Date(v.created_at).toLocaleString('tr-TR')}`);option.value=v.plan_id;versions.append(option);}

@@ -108,3 +108,16 @@ def test_layout_cards_use_the_look():
     graph = adaptive.graph(item, 'minimal_dark', 'layout-1.ass', g, ':fontsdir=fonts')
     assert '0x' + g['background'][1:] in graph and '0x' + g['accent'][1:] in graph and 'layout-1.ass:fontsdir=fonts' in graph
     assert adaptive.captions(item, 'minimal_dark') .count('Arial') >= 2  # without a look: unchanged
+
+
+def test_no_layout_card_on_or_next_to_a_motion_graphic():
+    h, p = owner_shape(); t = timeline.build(h, p)
+    motion = [s['slot_id'] for s in t['slots'] if s['scene_id'] in ('scene-3', 'scene-14')]
+    details = {s['slot_id']: {'motion': s['slot_id'] in motion, 'sha256': s['slot_id'], 'description': ''} for s in t['slots']}
+    plan = smart_edit.build(t, h, 'adaptive', 'src', media_details=details, subtitle_mode='emphasis')
+    items = plan['slots']
+    for i, item in enumerate(items):
+        if any(details[s['slot_id']]['motion'] for s in items[max(0, i - 1):i + 2]):
+            assert item['layout'] == 'full_broll' and item.get('secondary_slot_id') not in motion
+    edges = [i for i in range(len(items) - 1) if details[items[i]['slot_id']]['motion'] != details[items[i + 1]['slot_id']]['motion']]
+    assert edges and all(items[i]['transition_out'] == 'crossfade' and items[i]['transition_style'] in ('smoothleft', 'smoothright') for i in edges)

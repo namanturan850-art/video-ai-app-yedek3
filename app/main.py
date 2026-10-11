@@ -137,6 +137,16 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @application.middleware("http")
+    async def fresh_screens(request: Request, call_next):
+        # Screens (HTML/JS/CSS) must be revalidated on every open; otherwise a
+        # browser can keep showing the previous version after an update.
+        response = await call_next(request)
+        path = request.url.path
+        if path.startswith("/static/") and path.endswith((".js", ".css", ".html")) or "text/html" in response.headers.get("content-type", ""):
+            response.headers.setdefault("Cache-Control", "no-cache")
+        return response
+
+    @application.middleware("http")
     async def protect_local_data(request: Request, call_next):
         scope = "settings" if request.url.path.startswith("/api/settings") else "projects"
         if request.url.path.startswith(("/api/settings", "/api/projects", "/api/channels")):

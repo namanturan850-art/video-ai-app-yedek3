@@ -1,5 +1,9 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Güncelleme sonrası eski ekran sorunu
+
+- Uygulama artık tarayıcıya ekran dosyalarını (sayfa, JS, CSS) her açılışta yeniden kontrol etmesini söyler. Böylece güncellemeden sonra eski düğmeler/ekranlar görünmez; Ctrl+F5 gerekmez. Test: 1 yeni.
+
 ## 2026-10-11 — Aşama 4: Süre tahmini, Motor Durumu, lisanslar
 
 - **Süre tahmini düzeltildi**: tahmin artık dilin ölçülmüş konuşma hızıyla yapılır (Almanca ~130, İngilizce ~150, Türkçe ~115 kelime/dk). 385 kelimelik Almanca metin ~2:58 dk gösterir (önceden 1,4 dk görülmüştü). Seslendirme oluşturulduktan sonra senaryo ekranında **gerçek seslendirme süresi** de yazar.

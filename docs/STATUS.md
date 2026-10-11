@@ -1,8 +1,16 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Ücretli kısımlar Gemini'ye taşındı (PR-D)
+
+- **Sahibin isteği:** claude.ai aboneliği API'yi kapsamadığı için ücretli adımlar Gemini'nin ücretsiz kotasıyla çalışsın.
+- Yönetmen (amaç, senaryo, kurgu planı) ve **Medyayı Tamamla** (aday görsellere bakma/onaylama, yeni sorgular, bütün video kontrolü) artık varsayılan olarak **Gemini** kullanır. Claude yalnızca Ayarlar'da “Gemini yerine Claude kullan (ücretli)” işaretlenirse kullanılır; anahtarı kaydetmek tek başına ücretli motoru açmaz.
+- Gemini'ye görsel (resmî `Part.inlineData`) ve JSON yanıt (`GenerationConfig.responseMimeType`) desteği eklendi; yanıt yerelde doğrulanır. Kaynak: googleapis `generativelanguage/v1beta` proto dosyaları (docs/GEMINI.md'deki bağlantılar).
+- Ücretsiz kota: dakika sınırında `Retry-After` kadar beklenip yeniden denenir (iş başına en fazla 15 dk bekleme); günlük kota dolarsa yuvalar kartla dolar ve sonraki basışta yeniden denenir. Kurgu planındaki tek otomatik düzeltme yönetmen çalışmasında Gemini için de onay beklemeden yapılır.
+- Testler: altı konu hem Gemini hem Claude ile (12 çalışma) — hepsinde eksik yuva 0, onaysız stok 0, çakışan klip 0; Gemini ile Claude ücreti 0 $. Ek: Gemini dakika sınırı, günlük kota, Claude kesintisi, motor yok durumları. Normal (yönetmen dışı) Gemini planları eskisi gibi kısa istemle çalışır; zengin sahne notları yalnız yönetmen çalıştırmasında istenir. Tam paket: 1730 başarılı + bu nedenle düzeltilen 2 test (ilgili dosyalar yeniden: 189/189), 4 atlama; frontend 6/6. Gerçek Chromium'da Gemini ile yönetmen ve Medyayı Tamamla uçtan uca denendi. Gerçek Gemini çağrısı yapılmadı (sahte Gemini sunucusu). **Live provider test must be run by owner on Windows.**
+
 ## 2026-10-11 — Medyayı Tamamla: Claude seçer, her yuva dolar (PR-C)
 
-- **Kök neden (eski düğmeler):** seçim görüntüye bakmadan etiket kelimeleriyle yapılıyordu; dikey/kare, yuvadan kısa ve başka yuvada kullanılmış klipler kesin eleniyordu; her şey tükenince yuvayı kesin dolduracak son adım yoktu; Akıllı Tamamla'nın tıklama başına istek bütçesi “44 → 47 → 51 → 52” adım adım ilerlemeye yol açıyordu. [Düğme düğme açıklama](STOCK_MEDIA.md#medyayı-tamamla--claude-seçer-her-yuva-dolar-pr-c)
+- **Kök neden (eski düğmeler):** seçim görüntüye bakmadan etiket kelimeleriyle yapılıyordu; dikey/kare, yuvadan kısa ve başka yuvada kullanılmış klipler kesin eleniyordu; her şey tükenince yuvayı kesin dolduracak son adım yoktu; Akıllı Tamamla'nın tıklama başına istek bütçesi “44 → 47 → 51 → 52” adım adım ilerlemeye yol açıyordu. [Düğme düğme açıklama](STOCK_MEDIA.md#medyayı-tamamla--yapay-zekâ-seçer-her-yuva-dolar-pr-c)
 - **Yeni tek düğme “Medyayı Tamamla”** ve yuva başına **“Claude'a yeniden seçtir”**. Zincir: planlanan sorguyla video → Claude'un yeni sorgularıyla video → görsel (+hafif hareket) → daha geniş konu → (çok kısa yuvada komşu çekimin devamı) → anlatımdan yazılı **üretilmiş kart** (yerel, başarısız olamaz). 1–4. adımlarda her stok aday Claude'a önizleme kareleriyle gösterilir; **onaysız stok medya kullanılmaz**. Bitince Claude bütün videoya bir kez bakar (tekrar/benzer çekim/ton).
 - Aynı klip iki yuvada yok; yalnız uzun klibin çakışmayan bölümleri. Dikey/kare medya **bulanık arka planla** (yerel FFmpeg + OpenMontage). Sağlayıcı hatası/zaman aşımı yalnız o sağlayıcıyı atlar. Claude'a ulaşılamazsa kartla dolar, sonra yeniden denenir.
 - Ekran: tek özet satırı (“51/51 yuva dolu · 33 video · 9 görsel · 9 üretilmiş kart”), yuva başına aşama + neden, katlanır ayrıntılar, **Tanılama dosyası indir**.

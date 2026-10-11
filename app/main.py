@@ -247,8 +247,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def director_options():
         """Claude as default director when chosen; configured backups to offer on failure."""
         view = settings.safe_view()
-        backups = [name for name in ('gemini', 'ollama', 'openai') if view[name]['status'] != 'Yapılandırılmadı']
-        return {'claude_ready': view['claude']['has_api_key'], 'claude_default': settings.claude_director(), 'backup_providers': backups}
+        engine = settings.ai_engine()
+        backups = [name for name in ('gemini', 'ollama', 'openai') if view[name]['status'] != 'Yapılandırılmadı' and name != engine]
+        return {'claude_ready': view['claude']['has_api_key'], 'claude_default': settings.claude_director(), 'backup_providers': backups,
+                'engine': engine, 'engine_label': {'claude': 'Claude (ücretli)', 'gemini': 'Gemini (ücretsiz kota)'}.get(engine, ''),
+                'engine_paid': engine == 'claude'}
 
     @application.get('/api/projects/{project_id}/script')
     def get_script(project_id: str):

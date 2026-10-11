@@ -30,7 +30,7 @@ test('opening existing stock state never starts a search',async()=>{
 });
 test('Medyayı Tamamla requires confirmation and explains what is protected and that Claude is paid',async()=>{
  const {calls,find,confirmations}=await harness({confirm:false});find('stock-complete').listeners.click();await settle();assert.equal(calls.length,1);
- assert.match(confirmations[0],/Kilitli ve onaylı seçimler korunur/);assert.match(confirmations[0],/eski dosyalar silinmez/);assert.match(confirmations[0],/ücretlidir/);
+ assert.match(confirmations[0],/Kilitli ve onaylı seçimler korunur/);assert.match(confirmations[0],/eski dosyalar silinmez/);assert.match(confirmations[0],/Gemini ücretsiz kotası/);
 });
 test('confirmed Medyayı Tamamla posts the single action and current revision only',async()=>{
  const {calls,find}=await harness();find('stock-complete').listeners.click();await settle();
@@ -42,12 +42,12 @@ test('one media button, diagnostics download, stage and source details visible',
  const buttons=root.walk().filter(n=>n.tag==='button').map(n=>n.textContent);
  assert.ok(!buttons.includes('Alakaya Göre Medyayı Yeniden Ara')&&!buttons.includes('Medyayı Otomatik Bul')&&!buttons.includes('Eksik Medyaları Akıllı Tamamla'));
  assert.equal(find('stock-diagnostics').href,'/api/projects/abc/production/stock/diagnostics');
- assert.match(root.textContent,/Aşama: Claude onayı bekliyor/);assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Medya seçim sürümü 2/);assert.doesNotMatch(root.textContent,/güven oranı|görsel olarak doğrulandı/i);
+ assert.match(root.textContent,/Aşama: Yapay zekâ onayı bekliyor/);assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Medya seçim sürümü 2/);assert.doesNotMatch(root.textContent,/güven oranı|görsel olarak doğrulandı/i);
 });
 test('active job disables the button',async()=>{
  const {find}=await harness({busy:true});assert.equal(find('stock-complete').disabled,true);
 });
 test('empty slot is explained, manual choice stays possible and locks are respected',async()=>{
- const {root,button}=await harness({selected:false});assert.match(root.textContent,/Boş — Medyayı Tamamla deyin/);assert.equal(button('Değiştir').disabled,false);assert.equal(button('Claude’a yeniden seçtir').disabled,false);
- const locked=await harness({locked:true});assert.equal(locked.button('Değiştir').disabled,true);assert.equal(locked.button('Claude’a yeniden seçtir').disabled,true);
+ const {root,button}=await harness({selected:false});assert.match(root.textContent,/Boş — Medyayı Tamamla deyin/);assert.equal(button('Değiştir').disabled,false);assert.equal(button('Yeniden seçtir').disabled,false);
+ const locked=await harness({locked:true});assert.equal(locked.button('Değiştir').disabled,true);assert.equal(locked.button('Yeniden seçtir').disabled,true);
 });

@@ -1,4 +1,4 @@
-"""Claude as director: purpose → script → (auto) approval → edit plan.
+"""AI director (Gemini free tier by default, Claude on request): purpose → script → (auto) approval → edit plan.
 
 The owner enters only topic, language and target duration. Each step reuses
 the existing, tested engines (script jobs, visual scene plan jobs), so
@@ -127,11 +127,13 @@ class DirectorService:
         allowed = {'cost_confirmed', 'auto_approve', 'confirm_replace', 'provider', 'rewrite_purpose'}
         if not isinstance(payload, dict) or set(payload) - allowed or any(type(payload.get(k, False)) is not bool for k in allowed - {'provider'}):
             raise ScriptError('Yönetmen seçeneklerini kontrol edin.')
-        provider = payload.get('provider', 'claude')
+        provider = payload.get('provider') or self.settings.ai_engine()
+        if provider is None:
+            raise ScriptError('Yönetmen için Ayarlar → Gemini bölümünde ücretsiz API anahtarınızı kaydedip Modelleri Getir ile bir model seçin.', 422)
         if provider not in ('claude', 'gemini', 'ollama', 'openai'):
             raise ScriptError('Geçerli bir AI motoru seçin.')
-        if provider != 'ollama' and not payload.get('cost_confirmed'):
-            raise ScriptError('Yönetmen, Claude API ücreti kullanır. Başlatmadan önce maliyet onayı verin.', 409)
+        if provider in ('claude', 'openai') and not payload.get('cost_confirmed'):
+            raise ScriptError('Bu motor ücretli API kullanır. Başlatmadan önce maliyet onayı verin.', 409)
         project = self.projects.get(project_id)
         current = self.repo.view(project_id)['current']
         previous = self.state(project_id)
@@ -184,10 +186,10 @@ class DirectorService:
             purpose = self.purpose(project_id) or {}
             if not purpose.get('main_message'):
                 self._step(project_id, state, 'purpose', STEPS['purpose'])
-                if provider == 'claude':
+                if provider in ('claude', 'gemini'):
                     from app.providers.factory import make_script_provider
-                    claude = (self.provider_factory or make_script_provider)('claude', self.settings)
-                    purpose = clean_purpose(claude.complete_json('purpose', purpose_prompt(project), PURPOSE_SCHEMA, effort='medium', max_tokens=4000))
+                    engine = (self.provider_factory or make_script_provider)(provider, self.settings)
+                    purpose = clean_purpose(engine.complete_json('purpose', purpose_prompt(project), PURPOSE_SCHEMA, effort='medium', max_tokens=4000))
                 else:  # backup engines: a plain purpose from the topic, still editable
                     purpose = clean_purpose({'audience': 'Genel izleyici', 'main_message': project['topic'], 'tone': 'Merak uyandıran, sakin',
                                              'hook': '', 'viewer_promise': '', 'content_type': 'Belgesel anlatım',
@@ -219,10 +221,19 @@ class DirectorService:
             self._step(project_id, state, 'plan', STEPS['plan'])
             plan = self.production.view(project_id)['plan']
             if not plan or plan.get('version_id') != current['id']:
-                started = self.quality.start(project_id, 'visual', {'provider': provider, 'cost_confirmed': True, 'confirm_replace_plan': True})
+                started = self.quality.start(project_id, 'visual', {'provider': provider, 'cost_confirmed': True, 'confirm_replace_plan': True, 'director': True})
                 state['plan_job_id'] = started['job_id']
                 self._save_state(project_id, state)
-                self._wait(started['job_id'], 'Kurgu planı hazırlanamadı')
+                try:
+                    self._wait(started['job_id'], 'Kurgu planı hazırlanamadı')
+                except ScriptError:
+                    # The owner asked the director for one automatic plan repair;
+                    # engines that normally ask first get that consent here.
+                    progress = json.loads(self.repo.job(started['job_id'])['progress_json'])
+                    if progress.get('visual_repair', {}).get('status') != 'awaiting_cost_confirmation':
+                        raise
+                    self.quality.resume(project_id, started['job_id'], True, visual_repair_cost_confirmed=True)
+                    self._wait(started['job_id'], 'Kurgu planı hazırlanamadı')
             plan = self.production.view(project_id)['plan']
             if not plan:
                 raise ScriptError('Kurgu planı kaydedilemedi. Devam Et ile tekrar deneyin.')
@@ -232,7 +243,7 @@ class DirectorService:
             category = getattr(error, 'category', None) or 'director_error'
             message = str(error) if isinstance(error, (ScriptError, ScriptProviderError)) else 'Yönetmen beklenmeyen bir hatayla durdu. Devam Et ile tekrar deneyin; tamamlanan adımlar korundu.'
             state.update(status='error', message=message, category=category,
-                         offer_backup=provider == 'claude' and category in BACKUP_WORTHY)
+                         offer_backup=provider in ('claude', 'gemini') and category in BACKUP_WORTHY | {'free_quota_exhausted', 'quota_limit', 'gemini_timeout'})
             LOG.info('director project=%s step=%s category=%s', project_id, state.get('step'), category)
             try:
                 self._save_state(project_id, state)

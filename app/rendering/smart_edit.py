@@ -105,6 +105,7 @@ def adaptive_motion(scene,slot,index,profile,seed,previous):
     """Every shot gets a gentle, varied operator move; stills move more than
     video. Fast-moving footage and tight compositions stay restrained."""
     settings=PROFILES[profile];image=slot['selected_media_local_identity']['media_type']=='image'
+    if slot['selected_media_local_identity'].get('graphic'):return 'push_in',.015,'Metin kartında çok hafif yaklaşma'
     strength=settings['image' if image else 'video'];composition=scene.get('composition','medium')
     importance=scene.get('importance',50);mood=str(scene.get('mood',''))
     moving=composition=='movement' or bool(re.search(r'\b(?:running|driving|flying|racing|laufen|fahren|fliegen|koşu|hareket|vuelo|correr|voler|courir)\b',str(scene.get('action','')).casefold()))

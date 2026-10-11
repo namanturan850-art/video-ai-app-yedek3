@@ -97,3 +97,38 @@ def test_real_camera_is_subpixel_smooth(tmp_path, effect):
     assert np.hypot(*(c[-1] - c[0])) > 5          # it really moves
     assert np.sqrt((accel ** 2).mean()) < .3      # no whole-pixel stepping (zoompan measured ~0.76)
     assert np.abs(velocity[:, 0]).max() < 3       # gentle: no jumps
+
+
+def test_openmontage_props_carry_camera_segments_transitions_and_emphasis(tmp_path, monkeypatch):
+    import json
+    from pathlib import Path
+    from app.integrations.openmontage import provider
+    from app.integrations.openmontage.bridge import PIN
+    from app.rendering.models import options
+    h, p = owner_shape(); h['project_id'] = 'local'
+    t = timeline.build(h, p); source = tmp_path / 'source.mp4'; source.write_bytes(b'unchanged'); voice = tmp_path / 'voice.wav'; voice.write_bytes(b'v')
+    details = {s['slot_id']: {'path': source, 'type': 'video', 'duration': 60, 'sha256': 'fixture'} for s in t['slots']}
+    edit = smart_edit.build(t, h, 'adaptive', 'source', media_details=details, seed='3')
+    external = tmp_path / 'external'; (external / 'remotion-composer').mkdir(parents=True); job = tmp_path / 'job'; job.mkdir(); seen = {}
+    class FakeBridge:
+        def status(self, *a): return {'ready': True, 'commit': PIN[:7]}
+        def root(self): return external
+        def settings_guard(self, v): pass
+        def call(self, op, inputs, folder, runner):
+            if op == 'trim': Path(inputs['output_path']).write_bytes(b'trim'); return
+            seen['props'] = json.loads(Path(inputs['edit_decisions']['bespoke']['props_path']).read_text())
+            seen['entry'] = Path(inputs['edit_decisions']['bespoke']['entry']).read_text()
+            Path(inputs['output_path']).write_bytes(b'output')
+    class Delivery:
+        def __init__(self, *args): pass
+        def render(self, plan): return {'path': job / 'output.mp4', 'metadata': {}}
+    monkeypatch.setattr(provider, 'FFmpegRenderProvider', Delivery)
+    result = provider.OpenMontageProvider(FakeBridge(), {}, None).render({'temporary': job, 'handoff': h, 'timeline': t, 'smart_edit_plan': edit,
+        'options': options({'montage_engine': 'openmontage'}), 'media': details, 'audio': voice, 'music': None})
+    clips = seen['props']['clips']
+    assert all(seg['camera_curve'] == 'eased' for c in clips for seg in c['segments'])
+    assert any(c['transition_out'] == 'crossfade' and c['handle'] > 0 for c in clips)
+    assert 'emphasis' in seen['props'] and 'perspective' not in seen['entry'] and 'camera(' in seen['entry']
+    applied = result['metadata']['smart_edit_applied_summary']
+    assert applied['motion_effects'] == edit['summary']['motion_effects'] > 0
+    assert applied['scene_transitions'] == edit['summary']['scene_transitions']

@@ -96,3 +96,15 @@ def test_one_click_look_and_menu(client):
     home = client.get('/').text
     assert 'href="/channels"' not in home  # Kanallar is no longer in the menu (data is kept)
     assert client.get('/api/channels').status_code == 200
+
+
+def test_layout_cards_use_the_look():
+    from app.rendering import adaptive
+    g = {**{k: PRESETS['gizemli']['palette'][k] for k in ('background', 'accent', 'primary')}, 'font': 'Oswald'}
+    item = {'start': 10, 'end': 14, 'layout': 'big_number', 'number': '1945', 'texts': ['Fünf Flugzeuge verschwanden'],
+            'layout_window': {'start': 10.5, 'end': 13}, 'orientation': 'left'}
+    content = adaptive.captions(item, 'minimal_dark', g)
+    assert 'Style: Number,Oswald,130,' + ass.ass_colour(g['accent']) in content and '\\move(' in content and '\\t(0,320,' in content
+    graph = adaptive.graph(item, 'minimal_dark', 'layout-1.ass', g, ':fontsdir=fonts')
+    assert '0x' + g['background'][1:] in graph and '0x' + g['accent'][1:] in graph and 'layout-1.ass:fontsdir=fonts' in graph
+    assert adaptive.captions(item, 'minimal_dark') .count('Arial') >= 2  # without a look: unchanged

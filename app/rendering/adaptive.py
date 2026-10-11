@@ -99,6 +99,8 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
         if (previous['layout']!='full_broll' or current['layout']!='full_broll') and not (seconds and clear(previous,'end',seconds) and clear(current,'start',seconds)):
             if previous['transition_out'] not in ('none','hard_cut'):carried=(previous['transition_out'],seconds)
             previous.update(transition_out='hard_cut',transition_duration=0)
+        elif previous.get('transition_style') in ('smoothleft','smoothright') and previous['transition_out']=='crossfade':
+            pass  # motion graphic slides in/out: keep the push
         elif previous['transition_out'] not in ('none','hard_cut'):
             from app.rendering.smart_edit import PROFILES
             styles=PROFILES.get(plan.get('edit_profile'),{}).get('transitions',('crossfade','fade_dark','dip_black'))
@@ -114,11 +116,14 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
     return plan
 
 
-def captions(item,theme):
-    """Unicode text lives exclusively in an escaped local ASS file."""
+def captions(item,theme,g=None):
+    """Unicode text lives exclusively in an escaped local ASS file. With a
+    video look (g) the cards use its colours and heading font and animate in."""
     content,_,_=ass.create([],[],item['end']-item['start'],subtitles=False,overlays=False,editing_style='adaptive',emphasis=[])
     light=theme=='clean_light';colour='&H00202020' if light else '&H00FFFFFF'
-    styles=f'Style: Card,Arial,54,{colour},{colour},&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,120,120,80,1\nStyle: Number,Arial,110,{colour},{colour},&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,120,120,80,1\n'
+    font,number_colour,number_size='Arial',colour,110
+    if g:font,colour,number_colour,number_size=g['font'],ass.ass_colour(g['primary']),ass.ass_colour(g['accent']),130
+    styles=f'Style: Card,{font},54,{colour},{colour},&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,120,120,80,1\nStyle: Number,{font},{number_size},{number_colour},{number_colour},&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,5,120,120,80,1\n'
     content=content.replace('[Events]',styles+'\n[Events]')
     window=item['layout_window'];a=window['start']-item['start'];b=window['end']-item['start'];layout=item['layout']
     x=1440 if item['orientation']=='left' else 480
@@ -136,14 +141,16 @@ def captions(item,theme):
             lines.append((min(a+i*.15,b-.1),b,'Card',x,int(y),text))
     for start,end,style,x,y,text in lines:
         # Small fade is independent of all camera/transition handles.
-        content+=f'Dialogue: 2,{ass.timecode(start)},{ass.timecode(end)},{style},,0,0,0,,{{\\pos({x},{y})\\fad(150,150)}}{ass.escape(text)}\n'
+        motion=(f'\\move({x},{y+28},{x},{y},0,320)' if style=='Card' else f'\\pos({x},{y})\\fscx70\\fscy70\\t(0,320,\\fscx100\\fscy100)') if g else f'\\pos({x},{y})'
+        content+=f'Dialogue: 2,{ass.timecode(start)},{ass.timecode(end)},{style},,0,0,0,,{{{motion}\\fad({200 if g else 150},150)}}{ass.escape(text)}\n'
     return content
 
 
-def graph(item,theme,caption_name):
+def graph(item,theme,caption_name,g=None,fontsdir=''):
     """Decorate a normalized 1080p stream; windows never alter media timestamps."""
     layout=item['layout'];w=item['layout_window'];a=w['start']-item['start'];b=w['end']-item['start'];enable=f"between(t,{a:.6f},{b:.6f})"
     light=theme=='clean_light';bg='0xeceee8' if light else '0x19232d' if theme=='soft_documentary' else '0x101823';accent='0x559eaa'
+    if g:bg,accent='0x'+g['background'][1:],'0x'+g['accent'][1:]  # the video look's colours
     graph='';source='treated'
     if layout in ('split_media_text','dual_media'):
         left=item['orientation']=='left';mx=0 if left else 960;tx=960 if left else 0
@@ -162,4 +169,4 @@ def graph(item,theme,caption_name):
         graph+=f"[treated]drawbox=x=180:y={top}:w=1560:h={height}:color={bg}@0.85:t=fill:enable='{enable}'[title];";source='title'
     if layout=='timeline_card':
         graph+=f"[{source}]drawbox=x=300:y=300:w=5:h=480:color={accent}:t=fill:enable='{enable}'[timeline];";source='timeline'
-    return graph+f'[{source}]ass=filename={caption_name},format=yuv420p[layouttreated];'
+    return graph+f'[{source}]ass=filename={caption_name}{fontsdir},format=yuv420p[layouttreated];'

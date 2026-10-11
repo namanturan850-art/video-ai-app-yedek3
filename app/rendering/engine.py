@@ -93,7 +93,8 @@ class FFmpegRenderProvider:
                 if has_text:self.runner.run(args,folder,phase='subtitle_preflight')
         incoming=[0]*len(slots);outgoing=[0]*len(slots);fades=[0.]*len(slots)
         for i,slot in enumerate(slots[:-1]):
-            if slot['scene_id']==slots[i+1]['scene_id']:continue
+            # Same scene: hard cut, except a motion graphic sliding in/out.
+            if slot['scene_id']==slots[i+1]['scene_id'] and not (smart and edits[slot['slot_id']].get('transition_style') in ('smoothleft','smoothright')):continue
             transition=edits[slot['slot_id']]['transition_out'] if smart else slot['editing']['transition']
             if transition=='crossfade':
                 desired=round(edits[slot['slot_id']]['transition_duration']*30) if smart else 10
@@ -164,8 +165,8 @@ class FFmpegRenderProvider:
                         second=plan['media'].get(secondary)
                         if second:
                             args+=(['-stream_loop','-1'] if second['type']=='video' else ['-loop','1','-framerate','30'])+['-t',f'{length:.6f}','-i',str(second['path'])]
-                    name=f'layout-{i}.ass';write(folder/name,adaptive.captions(smart_slot,edit['theme']))
-                    layout_graph=adaptive.graph(smart_slot,edit['theme'],name)
+                    name=f'layout-{i}.ass';write(folder/name,adaptive.captions(smart_slot,edit['theme'],graphic_style))
+                    layout_graph=adaptive.graph(smart_slot,edit['theme'],name,graphic_style,fontsdir)
             graph=smart_graph.slot_graph(normalize,parts,i,incoming,outgoing,fades,smart_slot,emphasis or (),decorate=decorate,layout_graph=layout_graph)
             graph_index=len(args)
             args+=self.graph(folder,graph.rstrip(';\n'))

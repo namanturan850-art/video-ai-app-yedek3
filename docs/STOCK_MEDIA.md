@@ -2,6 +2,50 @@
 
 Güncel ve **Hazır** sahne planını açın: **Proje → Görsel / Kurgu Planı**. Her sahnenin altında **Medya Yuvaları** görünür. Bir sahne birden fazla video veya görsel taşıyabilir. Onaylı anlatım ve plan sürümleri değiştirilmez.
 
+## Medyayı Tamamla — Claude seçer, her yuva dolar (PR-C)
+
+### Eksik medya neden kalıyordu? (eski düğmeler tek tek)
+
+| Eski düğme | Ne yapıyordu | Neden yuvayı boş bırakabiliyordu |
+|---|---|---|
+| **Medyayı Otomatik Bul** / **Eksik Medyaları Tamamla** | Boş yuvalar için Pexels/Pixabay'de planlanan sorguları arayıp en iyi puanlı adayı indiriyordu. | Uygunluk, adayın **etiket/başlık kelimelerine** bakılarak puanlanıyordu (görüntüye bakılmıyordu). Niş/isimli konularda (ör. “Bermuda Üçgeni”, “izole kabile”) kelime tutmayınca uygun aday da elendi. Ayrıca dikey/kare videolar, yuvadan kısa klipler ve başka yuvada kullanılmış her klip kesin olarak reddediliyordu. Aday kalmayınca yuva “AI görsel gerekebilir” durumunda **boş** kalıyordu; son çare adımı yoktu. |
+| **Alakaya Göre Yeniden Ara** | Kilitsiz bütün yuvaları yeniden arıyordu. | Aynı kelime kapısı; ayrıca tekrar eden seçimleri boşaltıyordu → yeni boşluklar oluşabiliyordu. |
+| **Eksik Medyaları Akıllı Tamamla** | Mevcut dosyaları doğrulayıp boşlar için ek sayfa/sorgu deniyor, kalan kısa boşlukları aynı sahnedeki komşu çekimle kapatıyordu. | Tek basışta istek bütçesi vardı (yuva başı 12, iş başı 120 istek) → sahibin gördüğü “44 → 47 → 51 → 52” adım adım ilerleme. Boşluk ancak **aynı sahnede**, belirli süre sınırları içinde ve uygun komşu varsa kapanıyordu; sayı içeren altyazı yoksa kart da yapılamıyordu. Bir sahnenin hiç medyası yoksa boşluk kalıyordu. |
+| **Uygun görselleri videoyla değiştir** | Görsel seçilmiş yuvalarda video arıyordu. | Boş yuvaya dokunmuyordu. |
+| Sağlayıcı hatası / zaman aşımı | Hata nedeni kaydediliyordu. | Alternatif adım olmadığı için yuva yine boş kalıyordu. |
+
+**Kısaca:** seçim görüntüye bakmadan kelimeyle yapılıyordu, bazı geçerli medya türleri baştan eleniyordu ve her şey tükenince yuvayı **kesin dolduracak** bir son adım yoktu.
+
+### Yeni zincir (her yuva için, sırayla)
+
+1. **Stok video — planlanan sorgular** (sahnenin İngilizce sorgusu + yedekleri).
+2. **Stok video — Claude'un yeni sorguları** (aynı sahnedeki yuvalar paylaşır).
+3. **Stok görsel** + hafif kamera hareketi.
+4. **Daha geniş konu** medyası (ortam, dönem, atmosfer).
+5. **Üretilmiş kart**: başlık/alıntı, sayı veya basit konum kartı. Yazı **anlatımdan** alınır; bilgisayarda çizilir (internet, FFmpeg yazı filtresi gerekmez), başarısız olamaz. Art arda aynı cümle çıkarsa tek ve daha uzun kart olur.
+6. **Komşu çekimin devamı**: yalnız 1,5 sn'den kısa yuvalarda, kart yerine.
+
+1–4 arasında her aday (en fazla 5'i birlikte) **Claude'a önizleme kareleriyle** gösterilir; Claude “mutlaka göster / gösterme” notlarına göre 0–10 puan ve bir cümlelik Türkçe neden verir. **Onaylanmayan stok medya hiçbir koşulda kullanılmaz.** Onaylar sahne içinde önbelleğe alınır, aynı adaya ikinci kez para ödenmez. Doldurma bitince Claude videonun bütününe bir kez bakar (tekrar, birbirine çok benzeyen çekim, ton) ve en fazla 8 yuvayı değiştirtir; daha iyisi yoksa mevcut korunur.
+
+Kurallar: aynı klip iki yuvada kullanılmaz — yalnız **uzun bir klibin çakışmayan farklı bölümleri** kullanılabilir. Dikey/kare medya yatay videoda **bulanık arka planla** gösterilir (yerel FFmpeg ve OpenMontage). Sağlayıcı hatası veya zaman aşımı yalnız o sağlayıcıyı bu iş için atlar; zincir devam eder. Claude'a hiç ulaşılamazsa yuvalar kartla dolar ve ekranda yazılır; Claude düzelince **Medyayı Tamamla** bu kartları yeniden dener.
+
+### Ekran
+
+- Tek düğme **Medyayı Tamamla**; her yuvada **Claude'a yeniden seçtir**.
+- Üstte tek özet: “51/51 yuva dolu · 33 video · 9 görsel · 9 üretilmiş kart”.
+- Her yuvada **Aşama** (hangi adımla dolduğu) ve **Neden** (Claude'un cümlesi veya kart açıklaması). **Ayrıntılar**'da her adımın sorguları, sağlayıcı hataları ve Claude'un aday puanları.
+- **Tanılama dosyası indir**: bütün aramalar, adaylar, puanlar, hatalar ve son işler (anahtarlar yok).
+
+### Sahibin denemesi (Windows)
+
+1. Ayarlar → **Claude**, **Pexels**, **Pixabay** anahtarlarını kaydedin (Claude için Bağlantıyı Test Et ücretsizdir).
+2. Projede Senaryo sayfasında **Yönetmeni Başlat** (veya mevcut onaylı senaryo + kurgu planıyla devam edin).
+3. Kurgu sayfasında **Medyayı Tamamla**'ya **bir kez** basın; özet satırı “N/N yuva dolu” olana kadar bekleyin.
+4. Beğenmediğiniz yuvada **Claude'a yeniden seçtir** deyin.
+5. Sorun olursa **Tanılama dosyası indir** ile dosyayı paylaşın.
+
+**Bu ortamda doğrulanamayanlar:** gerçek Pexels/Pixabay yanıtları ve gerçek Claude görsel değerlendirmesi (anahtar yok, ücretli). Testler, resmî API biçimindeki sahte yanıtlarla ve sahte Claude ile yapıldı. **Live provider test must be run by owner on Windows.**
+
 ## Media Relevance V4 — Bağlamsal görüntü ve hızlı arama
 
 **Eksik yuvaların takılmasının kod nedeni:** Özel isimli sahnelerde (ör. *Bermuda Üçgeni*) yalnız açıklamasında o isim geçen medya kabul ediliyordu. Pexels/Pixabay bu isimleri neredeyse hiç etiketlemediği için “fırtınada gemi”, “eski harita ve pusula” gibi tam istenen görüntüler bile reddediliyordu; birkaç isimli klip kullanıldıktan sonra kalan yuvalar her denemede boş kalıyordu. Ayrıca sahnede hem gemi hem uçak geçtiğinde sahne yalnız “havacılık” sayılıp bütün gemi görüntüleri reddediliyordu.

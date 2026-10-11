@@ -149,17 +149,23 @@ class PexelsStockProvider(APIStockProvider):
             description = ' '.join(token for token in re.findall(r'[^\W\d_]+',unquote(urlsplit(item['url']).path))
                                    if token.casefold() not in ('video','videos'))
             preview, duration = item['image'], item['duration']
+            # Documented `video_pictures`: preview frames across the clip, so
+            # the media judge can see more than the cover image.
+            pictures = [p['picture'] for p in item.get('video_pictures') or [] if isinstance(p, dict) and isinstance(p.get('picture'), str)]
+            frames = [pictures[i] for i in sorted({0, len(pictures)//2, len(pictures)-1})] if pictures else []
         else:
             width, height = item['width'], item['height']
             chosen = {'url':item['src']['large2x'], 'width':1880,'height':1300}
             creator = {'name':item['photographer'],'url':item['photographer_url']}
             description, preview, duration = item.get('alt') or '', item['src']['medium'], None
+            frames = []
         return normalized_media({'provider':self.name,'media_id':str(item['id']),'media_type':media_type,
              'source_url':item['url'],'page_url':item['url'],'creator_name':creator['name'],'creator_url':creator['url'],
              'width':chosen['width'],'height':chosen['height'],'duration':duration,'preview_url':preview,
              'download_url':chosen['url'],'query_used':query,'description':description,
              'source_metadata':{'original_width':item['width'],'original_height':item['height'],
-                                'documentation_url':'https://www.pexels.com/api/documentation/'}})
+                                'documentation_url':'https://www.pexels.com/api/documentation/',
+                                **({'preview_frames':frames} if frames else {})}})
 
 
 class PixabayStockProvider(APIStockProvider):

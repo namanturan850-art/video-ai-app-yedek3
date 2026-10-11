@@ -25,25 +25,29 @@ async function harness({confirm=true,busy=false,selected=true,locked=false}={}){
  vm.runInContext(source,vm.createContext({document:{querySelector:s=>s==='#production-content'?root:blocks,createElement:tag=>new Element(tag)},window:{location:{pathname:'/projects/abc/production'},addEventListener(){},confirm:text=>{confirmations.push(text);return confirm;}},AbortSignal:{timeout(){}},fetch,setTimeout(){},clearTimeout(){}}));
  await settle();return {root,calls,confirmations,find:id=>root.find(n=>n.id===id),button:text=>root.find(n=>n.tag==='button'&&n.textContent===text)};
 }
-test('opening existing stock state never starts a replacement search',async()=>{
- const {calls,find}=await harness();assert.equal(calls.length,1);assert.equal(calls[0].method,'GET');assert.equal(find('stock-relevance-research').disabled,false);
+test('opening existing stock state never starts a search',async()=>{
+ const {calls,find}=await harness();assert.equal(calls.length,1);assert.equal(calls[0].method,'GET');assert.equal(find('stock-complete').disabled,false);
 });
-test('explicit relevance rescan requires confirmation and keeps protected-assets explanation',async()=>{
- const {calls,find,confirmations}=await harness({confirm:false});find('stock-relevance-research').listeners.click();await settle();assert.equal(calls.length,1);
- assert.match(confirmations[0],/Kilitli medyalar korunacak/);assert.match(confirmations[0],/indirilen dosyalar saklanır/);assert.match(confirmations[0],/seslendirme ve altyazılar değişmez/);
+test('Medyayı Tamamla requires confirmation and explains what is protected and that Claude is paid',async()=>{
+ const {calls,find,confirmations}=await harness({confirm:false});find('stock-complete').listeners.click();await settle();assert.equal(calls.length,1);
+ assert.match(confirmations[0],/Kilitli ve onaylı seçimler korunur/);assert.match(confirmations[0],/eski dosyalar silinmez/);assert.match(confirmations[0],/ücretlidir/);
 });
-test('confirmed relevance rescan posts action and current revision only',async()=>{
- const {calls,find}=await harness();find('stock-relevance-research').listeners.click();await settle();
+test('confirmed Medyayı Tamamla posts the single action and current revision only',async()=>{
+ const {calls,find}=await harness();find('stock-complete').listeners.click();await settle();
  const post=calls.find(c=>c.method==='POST');assert.match(post.url,/\/stock\/jobs$/);
- assert.deepEqual(JSON.parse(post.body),{plan_id:'plan',revision:7,action:'relevance_research',video_duration_tolerance_seconds:1.25});
+ assert.deepEqual(JSON.parse(post.body),{plan_id:'plan',revision:7,action:'complete_media'});
 });
-test('subject, tier, query and deterministic label visible without confidence percentage',async()=>{
- const {root}=await harness();assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Arama kademesi: 1/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Medya seçim sürümü 2/);assert.doesNotMatch(root.textContent,/güven oranı|görsel olarak doğrulandı/i);assert.match(root.textContent,/Sağlayıcı sorgusu: Bermuda Triangle map/);assert.match(root.textContent,/Video: 0 · Görsel: 1/);assert.match(root.textContent,/Video oranı: 0%/);
+test('one media button, diagnostics download, stage and source details visible',async()=>{
+ const {root,find}=await harness();
+ const buttons=root.walk().filter(n=>n.tag==='button').map(n=>n.textContent);
+ assert.ok(!buttons.includes('Alakaya Göre Medyayı Yeniden Ara')&&!buttons.includes('Medyayı Otomatik Bul')&&!buttons.includes('Eksik Medyaları Akıllı Tamamla'));
+ assert.equal(find('stock-diagnostics').href,'/api/projects/abc/production/stock/diagnostics');
+ assert.match(root.textContent,/Aşama: Claude onayı bekliyor/);assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Medya seçim sürümü 2/);assert.doesNotMatch(root.textContent,/güven oranı|görsel olarak doğrulandı/i);
 });
-test('active search disables new rescan and controls',async()=>{
- const {find}=await harness({busy:true});assert.equal(find('stock-relevance-research').disabled,true);
+test('active job disables the button',async()=>{
+ const {find}=await harness({busy:true});assert.equal(find('stock-complete').disabled,true);
 });
-test('weak unresolved state leaves manual candidate choice accessible and locks respected',async()=>{
- const {root,button}=await harness({selected:false});assert.match(root.textContent,/Uygun stok medya bulunamadı/);assert.equal(button('Değiştir').disabled,false);
- const locked=await harness({locked:true});assert.equal(locked.button('Değiştir').disabled,true);assert.equal(locked.button('Yeniden Ara').disabled,true);
+test('empty slot is explained, manual choice stays possible and locks are respected',async()=>{
+ const {root,button}=await harness({selected:false});assert.match(root.textContent,/Boş — Medyayı Tamamla deyin/);assert.equal(button('Değiştir').disabled,false);assert.equal(button('Claude’a yeniden seçtir').disabled,false);
+ const locked=await harness({locked:true});assert.equal(locked.button('Değiştir').disabled,true);assert.equal(locked.button('Claude’a yeniden seçtir').disabled,true);
 });

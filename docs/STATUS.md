@@ -1,5 +1,15 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Medyayı Tamamla: Claude seçer, her yuva dolar (PR-C)
+
+- **Kök neden (eski düğmeler):** seçim görüntüye bakmadan etiket kelimeleriyle yapılıyordu; dikey/kare, yuvadan kısa ve başka yuvada kullanılmış klipler kesin eleniyordu; her şey tükenince yuvayı kesin dolduracak son adım yoktu; Akıllı Tamamla'nın tıklama başına istek bütçesi “44 → 47 → 51 → 52” adım adım ilerlemeye yol açıyordu. [Düğme düğme açıklama](STOCK_MEDIA.md#medyayı-tamamla--claude-seçer-her-yuva-dolar-pr-c)
+- **Yeni tek düğme “Medyayı Tamamla”** ve yuva başına **“Claude'a yeniden seçtir”**. Zincir: planlanan sorguyla video → Claude'un yeni sorgularıyla video → görsel (+hafif hareket) → daha geniş konu → (çok kısa yuvada komşu çekimin devamı) → anlatımdan yazılı **üretilmiş kart** (yerel, başarısız olamaz). 1–4. adımlarda her stok aday Claude'a önizleme kareleriyle gösterilir; **onaysız stok medya kullanılmaz**. Bitince Claude bütün videoya bir kez bakar (tekrar/benzer çekim/ton).
+- Aynı klip iki yuvada yok; yalnız uzun klibin çakışmayan bölümleri. Dikey/kare medya **bulanık arka planla** (yerel FFmpeg + OpenMontage). Sağlayıcı hatası/zaman aşımı yalnız o sağlayıcıyı atlar. Claude'a ulaşılamazsa kartla dolar, sonra yeniden denenir.
+- Ekran: tek özet satırı (“51/51 yuva dolu · 33 video · 9 görsel · 9 üretilmiş kart”), yuva başına aşama + neden, katlanır ayrıntılar, **Tanılama dosyası indir**.
+- Yeni bağımlılık: `pillow==12.3.0` (kart çizimi; yoksa yazısız düz kart). Şema değişmedi; mevcut seçimler, kilitler ve dosyalar korunur.
+- **Kabul testi (6 konu × 3 dk, gerçekçi sahte Pexels/Pixabay + sahte Claude):** hepsinde eksik yuva 0, eksik süre 0, onaysız stok 0, çakışan klip 0, iş hatası 0, senaryo/plan metni değişmedi. Ayrıca Claude kesintisi ve anahtarsız durum testleri, gerçek FFmpeg render testi (dikey klip bulanık arka plan, aynı klibin iki bölümü, kart ve devamı; basit ve uyarlanabilir stil).
+- **Doğrulanamayan:** gerçek Pexels/Pixabay yanıtları ve gerçek Claude görsel değerlendirmesi (ücretli; anahtar yok). **Live provider test must be run by owner on Windows.**
+
 ## 2026-10-11 — Claude Yönetmen: amaç → senaryo → kurgu planı (PR-B)
 
 - Senaryo sayfasına **Claude Yönetmen** paneli: sahip yalnız konu/dil/süre girer; Claude sırayla **amaç özeti** (hedef kitle, ana mesaj, ton, açılış kancası — Türkçe, düzenlenebilir), dile uygun hızda **senaryo** (Almanca 125–135 ≈ 130 kelime/dk), **otomatik onay** (kapatılabilir) ve **kurgu planı** üretir. Mevcut senaryo/sahne motorları kullanıldığı için seslendirme ve altyazı akışı değişmedi.

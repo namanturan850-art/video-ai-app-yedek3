@@ -230,13 +230,15 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
                 # One continuous take: consecutive parts of a single source window.
                 window=source_window(media.get('duration'),sum(i['end']-i['start'] for i in items),media.get('sha256',root)+root)
                 cursor=window['source_in']
+                if media.get('segment_start') is not None:  # assigned non-overlapping part of a reused clip
+                    cursor=max(0.,min(float(media['segment_start']),window['source_duration']-sum(i['end']-i['start'] for i in items)))
                 for item in items:
                     used=item['end']-item['start']
                     item.update(source_duration=window['source_duration'],source_in=round(cursor,6),source_out=round(min(window['source_duration'],cursor+used),6),
                                 source_trim_start=round(cursor,6),source_trim_end=round(min(window['source_duration'],cursor+used),6),used_duration=used)
                     cursor+=used
             for item in items:
-                if media.get('type')=='image' and 0<media.get('width',0)<=media.get('height',0):item['fit']='contain'
+                if 0<media.get('width',0)<=media.get('height',0):item['fit']='contain'  # portrait/square: blurred backdrop
         plan['fingerprint']=digest({k:v for k,v in plan.items() if k!='fingerprint'})
     return plan
 

@@ -1,5 +1,12 @@
 # AI Video Studio — Durum
 
+## 2026-10-11 — Aşama 3: YouTube başlık, açıklama ve kapak
+
+- Projede **YouTube** sekmesi (yalnızca hazırlık; otomatik yükleme yok). Gemini (varsayılan) videonun dilinde **5 başlık** (merak uyandıran, abartısız, 55–70 karakter; karakter sayısı gösterilir), **açıklama** (2 satırlık kanca, kısa içerik, kurgu planı + gerçek altyazı zamanlarından **bölüm zaman damgaları** — 0:00 ile başlar, en az 3 bölüm, her biri ≥10 sn), **10–15 etiket**, 3 hashtag ve kullanılan stok medya için **kaynak teşekkürü** (Pexels/Pixabay + yapımcı) önerir. Hepsi tek tıkla kopyalanır; başlık/açıklama/etiketler düzenlenip kaydedilir.
+- **Kapak (1280×720)** — Yöntem A (ücretsiz, varsayılan): render edilmiş videodan keskinlik, renk ve ışığa göre en etkileyici 3–5 kare; seçilen kareye kanalın Tarzım fontu/renkleriyle 2–4 kelimelik büyük yazı ve vurgu öğeleri (ok, daire, çerçeve) — **3 yerleşim**. Kapak yazısı başlığı tekrar ederse uyarır. PNG indirme ve telefon boyutu önizlemesi.
+- Yöntem B (isteğe bağlı): Ayarlar → Görsel’de “YouTube kapağı için Gemini ile arka plan” açılırsa, açık onayla Gemini görsel modeli arka plan üretir; kota/ücret notu gösterilir. Varsayılan kapalıdır.
+- Testler: 3 yeni (başlık/açıklama/bölüm/etiket/kaynak, gerçek render'dan kare + 3 yerleşim PNG, isteğe bağlı Gemini arka planı ayar + onay). Gerçek Gemini çağrısı yapılmadı.
+
 ## 2026-10-11 — Aşama 2: Motion grafik şablonları ve ses efektleri
 
 - 6 parametreli şablon: büyüyen sayı, harita + işaret, başlık/alıntı (kelime kelime), zaman çizelgesi, karşılaştırma (karşı karşıya / çubuk), madde listesi. Kanalın Tarzım kitini kullanır. Yapay zekâ yalnız alanları doldurur; sayı/tarih/yer/alıntı anlatımda geçmiyorsa reddedilir. [Ayrıntı](MOTION.md)

@@ -147,7 +147,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                 message = "Ayarlar yalnızca uygulamanın Ayarlar ekranından değiştirilebilir. Sayfayı yeniden açın." if scope == "settings" else "Projeler yalnızca uygulamanın proje ekranından değiştirilebilir. Sayfayı yeniden açın."
                 return JSONResponse(status_code=403, content={"message": message}, headers={"Cache-Control": "no-store"})
             gemini = request.url.path == '/api/settings/gemini' or request.url.path.startswith('/api/settings/gemini/')
-            script_route = any(part in request.url.path for part in ('/script', '/director', '/production','/narration','/subtitles','/render')) and request.url.path.startswith('/api/projects/')
+            script_route = any(part in request.url.path for part in ('/script', '/director', '/production','/narration','/subtitles','/render','/youtube')) and request.url.path.startswith('/api/projects/')
             stock_route = '/production/stock' in request.url.path
             settings_route = request.url.path.startswith('/api/settings')
             started = time.monotonic()
@@ -417,6 +417,40 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def director_purpose(project_id: str, payload: dict):
         return {'purpose': director.save_purpose(project_id, payload), 'message': 'Amaç özeti kaydedildi. Senaryo bir sonraki yönetmen çalıştırmasında bu özete göre yazılır.'}
 
+    from app.youtube import YouTubeService
+    youtube = YouTubeService(projects, scripts, production, rendering, stock, channels, settings)
+    application.state.youtube = youtube
+
+    @application.get('/api/projects/{project_id}/youtube')
+    def youtube_view(project_id: str):
+        return youtube.view(project_id)
+
+    @application.post('/api/projects/{project_id}/youtube/text')
+    def youtube_text(project_id: str):
+        return youtube.generate_text(project_id)
+
+    @application.put('/api/projects/{project_id}/youtube')
+    def youtube_update(project_id: str, payload: dict):
+        return youtube.update(project_id, payload)
+
+    @application.post('/api/projects/{project_id}/youtube/frames')
+    def youtube_frames(project_id: str):
+        return {'frames': youtube.frames(project_id)}
+
+    @application.post('/api/projects/{project_id}/youtube/ai-background')
+    def youtube_ai_background(project_id: str, payload: dict):
+        return {'frames': youtube.ai_background(project_id, payload.get('cost_confirmed'))}
+
+    @application.post('/api/projects/{project_id}/youtube/thumbnails')
+    def youtube_thumbnails(project_id: str, payload: dict):
+        return youtube.thumbnails(project_id, payload)
+
+    @application.get('/api/projects/{project_id}/youtube/files/{kind}/{name}')
+    def youtube_file(project_id: str, kind: str, name: str, download: bool = False):
+        path = youtube.file(project_id, kind, name)
+        headers = {'Cache-Control': 'no-store', **({'Content-Disposition': f'attachment; filename="kapak-{name}"'} if download else {})}
+        return FileResponse(path, media_type='image/png' if name.endswith('.png') else 'image/jpeg', headers=headers)
+
     @application.get('/api/channels')
     def list_channels():
         return {'channels': channels.list(), 'options': channels.options(), 'engine': settings.ai_engine()}
@@ -638,6 +672,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/projects/{project_id}/narration')
     @application.get('/projects/{project_id}/subtitles')
     @application.get('/projects/{project_id}/render')
+    @application.get('/projects/{project_id}/youtube')
     @application.get('/channels')
     @application.get("/settings")
     @application.get('/settings/ai-diagnostics')

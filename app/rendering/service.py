@@ -79,12 +79,14 @@ class RenderService:
                     if opts.get('editing_style')!='adaptive':raise RenderError('recovery_style_required','Grafik içeren akıllı kurgu için Uyarlanabilir YouTube stilini seçin.')
                     media[slot['slot_id']]={'type':'graphic','path':None,'duration':None,'sha256':smart_edit.digest(slot['graphic_text'])}
                     identities.append({'slot_id':slot['slot_id'],'graphic_text':slot['graphic_text']});continue
-                m=selected.get(slot['slot_id'],{}).get('selected_media');identity=slot['selected_media_local_identity']
+                # A continuation keeps running the same verified file as its root shot.
+                owner=slot.get('continuation_of') or slot['slot_id']
+                m=selected.get(owner,{}).get('selected_media');identity=slot['selected_media_local_identity']
                 if not m or any(m.get(k)!=v for k,v in identity.items()):raise RenderError('source_stale',SOURCE_MESSAGE)
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
                 originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest}
                 if recovery:
-                    proof=selected[slot['slot_id']].get('local_validation',{})
+                    proof=selected[owner].get('local_validation',{})
                     media[slot['slot_id']].update({k:proof[k] for k in ('duration','width','height') if k in proof})
                 identities.append({'slot_id':slot['slot_id'],'identity':identity,'sha256':digest})
             for name in ('srt_local_path','vtt_local_path'):

@@ -89,6 +89,8 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
         return window['end']<=item['end']-seconds-.25 if edge=='end' else window['start']>=item['start']+seconds+.25
     carried=None
     for boundary,(previous,current) in enumerate(zip(plan['slots'],plan['slots'][1:])):
+        if previous.get('continuation_of') or current.get('continuation_of'):
+            previous.update(transition_out='hard_cut',transition_duration=0);current['transition_in']='hard_cut';continue
         if carried and previous['scene_id']!=current['scene_id'] and previous['transition_out'] in ('none','hard_cut'):
             # A transition blocked by card text moves to the next scene boundary.
             seconds=min(carried[1],previous['frames']/120 if 'frames' in previous else carried[1],(current['end']-current['start'])/4,(previous['end']-previous['start'])/4)

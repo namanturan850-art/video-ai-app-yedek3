@@ -16,6 +16,17 @@ Güncel ve **Hazır** sahne planını açın: **Proje → Görsel / Kurgu Planı
 
 Bu bir metadata (etiket) değerlendirmesidir; görüntünün gerçek içeriğini kesin olarak görmez. CLIP görsel kontrolü yalnız ayrıca kurulduğunda çalışır.
 
+### Eksik Medyaları Akıllı Tamamla — tek basışta bitirme
+
+Sahibin ekranında görülen durum: düğmeye her basışta 44 → 47 → 51 → 52 ilerliyor, sonra 3 alan ve 2,8 sn açık kalıyordu.
+
+- **Neden 1:** bir basış en fazla 48 arama / 16 indirme / alan başına 8 arama yapıp duruyordu. **Şimdi** tek basış, ilerleme oldukça en fazla 3 tur döner (iş başına 120 arama, alan başına 12, 40 indirme — Pexels'in saatlik 200 istek sınırının altında). Önceden denenmiş sorgu/sayfa tekrar istenmez.
+- **Neden 2:** akıllı kurgu bir boşluğu yalnız aynı sahnedeki *tek* komşu klibe, toplam 7,5 sn'yi aşmadan ekleyebiliyordu; sahnenin tamamı boşsa hiç kapatamıyordu. **Şimdi** sırayla:
+  1. aynı sahnede birleştirme sınırı video 10 sn / görsel 9 sn (uzun çekim render'da punch-in ile bölünüp hareket ettiği için sabit görünmez),
+  2. tek komşuya sığmayan boşluk **iki komşu arasında paylaştırılır**,
+  3. son çare olarak kısa boşluk (≤ 6 sn) **komşu çekimin kesintisiz devamıyla** kapatılır: aynı çekim kaynağın kaldığı yerinden sürer, sınırda belirgin yakın kadraja geçilir ve araya geçiş efekti konmaz. Bu aynı klibin ayrı bir tekrarı değildir; kilitli medya bu amaçla kullanılmaz, kaynağın gerçek süresi aşılmaz. Ekranda “X sn, komşu çekimin kesintisiz devamıyla kapatıldı” diye açıkça yazılır.
+- İlgisiz medya, siyah ekran veya gizli tekrar hâlâ yoktur. Ses ve altyazı zamanları değişmez.
+
 ## Media Relevance V3
 
 Güncel davranış: **özne → görsel bağlam → stil** ayrı değerlendirilir. Belgesel, röportaj, vintage, eski, siyah/beyaz, sinematik, arşiv, yakın/geniş çekim gibi beş dildeki format terimleri tek başına özne olamaz. Kayıtlı `search_anchor` körü körüne kullanılmaz: gerçek entity/konum, ana sorgunun güçlü kavramları ve görsel amaç önceliklidir; çelişen veya boş stil çapası reddedilir. Mürettebat/kokpit gibi yerel kavramlar İngilizce 2–5 kelimelik aramaya dönüşür. Bilinmeyen özel isimler çevrilmez.

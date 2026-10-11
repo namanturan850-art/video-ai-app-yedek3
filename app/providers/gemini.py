@@ -1,4 +1,5 @@
 """Google Gemini Developer API only. Official contract: docs/GEMINI.md."""
+import json
 import re
 import time
 import logging
@@ -223,13 +224,50 @@ class GeminiScriptProvider:
             raise ScriptProviderError('Senaryo isteği boş veya çok uzun. Konuyu kontrol edin.', 422, category='invalid_request', stage='configuration')
         if self._contains_key(prompt):
             raise ScriptProviderError('Senaryo isteğine API anahtarı eklemeyin.', 422, category='invalid_request', stage='configuration')
+        return self._generate([{'text': prompt}])
+
+    def complete_json(self, purpose, prompt, schema, *, images=(), effort=None, max_tokens=None, system=None):
+        """Same contract as ClaudeProvider.complete_json, for the free Gemini tier.
+
+        Images use the documented Part.inlineData (mimeType + base64 data);
+        JSON mode uses the documented GenerationConfig.responseMimeType. The
+        schema is stated in the prompt and the answer is checked locally.
+        """
+        from app.providers.json_output import parse_json_object
+        if not self.model:
+            raise ScriptProviderError('Önce Ayarlar → Gemini bölümünde bir model seçip kaydedin.', 422, category='missing_model', stage='configuration')
+        parts = []
+        for block in images:
+            if block.get('type') == 'text':
+                parts.append({'text': block['text']})
+            elif block.get('type') == 'image' and block.get('source', {}).get('type') == 'base64':
+                parts.append({'inlineData': {'mimeType': block['source']['media_type'], 'data': block['source']['data']}})
+        parts.append({'text': prompt + '\n\nReturn ONLY one JSON object (no Markdown) that matches this JSON Schema: '
+                      + json.dumps(schema, separators=(',', ':'))})
+        if self._contains_key(json.dumps(parts[-1])):
+            raise ScriptProviderError('İsteğe API anahtarı eklemeyin.', 422, category='invalid_request', stage='configuration')
+        text = self._generate(parts, json_mode=True, system=system)
+        try:
+            data = parse_json_object(text)
+        except ScriptProviderError:
+            raise
+        except Exception:
+            raise ScriptProviderError('Gemini geçerli JSON döndürmedi.', category='invalid_response', stage='response_json') from None
+        missing = [k for k in schema.get('required', []) if k not in data]
+        if not isinstance(data, dict) or missing:
+            raise ScriptProviderError('Gemini yanıtında gerekli alanlar eksik.', category='invalid_response', stage='response_json')
+        return data
+
+    def _generate(self, parts, *, json_mode=False, system=None):
         started, category, stage, exception_class, status = time.monotonic(), 'success', 'request_build', 'none', None
         try:
-            with self._client(120) as client:
+            body = {'systemInstruction': {'parts': [{'text': system or ORIGINALITY_INSTRUCTION}]},
+                    'contents': [{'role': 'user', 'parts': parts}]}
+            if json_mode:
+                body['generationConfig'] = {'responseMimeType': 'application/json'}
+            with self._client(180 if json_mode else 120) as client:
                 stage = 'http_request'
-                data = self._request(client, 'POST', f'/models/{self.model}:generateContent',
-                                     json={'systemInstruction': {'parts': [{'text': ORIGINALITY_INSTRUCTION}]},
-                                           'contents': [{'role': 'user', 'parts': [{'text': prompt}]}]})
+                data = self._request(client, 'POST', f'/models/{self.model}:generateContent', json=body)
             status, stage = 200, 'candidates'
             return self._final_text(data)
         except ScriptProviderError as error:

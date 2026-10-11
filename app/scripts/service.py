@@ -107,6 +107,8 @@ class ScriptService:
         started = time.monotonic()
         job = self.repository.job(job_id)
         options, project, progress = (json.loads(job[name]) for name in ('options_json', 'input_json', 'progress_json'))
+        from app.ai_usage import CURRENT_PROJECT
+        CURRENT_PROJECT.set(job['project_id'])  # AI cost ledger attribution
         engine = YouTubeScriptEngine(provider, guard)
 
         def save(status, phase, percent):
@@ -189,7 +191,7 @@ class ScriptService:
             save('draft', 'done', 100)
             LOG.info('script provider=%s operation=generate result=success category=success elapsed_ms=%.0f', job['provider'], (time.monotonic() - started) * 1000)
         except Exception as error:
-            category = error.category if isinstance(error, (ScriptProviderError, ScriptError)) and error.category in {'key_rejected', 'quota_limit', 'free_quota_exhausted', 'rate_limit', 'billing_quota', 'invalid_model', 'invalid_request', 'model_unavailable', 'no_internet', 'local_connection', 'network_error', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'empty_response', 'incomplete_response', 'invalid_json', 'schema_invalid', 'thinking_unsupported', 'reasoning_in_response', 'upstream_error', 'blocked_response', 'no_candidates', 'malformed_candidate', 'unexpected_finish_reason', 'output_limit', 'malformed_content', 'malformed_parts', 'thought_only_response', 'response_schema_mismatch', 'model_unsupported'} else 'generation_error'
+            category = error.category if isinstance(error, (ScriptProviderError, ScriptError)) and error.category in {'key_rejected', 'quota_limit', 'free_quota_exhausted', 'rate_limit', 'billing_quota', 'invalid_model', 'invalid_request', 'model_unavailable', 'no_internet', 'local_connection', 'network_error', 'gemini_timeout', 'generation_timeout', 'invalid_response', 'empty_response', 'incomplete_response', 'invalid_json', 'schema_invalid', 'thinking_unsupported', 'reasoning_in_response', 'upstream_error', 'refusal', 'blocked_response', 'no_candidates', 'malformed_candidate', 'unexpected_finish_reason', 'output_limit', 'malformed_content', 'malformed_parts', 'thought_only_response', 'response_schema_mismatch', 'model_unsupported'} else 'generation_error'
             messages = {'blocked_response': 'Gemini yanıtı içerik kısıtlaması nedeniyle engelledi.',
                         'no_candidates': 'Gemini yanıt adayı döndürmedi.',
                         'malformed_candidate': 'Gemini yanıt adayı okunamadı.',
@@ -218,7 +220,8 @@ class ScriptService:
                         'local_connection': 'Yerel Ollama sunucusuna ulaşılamadı. Ollama uygulamasını açıp yerel adresi kontrol edin.',
                         'network_error': 'Sağlayıcı HTTP bağlantısı tamamlanamadı. Ağ, proxy ve sağlayıcı durumunu kontrol edin.',
                         'gemini_timeout': 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.',
-                        'generation_timeout': 'Sağlayıcı zamanında yanıt vermedi. Tekrar deneyin.'}
+                        'generation_timeout': 'Sağlayıcı zamanında yanıt vermedi. Tekrar deneyin.',
+                        'refusal': 'Claude bu isteği güvenlik nedeniyle yanıtlamadı. Konuyu farklı ifade edin veya yedek motoru kullanın.'}
             message = str(error) if isinstance(error, ScriptError) else messages.get(category, 'Senaryo oluşturulurken işlem kesildi. Tekrar deneyin.')
             message = guard.clean(message) + ' Üretim tamamlanamadı. Tamamlanan bölümler korundu.'
             # Preserve the last committed checkpoint even if a file mirror caused the failure.

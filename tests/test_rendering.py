@@ -396,7 +396,7 @@ def test_schema9_upgrade_preserves_sources(ready):
         c.execute("UPDATE app_metadata SET value='9' WHERE key='schema_version'")
     initialize_database(ready['storage'])
     with closing(p._connection()) as c:
-        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='10'
+        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='11'
         assert c.execute('SELECT COUNT(*) FROM narration_versions').fetchone()[0]==1
         assert c.execute('SELECT COUNT(*) FROM subtitle_versions').fetchone()[0]>=1
     for name,data in ready['originals'].items():assert (ready['root']/name).read_bytes()==data

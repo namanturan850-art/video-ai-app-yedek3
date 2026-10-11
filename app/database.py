@@ -3,7 +3,7 @@ from contextlib import closing
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "10"
+SCHEMA_VERSION = "11"
 PROJECT_SCHEMA = """
 CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -94,6 +94,12 @@ def initialize_database(data_dir: Path) -> Path:
                 for statement in STATEMENTS:
                     connection.execute(statement)
                 version = '10'
+            if version == '10':
+                # Additive only: a new cost ledger. Existing tables are untouched.
+                from app.ai_usage import STATEMENTS
+                for statement in STATEMENTS:
+                    connection.execute(statement)
+                version = '11'
             if version != SCHEMA_VERSION:
                 raise sqlite3.DatabaseError("Bu veritabanı sürümü desteklenmiyor; mevcut dosyalar değiştirilmedi.")
             connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))

@@ -29,9 +29,12 @@ function camera(seg:any,local:number,length:number){
 }
 const Media:React.FC<any>=({clip,cam})=>{
  const style:React.CSSProperties={width:'100%',height:'100%',objectFit:clip.fit==='contain'?'contain':'cover'};
+ // Portrait/square source: blurred, darkened full-frame copy behind the sharp centre.
+ const back:React.CSSProperties={width:'100%',height:'100%',objectFit:'cover',filter:'blur(40px) brightness(0.8)',transform:'scale(1.1)'};
  const left=(W-W/cam.z)*cam.fx,top=(H-H/cam.z)*cam.fy;
  return <AbsoluteFill style={{overflow:'hidden'}}><AbsoluteFill style={{transformOrigin:'0 0',transform:`translate(${-left*cam.z}px,${-top*cam.z}px) scale(${cam.z})`}}>
-  {clip.type==='video'?<OffthreadVideo src={staticFile(clip.asset)} muted playbackRate={1} startFrom={Math.round((clip.source_in||0)*30)} style={style}/>:<Img src={staticFile(clip.asset)} style={style}/>}
+  {clip.fit==='contain'&&<AbsoluteFill>{clip.type==='video'?<OffthreadVideo src={staticFile(clip.asset)} muted playbackRate={1} startFrom={Math.round((clip.source_in||0)*30)} style={back}/>:<Img src={staticFile(clip.asset)} style={back}/>}</AbsoluteFill>}
+  <AbsoluteFill>{clip.type==='video'?<OffthreadVideo src={staticFile(clip.asset)} muted playbackRate={1} startFrom={Math.round((clip.source_in||0)*30)} style={style}/>:<Img src={staticFile(clip.asset)} style={style}/>}</AbsoluteFill>
  </AbsoluteFill></AbsoluteFill>;
 };
 const Scene:React.FC<any>=({clip,theme})=>{

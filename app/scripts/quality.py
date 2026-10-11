@@ -14,6 +14,21 @@ from app.production import (SCENE_ERRORS, SCENE_FIELDS, SCENE_METADATA_ERRORS, s
                             narration_units, exact_source_slices, visual_blocks, scene_checks)
 
 KINDS = ('retention', 'hooks', 'alternatives', 'claims', 'visual')
+# Extra director guidance, only for Claude (the compact prompt limit protects
+# small local models; Claude has room for the full shot brief).
+CLAUDE_DIRECTOR_VISUAL = (
+    'DIRECTOR FIELDS for every scene: must_show (what must be visible on screen, concrete, English), '
+    'must_not_show (what would be wrong or misleading here, English), shot_count (integer 1-6: how many '
+    'different shots this scene needs; plan FEWER, LONGER shots when the subject is niche or rare in stock '
+    'libraries such as isolated tribes, deep-sea creatures, black holes, specific historical events; more '
+    'shots for common subjects such as cities, oceans, aircraft). Scene type via media_type: stock_video '
+    '(default), stock_image (when stills are more likely to exist, e.g. historical photos, maps), or '
+    'motion_graphic with card_kind (map, number, title or quote) and card_text when stock cannot show it: '
+    'card_text must be an EXACT short phrase from that scene narration (a number with its unit, a place '
+    'name, a key sentence of max 14 words); never invent card text. Aim for roughly 15-25% cards over the '
+    'whole video. stock_query and 2-3 alternative_stock_queries: English, concrete, filmable '
+    '(e.g. "airplane cockpit night", "ancient roman forum ruins"), each a DIFFERENT angle: specific, '
+    'synonym, and broader context.')
 RATINGS = ('Güçlü', 'Orta', 'Geliştirilebilir')
 CRITERIA = ('opening_10_30_seconds', 'hook', 'slow_sections', 'repetition', 'transitions', 'overload', 'pacing', 'section_length', 'curiosity', 'payoff', 'ending')
 
@@ -62,6 +77,8 @@ class QualityService:
 
     def start(self, project_id, kind, payload):
         expected = {'provider', 'cost_confirmed', 'confirm_replace_plan'} if kind == 'visual' else {'provider', 'cost_confirmed'}
+        if kind == 'visual' and type(payload.get('director')) is bool:
+            expected = expected | {'director'}  # the AI director asks for its richer scene notes
         if kind not in KINDS or set(payload) != expected or type(payload['cost_confirmed']) is not bool or kind == 'visual' and type(payload['confirm_replace_plan']) is not bool:
             raise ScriptError('Geçerli bir analiz aracı ve sağlayıcı seçin.')
         return self._enqueue(project_id, kind, payload)
@@ -125,6 +142,7 @@ class QualityService:
             if payload['provider'] != 'ollama' and not payload['cost_confirmed']:
                 raise ScriptError('Bu AI işlemi API kotası veya ücret kullanabilir. İşlemi başlatmadan önce onay verin.', 409)
             inputs = {'version_id': current['id'], 'text': current['text'], 'content_type': current['content_type'], 'selected': selected, 'confirm_replace_plan': payload.get('confirm_replace_plan', False)}
+            if payload.get('director'): inputs['director'] = True
             saved_options=dict(current['options'])
             if kind in ('visual','visual_scene'):
                 saved_options['language']=self.projects.get(project_id)['language']
@@ -149,6 +167,8 @@ class QualityService:
         started, category = time.monotonic(), 'success'
         failed_field=None
         job = self.repo.job(job_id)
+        from app.ai_usage import CURRENT_PROJECT
+        CURRENT_PROJECT.set(job['project_id'])  # AI cost ledger attribution
         inputs, options, progress = (json.loads(job[key]) for key in ('input_json', 'options_json', 'progress_json'))
         engine = YouTubeScriptEngine(provider, guard)
         kind = job['action']
@@ -235,12 +255,12 @@ class QualityService:
             progress.update(phase='done', percent=100)
             checkpoint('draft')
         except Exception as error:
-            allowed_categories=set(SCENE_ERRORS)|{'quota_limit','free_quota_exhausted','rate_limit','billing_quota','key_rejected','no_internet','local_connection','network_error','generation_timeout','gemini_timeout','model_unavailable','invalid_response','invalid_json','thinking_unsupported','empty_response','upstream_error'}
+            allowed_categories=set(SCENE_ERRORS)|{'quota_limit','free_quota_exhausted','rate_limit','billing_quota','key_rejected','no_internet','local_connection','network_error','generation_timeout','gemini_timeout','model_unavailable','invalid_response','invalid_json','thinking_unsupported','empty_response','upstream_error','refusal','incomplete_response','invalid_request'}
             category = error.category if isinstance(error,(ScriptProviderError,ScriptError)) and error.category in allowed_categories else 'tool_error'
             field=getattr(error,'field',None)
             failed_field=field if isinstance(field,str) and field in SCENE_FIELDS else None
             diagnostic=f'{category}:{failed_field}' if failed_field else category
-            allowed = {'quota_limit': 'Kullanım sınırına ulaşıldı.', 'free_quota_exhausted': 'Gemini ücretsiz API kotasını kontrol edin.', 'rate_limit': 'İstek hız sınırına ulaşıldı.', 'billing_quota': 'API bakiye/kota sınırını kontrol edin.', 'no_internet': 'Sağlayıcı bağlantısı kurulamadı.', 'local_connection': 'Yerel Ollama sunucusuna ulaşılamadı.', 'network_error': 'API HTTP bağlantısı tamamlanamadı.', 'thinking_unsupported': 'Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.', 'invalid_json': 'Sağlayıcı tek ve geçerli JSON döndürmedi.', 'empty_response': 'Sağlayıcı boş son yanıt döndürdü.'}
+            allowed = {'quota_limit': 'Kullanım sınırına ulaşıldı.', 'free_quota_exhausted': 'Gemini ücretsiz API kotasını kontrol edin.', 'rate_limit': 'İstek hız sınırına ulaşıldı.', 'billing_quota': 'API bakiye/kota sınırını kontrol edin.', 'no_internet': 'Sağlayıcı bağlantısı kurulamadı.', 'local_connection': 'Yerel Ollama sunucusuna ulaşılamadı.', 'network_error': 'API HTTP bağlantısı tamamlanamadı.', 'thinking_unsupported': 'Bu Ollama modeli mevcut ayarlarla reasoning modunu kapatamıyor.', 'invalid_json': 'Sağlayıcı tek ve geçerli JSON döndürmedi.', 'empty_response': 'Sağlayıcı boş son yanıt döndürdü.', 'refusal': 'Claude bu isteği güvenlik nedeniyle yanıtlamadı.', 'incomplete_response': 'Sağlayıcı yanıtı yarıda kaldı; tekrar deneyin.', 'key_rejected': 'API anahtarı kabul edilmedi. Ayarları kontrol edin.', 'model_unavailable': 'Seçilen model kullanılamıyor. Ayarları kontrol edin.', 'upstream_error': 'Sağlayıcı şu anda yanıt veremiyor; biraz sonra tekrar deneyin.', 'generation_timeout': 'Sağlayıcı zamanında yanıt vermedi; tekrar deneyin.'}
             message = str(error) if isinstance(error, ScriptError) else allowed.get(category, 'AI aracı tamamlanamadı. Tekrar deneyin.')
             with self.projects.lock, closing(self.projects._connection()) as connection, connection:
                 saved = json.loads(connection.execute('SELECT progress_json FROM script_jobs WHERE id=?', (job_id,)).fetchone()['progress_json'])
@@ -256,6 +276,7 @@ class QualityService:
         """One job-wide repair budget; persist consent/attempt before any extra call."""
         units=data['narration_units'];index=data['segment_index']
         instructions=self._instructions('visual').replace('"first supplied unit_id"',json.dumps(units[0]['unit_id']))
+        if job['provider']=='claude' or json.loads(job['input_json']).get('director'):instructions+=' '+CLAUDE_DIRECTOR_VISUAL
         instructions+=' Use the actual IDs in narration_units; the example shows the response shape, not the complete scene plan.'
         if single: instructions+=' Return EXACTLY ONE scene containing all supplied unit IDs.'
         def ask(payload, *, repair=False):
@@ -278,13 +299,14 @@ class QualityService:
                 groups=scene_references(raw,units)
                 if single: groups=[[uid for group in groups for uid in group]]
                 repair={'segment_index':index,'unit_groups':groups,'error_category':error.category,'error_field':getattr(error,'field',None),
-                        'attempted':False,'status':'ready' if job['provider']=='ollama' else 'awaiting_cost_confirmation'}
+                        'attempted':False,'status':'ready' if job['provider'] in ('ollama','claude') else 'awaiting_cost_confirmation'}
                 progress['visual_repair']=repair;checkpoint('analyzing')
         if repair.get('attempted'):
             error=scene_error(repair['error_category'],repair.get('error_field')) if repair['error_category'] in SCENE_ERRORS else ScriptError('Tek görsel düzeltme tamamlanamadı.',category=repair['error_category'])
             error.args=(str(error)+' Tek görsel düzeltme denemesi kullanıldı; isterseniz yeni plan işlemi başlatın.',)
             raise error
-        if job['provider']!='ollama' and repair['status']!='confirmed':
+        # Claude (director) repairs once automatically, as the owner asked.
+        if job['provider'] not in ('ollama','claude') and repair['status']!='confirmed':
             error=scene_error(repair['error_category'],repair.get('error_field'))
             error.args=(str(error)+' Tek düzeltme ek API kotası veya ücret kullanabilir; Plan İşlemine Devam Et ile onay verin.',)
             raise error

@@ -84,6 +84,12 @@ class VisualBlock(BaseModel):
     search_alternatives: list[str] = Field(default_factory=list,max_length=5)
     provider_query: str = Field(default='',max_length=300)
     semantic_descriptor: str = Field(default='',max_length=300)
+    # Director (Claude) fields. Optional: older plans and other engines omit them.
+    must_show: str = Field(default='',max_length=300)
+    must_not_show: str = Field(default='',max_length=300)
+    shot_count: int = Field(default=0,ge=0,le=12)
+    card_kind: Literal['', 'map', 'number', 'title', 'quote'] = ''
+    card_text: str = Field(default='',max_length=150)
 
     @model_validator(mode='after')
     def semantic_queries(self):
@@ -198,6 +204,23 @@ def scene_metadata(scene, narration):
         value=scene[field]
         if isinstance(value,str) and value in choices: block[field]=value
         else: warnings.append(labels[field]+' önerisi kullanılamadı; güvenli varsayılan kullanıldı.')
+    for field in ('must_show','must_not_show'):
+        if field not in scene: continue
+        value=scene[field]
+        if isinstance(value,str) and len(value)<=300:block[field]=normalize(value)
+        else:warnings.append('Görünmeli/görünmemeli notu kullanılamadı; boş bırakıldı. Plan geçerli.')
+    if 'shot_count' in scene:
+        value=scene['shot_count']
+        if type(value) is int and 1<=value<=12:block['shot_count']=value
+        else:warnings.append('Çekim sayısı önerisi kullanılamadı; süreye göre otomatik bölünecek.')
+    card=card_fields(scene,narration,safe_entities)
+    if card:
+        block.update(card)
+        if block['media_type'] not in ('motion_graphic',):block['media_type']='motion_graphic'
+    elif scene.get('card_kind'):
+        # No exact, source-backed text: a card would invent content. Use stock.
+        warnings.append('Kart metni anlatımda birebir bulunamadı; sahne stok görüntüyle planlandı.')
+        if block['media_type']=='motion_graphic':block['media_type']='stock_video'
     if 'importance' in scene:
         value=scene['importance']
         if type(value) is int and 0<=value<=100: block['importance']=value
@@ -207,6 +230,23 @@ def scene_metadata(scene, narration):
     block['metadata_warnings']=warnings
     block['_editing_defaults']=defaults  # Consumed locally before blocks are persisted.
     return block
+
+
+def card_fields(scene, narration, entities=()):
+    """Generated card text must come from the narration (or a scene entity for
+    maps) - a card never states something the voice-over does not."""
+    kind=scene.get('card_kind');text=scene.get('card_text')
+    if kind not in ('map','number','title','quote') or not isinstance(text,str):return None
+    text=normalize(text).strip(' "\'„“”«»')
+    if not text or len(text)>150 or word_count(text)>(14 if kind=='quote' else 8):return None
+    source=normalize(narration).casefold()
+    if kind=='map':ok=text.casefold() in source or any(text.casefold()==str(e).casefold() for e in entities)
+    elif kind=='number':ok=bool(re.search(r'\d',text)) and text.casefold() in source
+    elif kind=='quote':ok=text.casefold() in source
+    else:  # title: every content word must come from the narration
+        words=[w for w in re.findall(r'[^\W_]+',text.casefold()) if len(w)>2]
+        ok=bool(words) and all(w in source for w in words)
+    return {'card_kind':kind,'card_text':text} if ok else None
 
 
 def narration_units(text, words_per_minute=135, *, prefix='U'):
@@ -746,7 +786,8 @@ class ProductionService:
         return {'contract_version':1,'project_id':project_id,'plan_id':plan['plan_id'],'plan_version':plan['plan_version'],
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
                 'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
-                'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query','semantic_descriptor') if b.get(key)}} for b in plan['blocks']]}
+                'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query','semantic_descriptor',
+                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

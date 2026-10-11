@@ -227,7 +227,7 @@ class ProjectService:
                         values['channel_id'] = connection.execute('SELECT id FROM channels WHERE is_default=1').fetchone()[0]
                     columns = ', '.join(values)
                     connection.execute(f"INSERT INTO projects ({columns}) VALUES ({', '.join('?' for _ in values)})", tuple(values.values()))
-                    project = public_project(self._row(connection, project_id), detail=True)
+                    project = self._detail(connection, project_id)
                 return project
             except (OSError, sqlite3.Error, ProjectError) as error:
                 if owned and path is not None:
@@ -248,13 +248,17 @@ class ProjectService:
         except sqlite3.Error:
             raise ProjectError('Projeler okunamadı. Uygulamayı kapatıp yeniden açın.', 503) from None
 
+    def _detail(self, connection, project_id):
+        # Same shape from create/get/update: the record plus its channel name.
+        project = public_project(self._row(connection, project_id), detail=True)
+        channel = connection.execute('SELECT name FROM channels WHERE id=?', (project.get('channel_id', ''),)).fetchone() if project.get('channel_id') else None
+        project['channel_name'] = channel[0] if channel else 'Varsayılan kanal'
+        return project
+
     def get(self, project_id: str) -> dict:
         try:
             with closing(self._connection()) as connection:
-                project = public_project(self._row(connection, project_id), detail=True)
-                channel = connection.execute('SELECT name FROM channels WHERE id=?', (project.get('channel_id', ''),)).fetchone() if project.get('channel_id') else None
-                project['channel_name'] = channel[0] if channel else 'Varsayılan kanal'
-                return project
+                return self._detail(connection, project_id)
         except sqlite3.Error:
             raise ProjectError('Proje okunamadı. Uygulamayı kapatıp yeniden açın.', 503) from None
 
@@ -274,7 +278,7 @@ class ProjectService:
                     raise ProjectError('Seçilen kanal bulunamadı. Kanallar sayfasını kontrol edin.', 404)
                 assignments = ', '.join(f'{key} = ?' for key in values)
                 connection.execute(f'UPDATE projects SET {assignments} WHERE id = ?', (*values.values(), project_id))
-                return public_project(self._row(connection, project_id), detail=True)
+                return self._detail(connection, project_id)
         except sqlite3.Error:
             raise ProjectError('Proje bilgileri kaydedilemedi. Uygulamayı yeniden açıp tekrar deneyin.', 503) from None
 

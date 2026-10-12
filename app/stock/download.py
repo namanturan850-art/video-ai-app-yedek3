@@ -15,10 +15,14 @@ from app.stock.models import StockError
 
 # Hosts in official examples. Unrecognized redirect hosts are refused, not guessed.
 HOSTS = {'pexels': {'images.pexels.com','videos.pexels.com','static-videos.pexels.com','player.vimeo.com'},
-         'pixabay': {'pixabay.com','cdn.pixabay.com'}}
-PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'}}
+         'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'wikimedia': {'upload.wikimedia.org'}}
+PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'}, 'wikimedia': {'commons.wikimedia.org'}}
 TYPES = {'video/mp4':('.mp4','video'), 'image/jpeg':('.jpg','image'),
-         'image/png':('.png','image'), 'image/webp':('.webp','image')}
+         'image/png':('.png','image'), 'image/webp':('.webp','image'),
+         'video/webm':('.mp4','video')}  # Commons WebM is converted to MP4 here, so the rest of the app only sees MP4
+# Wikimedia's User-Agent policy asks every client to identify itself with a contact URL.
+USER_AGENT = 'AIVideoStudio/1.0 (local desktop app; https://github.com/naman85331/video-ai-app)'
+WEBM_SECONDS = 60
 
 
 def safe_url(value, provider, *, page=False):
@@ -59,7 +63,24 @@ def signature(data, mime):
     return ((mime=='video/mp4' and len(data)>=12 and data[4:8]==b'ftyp')
             or (mime=='image/jpeg' and data.startswith(b'\xff\xd8\xff'))
             or (mime=='image/png' and data.startswith(b'\x89PNG\r\n\x1a\n'))
-            or (mime=='image/webp' and data.startswith(b'RIFF') and data[8:12]==b'WEBP'))
+            or (mime=='image/webp' and data.startswith(b'RIFF') and data[8:12]==b'WEBP')
+            or (mime=='video/webm' and data.startswith(b'\x1aE\xdf\xa3')))
+
+
+def webm_to_mp4(source, target):
+    """First minute of a WebM as silent H.264 MP4 (at most 1080p). Raises StockError."""
+    import subprocess
+    from app.rendering.tools import discover
+    ffmpeg = discover().get('ffmpeg')
+    if not ffmpeg: raise StockError('download_type','Bu video WebM biçiminde; dönüştürmek için FFmpeg gerekli. Başka aday seçin.')
+    try:
+        done = subprocess.run([ffmpeg,'-v','error','-y','-t',str(WEBM_SECONDS),'-i',str(source),'-an','-vf',"scale='min(1920,iw)':-2",
+                               '-c:v','libx264','-preset','veryfast','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(target)],
+                              capture_output=True,timeout=900,stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        done = None
+    if not done or done.returncode or not target.is_file() or target.stat().st_size < 12:
+        raise StockError('incomplete_download','Video MP4’e dönüştürülemedi. Başka aday seçin.')
 
 
 def mirror(projects, project_id, plan_id, state):
@@ -120,7 +141,7 @@ class Downloader:
                 with httpx.Client(timeout=httpx.Timeout(60,connect=10), follow_redirects=False,
                                   transport=self.transport) as client:
                     for redirect in range(4):
-                        with client.stream('GET',url,headers={'Accept-Encoding':'identity'}) as response:
+                        with client.stream('GET',url,headers={'Accept-Encoding':'identity','User-Agent':USER_AGENT}) as response:
                             if response.status_code in (301,302,303,307,308):
                                 if redirect==3 or not response.headers.get('location'):
                                     raise StockError('unsafe_redirect','Medya indirmesi çok fazla yönlendirildi.')
@@ -149,6 +170,15 @@ class Downloader:
                                 stream.flush();os.fsync(stream.fileno())
                             if size<12 or (declared and size!=int(declared)) or not signature(head,mime):
                                 raise StockError('incomplete_download','Medya indirme tamamlanamadı veya dosya geçersiz. Tekrar deneyin.')
+                            if mime=='video/webm':
+                                converted = folder/('.convert-'+uuid4().hex+'.mp4')
+                                try:
+                                    webm_to_mp4(temporary,converted)
+                                    os.replace(converted,temporary)
+                                finally:
+                                    converted.unlink(missing_ok=True)
+                                with temporary.open('rb') as stream: digest=hashlib.file_digest(stream,'sha256')
+                                size, mime = temporary.stat().st_size, 'video/mp4'
                             with self.projects.lock:
                                 directory(self.projects,project_id)
                                 target = folder/(uuid4().hex+TYPES[mime][0])

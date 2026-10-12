@@ -61,10 +61,10 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
       slotJob(slot,'motion_edit',{motion:{template:t,data,emphasis:emphasis.value.trim()}});});
     return form;
   }
-  function mediaInfo(media){if(media.provider==='generated'&&media.media_type==='video')return `Motion grafik · ${TEMPLATE_LABELS[media.source_metadata?.motion?.template]||''} · 1920×1080 · ${media.source_metadata?.engine==='openmontage'?'OpenMontage':'yerel çizim'}`;if(media.provider==='generated')return `Üretilmiş kart · ${{map:'Konum',number:'Sayı',quote:'Alıntı',title:'Başlık'}[media.source_metadata?.card_kind]||'Başlık'} · 1920×1080`;return `${media.provider==='pexels'?'Pexels':media.provider==='openmontage'?'OpenMontage':'Pixabay'} · ${media.media_type==='video'?'Video':'Görsel'} · ${media.width}×${media.height}${media.width>media.height?' · Yatay'+(Math.abs(media.width/media.height-16/9)<.06?' · 16:9':''):' · Dikey/kare'}`;}
+  function mediaInfo(media){if(media.provider==='generated'&&media.media_type==='video')return `Motion grafik · ${TEMPLATE_LABELS[media.source_metadata?.motion?.template]||''} · 1920×1080 · ${media.source_metadata?.engine==='openmontage'?'OpenMontage':'yerel çizim'}`;if(media.provider==='generated')return `Üretilmiş kart · ${{map:'Konum',number:'Sayı',quote:'Alıntı',title:'Başlık'}[media.source_metadata?.card_kind]||'Başlık'} · 1920×1080`;return `${{pexels:'Pexels',openmontage:'OpenMontage',wikimedia:'Wikimedia Commons'}[media.provider]||'Pixabay'} · ${media.media_type==='video'?'Video':'Görsel'} · ${media.width}×${media.height}${media.width>media.height?' · Yatay'+(Math.abs(media.width/media.height-16/9)<.06?' · 16:9':''):' · Dikey/kare'}`;}
   function sourceInfo(media){
     if(media.provider==='generated'){const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`Uygulama tarafından üretildi. Yazı anlatımdan alındı: “${media.source_metadata?.card_text||''}”`));return info;}
-    const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`${media.provider} · Medya ID: ${media.media_id} · Oluşturan: ${media.creator_name||'Belirtilmedi'}`));
+    const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`${media.provider} · Medya ID: ${media.media_id} · Oluşturan: ${media.creator_name||'Belirtilmedi'}`));if(media.source_metadata?.license)info.append(node('p',`Lisans: ${media.source_metadata.license} · Yazar: ${media.source_metadata.author||media.creator_name||'Belirtilmedi'} · YouTube açıklamasına kaynak olarak eklenir.`));
     if(media.relevance_label)info.append(node('p',`Alaka: ${relevanceText(media)} · Arama kademesi: ${media.search_tier||'—'} · Sorgu: ${media.query_used}`));
     if(media.provider_query)info.append(node('p',`Sağlayıcı sorgusu: ${media.provider_query}`));
     const link=node('a','Sağlayıcıdaki kaynak sayfası');link.href=media.page_url;link.target='_blank';link.rel='noopener noreferrer';info.append(link);
@@ -133,7 +133,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   async function load(){
     if(loading)return;loading=true;
     try{state=await request(base);const job=state.job;
-      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pexels&&!state.providers.pixabay&&!state.providers.openmontage?'Ayarlar → Pexels/Pixabay anahtarını kaydedin veya isteğe bağlı OpenMontage medya aramasını açın.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}`;
+      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pixabay&&!state.providers.wikimedia&&!state.providers.openmontage?'Ayarlar → Pixabay anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}`;
       render();
     }catch(error){state=null;message.textContent=error.message;render();}
     finally{loading=false;clearTimeout(timer);if(['queued','running'].includes(state?.job?.status))timer=setTimeout(load,1200);}

@@ -33,7 +33,7 @@ from app.projects import linked, now
 from app.providers.base import ScriptProviderError
 from app.stock import relevance
 from app.stock.cards import render_card
-from app.stock.download import asset_path, directory, safe_url
+from app.stock.download import USER_AGENT, asset_path, directory, safe_url
 from app.stock.identities import identity_keys
 from app.stock.models import StockError
 
@@ -370,14 +370,18 @@ class MediaDirector:
         return [q for q in dict.fromkeys(queries) if q.casefold() not in {t.casefold() for t in tried}][:3]
 
     # ---- searching -----------------------------------------------------------
-    def providers(self):
-        names = [n for n in ('pexels', 'pixabay') if self.service.settings.stock_config(n).get('api_key')]
+    def providers(self, scene=None):
+        """Pixabay (with a key) and Wikimedia Commons (no key; Pexels is switched
+        off). History/archaeology/museum/map scenes ask Wikimedia first."""
+        from app.stock.providers import ACTIVE
+        names = [n for n in ACTIVE if n == 'wikimedia' or self.service.settings.stock_config(n).get('api_key')]
+        if scene is not None and historic(scene): names.sort(key=lambda n: n != 'wikimedia')
         return [n for n in names if n not in self.unavailable]
 
-    def search(self, slot, kinds, query, log):
+    def search(self, slot, kinds, query, log, scene=None):
         found = []
         for kind in kinds:
-            for name in self.providers():
+            for name in self.providers(scene):
                 entry = {'provider': name, 'media_type': kind, 'query': query}
                 self.progress['message'] = f'Yuva {slot["order"]} · {name.title()} {"video" if kind == "video" else "görsel"} aranıyor: “{query}”'
                 self.service._checkpoint(self.job, self.progress, light=True)
@@ -444,7 +448,8 @@ class MediaDirector:
                     self.filtered_keys.add(k); self.progress['irrelevant_filtered'] = len(self.filtered_keys) + self.progress.get('ai_rejected', 0)
                 continue
             pool.append(relevance.annotate(media, slot['relevance_profile'], 1, media.get('query_used', '')))
-        pool.sort(key=lambda m: (m['width'] > m['height'], key(m) not in self.usage, relevance.rank(m, slot)), reverse=True)
+        archive = bool(scene) and historic(scene)  # history/museum/map scenes: Commons archive material first
+        pool.sort(key=lambda m: (m['width'] > m['height'], archive and m['provider'] == 'wikimedia', key(m) not in self.usage, relevance.rank(m, slot)), reverse=True)
         return pool
 
     def look(self, media):
@@ -492,7 +497,7 @@ class MediaDirector:
         step = {'stage': stage, 'label': STAGES[stage], 'queries': list(queries), 'judged': []}
         log['steps'].append(step)
         for query in queries:
-            pool = self.pool(slot, self.search(slot, kinds, query, log), log, exclude, scene)
+            pool = self.pool(slot, self.search(slot, kinds, query, log, scene), log, exclude, scene)
             # The AI already approved these for this scene (another slot):
             # reuse the verdict instead of paying for the same look again.
             known = [m for m in pool if log['judged'].get(key(m), {}).get('approved') and log['judged'][key(m)]['score'] >= APPROVE_SCORE]
@@ -1068,6 +1073,21 @@ class MediaDirector:
 TEMPLATE_WORDS = {'stat': 'sayı', 'map': 'harita', 'timeline': 'çizelge', 'compare': 'karşılaştırma', 'list': 'liste', 'quote': 'yazı'}
 
 
+HISTORIC = re.compile(r'(?i)\b(ancient|antique|roman|greek|egypt\w*|pharaoh|medieval|middle ages|histor\w*|archaeolog\w*|excavat\w*|museum|artifact|artefact|'
+                      r'relief|engraving|etching|lithograph|woodcut|manuscript|codex|fresco|mosaic|sculpture|statue|bust|ruins?|'
+                      r'map|maps|atlas|chart|painting|portrait|empire|dynasty|century|vintage|archive|antik\w*|römisch\w*|'
+                      r'mittelalter\w*|geschicht\w*|archäolog\w*|karte|gemälde|stich|kupferstich|ruine\w*|tarih\w*|arkeoloji\w*|'
+                      r'müze\w*|harita\w*|kabartma\w*|gravür\w*|minyatür\w*)\b')
+
+
+def historic(scene):
+    """History, archaeology, museum, map, engraving… (or a year before 1900) in the scene notes."""
+    text = ' '.join(str(scene.get(k) or '') for k in ('visual_intent', 'primary_stock_query', 'must_show', 'narration_text'))
+    text += ' ' + ' '.join(scene.get('alternative_stock_queries') or [])
+    text += ' ' + ' '.join(str(h.get('type')) for h in scene.get('owner_hints') or [])
+    return bool(HISTORIC.search(text) or re.search(r'(?<!\d)1[0-8]\d\d(?!\d)', text))
+
+
 def pause_message(label, category, retry, waited_out):
     """Plain Turkish: what happened, what was kept and when to try again."""
     kept = ' Tamamlanan yuvalar korundu, kalanlar “Bekliyor” durumunda; Medyayı Tamamla’ya tekrar basınca kaldığı yerden devam eder.'
@@ -1154,7 +1174,7 @@ def extract_frames(url, duration, limit=15_000_000):
     with tempfile.TemporaryDirectory() as folder:
         clip = Path(folder) / 'sample.mp4'
         try:
-            with httpx.Client(timeout=30, follow_redirects=False) as client, client.stream('GET', url) as response:
+            with httpx.Client(timeout=30, follow_redirects=False, headers={'User-Agent': USER_AGENT}) as client, client.stream('GET', url) as response:
                 if response.status_code != 200: return []
                 size = 0
                 with clip.open('wb') as out:
@@ -1202,7 +1222,7 @@ def _sleep(seconds, service):
 def fetch_thumbnail(url):
     """Small preview image from the provider CDN (no API key is sent)."""
     try:
-        with httpx.Client(timeout=httpx.Timeout(15, connect=8), follow_redirects=False) as client:
+        with httpx.Client(timeout=httpx.Timeout(15, connect=8), follow_redirects=False, headers={'User-Agent': USER_AGENT}) as client:
             response = client.get(url)
             if response.status_code != 200 or len(response.content) > 3_000_000: return None
             return response.content

@@ -153,10 +153,15 @@ class AI33Settings(KeySettings):
         return web_url(value)
 
 
+class OpenSourceSettings(BaseModel):
+    """A source that needs no key (Wikimedia Commons): nothing to save, only a test."""
+    model_config = ConfigDict(extra='forbid')
+
+
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
           "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings,
-          "claude": ClaudeSettings, "youtube": KeySettings}
-PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube")
+          "claude": ClaudeSettings, "youtube": KeySettings, "wikimedia": OpenSourceSettings}
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia")
 
 
 def stored_secrets(values):
@@ -238,10 +243,19 @@ class SettingsService:
                     configured = public['model_verified']
                 if name == "openai":
                     configured = configured and config['enabled'] and bool(public['model'])
+                if name == 'wikimedia':
+                    configured = True  # no key needed
+                if name == 'pexels':
+                    from app.stock.providers import PEXELS_ENABLED
+                    public['disabled'] = not PEXELS_ENABLED
                 if name == "claude":
                     public['models'] = [{'id': key, 'label': label} for key, label in CLAUDE_MODELS.items()]
                 status = "Hazır" if configured else "Yapılandırılmadı"
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
+                if name == 'wikimedia':
+                    message = 'Anahtar gerekmez; Medyayı Tamamla Wikimedia Commons’u kendiliğinden kullanır. İsterseniz Bağlantıyı Test Et ile kontrol edin.'
+                if name == 'pexels' and public.get('disabled'):
+                    status, message = 'Kullanılmıyor', 'Pexels şu an yeni anahtar vermediği için kapalı; medya Pixabay ve Wikimedia Commons’tan aranır. Anahtar alanı ileride kullanmak için duruyor.'
                 if name == "ai33":
                     from app.narration.provider import OpenSpeakerProvider
                     public.update(official_base_url=OFFICIAL_BASE,
@@ -262,7 +276,7 @@ class SettingsService:
                         status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result['images'] = self.image_view()
@@ -373,7 +387,7 @@ class SettingsService:
             return self._values()['youtube'].get('api_key', '')
 
     def stock_config(self, provider):
-        if provider not in ('pexels','pixabay','youtube'):
+        if provider not in ('pexels','pixabay','youtube','wikimedia'):
             raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
         with self.store.lock:
             return dict(self._values()[provider])

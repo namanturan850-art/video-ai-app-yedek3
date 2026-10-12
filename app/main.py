@@ -600,6 +600,14 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             try:outcome = sources.youtube_factory(config.get('api_key','')).test()
             except YouTubeDataError as error:outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test('youtube',config,outcome)}
+        if section == 'wikimedia':  # no key: one small image search against the official API
+            from app.stock.providers import make_stock_provider
+            try:
+                found = make_stock_provider('wikimedia', settings).search_images('roman forum')
+                outcome = {'status':'Hazır','message':f'Wikimedia Commons bağlantısı başarılı ({len(found)} ticari kullanıma uygun görsel bulundu).','category':'none'}
+            except StockError as error:
+                outcome = {'status':'Hata','message':str(error),'category':error.category}
+            return {'result':outcome,'settings':settings.record_stock_test('wikimedia',{},outcome)}
         if section in ('pexels','pixabay'):
             from app.stock.providers import make_stock_provider
             from datetime import datetime, timedelta, timezone

@@ -944,10 +944,10 @@ def summary(slots):
     missing = [s for s in slots if s not in filled]
     seconds = round(sum(used_seconds(s) for s in missing), 2)
     text = f'{len(filled)}/{len(slots)} yuva dolu · {videos} video · {images} görsel · {motion} motion grafik' + (f' · {cards} kart' if cards else '')
-    average = relevance_summary(filled)['relevance_average']
-    if average is not None: text += f' · ortalama alaka {average}/10'
     if merged: text += f' (bunların {merged} tanesi önceki çekimin devamı)'
     if missing: text += f' · {len(missing)} eksik ({seconds} sn)'
+    average = relevance_summary(filled)['relevance_average']
+    if average is not None: text += f' · ortalama alaka {average}/10'
     return {'total': len(slots), 'filled': len(filled), 'videos': videos, 'images': images, 'cards': cards, 'motion': motion, 'merged': merged,
             'motion_seconds': motion_seconds, 'motion_percent': round(100 * motion_seconds / total_seconds, 1),
             'missing': len(missing), 'missing_seconds': seconds, 'text': text,

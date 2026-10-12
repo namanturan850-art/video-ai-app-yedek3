@@ -407,7 +407,6 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         if view['current'] or view['job']:
             project['pipeline'][1].update(status=view['status'], message='Senaryoyu açıp inceleyebilir, düzenleyebilir ve onaylayabilirsiniz.' if settings.script_generation()
                                           else 'Metin kaydedildi. Düzenleyip yeni sürüm kaydedebilirsiniz.')
-        project['script_generation'] = settings.script_generation()
         scene_plan = production.view(project_id)['plan']
         if scene_plan:
             project['pipeline'][2].update(status='Plan hazır' if scene_plan['status']=='ready' else 'Eski plan / onay gerekli',

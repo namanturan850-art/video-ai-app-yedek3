@@ -268,7 +268,7 @@ class StockService:
         with self.projects.lock, closing(self.projects._connection()) as connection, connection:
             handoff = self._handoff(project_id);state = self._ensure(connection,handoff)
             self._stamp(state,payload);self._idle(connection,project_id)
-            if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds','motion'}:
+            if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds','motion','reason'}:
                 raise StockError('invalid_input','Medya işlemini kontrol edin.',422)
             action = payload.get('action')
             if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery','complete_media','reselect','to_motion','to_stock','motion_edit'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
@@ -289,6 +289,15 @@ class StockService:
                     scene=next(sc for sc in handoff['scenes'] if sc['scene_id']==slot['scene_id'])
                     try: progress['motion']=motion_validate(payload.get('motion'),scene['narration_text'],scene.get('entities',[]))
                     except MotionError: raise StockError('invalid_input','Motion bilgisini kontrol edin: sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmeli; liste 2–4, zaman çizelgesi 2–5 öğe.',422) from None
+                if action=='reselect' and slot.get('selected_media') and slot['selected_media'].get('provider') in ('pexels','pixabay'):
+                    # The owner rejected this pick: never offer it again in this project; the reason guides the next choice.
+                    reason=' '.join(str(payload.get('reason') or '').split())[:200]
+                    media=slot['selected_media']
+                    entry={'provider':media['provider'],'media_type':media['media_type'],'media_id':str(media['media_id']),'sha256':media.get('sha256'),
+                           'reason':reason,'slot_id':slot_id,'description':str(media.get('description',''))[:120],'at':now()}
+                    from app.stock.director_media import remember_rejection
+                    remember_rejection(self.projects,project_id,entry)  # project-wide, survives new scene plans
+                elif 'reason' in payload: raise StockError('invalid_input','Gerekçe yalnızca Yeniden seçtir ile gönderilir.',422)
                 if action=='search_videos' and (not slot['selected_media'] or slot['selected_media']['media_type']!='image'):
                     raise StockError('invalid_input','Videoyla değiştirmek için bir görsel yuvası seçin.',422)
                 if action=='select':

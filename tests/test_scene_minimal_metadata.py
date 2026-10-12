@@ -159,7 +159,10 @@ def test_minimal_qwen_or_gemini_native_response_creates_complete_persistent_plan
         sample=prompt.split('Shape example; use actual source subjects and IDs: ')[1]
         example=json.JSONDecoder().raw_decode(sample)[0]
         assert set(example['scenes'][0])==CORE_FIELDS
-        assert len(prompt.split('INPUT DATA')[0])<1700 and 'Return JSON only. Do not explain.' in prompt
+        # Compact prompt for small local models; Gemini/Claude get the rich shot brief.
+        assert 'Return JSON only. Do not explain.' in prompt
+        if provider=='ollama': assert len(prompt.split('INPUT DATA')[0])<1700 and 'must_not_show' not in prompt
+        else: assert 'must_not_show' in prompt and 'THREE tiers' in prompt
         scenes=[minimal([u['unit_id']]) for u in payload['narration_units']]
         for s in scenes:s.update(stock_query='  electric   car charging station. ',media_type='video')
         if search_hints:

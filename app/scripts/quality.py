@@ -17,8 +17,13 @@ KINDS = ('retention', 'hooks', 'alternatives', 'claims', 'visual')
 # Extra director guidance, only for Claude (the compact prompt limit protects
 # small local models; Claude has room for the full shot brief).
 CLAUDE_DIRECTOR_VISUAL = (
-    'DIRECTOR FIELDS for every scene: must_show (what must be visible on screen, concrete, English), '
-    'must_not_show (what would be wrong or misleading here, English), shot_count (integer 1-6: how many '
+    'Read each scene with the sentence before and after it and the main topic of the video. '
+    'DIRECTOR FIELDS for every scene: visual_intent and must_show = what must be visible on screen, concrete English: '
+    'object, place, action, period/era, setting, day or night (turn abstract ideas into something filmable, e.g. '
+    '"loneliness" -> "lone person on empty road at dusk"); must_not_show = comma-separated things that would be wrong '
+    'or misleading here, English (e.g. ancient Rome: modern cars, modern buildings, modern clothing; history/nature '
+    'documentaries: people talking to camera, office, logos, text, watermark); entities = the proper names (places, '
+    'people, events) of the scene, which get priority in search; shot_count (integer 1-6: how many '
     'different shots this scene needs; plan FEWER, LONGER shots when the subject is niche or rare in stock '
     'libraries such as isolated tribes, deep-sea creatures, black holes, specific historical events; more '
     'shots for common subjects such as cities, oceans, aircraft). Scene type via media_type: stock_video '
@@ -32,8 +37,8 @@ CLAUDE_DIRECTOR_VISUAL = (
     'list {"title": short, "items": 2-4 short items}. Every number, date, place and quote MUST appear in that '
     'scene narration; never invent facts. Give motion_graphic scenes shot_count 1. Aim for roughly 40% '
     'motion scenes over the whole video (60% stock footage), spread out, never three motion scenes in a row. stock_query and 2-3 alternative_stock_queries: English, concrete, filmable '
-    '(e.g. "airplane cockpit night", "ancient roman forum ruins"), each a DIFFERENT angle: specific, '
-    'synonym, and broader context.')
+    '(e.g. "airplane cockpit night", "ancient roman forum ruins") in THREE tiers: stock_query very specific, the first '
+    'alternative medium, the last alternative general.')
 RATINGS = ('Güçlü', 'Orta', 'Geliştirilebilir')
 CRITERIA = ('opening_10_30_seconds', 'hook', 'slow_sections', 'repetition', 'transitions', 'overload', 'pacing', 'section_length', 'curiosity', 'payoff', 'ending')
 
@@ -281,7 +286,9 @@ class QualityService:
         """One job-wide repair budget; persist consent/attempt before any extra call."""
         units=data['narration_units'];index=data['segment_index']
         instructions=self._instructions('visual').replace('"first supplied unit_id"',json.dumps(units[0]['unit_id']))
-        if job['provider']=='claude' or json.loads(job['input_json']).get('director'):instructions+=' '+CLAUDE_DIRECTOR_VISUAL
+        # Rich shot brief for the cloud engines (Gemini default, Claude when chosen);
+        # the compact prompt stays for small local models.
+        if job['provider'] in ('claude','gemini') or json.loads(job['input_json']).get('director'):instructions+=' '+CLAUDE_DIRECTOR_VISUAL
         instructions+=' Use the actual IDs in narration_units; the example shows the response shape, not the complete scene plan.'
         if single: instructions+=' Return EXACTLY ONE scene containing all supplied unit IDs.'
         def ask(payload, *, repair=False):

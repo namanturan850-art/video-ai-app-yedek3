@@ -288,3 +288,58 @@ class ScriptService:
         version_id = self.repository.create_version(project_id, payload['text'], current['provider'], current['model'],
             current['options'], current['content_type'], report, base_version=payload['base_version_id'], confirmed=payload.get('confirm_replace_approved', False))
         return {'version_id': version_id, 'message': 'Düzenleme yeni sürüm olarak kaydedildi. Önceki sürüm korundu.'}
+
+    # ---- “Metni yapıştır”: the owner's own text (no AI writing) ------------
+    def paste_preview(self, project_id, payload):
+        from app.scripts.paste import clean
+        project = self.projects.get(project_id)
+        raw = payload.get('text') if isinstance(payload, dict) else None
+        if not isinstance(raw, str) or len(raw) > 300000:
+            raise ScriptError('Metni düz yazı olarak yapıştırın (en fazla 300.000 karakter).')
+        result = clean(raw)
+        options = ScriptOptions(language=project['language']).model_dump()
+        metrics = duration_metrics(result['text'], project['target_duration_minutes'], options)
+        return {**result, 'word_count': metrics['word_count'], 'estimated_minutes': metrics['estimated_minutes'], 'spoken_rate': metrics['spoken_rate'],
+                'language': project['language']}
+
+    def paste(self, project_id, payload):
+        """Save the pasted text as a new, approved script version. The raw text
+        (with markers) and the markers are kept next to it; narration and
+        subtitles only ever get the cleaned text."""
+        if not isinstance(payload, dict) or set(payload) - {'text', 'confirm_replace_approved'} or type(payload.get('confirm_replace_approved', False)) is not bool:
+            raise ScriptError('Metni ve onay tercihini kontrol edin.')
+        preview = self.paste_preview(project_id, payload)
+        if not preview['text'].strip():
+            raise ScriptError('Seslendirilecek metin boş. Metninizi yapıştırın.')
+        SecretGuard(self.settings.secret_values()).validate(payload['text'])
+        project = self.projects.get(project_id)
+        options = ScriptOptions(language=project['language']).model_dump()
+        report = {'consistent': True, 'issues': repetition_warnings(preview['text']), 'source': 'owner_paste'}
+        version_id = self.repository.create_version(project_id, preview['text'], 'owner', 'paste', options, 'Kendi metnim', report,
+                                                    confirmed=payload.get('confirm_replace_approved', False))
+        self.repository._file(project_id, f'raw_{version_id}.txt', payload['text'])
+        self.repository._file(project_id, f'markers_{version_id}.json', json.dumps(preview['markers'], ensure_ascii=False))
+        self.repository.approve(project_id, version_id, True)  # the owner's own words: ready for narration
+        return {**self.paste_view(project_id), 'message': 'Metin kaydedildi ve seslendirmeye hazır. Önceki sürümler korundu.'}
+
+    def _version_file(self, project_id, name):
+        path = self.projects._path(project_id) / 'script' / name
+        try:
+            return path.read_text(encoding='utf-8') if path.is_file() else None
+        except OSError:
+            return None
+
+    def markers(self, project_id, version_id):
+        raw = self._version_file(project_id, f'markers_{version_id}.json')
+        try:
+            return json.loads(raw) if raw else []
+        except ValueError:
+            return []
+
+    def paste_view(self, project_id):
+        view = self.repository.view(project_id)
+        current = view['current']
+        if current:
+            current = {**current, 'raw_text': self._version_file(project_id, f'raw_{current["id"]}.txt') or current['text'],
+                       'markers': self.markers(project_id, current['id'])}
+        return {**view, 'current': current}

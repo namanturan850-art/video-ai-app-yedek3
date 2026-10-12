@@ -1,5 +1,6 @@
 /* AI director panel (Gemini free tier by default, Claude only if chosen) on the script page: purpose → script → approval → edit plan. */
-if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
+// AI script writing is behind a flag (default off): the paste screen (paste.js) is used instead.
+if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname) && document.body.dataset.scriptGeneration === '1') {
   const id = window.location.pathname.split('/')[2];
   const api = `/api/projects/${id}/director`;
   const root = document.querySelector('#script-content');

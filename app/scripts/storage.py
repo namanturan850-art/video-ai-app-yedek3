@@ -197,5 +197,5 @@ class ScriptRepository:
     def approved_current(self, project_id):
         current = self.view(project_id)['current']
         if not current or current['status'] != 'approved':
-            raise ScriptError('Geçerli senaryo henüz onaylanmadı. Önce Senaryo ekranından onaylayın.', 409)
+            raise ScriptError('Geçerli metin henüz onaylanmadı. Metin ekranında metninizi kaydedin.', 409)
         return current

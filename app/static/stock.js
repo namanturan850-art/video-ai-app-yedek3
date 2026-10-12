@@ -87,13 +87,21 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   function slotCard(slot){
     let card=node('article','','stock-slot');card.dataset.slotId=slot.slot_id;
     const media=slot.selected_media;
+    const score=media&&media.provider!=='generated'?slot.ai_review?.score:null;
+    if(Number.isFinite(score)&&score<9)card.classList.add('stock-slot-check');  // 7–8: worth a look first
     card.append(node('h4',`Medya ${slot.order}${slot.locked?' · Kilitli':''} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
     const stage=slot.director?.stage_label||(slot.locked&&media?'Kilitli (sizin seçiminiz)':media?(slot.ai_review?.approved?'Yapay zekâ onayladı':'Yapay zekâ onayı bekliyor — Medyayı Tamamla deyin'):'Boş — Medyayı Tamamla deyin');
     const stageLine=node('p',`Aşama: ${stage}`,'provider-status');stageLine.className+=' stock-stage';card.append(stageLine);
+    if(Number.isFinite(score)){const rel=node('p',`Alaka puanı: ${score}/10${score<9?' — önce buna bakın':''} · ${slot.ai_review.reason||''}`,'stock-relevance');card.append(rel);}
     if(slot.message)card.append(node('p',`Neden: ${slot.message}`));
     if(media&&!(media.provider==='generated'&&media.media_type==='video'))card.append(thumbnail(media));
     const top=node('div','','settings-actions');card.append(top);
-    button(top,'Yeniden seçtir',()=>{if(window.confirm('Bu yuva için yapay zekâ yeniden aday arar ve seçer. Uygun stok bulunamazsa motion grafik üretilir; yuva boş kalmaz. Devam edilsin mi?'))slotJob(slot,'reselect');},active()||slot.locked).className='stock-reselect';
+    button(top,'Yeniden seçtir',()=>{
+      const own=media&&media.provider!=='generated';
+      const reason=own?window.prompt('Bu medya neden uymadı? (isteğe bağlı — örn. “modern bina var”, “konu dışı”). Bu medya bu projede bir daha önerilmez.',''):'';
+      if(reason===null)return;
+      if(own||window.confirm('Bu yuva için yapay zekâ yeniden aday arar ve seçer. Uygun stok bulunamazsa motion grafik üretilir; yuva boş kalmaz. Devam edilsin mi?'))slotJob(slot,'reselect',own?{reason:reason.trim().slice(0,200)}:{});
+    },active()||slot.locked).className='stock-reselect';
     const isMotion=media?.provider==='generated'&&media?.media_type==='video';
     if(isMotion)button(top,'Stok videoyla değiştir',()=>slotJob(slot,'to_stock'),active()||slot.locked).className='stock-to-stock';
     else button(top,'Motion’a çevir',()=>slotJob(slot,'to_motion'),active()||slot.locked).className='stock-to-motion';

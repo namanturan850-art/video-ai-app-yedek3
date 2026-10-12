@@ -42,8 +42,11 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
           'motion_edit': 'Motion grafik (sizin düzenlemeniz)', 'motion_balance': 'Motion grafik (dengeli kurgu: %40 motion)'}
 MOTION_SHARE = .40      # owner's target: ~40% motion graphics, ~60% stock footage
-CANDIDATES = 5          # per AI look
-APPROVE_SCORE = 6       # 0-10
+CANDIDATES = 6          # at most this many candidates go to the AI per look (after a metadata pre-filter)
+APPROVE_SCORE = 7       # 0-10: only 7+ stock media is ever used
+SIMILAR_FRAMING = 6     # dHash bits: closer than this to the previous shot of the scene = same framing
+# Never-wanted signs in provider metadata (checked before the AI look).
+RED_FLAGS = {'watermark', 'watermarked', 'logo', 'logos', 'subscribe', 'intro', 'outro', 'template', 'lower third', 'green screen', 'chroma key'}
 MERGE_SECONDS = 1.5
 WAIT_BUDGET = 900       # seconds of rate-limit waiting per job (free tier)
 UNREACHABLE = 'Yapay zekâya ulaşılamadı'
@@ -63,6 +66,31 @@ REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['
                  'properties': {'replace': {'type': 'array', 'items': {
                      'type': 'object', 'additionalProperties': False, 'required': ['slot', 'reason'],
                      'properties': {'slot': {'type': 'integer'}, 'reason': {'type': 'string'}}}}}}
+
+
+def _rejected_path(projects, project_id):
+    folder = directory(projects, project_id)
+    if linked(folder): raise StockError('local_storage', 'Medya klasörü dış konuma bağlı; işlem durduruldu.', 409)
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / 'rejected.json'
+
+
+def rejected_media(projects, project_id):
+    """Stock picks the owner rejected with “Yeniden seçtir” (project-wide)."""
+    try:
+        path = _rejected_path(projects, project_id)
+        data = json.loads(path.read_text(encoding='utf-8')) if path.is_file() else []
+        return [r for r in data if isinstance(r, dict) and {'provider', 'media_type', 'media_id'} <= set(r)]
+    except (OSError, ValueError, StockError):
+        return []
+
+
+def remember_rejection(projects, project_id, entry):
+    current = [r for r in rejected_media(projects, project_id) if (r['provider'], r['media_type'], r['media_id']) != (entry['provider'], entry['media_type'], entry['media_id'])]
+    path = _rejected_path(projects, project_id)
+    temporary = path.with_name('.rejected-' + hashlib.sha256(path.as_posix().encode()).hexdigest()[:8])
+    temporary.write_text(json.dumps((current + [entry])[-200:], ensure_ascii=False), encoding='utf-8')
+    temporary.replace(path)
 
 
 def key(media):
@@ -135,6 +163,9 @@ class MediaDirector:
         self.progress = job['progress']
         self.ai, self.ai_error, self.waited = None, '', 0
         self.unavailable = dict(self.progress.get('unavailable_providers', {}))
+        self.rejected, self.rejected_keys, self.rejected_hashes = [], set(), set()
+        self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
+        self.scene_order, self.scene_text, self.topic = [], {}, ''
 
     # ---- AI engine---------------------------------------------------------
     def connect(self):
@@ -208,7 +239,17 @@ class MediaDirector:
 
     # ---- judging -----------------------------------------------------------
     def brief(self, slot, scene):
-        return (f'Narration of this shot (spoken language {scene.get("stock_query_language", "")}): '
+        index = self.scene_order.index(scene['scene_id']) if scene.get('scene_id') in self.scene_order else -1
+        before = self.scene_text.get(self.scene_order[index - 1], '') if index > 0 else ''
+        after = self.scene_text.get(self.scene_order[index + 1], '') if 0 <= index < len(self.scene_order) - 1 else ''
+        hints = '; '.join(f'{h.get("type")}: {h.get("value")}' for h in scene.get('owner_hints') or [])
+        owner = '; '.join(f'“{r.get("description", "")[:60]}” ({r.get("reason") or "neden yazılmadı"})' for r in self.rejected[-6:])
+        return (f'Video topic: {self.topic}\n'
+                f'Previous sentence: "{sentence_at(before, 1.0)}"\nNext sentence: "{sentence_at(after, 0.0)}"\n'
+                + (f'Proper names (priority): {", ".join(scene.get("entities") or [])}\n' if scene.get('entities') else '')
+                + (f'Owner’s own visual note (top priority): {hints}\n' if hints else '')
+                + (f'The owner REJECTED these earlier picks (avoid similar footage): {owner}\n' if owner else '') +
+                f'Narration of this shot (spoken language {scene.get("stock_query_language", "")}): '
                 f'"{sentence_at(scene.get("narration_text", ""), .5) if used_seconds(slot) < 6 else scene.get("narration_text", "")[:600]}"\n'
                 f'Scene narration: "{scene.get("narration_text", "")[:900]}"\n'
                 f'Visual goal: {slot.get("visual_goal") or scene.get("visual_intent", "")}\n'
@@ -216,11 +257,46 @@ class MediaDirector:
                 f'MUST NOT show: {scene.get("must_not_show") or "(not specified)"}\n'
                 f'Shot length: {used_seconds(slot):.1f} s. Mood: {scene.get("mood", "")}.')
 
+    def frames(self, media):
+        """Start/middle/end frames of a video candidate (one picture for an
+        image). Provider preview pictures first; a clip with fewer than three
+        gets them from its smallest rendition."""
+        blocks = [b for b in (self.thumbnail(u, media['provider']) for u in self.frame_urls(media)) if b]
+        sample = (media.get('source_metadata') or {}).get('sample_url')
+        if media['media_type'] == 'video' and len(blocks) < 3 and sample:
+            extra = self.sample_frames(media, sample)
+            if len(extra) >= len(blocks): blocks = extra
+        return blocks[:3]
+
+    def sample_frames(self, media, url):
+        try:
+            safe_url(url, media['provider'])
+            folder = directory(self.service.projects, self.pid) / 'thumbs'
+            if linked(folder): return []
+            folder.mkdir(exist_ok=True)
+            stem = hashlib.sha256(url.encode()).hexdigest()[:32]
+            paths = [folder / f'{stem}-f{i}.img' for i in range(3)]
+            if not all(p.is_file() for p in paths):
+                fetch = getattr(self.service, 'fetch_video_frames', None) or extract_frames
+                data = fetch(url, float(media.get('duration') or 0))
+                if len(data) < 3: return []
+                for path, item in zip(paths, data): path.write_bytes(item)
+            out = []
+            for path in paths:
+                data = shrink(path.read_bytes())
+                if data.startswith(b'\xff\xd8') or data.startswith(b'\x89PNG'):
+                    out.append({'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/png' if data.startswith(b'\x89PNG') else 'image/jpeg',
+                                                            'data': base64.b64encode(data).decode()}})
+            return out
+        except (StockError, OSError, ValueError):
+            return []
+
     def judge(self, slot, scene, pool):
-        """The AI looks at up to five candidates; returns verdicts by key."""
+        """The AI looks at up to six candidates (three frames each for video);
+        returns verdicts by key."""
         blocks, listed = [], []
         for index, media in enumerate(pool, 1):
-            frames = [b for b in (self.thumbnail(u, media['provider']) for u in self.frame_urls(media)) if b]
+            frames = self.frames(media)
             if not frames:
                 slot['director']['skipped_no_preview'] = slot['director'].get('skipped_no_preview', 0) + 1
                 continue
@@ -231,20 +307,24 @@ class MediaDirector:
             blocks.extend(frames)
             listed.append(index)
         if not listed: return {}
-        prompt = (self.brief(slot, scene) + '\n\nYou are choosing documentary B-roll for this shot. For EVERY candidate above, '
-                  'look at the frames and give score 0-10 for how well it shows what the narration says right now. '
-                  'approved=true only if it clearly fits the MUST-show note (if any), shows nothing from the MUST-NOT list, '
-                  'contains no visible logos/watermarks/readable on-screen text in another language, and would not mislead the viewer. '
-                  'Contextual footage (e.g. ocean for a ship disappearance) is fine when no literal footage exists; unrelated or '
-                  'generic-but-wrong footage is not. reason: ONE short sentence in Turkish for the channel owner. '
+        prompt = (self.brief(slot, scene) + '\n\nYou are choosing documentary B-roll for this shot. For EVERY candidate above '
+                  '(video candidates show their start, middle and end frames), give score 0-10 using these criteria: '
+                  '(1) does it show what the narration says right now (the visual goal / MUST show)? '
+                  '(2) do the period, place and setting fit (no modern things in historical scenes, right environment, day/night)? '
+                  '(3) is anything from the MUST-NOT list visible? (4) any text, watermark or logo on screen? (5) image quality. '
+                  'A score of 7 or more means a viewer would see exactly what is being said; unrelated, generic-but-wrong, '
+                  'anachronistic, watermarked or low-quality footage scores at most 4. approved=true only for 7+ with nothing from '
+                  'the MUST-NOT list. reason: ONE short sentence in Turkish for the channel owner. '
                   f'Candidates to rate: {listed}.')
         answer = self._ask('media_select', prompt, JUDGE_SCHEMA, blocks)
         verdicts = {}
         for item in (answer or {}).get('verdicts', []):
             index = item.get('candidate')
             if isinstance(index, int) and index in listed:
-                verdicts[key(pool[index - 1])] = {'score': max(0, min(10, int(item.get('score', 0)))),
-                                                  'approved': item.get('approved') is True,
+                try: score = max(0, min(10, round(float(item.get('score', 0)))))
+                except (TypeError, ValueError): score = 0
+                verdicts[key(pool[index - 1])] = {'score': score,
+                                                  'approved': item.get('approved') is not False and score >= APPROVE_SCORE,
                                                   'reason': ' '.join(str(item.get('reason', '')).split())[:300]}
         return verdicts
 
@@ -287,6 +367,12 @@ class MediaDirector:
                     entry.update(error='unexpected', error_text='beklenmeyen yanıt')
                     log['searches'].append(entry)
                     continue
+                if len(results) < 15:  # thin first page: one more page (cached the same way)
+                    try:
+                        more, _, _ = self.service._cache_search(self.pid, name, kind, query, page=2)
+                        results = list(results) + [m for m in more if key(m) not in {key(r) for r in results}]
+                    except Exception:
+                        pass
                 entry.update(results=len(results), cached=cached)
                 log['searches'].append(entry)
                 found.extend(results)
@@ -299,7 +385,21 @@ class MediaDirector:
         start = max(end for _, end in taken) + .5
         return round(start, 3) if start + need + .3 <= float(media.get('duration') or 0) else None
 
-    def pool(self, slot, results, log, exclude):
+    def prefilter(self, media, scene):
+        """Metadata check before any AI look: owner-rejected picks, watermark/
+        logo signs and anything from the scene's MUST-NOT list in the tags."""
+        if key(media) in self.rejected_keys or (media.get('sha256') and media['sha256'] in self.rejected_hashes):
+            return 'owner_rejected'
+        tags = ' ' + relevance.normalized(f'{media.get("description", "")} {media.get("query_used", "")}') + ' '
+        if any(f' {flag} ' in tags for flag in RED_FLAGS):
+            return 'watermark_or_logo'
+        for phrase in re.split(r'[,;/]| or | and ', relevance.normalized(scene.get('must_not_show') or '')):
+            words = [w for w in re.findall(r'[a-z0-9]+', phrase) if len(w) > 2 and w not in relevance.STOP and w not in ('any', 'modern', 'people')]
+            if words and all(f' {w} ' in tags or f' {w}s ' in tags for w in words[-2:]):
+                return 'must_not_show'
+        return None
+
+    def pool(self, slot, results, log, exclude, scene=None):
         need, seen, pool = used_seconds(slot), set(), []
         rejected = log.setdefault('rejected', {})
         for media in results:
@@ -309,55 +409,95 @@ class MediaDirector:
             reason = technical(media, need)
             if reason is None and self.segment(media, need) is None: reason = 'used_elsewhere'
             if reason is None and k in log['judged'] and not log['judged'][k]['approved']: reason = 'ai_rejected_before'
+            if reason is None: reason = self.prefilter(media, scene or {})
             if reason:
                 rejected[reason] = rejected.get(reason, 0) + 1
+                if reason in ('owner_rejected', 'watermark_or_logo', 'must_not_show') and k not in self.filtered_keys:
+                    self.filtered_keys.add(k); self.progress['irrelevant_filtered'] = len(self.filtered_keys) + self.progress.get('ai_rejected', 0)
                 continue
             pool.append(relevance.annotate(media, slot['relevance_profile'], 1, media.get('query_used', '')))
         pool.sort(key=lambda m: (m['width'] > m['height'], key(m) not in self.usage, relevance.rank(m, slot)), reverse=True)
         return pool
 
+    def look(self, media):
+        """(average colour, dHash) of the first preview frame, or None."""
+        if key(media) in self.looks: return self.looks[key(media)]
+        result = None
+        try:
+            from io import BytesIO
+            from PIL import Image
+            urls = self.frame_urls(media)
+            folder = directory(self.service.projects, self.pid) / 'thumbs'
+            path = folder / (hashlib.sha256(urls[0].encode()).hexdigest()[:32] + '.img') if urls else None
+            if path and path.is_file():
+                image = Image.open(BytesIO(path.read_bytes())).convert('RGB')
+                colour = image.resize((1, 1)).getpixel((0, 0))
+                grey = image.convert('L').resize((9, 8))
+                pixels = list(grey.tobytes())
+                bits = sum(1 << i for i in range(64) if pixels[(i // 8) * 9 + i % 8] > pixels[(i // 8) * 9 + i % 8 + 1])
+                result = (colour, bits)
+        except Exception:
+            result = None
+        self.looks[key(media)] = result
+        return result
+
+    def order(self, slot, candidates, verdicts):
+        """Best score first; within a scene prefer the same colour mood as the
+        previous shot and drop near-identical framing of it."""
+        previous = self.scene_last.get(slot['scene_id'])
+        prev_look = self.look(previous) if previous else None
+        ranked = []
+        for media in candidates:
+            here = self.look(media) if prev_look else None
+            distance = sum(abs(a - b) for a, b in zip(prev_look[0], here[0])) if prev_look and here else 0
+            textured = prev_look and here and all(8 <= bin(x[1]).count('1') <= 56 for x in (prev_look, here))  # flat sky/sea frames prove nothing
+            if textured and bin(prev_look[1] ^ here[1]).count('1') < SIMILAR_FRAMING and distance < 30:
+                verdicts[key(media)]['note'] = 'önceki çekimle neredeyse aynı kadraj'
+                continue
+            ranked.append((verdicts[key(media)]['score'], -distance // 60, media['width'] > media['height'], media))
+        return [m for *_, m in sorted(ranked, key=lambda r: r[:3], reverse=True)]
+
     def try_step(self, slot, scene, stage, kinds, queries, log, exclude):
+        """Queries are tiers (very specific → medium → general): each tier is
+        searched, pre-filtered and judged on its own; only when no candidate
+        reaches 7/10 does the next tier start."""
         step = {'stage': stage, 'label': STAGES[stage], 'queries': list(queries), 'judged': []}
         log['steps'].append(step)
         if not self.ai:
             step['result'] = 'ai_unavailable'
             return None
-        waiting = []
-        for index, query in enumerate(queries):
-            waiting.extend(self.search(slot, kinds, query, log))
-            pool = self.pool(slot, waiting, log, exclude)
+        for query in queries:
+            pool = self.pool(slot, self.search(slot, kinds, query, log), log, exclude, scene)
             # The AI already approved these for this scene (another slot):
             # reuse the verdict instead of paying for the same look again.
-            known = sorted((m for m in pool if log['judged'].get(key(m), {}).get('approved') and log['judged'][key(m)]['score'] >= APPROVE_SCORE),
-                           key=lambda m: (log['judged'][key(m)]['score'], m['width'] > m['height'], key(m) not in self.usage), reverse=True)
-            for media in known:
+            known = [m for m in pool if log['judged'].get(key(m), {}).get('approved') and log['judged'][key(m)]['score'] >= APPROVE_SCORE]
+            for media in self.order(slot, known, log['judged']):
                 chosen = self.take(slot, media, log['judged'][key(media)], stage, log)
                 if chosen:
                     step['judged'].append({'provider': media['provider'], 'media_type': media['media_type'], 'media_id': media['media_id'],
                                            'query': media.get('query_used'), **log['judged'][key(media)], 'reused_verdict': True})
                     return chosen
-            fresh = [m for m in pool if key(m) not in log['judged']]
-            if len(fresh) < CANDIDATES and index < len(queries) - 1:
+            fresh = [m for m in pool if key(m) not in log['judged']][:CANDIDATES]
+            if not fresh:
                 continue
-            pool = fresh[:CANDIDATES]
-            if not pool:
-                continue
-            self.progress['message'] = f'Yuva {slot["order"]} · {self.label} {len(pool)} adaya bakıyor'
+            self.progress['message'] = f'Yuva {slot["order"]} · {self.label} {len(fresh)} adaya bakıyor (“{query}”)'
             self.service._checkpoint(self.job, self.progress, light=True)
-            verdicts = self.judge(slot, scene, pool)
-            for media in pool:
+            verdicts = self.judge(slot, scene, fresh)
+            for media in fresh:
                 verdict = verdicts.get(key(media))
                 if verdict is None: continue
                 log['judged'][key(media)] = verdict
+                if not verdict['approved'] and key(media) not in self.ai_rejected_keys:
+                    self.ai_rejected_keys.add(key(media))
+                    self.progress['ai_rejected'] = len(self.ai_rejected_keys)
+                    self.progress['irrelevant_filtered'] = len(self.filtered_keys) + len(self.ai_rejected_keys)
                 step['judged'].append({'provider': media['provider'], 'media_type': media['media_type'], 'media_id': media['media_id'],
                                        'query': media.get('query_used'), 'width': media['width'], 'height': media['height'],
                                        'duration': media.get('duration'), **verdict})
-            approved = sorted((m for m in pool if verdicts.get(key(m), {}).get('approved') and verdicts[key(m)]['score'] >= APPROVE_SCORE),
-                              key=lambda m: (verdicts[key(m)]['score'], m['width'] > m['height']), reverse=True)
-            for media in approved:
+            approved = [m for m in fresh if verdicts.get(key(m), {}).get('approved') and verdicts[key(m)]['score'] >= APPROVE_SCORE]
+            for media in self.order(slot, approved, verdicts):
                 chosen = self.take(slot, media, verdicts[key(media)], stage, log)
                 if chosen: return chosen
-            waiting = [m for m in waiting if key(m) not in log['judged']]
             if not self.ai:
                 break
         step['result'] = step.get('result') or 'no_approved_candidate'
@@ -385,6 +525,7 @@ class MediaDirector:
         if segment is not None:
             slot['warnings'].append('Aynı uzun klibin başka bir bölümü kullanılıyor (çakışma yok).')
         log['steps'][-1]['result'] = 'chosen'
+        self.scene_last[slot['scene_id']] = media  # next shot of this scene: same mood, different framing
         return saved
 
     def register(self, slot_id, media, start, need):
@@ -581,6 +722,16 @@ class MediaDirector:
         for slot in self.slots:
             if slot['slot_id'] in actual: slot['actual_duration_hint'] = actual[slot['slot_id']]
         self.usage, self.media_by_key, self.memo, self.card_texts = {}, {}, {}, set()
+        self.rejected = rejected_media(service.projects, self.pid)
+        self.rejected_keys = {(r['provider'], r['media_type'], str(r['media_id'])) for r in self.rejected}
+        self.rejected_hashes = {r['sha256'] for r in self.rejected if r.get('sha256')}
+        self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
+        self.progress.setdefault('irrelevant_filtered', 0)
+        ordered_scenes = sorted(handoff['scenes'], key=lambda sc: sc.get('start_estimate', 0))
+        self.scene_order = [sc['scene_id'] for sc in ordered_scenes]
+        self.scene_text = {sc['scene_id']: sc.get('narration_text', '') for sc in ordered_scenes}
+        project = service.projects.get(self.pid)
+        self.topic = project.get('topic') or project.get('name', '')
         self.connect()
         single = job.get('slot_id')
         action = {'reselect': 'reselect', 'to_motion': 'to_motion', 'to_stock': 'to_stock', 'motion_edit': 'motion_edit'}.get(job['action'], 'reselect')
@@ -609,8 +760,8 @@ class MediaDirector:
             if single or slot['locked']: continue
             if is_generated(media):
                 if UNREACHABLE in slot.get('message', ''): targets.append((slot, 'retry_card'))
-            elif not (slot.get('ai_review') or {}).get('approved'):
-                targets.append((slot, 'unreviewed'))
+            elif not (slot.get('ai_review') or {}).get('approved') or (slot['ai_review'].get('score') or 0) < APPROVE_SCORE:
+                targets.append((slot, 'unreviewed'))  # below 7/10 is never kept
         total = max(1, len(targets))
         for done, (slot, why) in enumerate(targets):
             if service.closed: raise StockError('interrupted', 'İşlem durdu; tamamlanan yuvalar korundu. Medyayı Tamamla ile sürdürün.')
@@ -795,10 +946,56 @@ def summary(slots):
     text = f'{len(filled)}/{len(slots)} yuva dolu · {videos} video · {images} görsel · {motion} motion grafik' + (f' · {cards} kart' if cards else '')
     if merged: text += f' (bunların {merged} tanesi önceki çekimin devamı)'
     if missing: text += f' · {len(missing)} eksik ({seconds} sn)'
+    average = relevance_summary(filled)['relevance_average']
+    if average is not None: text += f' · ortalama alaka {average}/10'
     return {'total': len(slots), 'filled': len(filled), 'videos': videos, 'images': images, 'cards': cards, 'motion': motion, 'merged': merged,
             'motion_seconds': motion_seconds, 'motion_percent': round(100 * motion_seconds / total_seconds, 1),
             'missing': len(missing), 'missing_seconds': seconds, 'text': text,
-            'ai_approved': sum(bool((s.get('ai_review') or {}).get('approved')) for s in filled if not is_generated(s['selected_media']))}
+            'ai_approved': sum(bool((s.get('ai_review') or {}).get('approved')) for s in filled if not is_generated(s['selected_media'])),
+            **relevance_summary(filled)}
+
+
+def relevance_summary(filled):
+    """Average AI relevance (0-10) of the stock picks and the 7–8 slots worth a look first."""
+    scores = [(s['ai_review'] or {}).get('score') for s in filled if not is_generated(s['selected_media']) and not s.get('continuation_of') and s.get('ai_review')]
+    scores = [x for x in scores if isinstance(x, (int, float))]
+    low = [s['slot_id'] for s in filled if not is_generated(s['selected_media']) and isinstance((s.get('ai_review') or {}).get('score'), (int, float)) and s['ai_review']['score'] < 9]
+    return {'relevance_average': round(sum(scores) / len(scores), 1) if scores else None, 'relevance_low_slots': low}
+
+
+def extract_frames(url, duration, limit=15_000_000):
+    """Start/middle/end JPEG frames of a small preview rendition (temporary
+    download, deleted afterwards). [] when anything fails."""
+    import subprocess
+    import tempfile
+    from pathlib import Path
+    from app.rendering.tools import discover
+    ffmpeg = discover().get('ffmpeg')
+    if not ffmpeg: return []
+    with tempfile.TemporaryDirectory() as folder:
+        clip = Path(folder) / 'sample.mp4'
+        try:
+            with httpx.Client(timeout=30, follow_redirects=False) as client, client.stream('GET', url) as response:
+                if response.status_code != 200: return []
+                size = 0
+                with clip.open('wb') as out:
+                    for chunk in response.iter_bytes():
+                        size += len(chunk)
+                        if size > limit: return []
+                        out.write(chunk)
+        except (httpx.HTTPError, OSError):
+            return []
+        frames = []
+        length = duration if duration > 0 else 6
+        for i, at in enumerate((.1, .5, .9)):
+            target = Path(folder) / f'f{i}.jpg'
+            try:
+                subprocess.run([ffmpeg, '-v', 'error', '-y', '-ss', f'{length * at:.2f}', '-i', str(clip), '-frames:v', '1', '-vf', 'scale=640:-2', str(target)],
+                               capture_output=True, timeout=60, stdin=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                return []
+            if target.is_file(): frames.append(target.read_bytes())
+        return frames
 
 
 def shrink(data, width=640):

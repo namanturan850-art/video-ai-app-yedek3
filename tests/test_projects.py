@@ -72,7 +72,7 @@ def test_all_preferences_saved(client):
 @pytest.mark.parametrize('changes,field,text', [
     ({'name': ''}, 'name', 'Proje adı gerekli.'),
     ({'name': '   '}, 'name', 'Proje adı gerekli.'),
-    ({'topic': ''}, 'topic', 'Konu gerekli.'),
+    ({'name': '', 'topic': ''}, 'topic', 'Konu gerekli.'),  # an empty topic takes the title; both empty: error
     ({'content_style': ''}, 'content_style', 'stil gerekli.'),
     ({'name': 'a' * 121}, 'name', 'çok uzun'),
     ({'topic': 'a' * 5001}, 'topic', 'çok uzun'),

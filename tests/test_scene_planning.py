@@ -34,7 +34,7 @@ def generate(studio):
 def test_part5_requires_approved_script_exact_message_no_provider_request(studio):
     client,project,fake,_=studio
     response=client.post(route(project)+'/plan',json={'provider':'ollama','cost_confirmed':False,'confirm_replace_plan':False})
-    assert response.status_code==409 and response.json()['message']=='Önce senaryo sürümünü onaylayın.'
+    assert response.status_code==409 and response.json()['message']=='Önce metni kaydedip onaylayın (Metin ekranı).'
     assert not fake.calls and not view(studio)['approved_script']
     current=run(studio)['current']
     assert client.post(route(project)+'/plan',json={'provider':'ollama','cost_confirmed':False,'confirm_replace_plan':False}).status_code==409

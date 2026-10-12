@@ -178,7 +178,7 @@ class YouTubeService:
     def generate_text(self, pid):
         project = self.projects.get(pid)
         current = self.scripts.repository.view(pid)['current']
-        if not current: raise ProjectError('Önce senaryo oluşturun.', 409)
+        if not current: raise ProjectError('Önce Metin ekranında metninizi yapıştırıp kaydedin.', 409)
         engine, ai = self._ai()
         chapters = self.chapters(pid)
         channel = self.channels.for_project(pid)

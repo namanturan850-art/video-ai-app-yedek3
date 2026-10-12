@@ -54,7 +54,7 @@ class NarrationService:
 
     def _approved(self,pid):
         try:return self.scripts.repository.approved_current(pid)
-        except ScriptError:raise NarrationError('approval_required','Önce senaryo sürümünü onaylayın.',409) from None
+        except ScriptError:raise NarrationError('approval_required','Önce metni kaydedip onaylayın (Metin ekranı).',409) from None
 
     def _version(self,c,pid,vid):
         row=c.execute('SELECT * FROM narration_versions WHERE project_id=? AND id=?',(pid,vid)).fetchone()

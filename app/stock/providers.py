@@ -182,7 +182,11 @@ class PixabayStockProvider(APIStockProvider):
                      and urlsplit(f['url']).path.lower().endswith('.mp4')]
             chosen = rendition(files)
             preview, duration = chosen.get('thumbnail') or '', item['duration']
+            # Smallest rendition: the media judge reads start/middle/end frames from it
+            # (Pixabay documents only one thumbnail per video).
+            smallest = min(files, key=lambda f: f.get('width') or 10**6)['url'] if files else ''
         else:
+            smallest = ''
             max_side = 1920 if item.get('fullHDURL') else 1280
             factor = min(1, max_side/max(item['imageWidth'],item['imageHeight']))
             chosen = {'url':item.get('fullHDURL') or item['largeImageURL'],
@@ -193,7 +197,7 @@ class PixabayStockProvider(APIStockProvider):
             'creator_url':'https://pixabay.com/users/'+quote(item['user'],safe='')+'-'+str(item['user_id'])+'/',
             'width':chosen['width'],'height':chosen['height'],'duration':duration,'preview_url':preview,
             'download_url':chosen['url'],'query_used':query,'description':item['tags'],
-            'source_metadata':{'documentation_url':'https://pixabay.com/api/docs/',
+            'source_metadata':{'documentation_url':'https://pixabay.com/api/docs/',**({'sample_url':smallest} if smallest else {}),
                                **({'original_width':item['imageWidth'],'original_height':item['imageHeight']} if media_type=='image' else {})}})
 
 

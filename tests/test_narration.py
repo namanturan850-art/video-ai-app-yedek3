@@ -131,7 +131,7 @@ def test_no_approved_script_no_generation(studio):
     st=studio
     r=st[0].post(base(st)+'/jobs',json={'source_script_version_id':'none','voice_provider':'edge','voice_id':'fixture','cost_confirmed':True})
     assert r.status_code==409 and r.json()['category']=='approval_required'
-    assert r.json()['message']=='Önce senaryo sürümünü onaylayın.'
+    assert r.json()['message']=='Önce metni kaydedip onaylayın (Metin ekranı).'
 
 
 def test_cost_confirmation_required_and_api_key_no_sqlite_or_html(narration_studio):

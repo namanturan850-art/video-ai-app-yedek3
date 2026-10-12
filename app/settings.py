@@ -20,6 +20,9 @@ class StrictModel(BaseModel):
 
 class GeneralSettings(StrictModel):
     content_language: str = 'de'
+    # AI script writing (Senaryo oluştur, AI Yönetmen purpose/script, source
+    # analysis) is kept in the code but OFF: the owner pastes their own text.
+    script_generation: bool = False
     _language = field_validator('content_language')(validate_language)
 
 
@@ -355,6 +358,14 @@ class SettingsService:
     def secret_values(self) -> tuple[str, ...]:
         with self.store.lock:
             return stored_secrets(self._values())
+
+    def script_generation(self):
+        """Owner flag (default off). AVS_SCRIPT_GENERATION=1 also turns it on."""
+        import os
+        if os.environ.get('AVS_SCRIPT_GENERATION') == '1':
+            return True
+        with self.store.lock:
+            return bool(self._values()['general'].get('script_generation', False))
 
     def youtube_key(self):
         """Private YouTube Data API key ('' when not saved); never returned by a route."""

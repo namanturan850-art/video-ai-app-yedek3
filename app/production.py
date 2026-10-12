@@ -92,6 +92,8 @@ class VisualBlock(BaseModel):
     card_text: str = Field(default='',max_length=150)
     # Motion-graphic template (app/motion/templates.py) for motion_graphic scenes.
     motion_spec: dict | None = None
+    # Owner's own markers from the pasted text ([GÖRSEL]/[HARİTA]/[SAYI]).
+    owner_hints: list[dict] = Field(default_factory=list, max_length=10)
 
     @model_validator(mode='after')
     def semantic_queries(self):
@@ -578,7 +580,7 @@ class ProductionService:
         state = 'Plan hazır — çalıştırma daha sonra' if plan else 'Plan henüz hazırlanmadı'
         if plan and plan['status']!='ready': state='Plan eski veya senaryo onaysız. Yeni onaylı senaryodan plan hazırlayın.'
         warnings=production_checks(plan,current,project)
-        if not current or current['status']!='approved': warnings.insert(0,'Önce senaryo sürümünü onaylayın.')
+        if not current or current['status']!='approved': warnings.insert(0,'Önce metni kaydedip onaylayın (Metin ekranı).')
         return {'state': state, 'plan': plan, 'versions':versions, 'approved_script':bool(current and current['status']=='approved'),
                 'warnings':list(dict.fromkeys(warnings)), 'scene_warnings':scene_checks(plan['blocks'],current['text']) if plan and current else [],
                 'coverage_complete':bool(plan and current and plan['version_id']==current['id'] and coverage(plan['blocks'],current['text'])),
@@ -586,7 +588,7 @@ class ProductionService:
 
     def require_approved(self, project_id):
         current=self.repo.view(project_id)['current']
-        if not current or current['status']!='approved': raise ScriptError('Önce senaryo sürümünü onaylayın.',409)
+        if not current or current['status']!='approved': raise ScriptError('Önce metni kaydedip onaylayın (Metin ekranı).',409)
         return current
 
     def snapshot(self, project_id):
@@ -652,6 +654,10 @@ class ProductionService:
         existing = self.view(project_id)['plan']
         if existing and not confirmed: raise ScriptError('Mevcut görsel plan korunuyor. Yenisiyle değiştirmek için açık onay verin.', 409)
         if not coverage(blocks,current['text']): raise ScriptError('Sahne anlatımı onaylı senaryoyu tam ve aynı sırayla kapsamıyor.',422)
+        markers=getattr(self.scripts,'markers',None)
+        if markers:  # the owner's [GÖRSEL]/[HARİTA]/[SAYI] notes win over the AI's queries
+            from app.scripts.paste import apply_markers
+            blocks=apply_markers(blocks,markers(project_id,current['id']))
         image_config = self.scripts.settings.image_config()
         plan = {'version_id': current['id'], 'source_script_version':current['version'], 'language': language,
                 'provider':provider,'model':model,'status':'ready','width': image_config['width'], 'height': image_config['height'], 'blocks': deepcopy(blocks),
@@ -728,7 +734,7 @@ class ProductionService:
         block=self._scene(plan,scene_id)
         if block['locked']: raise ScriptError('Önce sahnenin kilidini açın.',409)
         allowed=set(VisualBlock.model_fields)-{'narration'}
-        if set(payload['changes'])-allowed: raise ScriptError('Anlatım burada değiştirilemez. Metin için Senaryo ekranını kullanın.')
+        if set(payload['changes'])-allowed: raise ScriptError('Anlatım burada değiştirilemez. Metni Metin ekranında düzenleyin.')
         try:
             visual=VisualBlock.model_validate({**{key:block[key] for key in VisualBlock.model_fields},**payload['changes']}).model_dump()
         except ValueError: raise ScriptError('Sahne alanlarını kontrol edin. Bir–beş farklı kısa stok alternatifi, kısa vurgu yazısı ve 0–100 önem puanı gerekli.') from None
@@ -807,7 +813,7 @@ class ProductionService:
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
                 'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
                 'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query','semantic_descriptor',
-                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec') if b.get(key)}} for b in plan['blocks']]}
+                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec','owner_hints') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

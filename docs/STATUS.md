@@ -1,5 +1,22 @@
 # AI Video Studio — Durum
 
+## 2026-10-12 — Metni yapıştır + güçlü medya alakası
+
+- **Senaryo yazımı ekrandan kalktı** (kod duruyor, bayrak varsayılan kapalı).
+  - Yeni proje yalnız başlık ve dil ister, ardından **Metni yapıştır** ekranı açılır.
+  - Ekran metni temizler, kelime sayısı ve dile göre süreyi gösterir (Almanca ~130 kelime/dk).
+  - Kayıt yeni ve onaylı bir sürüm olur.
+  - `[GÖRSEL]`, `[HARİTA]` ve `[SAYI]` işaretleri renkli görünür, okunmaz ve sahne planına aktarılır.
+- **Seslendirme ve altyazı** yapıştırılan metni kelimesi kelimesine kullanır; eski projeler ve sürümler açılır.
+- **Sahne planı** her sahne için şunları üretir: somut görsel tarif, “görünmemeli” listesi, 3 kademeli sorgu, özel isimler ve önceki/sonraki cümle bağlamı.
+- **Medya seçimi:**
+  - Video başına 3 kare değerlendirilir.
+  - Puan eşiği 7; altı asla kullanılmaz.
+  - Sorgular kademeli denenir; Gemini'ye en fazla 6 aday gider; metadata ile ön eleme yapılır.
+  - 2. sayfa taranır; sahne içinde ton uyumu gözetilir, benzer kadraj elenir.
+  - Reddedilen medya hatırlanır.
+- **Ekranda:** yuva başına puan ve gerekçe, ortalama alaka, 7–8 puanlılara sarı işaret. Ayrıntı: [PASTE_AND_RELEVANCE.md](PASTE_AND_RELEVANCE.md).
+
 ## 2026-10-12 — “Senaryo yazılamadı: JSON … eksik/geçersiz” düzeltmesi
 
 - Yapay zekânın senaryo planı/konsept cevabındaki küçük biçim kaymaları artık otomatik onarılıyor:

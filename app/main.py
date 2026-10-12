@@ -8,7 +8,7 @@ import logging
 import time
 
 from fastapi import Body, FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException
@@ -354,6 +354,18 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             return quality.resume(project_id, job_id, payload['confirm_replace_approved'],visual_repair_cost_confirmed=payload.get('visual_repair_cost_confirmed',False))
         return scripts.resume(project_id, job_id, payload['confirm_replace_approved'])
 
+    @application.get('/api/projects/{project_id}/script/paste')
+    def paste_view(project_id: str):
+        return scripts.paste_view(project_id)
+
+    @application.post('/api/projects/{project_id}/script/paste/preview')
+    def paste_preview(project_id: str, payload: dict):
+        return scripts.paste_preview(project_id, payload)
+
+    @application.post('/api/projects/{project_id}/script/paste', status_code=201)
+    def paste_script(project_id: str, payload: dict):
+        return scripts.paste(project_id, payload)
+
     @application.post('/api/projects/{project_id}/script/versions', status_code=201)
     def edit_script(project_id: str, payload: dict):
         return scripts.edit(project_id, payload)
@@ -378,6 +390,8 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.post("/api/projects", status_code=201)
     def create_project(payload: dict):
+        if isinstance(payload, dict) and not str(payload.get('topic', '')).strip() and str(payload.get('name', '')).strip():
+            payload = {**payload, 'topic': payload['name']}  # “Metni yapıştır” flow: title and language are enough
         return projects.create(payload)
 
     @application.get("/api/projects")
@@ -391,7 +405,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         if view['job'] and view['job']['progress'].get('blueprint'):
             project['pipeline'][0].update(status='Hazır', message='Konsept analizi Senaryo ekranında görüntülenebilir.')
         if view['current'] or view['job']:
-            project['pipeline'][1].update(status=view['status'], message='Senaryoyu açıp inceleyebilir, düzenleyebilir ve onaylayabilirsiniz.')
+            project['pipeline'][1].update(status=view['status'], message='Senaryoyu açıp inceleyebilir, düzenleyebilir ve onaylayabilirsiniz.' if settings.script_generation()
+                                          else 'Metin kaydedildi. Düzenleyip yeni sürüm kaydedebilirsiniz.')
+        project['script_generation'] = settings.script_generation()
         scene_plan = production.view(project_id)['plan']
         if scene_plan:
             project['pipeline'][2].update(status='Plan hazır' if scene_plan['status']=='ready' else 'Eski plan / onay gerekli',
@@ -712,7 +728,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/settings/ai-diagnostics')
     @application.get("/diagnostics")
     def page():
-        return FileResponse(STATIC / "index.html")
+        # The page knows whether AI script writing is on (default: off).
+        html = (STATIC / "index.html").read_text(encoding='utf-8')
+        flag = '1' if settings.script_generation() else '0'
+        return HTMLResponse(html.replace('<body>', f'<body data-script-generation="{flag}">', 1))
 
     return application
 

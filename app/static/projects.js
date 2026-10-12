@@ -153,15 +153,21 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     return card;
   }
 
+  // AI script writing is behind a flag (default off): projects start from the owner's own text.
+  const GEN = document.body.dataset.scriptGeneration === '1';
+
   if (window.location.pathname === '/new-project') {
     const form = make('form', '', 'settings-panel project-form');
     form.id = 'new-project-form'; form.noValidate = true;
-    field(form, 'name', 'Proje adı', 'text', '', {maxLength: 120, required: true});
+    field(form, 'name', GEN ? 'Proje adı' : 'Başlık', 'text', '', {maxLength: 120, required: true});
+    if (GEN) {
     field(form, 'topic', 'Konu', 'textarea', '', {maxLength: 5000, required: true});
     field(form, 'reference_url', "Referans YouTube URL’si (isteğe bağlı)", 'url', '', {maxLength: 2000});
     field(form, 'reference_transcript', 'Transkript (yapıştır, isteğe bağlı)', 'textarea', '', {maxLength: 60000});
     form.append(make('p', 'Referans video analiz edilir ama indirilmez: Gemini herkese açık linki okur (transkript yapıştırdıysanız o kullanılır), YouTube API anahtarınız varsa izlenme/beğeni sayıları ve en çok beğenilen yorumlar da okunur. Senaryo bu analizden yeni cümlelerle, hedef dilde yazılır; birebir çeviri yapılmaz. Link ve transkript boşsa senaryo yalnız konudan üretilir.', 'note'));
+    }
     field(form, 'language', 'Hedef Dil', 'select', 'de', {choices: [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']]});
+    if (GEN) {
     field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', 'gemini', {choices: [['gemini', 'Gemini (ücretsiz kota — önerilen)'], ['ollama', 'Ollama (yerel yedek)'], ['openai', 'OpenAI']]});
     field(form, 'target_duration_minutes', 'Hedef video süresi (dakika)', 'number', 5, {min: 1, max: 180});
     field(form, 'content_style', 'İçerik türü / stil', 'text', 'Otomatik', {maxLength: 120, required: true});
@@ -169,7 +175,8 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     field(form, 'max_scene_duration_seconds', 'Maksimum sahne süresi (saniye)', 'number', 8, {min: 1, max: 120});
     field(form, 'subtitles_enabled', 'Altyazı planlansın', 'checkbox', true);
     field(form, 'background_music_enabled', 'Arka plan müziği planlansın', 'checkbox', false);
-    form.append(make('p', 'Proje oluşturduktan sonra Senaryo aşamasını açabilirsiniz. Ses ve video üretimi daha sonra eklenecek.', 'note'));
+    }
+    form.append(make('p', GEN ? 'Proje oluşturduktan sonra Senaryo aşamasını açabilirsiniz.' : 'Proje oluşturduktan sonra “Metni yapıştır” ekranında kendi metninizi yapıştırın; ardından Seslendirme → Altyazı → Sahne planı → Medyayı Tamamla → Video.', 'note'));
     const submit = make('button', 'Proje Oluştur'); submit.type = 'submit';
     form.append(submit); container.append(form);
     form.addEventListener('submit', async event => {
@@ -183,7 +190,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       try {
         const project = await request('/api/projects', 'POST', data);
         if (transcript) await request(`/api/projects/${project.id}/source/transcript`, 'PUT', {transcript});
-        window.location.assign(`/projects/${project.id}`);
+        window.location.assign(GEN ? `/projects/${project.id}` : `/projects/${project.id}/script`);
       } catch (error) {
         feedback.textContent = error.message; errors(form, error.fields); busy(form, false);
         form.querySelector('[aria-invalid="true"]')?.focus();
@@ -203,7 +210,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         for (const project of data.projects) {
           const card = make('article', '', 'settings-panel project-card'); card.dataset.projectId = project.id;
           card.append(make('h2', project.name), make('p', project.topic, 'topic-preview'));
-          card.append(information([['Dil', project.language_label], ['Hedef süre', `${project.target_duration_minutes} dakika`], ['Durum', project.status_label], ...timestamps(project)]));
+          card.append(information([['Dil', project.language_label], ...(GEN ? [['Hedef süre', `${project.target_duration_minutes} dakika`]] : []), ['Durum', project.status_label], ...timestamps(project)]));
           const actions = make('div', '', 'settings-actions');
           const removeButton = make('button', 'Projeyi Sil', 'danger'); removeButton.type = 'button';
           removeButton.addEventListener('click', () => remove(project, removeButton, () => load(true)));
@@ -224,9 +231,9 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       document.querySelector('#page-title').textContent = project.name;
       document.title = `${project.name} · AI Video Studio`;
       detail.append(information([
-        ['Konu', project.topic], ['Referans YouTube URL’si', project.reference_url || 'Eklenmedi'],
-['Dil', project.language_label], ['Hedef video süresi', `${project.target_duration_minutes} dakika`],
-        ['Senaryo motoru', project.script_engine_label], ['İçerik türü / stil', project.content_style],
+        ...(GEN ? [['Konu', project.topic], ['Referans YouTube URL’si', project.reference_url || 'Eklenmedi']] : []),
+['Dil', project.language_label], ...(GEN ? [['Hedef video süresi', `${project.target_duration_minutes} dakika`]] : []),
+        ...(GEN ? [['Senaryo motoru', project.script_engine_label], ['İçerik türü / stil', project.content_style]] : []),
         ['Sahne süresi', `${project.min_scene_duration_seconds} – ${project.max_scene_duration_seconds} saniye`],
         ['Altyazı', project.subtitles_enabled ? 'Açık' : 'Kapalı'], ['Arka plan müziği', project.background_music_enabled ? 'Açık' : 'Kapalı'],
         ['Durum', project.status_label], ...timestamps(project)
@@ -236,22 +243,31 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       edit.append(make('summary', 'Proje bilgilerini düzenle'));
       const form = make('form'); form.id = 'edit-project-form'; form.noValidate = true;
       field(form, 'name', 'Proje adı', 'text', project.name, {maxLength: 120, required: true});
-      field(form, 'topic', 'Konu', 'textarea', project.topic, {maxLength: 5000, required: true});
-      field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', project.script_engine, {choices: [['gemini', 'Gemini (ücretsiz kota — önerilen)'], ['ollama', 'Ollama (yerel yedek)'], ['openai', 'OpenAI']]});
+      if (GEN) {
+        field(form, 'topic', 'Konu', 'textarea', project.topic, {maxLength: 5000, required: true});
+        field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', project.script_engine, {choices: [['gemini', 'Gemini (ücretsiz kota — önerilen)'], ['ollama', 'Ollama (yerel yedek)'], ['openai', 'OpenAI']]});
+      }
       const save = make('button', 'Bilgileri Kaydet'); save.type = 'submit'; form.append(save); edit.append(form); detail.append(edit);
       form.addEventListener('submit', async event => {
         event.preventDefault(); errors(form); busy(form, true); feedback.textContent = 'Proje bilgileri kaydediliyor…';
         try {
-          const updated = await request(`/api/projects/${id}`, 'PATCH', {name: form.elements.namedItem('name').value, topic: form.elements.namedItem('topic').value, script_engine: form.elements.namedItem('script_engine').value});
+          const changes = {name: form.elements.namedItem('name').value};
+          if (GEN) Object.assign(changes, {topic: form.elements.namedItem('topic').value, script_engine: form.elements.namedItem('script_engine').value});
+          const updated = await request(`/api/projects/${id}`, 'PATCH', changes);
           render(updated); feedback.textContent = 'Proje bilgileri kaydedildi.';
         } catch (error) { feedback.textContent = error.message; errors(form, error.fields); busy(form, false); }
       });
-      detail.append(sourceCard(project));
-      detail.append(make('h2', 'Üretim aşamaları'), make('p', 'Senaryo aşamasını açıp metninizi hazırlayabilirsiniz. Diğer üretim aşamaları daha sonra eklenecek.', 'note'));
+      if (GEN) detail.append(sourceCard(project));
+      detail.append(make('h2', 'Üretim aşamaları'), make('p', GEN ? 'Senaryo aşamasını açıp metninizi hazırlayabilirsiniz.' : 'Sıra: Metni yapıştır → Seslendirme → Altyazı → Sahne planı → Medyayı Tamamla → Video → YouTube.', 'note'));
       const pipeline = make('ol', '', 'pipeline'); pipeline.id = 'project-pipeline';
-      for (const stage of project.pipeline) {
-        const item = make('li'); item.append(make('h3', stage.name), make('span', stage.status, 'badge'), make('p', stage.message, 'note'));
-        if (stage.name === 'Senaryo') item.append(link('Senaryoyu Aç', `/projects/${id}/script`, 'action-link'));
+      // Owner's flow: Metin → Seslendirme → Altyazı → Sahne planı → Medya → Video.
+      const flow = ['Senaryo', 'Seslendirme', 'Altyazı', 'Sahne Planı', 'Stok Medya', 'Render'];
+      const stages = GEN ? project.pipeline : [...project.pipeline].sort((a, b) => flow.indexOf(a.name) - flow.indexOf(b.name));
+      for (const stage of stages) {
+        if (!GEN && (stage.name === 'Konsept' || stage.name === 'Metadata' || stage.name === 'Export')) continue;
+        const item = make('li'); item.append(make('h3', !GEN && stage.name === 'Senaryo' ? 'Metin' : stage.name), make('span', stage.status, 'badge'), make('p', stage.message, 'note'));
+        if (stage.name === 'Senaryo') item.append(link(GEN ? 'Senaryoyu Aç' : 'Metni Yapıştır', `/projects/${id}/script`, 'action-link'));
+        if (stage.name === 'Sahne Planı' || stage.name === 'Stok Medya') item.append(link(stage.name === 'Sahne Planı' ? 'Sahne Planını Aç' : 'Medyayı Tamamla', `/projects/${id}/production`, 'action-link'));
         if(stage.name==='Seslendirme')item.append(link('Seslendirmeyi Aç',`/projects/${id}/narration`,'action-link'));
         if(stage.name==='Render')item.append(link('Video Oluştur / Render',`/projects/${id}/render`,'action-link'));
         if(stage.name==='Altyazı')item.append(link('Altyazı ve Zamanlama',`/projects/${id}/subtitles`,'action-link'));

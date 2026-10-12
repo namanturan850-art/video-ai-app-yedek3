@@ -1,5 +1,6 @@
 /* Part 4: background jobs are polled locally; no browser-held provider credentials. */
-if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname)) {
+// AI script writing is behind a flag (default off): the paste screen (paste.js) is used instead.
+if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname) && document.body.dataset.scriptGeneration === '1') {
   const id = window.location.pathname.split('/')[2];
   const base = `/api/projects/${id}/script`;
   const root = document.querySelector('#script-content'); root.hidden = false;

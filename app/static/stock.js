@@ -135,7 +135,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   async function load(){
     if(loading)return;loading=true;
     try{state=await request(base);const job=state.job;
-      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pixabay&&!state.providers.wikimedia&&!state.providers.openmontage?'Ayarlar → Pixabay anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}`;
+      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pixabay&&!state.providers.wikimedia&&!state.providers.openmontage?'Ayarlar → Pixabay anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}${job?.status==='completed'&&job.progress?.local_reason&&state.media_summary?.unchecked?' ⚠ '+job.progress.local_reason:''}`;
       render();
     }catch(error){state=null;message.textContent=error.message;render();}
     finally{loading=false;clearTimeout(timer);if(['queued','running'].includes(state?.job?.status))timer=setTimeout(load,1200);}

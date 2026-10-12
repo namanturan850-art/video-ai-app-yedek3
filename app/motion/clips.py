@@ -84,6 +84,19 @@ def openmontage(scene, output, bridge, ffmpeg, folder):
         shutil.rmtree(public, ignore_errors=True)
 
 
+def with_pictures(spec, folder):
+    """İŞARETLE / ÖNCESONRA: the spec keeps picture file names (project stock
+    folder); drawing needs their full paths. Other templates are unchanged."""
+    if spec['template'] not in ('mark', 'beforeafter'): return spec
+    spec = {**spec, 'data': {**spec['data']}}
+    names = [spec['data'].get('image')] if spec['template'] == 'mark' else list(spec['data'].get('images') or [])
+    paths = [Path(folder) / Path(str(n)).name for n in names if n]
+    if not paths or not all(p.is_file() and not linked(p) for p in paths): raise RuntimeError('picture_missing')
+    if spec['template'] == 'mark': spec['data']['image_path'] = str(paths[0])
+    else: spec['data']['image_paths'] = [str(p) for p in paths]
+    return spec
+
+
 def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
@@ -91,12 +104,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     ffmpeg = ffmpeg or discover().get('ffmpeg')
     if not ffmpeg:
         raise RuntimeError('ffmpeg_missing')
-    if spec['template'] in ('mark', 'beforeafter'):  # pictures live in the project's stock folder (file names in the spec)
-        spec = {**spec, 'data': {**spec['data']}}
-        names = [spec['data'].get('image')] if spec['template'] == 'mark' else list(spec['data'].get('images') or [])
-        paths = [folder / Path(str(n)).name for n in names if n]
-        if not paths or not all(p.is_file() and not linked(p) for p in paths): raise RuntimeError('picture_missing')
-        spec['data']['image_path' if spec['template'] == 'mark' else 'image_paths'] = str(paths[0]) if spec['template'] == 'mark' else [str(p) for p in paths]
+    spec = with_pictures(spec, folder)
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
     target = folder / (scene_key(scene) + '.mp4')
     if target.is_file() and not linked(target) and target.stat().st_size > 0:

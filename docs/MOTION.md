@@ -19,6 +19,7 @@ Harita verisi: Natural Earth 1:110m kara poligonları (kamu malı).
 ## Nerede kullanılır?
 - **Yönetmen** (kurgu planı) motion grafiği yalnız sayı, tarih, yer, liste veya karşılaştırma geçen sahnelerde ister: en fazla ~%20 (en az %80 stok video). Yazı kartı (alıntı) son seçenektir.
 - **Metindeki işaretler** (`[HARİTA]`, `[SAYI]`, `[ÇİZELGE]`, `[KARŞILAŞTIR]`, `[LİSTE]`) doğrudan ilgili şablonu üretir.
+- **Dokuz işaret şablonu** (`app/motion/templates_extra.py`): `[ROTA]`, `[İMPARATORLUK]`, `[YAKINLAŞ]`, `[İŞARETLE]`, `[ÖNCESONRA]`, `[İKON]`, `[ORAN]`, `[HANEDAN]`, `[BİLGİ]`. Hepsi Tarzım renk/yazı tipleriyle **yerel çizimle** (Pillow + FFmpeg) üretilir; OpenMontage kullanılmaz. Ayrıntı: [PASTE_AND_RELEVANCE.md](PASTE_AND_RELEVANCE.md).
 - **Medyayı Tamamla**: işaretli ve planlanmış motion sahneleri önce çizilir. Diğer yuvalar motion'a yalnız onaylı stok bulunamazsa düşer; o zaman da önce sayı/harita/çizelge aranır, yazı kartı motion yuvalarının en fazla ~%30'u olur.
 - Motion oranı yuvaların %25'ini aşarsa ekranda uyarı çıkar. Eski “%40'a tamamlama” kaldırıldı.
 - **Sayılar yazıyla da tanınır**: “neunzehnhundertfünfundvierzig” = 1945, “vierzig Prozent” = %40 (Almanca; İngilizce, İspanyolca, Fransızca ve Türkçe temel düzeyde).

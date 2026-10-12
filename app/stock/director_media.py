@@ -1465,7 +1465,9 @@ class MediaDirector:
         service._checkpoint(job, self.progress, status='completed')
 
 
-TEMPLATE_WORDS = {'stat': 'sayı', 'map': 'harita', 'timeline': 'çizelge', 'compare': 'karşılaştırma', 'list': 'liste', 'quote': 'yazı'}
+TEMPLATE_WORDS = {'stat': 'sayı', 'map': 'harita', 'timeline': 'çizelge', 'compare': 'karşılaştırma', 'list': 'liste', 'quote': 'yazı',
+                  'route': 'rota', 'empire': 'imparatorluk', 'zoom': 'yakınlaşma', 'mark': 'işaretleme', 'beforeafter': 'önce/sonra',
+                  'icons': 'ikon', 'ratio': 'oran', 'dynasty': 'hanedan', 'fact': 'bilgi kartı'}
 
 
 MODERN = {'car', 'traffic', 'highway', 'smartphone', 'phone', 'laptop', 'computer', 'office', 'skyscraper', 'skyline', 'business', 'businessman',
@@ -1592,9 +1594,11 @@ def summary(slots):
         if model and not is_generated(s['selected_media']) and not s.get('continuation_of'): models[model] = models.get(model, 0) + 1
     if models:
         text += ' · seçen model' + ('ler' if len(models) > 1 else '') + ': ' + ', '.join(f'{m.removeprefix("gemini-")} ({n})' for m, n in sorted(models.items(), key=lambda kv: -kv[1]))
+    clip = [s for s in filled if (s.get('local_review') or {}).get('method') == 'clip' and not (s.get('ai_review') or {}).get('approved')]
+    if clip: text += f' · {len(clip)} yuva yerel görüntü modeliyle (CLIP) onaylandı'
     unchecked = [s['slot_id'] for s in filled if not is_generated(s['selected_media']) and not s.get('continuation_of')
-                 and not (s.get('ai_review') or {}).get('approved')]
-    if unchecked: text += f' · {len(unchecked)} yuva yapay zekâ onayı bekliyor'
+                 and not (s.get('ai_review') or {}).get('approved') and (s.get('local_review') or {}).get('method') != 'clip']
+    if unchecked: text += f' · {len(unchecked)} yuva yalnız etiket/kelimeyle seçildi'
     return {'unchecked': len(unchecked), 'unchecked_slots': unchecked,'total': len(slots), 'filled': len(filled), 'videos': videos, 'images': images, 'cards': cards, 'motion': motion, 'merged': merged,
             'motion_templates': templates, 'models': models, 'motion_slot_percent': round(100 * (motion + cards) / len(slots)) if slots else 0,
             'motion_seconds': motion_seconds, 'motion_percent': round(100 * motion_seconds / total_seconds, 1),

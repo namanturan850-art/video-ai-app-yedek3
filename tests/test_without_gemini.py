@@ -63,7 +63,7 @@ def test_gemini_always_busy_media_still_completes_locally_then_one_click_recheck
         assert summary['missing'] == 0 and summary['videos'] + summary['images'] > 0  # stock media, not an empty project
         local = stock_slots(view)
         assert local and all(s['local_review'] and s['needs_ai_review'] and not s.get('ai_review') for s in local)  # “yapay zekâ onayı yok”
-        assert summary['unchecked'] == len(local) and 'yapay zekâ onayı bekliyor' in summary['text']
+        assert summary['unchecked'] == len(local) and 'yalnız etiket/kelimeyle seçildi' in summary['text']
         assert 'Medya seçimi durmadı' in view['job']['progress']['message']
         # The chain moved down all three models (two 503s each → 15 min off), then the job went on locally.
         assert set(calls[before:]) == set(C.CHAIN)

@@ -37,17 +37,32 @@ def in_narration(value, narration):
     return clean(value, 300).casefold() in ' '.join(narration.split()).casefold()
 
 
-def validate(spec, narration, entities=()):
+def place_spoken(place, text, entities=()):
+    """The place (or another name of it, or one of its words) is spoken."""
+    from app.motion.places import lookup, spoken_places
+    if not place: return False
+    if in_narration(place, text) or place.casefold() in [str(e).casefold() for e in entities]: return True
+    found = lookup(place)
+    if found and any((lat, lon) == found[:2] for _, lat, lon in spoken_places(text)): return True
+    return any(len(w) >= 4 and re.search(r'(?<!\w)' + re.escape(w) + r'(?!\w)', text, re.I) for w in re.findall(r'[^\W\d_]+', place))
+
+
+def validate(spec, narration, entities=(), *, trusted=False):
     """Return a clean spec or raise MotionError. Numbers, dates, places and
-    quotes must be spoken in the narration — a template never invents facts."""
+    quotes must be spoken in the narration (digits or words, e.g.
+    “neunzehnhundertfünfundvierzig” = 1945) — a template never invents facts.
+    trusted=True: the owner's own marker in the text ([SAYI: …], [HARİTA: …]);
+    only the shape is checked."""
+    from app.motion.numbers import is_spoken
     if not isinstance(spec, dict) or spec.get('template') not in TEMPLATES or not isinstance(spec.get('data'), dict):
         raise MotionError('template')
     t, d = spec['template'], spec['data']
     text = ' '.join(narration.split())
-    spoken = lambda v: bool(v) and in_narration(v, text)
+    spoken = lambda v: trusted or (bool(v) and in_narration(v, text))
+    number = lambda v: bool(NUMBER.search(v)) and (trusted or is_spoken(NUMBER.search(v).group(2), text))
     if t == 'stat':
         value, label = clean(d.get('value'), 24), clean(d.get('label'), 70)
-        if not NUMBER.search(value) or not spoken(NUMBER.search(value).group(2)):
+        if not number(value):
             raise MotionError('stat value must be a number from the narration')
         data = {'value': value, 'label': label}
     elif t == 'map':
@@ -56,7 +71,7 @@ def validate(spec, narration, entities=()):
             lat, lon = float(d.get('lat')), float(d.get('lon'))
         except (TypeError, ValueError):
             raise MotionError('map coordinates') from None
-        if not (-85 <= lat <= 85 and -180 <= lon <= 180) or not (spoken(place) or place.casefold() in [str(e).casefold() for e in entities]):
+        if not (-85 <= lat <= 85 and -180 <= lon <= 180) or not place or not (trusted or place_spoken(place, text, entities)):
             raise MotionError('map place must be spoken')
         data = {'place': place, 'label': label, 'lat': round(lat, 3), 'lon': round(lon, 3)}
     elif t == 'quote':
@@ -71,7 +86,7 @@ def validate(spec, narration, entities=()):
         data = {'events': []}
         for e in events:
             date, label = clean((e or {}).get('date'), 20), clean((e or {}).get('label'), 50)
-            if not re.search(r'\d', date) or not spoken(date):
+            if not re.search(r'\d', date) or not (spoken(date) or all(is_spoken(n, text) for n in re.findall(r'\d+', date))):
                 raise MotionError('timeline dates must be spoken')
             data['events'].append({'date': date, 'label': label})
     elif t == 'compare':
@@ -81,7 +96,7 @@ def validate(spec, narration, entities=()):
         data = {'title': clean(d.get('title'), 60), 'items': []}
         for item in items:
             label, value = clean((item or {}).get('label'), 40), clean((item or {}).get('value'), 24)
-            if not label or (value and (not NUMBER.search(value) or not spoken(NUMBER.search(value).group(2)))):
+            if not label or (value and not number(value)):
                 raise MotionError('compare values must be spoken numbers')
             data['items'].append({'label': label, 'value': value})
         if len(data['items']) > 2 and not all(i['value'] for i in data['items']):
@@ -94,24 +109,66 @@ def validate(spec, narration, entities=()):
         if not all(data['items']):
             raise MotionError('empty list item')
     emphasis = clean(spec.get('emphasis'), 60)
-    if emphasis and not spoken(emphasis):
+    if emphasis and not in_narration(emphasis, text):
         emphasis = ''
     return {'template': t, 'data': data, 'emphasis': emphasis}
 
 
+PERCENT = re.compile(r'(?i)\b(prozent|percent|per cent|por ciento|pour cent|pourcent)\b')
+
+
+def short(sentence, limit=70):
+    """At most `limit` characters, cut at a word."""
+    if len(sentence) <= limit: return sentence
+    return sentence[:limit].rsplit(' ', 1)[0].rstrip(' ,;:') + ' …'
+
+
 def from_narration(sentence, entities=()):
-    """Deterministic last-resort motion from one narration sentence."""
+    """Deterministic motion from one narration sentence: a number (digits or
+    words) → counter, several years → timeline, a known place → map; a plain
+    text card only when nothing else is spoken."""
+    from app.motion.numbers import spoken_numbers
+    from app.motion.places import spoken_places
     sentence = ' '.join(sentence.split()).rstrip('.!?…')
+    years = list(dict.fromkeys(y for y in re.findall(r'(?<!\d)(1\d{3}|20\d{2})(?!\d)', sentence)))
+    if len(years) < 2:
+        years = list(dict.fromkeys(years + [str(n) for n in sorted(spoken_numbers(sentence)) if 1000 <= n <= 2100 and str(n) not in years]))
+    if 2 <= len(years) <= 5:
+        events = []
+        for year in years:
+            at = sentence.find(year)
+            after = []
+            for word in (sentence[at + len(year):].split() if at >= 0 else []):
+                if re.search(r'\d', word) or word.casefold() in ('bis', 'to', 'until', 'hasta', "jusqu'en", 'und', 'and', 've', 'y', 'et') or len(after) == 3: break
+                after.append(word)
+            events.append({'date': year, 'label': clean(' '.join(after).strip(' ,;:'), 50)})
+        return {'template': 'timeline', 'data': {'events': events}, 'emphasis': ''}
     match = NUMBER.search(sentence)
     if match:
         value = (match.group(1) + match.group(2) + match.group(3)).strip()
-        start = max(0, sentence.rfind(' ', 0, max(0, match.start() - 40)))
-        label = sentence[start:match.start()].strip(' ,;:') + ' … ' + sentence[match.end():match.end() + 40].strip(' ,;:')
-        return {'template': 'stat', 'data': {'value': value, 'label': clean(label.strip(' …'), 70)}, 'emphasis': match.group(2)}
+        return {'template': 'stat', 'data': {'value': value, 'label': short(sentence)}, 'emphasis': match.group(2)}
+    for word in sentence.split():
+        found = [n for n in spoken_numbers(word.strip(',.;:')) if n >= 2]
+        if found:
+            n = max(found)
+            percent = PERCENT.search(sentence[sentence.find(word):sentence.find(word) + len(word) + 14]) or 'yüzde ' + word.casefold() in sentence.casefold()
+            value = (f'%{n}' if 'yüzde' in sentence.casefold() else f'{n} %') if percent else str(n)
+            return {'template': 'stat', 'data': {'value': value, 'label': short(sentence)}, 'emphasis': word.strip(',.;:')}
+    places = spoken_places(sentence) or [p for e in entities for p in spoken_places(str(e)) if in_narration(p[0], sentence)]
+    if places:
+        name, lat, lon = places[0]
+        return {'template': 'map', 'data': {'place': name, 'label': '', 'lat': lat, 'lon': lon}, 'emphasis': name.split()[0]}
     tokens = sentence.split()
     text = ' '.join(tokens[:16])
     emphasis = max(tokens[:16], key=len) if tokens else ''
     return {'template': 'quote', 'data': {'text': text}, 'emphasis': emphasis.strip(',.;:')}
+
+
+def grouped(value, language='de'):
+    """'1000000' → '1.000.000' (en: '1,000,000'); anything else unchanged."""
+    m = re.fullmatch(r'(\D*?)(\d{5,})(\D*)', value.strip())
+    if not m: return value
+    return m.group(1) + f'{int(m.group(2)):,}'.replace(',', ',' if language == 'en' else '.') + m.group(3)
 
 
 def number_value(text):
@@ -214,6 +271,7 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
     s.add('rect', x=0, y=0, w=W, h=H, fill=s.bg, opacity=1)
     t, d = spec['template'], spec['data']
     if t == 'stat':
+        d = {**d, 'value': grouped(d['value'], language)}
         match = NUMBER.search(d['value'])
         size = 300 if len(d['value']) <= 6 else 220
         start = max(.15, E - max(1.2, md * 2))
@@ -231,7 +289,10 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
         span_from, span_to = 140., 46.
         s.add('map', {'zoom': [[0, 0], [E, 1]]}, lon=d['lon'], lat=d['lat'], span_from=span_from, span_to=span_to,
               land=mix(s.bg, s.primary, .28), coast=mix(s.bg, s.primary, .5), ocean=mix(s.bg, s.primary, .06))
-        cx, cy = W / 2, H / 2
+        # The pin sits on the place itself (near the poles the view stops at ±85°, so it is not always the centre).
+        left, top, span, height = map_view({'lon': d['lon'], 'lat': d['lat'], 'span_from': span_from, 'span_to': span_to}, 1)
+        cx, cy = W / 2, (top - d['lat']) / height * H
+        cy = min(max(cy, 120), H - 260)
         s.add('circle', {'r': [[E, 0], [E + 1.2, 140]], 'opacity': [[E, .55], [E + 1.2, 0]]}, cx=cx, cy=cy, r=0, fill='', stroke=s.accent, width=6, opacity=0)
         s.add('pin', {'dy': [[E - .45, -160], [E, 0]], 'opacity': [[E - .45, 0], [E - .3, 1]]}, x=cx, y=cy, size=46, fill=s.accent, hole=s.bg, opacity=0, dy=-160)
         label = d['place'] + (' · ' + d['label'] if d['label'] else '')
@@ -284,15 +345,17 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
             values = []
             for it in items:
                 values.append(number_value(it['value']))
-            top, gap = 260, min(150, 640 / len(items))
+            gap = min(150, 640 / len(items))
+            top = max(260, (H - len(items) * gap) / 2)
             biggest = max(values) or 1
+            room = min(1000, W - 640 - 24 - 100 - max(measure(grouped(it['value'], language), s.head, 46) for it in items))  # value never leaves the frame
             for i, (it, v) in enumerate(zip(items, values)):
                 y = top + i * gap
                 at = .3 + i * .15 if i != key else E - md
                 s.text(it['label'], 180, y + 30, 46, font=s.body, anchor='lm', start=.15 + i * .1, bold=False)
-                length = 1000 * v / biggest
+                length = room * v / biggest
                 s.add('rect', {'w': [[at, 0], [at + md if i != key else E, length]]}, x=640, y=y, w=0, h=60, fill=s.accent if i == key else s.primary, radius=10, opacity=1)
-                s.text(it['value'], 640 + length + 24, y + 30, 46, anchor='lm', start=(at + md) if i != key else E, fill=s.accent if i == key else s.fg)
+                s.text(grouped(it['value'], language), 640 + length + 24, y + 30, 46, anchor='lm', start=(at + md) if i != key else E, fill=s.accent if i == key else s.fg)
             s.sound('hit', E)
         else:  # versus
             a, b = items[0], items[1]

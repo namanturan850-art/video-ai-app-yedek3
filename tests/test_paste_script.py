@@ -97,7 +97,8 @@ def test_markers_steer_the_scene_plan_without_touching_words(studio):
     blocks = visual_blocks({'scenes': [base_scene(ids[:2]), base_scene(ids[2:])]}, current['text'], 'de', 130, units=units)
     plan = client.app.state.production.save_generated(p['id'], current['id'], 'de', blocks)
     first, second = plan['blocks']
-    assert first['stock_query'] == 'airplane cockpit at night' and first['owner_hints'] == [{'type': 'visual', 'value': 'airplane cockpit at night'}]
+    assert first['stock_query'] == 'airplane cockpit at night' and [{k: h[k] for k in ('type', 'value')} for h in first['owner_hints']] == [{'type': 'visual', 'value': 'airplane cockpit at night'}]
+    assert first['owner_hints'][0]['sentence'] == 'Im Dezember 1945 startete Flug 19 zu einem Übungsflug.'  # the graphic is timed to its sentence
     assert first['must_show'] == 'airplane cockpit at night'
     assert {h['type'] for h in second['owner_hints']} == {'map', 'number'} and 'Bermuda Triangle map' in second['alternative_stock_queries']
     assert ' '.join(b['narration'] for b in plan['blocks']).split() == CLEAN.split()  # words never change

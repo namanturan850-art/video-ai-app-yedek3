@@ -200,12 +200,17 @@ class StockService:
             bridge=getattr(self,'openmontage',None)
             public['providers']['openmontage']=bool(bridge and bridge.config().get('media_search') and bridge.status()['ready'])
             media = [s['selected_media'] for s in public['slots'] if s['status']=='complete' and s['selected_media']]
+            # Stock videos, stock images and generated motion/cards are counted apart (motion is never “video” here).
+            from app.stock.director_media import is_generated, MOTION_WARN, QUOTE_SHARE
+            generated=[m for m in media if is_generated(m)]
             public['media_mix'] = {'total_slots':len(public['slots']),
-                                   'selected_videos':sum(m['media_type']=='video' for m in media),
-                                   'selected_images':sum(m['media_type']=='image' and m['provider']!='generated' for m in media),
-                                   'generated_cards':sum(m['provider']=='generated' for m in media),
+                                   'selected_videos':sum(m['media_type']=='video' and not is_generated(m) for m in media),
+                                   'selected_images':sum(m['media_type']=='image' and not is_generated(m) for m in media),
+                                   'motion_graphics':sum(m['media_type']=='video' for m in generated),
+                                   'generated_cards':sum(m['media_type']=='image' for m in generated),
                                    'unresolved_slots':len(public['slots'])-len(media)}
             public['media_mix']['video_ratio_percent']=round(100*public['media_mix']['selected_videos']/len(media)) if media else 0
+            public['media_mix']['motion_ratio_percent']=round(100*len(generated)/len(media)) if media else 0
             public['media_mix']['video_target_range']=[80,95]
             from app.stock.recovery import report
             from app.stock.director_media import summary as media_summary
@@ -217,6 +222,11 @@ class StockService:
                 portrait_videos=sum(m['media_type']=='video' and m.get('width',1)<=m.get('height',0) for m in media),
                 unique_media_count=len({m.get('sha256') or identity(m) for m in media}),
                 short_pacing_version=state.get('short_pacing_version',0))
+            quotes=sum(((m.get('source_metadata') or {}).get('motion') or {}).get('template')=='quote' for m in generated if m['media_type']=='video')
+            if public['media_mix']['motion_graphics']>=4 and quotes>QUOTE_SHARE*public['media_mix']['motion_graphics']:
+                public['warnings'].append(f"Motion grafiklerin {quotes} tanesi yazı kartı: bu cümlelerde sayı, tarih veya yer geçmiyor ve uygun stok bulunamadı. İsterseniz metne [SAYI: …], [HARİTA: …], [LİSTE: …] işareti ekleyin veya yuvada “Stok videoyla değiştir” deyin.")
+            if len(media)>=4 and public['media_mix']['motion_ratio_percent']>MOTION_WARN:
+                public['warnings'].append(f"Yuvaların %{public['media_mix']['motion_ratio_percent']}'i motion grafik (hedef: en fazla %{MOTION_WARN}). Stok video az bulundu; Medyayı Tamamla'ya tekrar basın veya motion yuvalarında “Stok videoyla değiştir” deyin.")
             if len(media)>=3 and not public['media_mix']['selected_videos'] and any(s['preferred_type']=='stock_video' for s in public['slots']):
                 public['warnings'].append('Hiç stok video seçilmedi. Yalnız uygun görsel bulunduysa bu korunur; ilgisiz video oranı artırmak için seçilmez. Arama Tanısı bölümünü kontrol edin.')
             duplicates = sum(media_duplicate(m,media[:i]) for i,m in enumerate(media))
@@ -588,7 +598,7 @@ class StockService:
                     progress = job['progress'];progress['category']=category
                     progress = SecretGuard(self.settings.secret_values()).clean(progress)
                     state = self._load(connection,job['project_id'],job['plan_id'])
-                    if state and progress.get('slot_id'):
+                    if state and progress.get('slot_id') and category not in ('ai_paused','interrupted'):
                         failed = next((s for s in state['slots'] if s['slot_id']==progress['slot_id']),None)
                         if failed and not failed['selected_media'] and not failed['locked']:
                             failed.update(status='error',message=safe_message)

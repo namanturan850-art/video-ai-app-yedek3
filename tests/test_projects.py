@@ -150,7 +150,7 @@ def test_get_detail_pipeline_is_only_placeholders(client):
     response = client.get('/api/projects/' + project['id'])
     assert response.status_code == 200
     assert [stage['name'] for stage in response.json()['pipeline']] == list(STAGES)
-    assert all(stage['status'] == 'Bekliyor' and 'Hazır değil' in stage['message'] for stage in response.json()['pipeline'])
+    assert all(stage['status'] == 'Bekliyor' and stage['message'] == 'Henüz yapılmadı.' for stage in response.json()['pipeline'])
     assert client.get('/projects/' + project['id']).status_code == 200
 
 

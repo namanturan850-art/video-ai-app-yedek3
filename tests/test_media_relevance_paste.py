@@ -51,6 +51,7 @@ def pasted_text(data, words=390):
 
 def build(tmp_path, monkeypatch, key):
     monkeypatch.setattr('app.motion.clips.raster_render', T.fast_motion)
+    monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))  # synthetic two-provider library (Commons: test_wikimedia.py)
     data = T.TOPICS[key]
     world, director = World(key, data), T.Director(data)
     fake = T.FakeGemini(director)

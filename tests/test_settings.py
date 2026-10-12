@@ -30,8 +30,9 @@ def test_no_keys_required_and_no_vault_created(settings_client, tmp_path):
     assert response.headers['cache-control'] == 'no-store'
     data = response.json()
     for section in ('ollama', 'openai', 'pexels', 'pixabay', 'ai33'):
-        assert data[section]['status'] == 'Yapılandırılmadı'
+        assert data[section]['status'] == ('Kullanılmıyor' if section == 'pexels' else 'Yapılandırılmadı')  # Pexels is switched off
         assert not data[section]['has_api_key']
+    assert data['wikimedia']['status'] == 'Hazır'  # no key needed
     assert data['ollama']['base_url'] == 'http://127.0.0.1:11434'
     assert not data['openai']['enabled']
     assert data['youtube']['status'] == 'Yapılandırılmadı' and not data['youtube']['has_api_key']  # optional YouTube Data API key

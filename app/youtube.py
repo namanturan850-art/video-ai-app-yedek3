@@ -12,11 +12,11 @@ from uuid import uuid4
 
 from app.projects import ProjectError, linked, now
 
-LANG = {'de': {'chapters': 'Kapitel', 'credits': 'Stockmaterial', 'intro': 'Einleitung'},
-        'en': {'chapters': 'Chapters', 'credits': 'Stock footage', 'intro': 'Intro'},
-        'es': {'chapters': 'Capítulos', 'credits': 'Material de archivo', 'intro': 'Introducción'},
-        'fr': {'chapters': 'Chapitres', 'credits': 'Images d’archives', 'intro': 'Introduction'},
-        'tr': {'chapters': 'Bölümler', 'credits': 'Stok görüntüler', 'intro': 'Giriş'}}
+LANG = {'de': {'chapters': 'Kapitel', 'credits': 'Stockmaterial', 'intro': 'Einleitung', 'sources': 'Bildquellen'},
+        'en': {'chapters': 'Chapters', 'credits': 'Stock footage', 'intro': 'Intro', 'sources': 'Image sources'},
+        'es': {'chapters': 'Capítulos', 'credits': 'Material de archivo', 'intro': 'Introducción', 'sources': 'Fuentes de las imágenes'},
+        'fr': {'chapters': 'Chapitres', 'credits': 'Images d’archives', 'intro': 'Introduction', 'sources': 'Sources des images'},
+        'tr': {'chapters': 'Bölümler', 'credits': 'Stok görüntüler', 'intro': 'Giriş', 'sources': 'Görsel kaynakları'}}
 TEXT_SCHEMA = {'type': 'object', 'additionalProperties': False,
                'required': ['titles', 'hook', 'summary', 'tags', 'hashtags', 'chapter_titles'],
                'properties': {'titles': {'type': 'array', 'items': {'type': 'string'}}, 'hook': {'type': 'string'}, 'summary': {'type': 'string'},
@@ -146,11 +146,18 @@ class YouTubeService:
         seen, out = set(), []
         for slot in state['slots']:
             m = slot.get('selected_media') or {}
+            if m.get('provider') == 'wikimedia':  # CC BY / BY-SA need author, licence and link: one line per file
+                meta = m.get('source_metadata') or {}
+                key = ('wikimedia', m.get('media_id'))
+                if key in seen: continue
+                seen.add(key); out.append({'provider': 'Wikimedia Commons', 'creator': meta.get('author') or m.get('creator_name', ''),
+                                           'title': meta.get('title', ''), 'license': meta.get('license', ''), 'url': m.get('page_url', '')})
+                continue
             if m.get('provider') not in ('pexels', 'pixabay'): continue
             key = (m['provider'], m.get('creator_name', ''))
             if key in seen: continue
             seen.add(key); out.append({'provider': m['provider'].title(), 'creator': m.get('creator_name', ''), 'url': m.get('page_url', '')})
-        return out[:30]
+        return out[:40]
 
     def _ai(self):
         engine = self.settings.ai_engine()
@@ -264,9 +271,14 @@ class YouTubeService:
         parts = [hook.strip(), package.get('summary', '').strip()]
         if package.get('chapters'):
             parts.append(labels['chapters'] + ':\n' + '\n'.join(f'{stamp(c["start"])} {c["title"]}' for c in package['chapters']))
-        if package.get('credits'):
-            parts.append(labels['credits'] + ': ' + ', '.join(sorted({c['provider'] for c in package['credits']}))
-                         + '\n' + '\n'.join(f'{c["provider"]} — {c["creator"]}' for c in package['credits'] if c['creator']))
+        stock = [c for c in package.get('credits') or [] if not c.get('license')]
+        sources = [c for c in package.get('credits') or [] if c.get('license')]
+        if stock:
+            parts.append(labels['credits'] + ': ' + ', '.join(sorted({c['provider'] for c in stock}))
+                         + '\n' + '\n'.join(f'{c["provider"]} — {c["creator"]}' for c in stock if c['creator']))
+        if sources:  # “Görsel kaynakları”: title — author, licence (Wikimedia Commons) link
+            parts.append(labels['sources'] + ':\n' + '\n'.join(
+                f'{(c.get("title") or "")[:70]} — {c["creator"][:60]}, {c["license"]} ({c["provider"]}) {c["url"]}' for c in sources[:25]))
         if package.get('hashtags'):
             parts.append(' '.join(package['hashtags']))
         return '\n\n'.join(p for p in parts if p)[:5000]

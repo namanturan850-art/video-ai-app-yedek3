@@ -1,5 +1,17 @@
 # AI Video Studio — Durum
 
+## 2026-10-12 — Wikimedia Commons kaynağı, Pexels kapalı
+
+- **Pexels kapalı:** yeni anahtar verilmediği için aramalarda kullanılmıyor. Anahtar alanı duruyor; boşsa uyarı çıkmıyor. Kodda tek satırla yeniden açılabilir.
+- **Wikimedia Commons eklendi** (anahtarsız, resmî MediaWiki API):
+  - fotoğraf, kabartma, harita ve gravür; varsa video da (WebM indirilip ilk 60 sn MP4'e çevrilir);
+  - yalnız Public Domain, CC0, CC BY ve CC BY-SA kullanılır; NC/ND ve belirsiz lisanslar elenir;
+  - yazar, lisans ve kaynak bağlantısı kaydedilir ve YouTube açıklamasına “Görsel kaynakları” olarak eklenir;
+  - tarih/arkeoloji/müze/harita sahnelerinde önce Commons aranır;
+  - Commons adayları diğer kaynaklarla aynı alaka kontrolünden geçer (7/10).
+- **Ayarlar:** “Wikimedia Commons” bölümünde Bağlantıyı Test Et düğmesi var. Ayrıntı: [WIKIMEDIA_COMMONS.md](WIKIMEDIA_COMMONS.md).
+- **Not:** canlı API bu geliştirme ortamından denenemedi (ağ kapalı). Testler belgelenmiş yanıt biçimini taklit eder.
+
 ## 2026-10-12 — Gemini yedek model zinciri
 
 - **Bir modelin günlük kotası dolarsa iş durmaz;** aynı istek sıradaki modele gider. Sahne planı, Medyayı Tamamla ve diğer tüm Gemini işlerinde çalışır.

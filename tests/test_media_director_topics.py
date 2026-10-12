@@ -332,6 +332,9 @@ def fast_motion(scene, output, ffmpeg):
 
 def build(tmp_path, monkeypatch, key, engine='gemini'):
     monkeypatch.setattr('app.motion.clips.raster_render', fast_motion)
+    # These tests exercise the choosing logic on a synthetic two-provider library;
+    # Commons and the Pexels switch have their own tests (test_wikimedia.py).
+    monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))
     data = TOPICS[key]
     world, claude = World(key, data), Director(data)
     if engine == 'claude':

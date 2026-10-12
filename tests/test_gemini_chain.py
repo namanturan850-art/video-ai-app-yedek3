@@ -37,6 +37,7 @@ def build(tmp_path, monkeypatch, key='rome'):
     """A pasted-text project whose Gemini answers per model: `world.dead`
     models answer with the daily-quota 429, `world.minute` with a minute limit."""
     monkeypatch.setattr('app.motion.clips.raster_render', T.fast_motion)
+    monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))  # synthetic two-provider library
     data = T.TOPICS[key]
     world, director = R.World(key, data), T.Director(data)
     fake = T.FakeGemini(director)

@@ -196,7 +196,9 @@ class StockService:
             rows = connection.execute('SELECT * FROM stock_jobs WHERE project_id=? AND plan_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1',
                                       (project_id,handoff['plan_id'])).fetchone()
             public['job'] = self._job(rows)
-            public['providers'] = {name:bool(self.settings.stock_config(name).get('api_key')) for name in ('pexels','pixabay')}
+            from app.stock.providers import PEXELS_ENABLED
+            public['providers'] = {'pexels':PEXELS_ENABLED and bool(self.settings.stock_config('pexels').get('api_key')),
+                                   'pixabay':bool(self.settings.stock_config('pixabay').get('api_key')),'wikimedia':True}  # Commons needs no key
             bridge=getattr(self,'openmontage',None)
             public['providers']['openmontage']=bool(bridge and bridge.config().get('media_search') and bridge.status()['ready'])
             media = [s['selected_media'] for s in public['slots'] if s['status']=='complete' and s['selected_media']]

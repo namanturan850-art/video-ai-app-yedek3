@@ -29,7 +29,7 @@ def test_new_project_engine_is_gemini(client):
 
 def test_script_screen_defaults_to_gemini_even_for_old_ollama_projects(client):
     old = client.post('/api/projects', json={'name': 'Eski', 'topic': 'Rom', 'script_engine': 'ollama'}).json()
-    assert client.get(f'/api/projects/{old["id"]}/script').json()['default_provider'] == 'ollama'  # nothing configured: keep
+    assert client.get(f'/api/projects/{old["id"]}/script').json()['default_provider'] == 'gemini'  # never Ollama by itself; the plan screen asks
     gemini(client)
     view = client.get(f'/api/projects/{old["id"]}/script').json()
     assert view['default_provider'] == 'gemini' and view['director']['engine'] == 'gemini' and not view['director']['engine_paid']

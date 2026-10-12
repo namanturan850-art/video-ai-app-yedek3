@@ -31,6 +31,7 @@ import httpx
 from app.ai_usage import CURRENT_PROJECT
 from app.projects import linked, now
 from app.providers.base import ScriptProviderError
+from app.providers.gemini_chain import MAX_MODELS
 from app.stock import relevance
 from app.stock.cards import render_card
 from app.stock.download import USER_AGENT, asset_path, directory, safe_url
@@ -38,6 +39,11 @@ from app.stock.identities import identity_keys
 from app.stock.models import StockError
 
 LOG = logging.getLogger('uvicorn.error.stock')
+
+
+def clock():  # replaced in tests
+    import time
+    return time.monotonic()
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
@@ -48,12 +54,18 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
 MOTION_WARN = 25        # % of slots: above this the screen warns (too little stock footage)
 QUOTE_SHARE = .30       # at most this share of motion slots may be a plain text (quote) card
 CANDIDATES = 4          # at most this many candidates per slot go to the AI (after a metadata pre-filter)
+IMAGES_PER_REQUEST = 4  # pictures per AI request (each ≤512 px JPEG); one after a batch got “server busy”
 APPROVE_SCORE = 7       # 0-10: only 7+ stock media is ever used
+CLIP_APPROVE = 7        # local picture model (CLIP) score that approves a candidate by itself
+CLIP_MIN = 4            # below this CLIP score a candidate is dropped (dog / office / modern city …)
 SIMILAR_FRAMING = 6     # dHash bits: closer than this to the previous shot of the scene = same framing
 # Never-wanted signs in provider metadata (checked before the AI look).
 RED_FLAGS = {'watermark', 'watermarked', 'logo', 'logos', 'subscribe', 'intro', 'outro', 'template', 'lower third', 'green screen', 'chroma key'}
 MERGE_SECONDS = 1.5
-WAIT_BUDGET = 180       # seconds of waiting for a busy AI per job; then the job continues with local scoring
+WAIT_BUDGET = 60        # seconds of rate-limit pauses per job; then the job continues with local scoring
+FIRST_ANSWER_SECONDS = 60  # no AI answer at all within this time → the whole job continues locally
+REQUEST_SECONDS = 60    # later: one request may take this long, then that look is skipped
+PROGRESS_TICK = 2       # seconds between “model X, N s left” screen updates
 UNREACHABLE = 'Yapay zekâya ulaşılamadı'  # older motion picks made while the AI was down carry this; they are retried
 REVIEW_MAX = 8
 # Temporary AI problems: wait and ask again (never switch the engine off).
@@ -74,6 +86,7 @@ JUDGE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['v
                     'type': 'object', 'additionalProperties': False, 'required': ['candidate', 'score', 'approved', 'reason'],
                     'properties': {'candidate': {'type': 'integer'}, 'score': {'type': 'integer'},
                                    'approved': {'type': 'boolean'}, 'reason': {'type': 'string'}}}}}}
+PROBE_SCHEMA = {'type': 'object', 'required': ['ok'], 'properties': {'ok': {'type': 'boolean'}}}
 PLACE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['found', 'lat', 'lon'],
                 'properties': {'found': {'type': 'boolean'}, 'lat': {'type': 'number'}, 'lon': {'type': 'number'}}}
 INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list')
@@ -108,6 +121,26 @@ def remember_rejection(projects, project_id, entry):
     temporary = path.with_name('.rejected-' + hashlib.sha256(path.as_posix().encode()).hexdigest()[:8])
     temporary.write_text(json.dumps((current + [entry])[-200:], ensure_ascii=False), encoding='utf-8')
     temporary.replace(path)
+
+
+def key_text(media):
+    return f'{media["provider"]}:{media["media_type"]}:{media["media_id"]}'
+
+
+def clip_descriptor(slot, scene, language='de'):
+    """English description for the picture model: the owner's [GÖRSEL] note,
+    the slot's planned query and the sentence's filmable words."""
+    from app.scripts.query_clean import english_query
+    hints = [h.get('value', '') for h in scene.get('owner_hints') or [] if h.get('type') == 'visual']
+    narration = sentence_at(scene.get('narration_text', ''), .5) if used_seconds(slot) < 6 else scene.get('narration_text', '')[:400]
+    parts = [english_query(h, language, limit=6) for h in hints]
+    parts += [english_query(q, language, limit=5) for q in (slot.get('search_query'), scene.get('primary_stock_query')) if q]
+    parts.append(english_query(narration, language, strict=True, limit=6))
+    seen, words = set(), []
+    for part in parts:
+        for word in part.split():
+            if word.casefold() not in seen: seen.add(word.casefold()); words.append(word)
+    return ('a photo of ' + ' '.join(words[:16])) if words else 'a documentary photo'
 
 
 def key(media):
@@ -180,20 +213,27 @@ class MediaDirector:
         self.progress = job['progress']
         self.ai, self.ai_error, self.waited, self.unusable = None, '', 0, 0
         self.local, self.requests = False, 0
+        self.answered, self.ai_waited, self.skipped_looks, self.last_error, self.single = False, 0.0, 0, None, False
+        self.clip = None
         self.unavailable = dict(self.progress.get('unavailable_providers', {}))
         self.rejected, self.rejected_keys, self.rejected_hashes = [], set(), set()
         self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
-        self.scene_order, self.scene_text, self.topic, self.owner = [], {}, '', {}
+        self.scene_order, self.scene_text, self.topic, self.owner, self.language = [], {}, '', {}, 'de'
 
     # ---- AI engine---------------------------------------------------------
     def connect(self):
         """The AI look is optional: switched off in Settings, no engine, or the
         engine cannot be reached → local scoring (tags/words), never a stop."""
         settings = self.service.settings
+        from app.stock.clip_check import MISSING, ClipCheck
+        self.clip = ClipCheck(self.service)
+        self.progress['clip_ready'] = self.clip.ready()
+        if not self.progress['clip_ready']: self.progress['clip_warning'] = MISSING
+        else: self.progress.pop('clip_warning', None)
         engine = settings.ai_engine()
         self.engine = engine or 'gemini'
         self.label = 'Claude' if engine == 'claude' else 'Gemini'
-        if not getattr(settings, 'ai_visual_check', lambda: True)():
+        if not getattr(settings, 'ai_visual_check', lambda: False)():
             return self._go_local(None, 'off')
         if not engine:
             return self._go_local(None, 'no_engine')
@@ -216,45 +256,120 @@ class MediaDirector:
             category = getattr(error, 'category', '') or 'provider_error'
             self.ai_error = str(error)
             self.progress['ai_failure'] = {'category': category, 'message': str(error)[:300], 'upstream_status': getattr(error, 'upstream_status', None),
-                                           'stage': getattr(error, 'stage', ''), 'waited_seconds': self.waited, 'at': now(),
+                                           'stage': getattr(error, 'stage', ''), 'waited_seconds': round(self.waited + self.ai_waited), 'at': now(),
                                            'slot_id': self.progress.get('slot_id')}
             why = 'down'
             self.progress['local_reason'] = local_message(self.label, category, int(getattr(error, 'retry_after', 0) or 0), getattr(error, 'chain_models', None))
         else:
-            self.progress['local_reason'] = {'off': 'Yapay zekâ görsel kontrolü Ayarlar’da kapalı; medya yerel kelime eşleşmesiyle seçildi.',
+            self.progress['local_reason'] = {'off': ('Gemini görsel kontrolü kapalı (varsayılan); adaylar yerel görüntü modeli (CLIP) ve etiket/kelime eşleşmesiyle seçildi.'
+                                                     if self.clip and self.clip.ready() else
+                                                     'Gemini görsel kontrolü kapalı (varsayılan); adaylar etiket/kelime eşleşmesiyle seçildi.'),
                                              'no_engine': 'Yapay zekâ ayarlı değil; medya yerel kelime eşleşmesiyle seçildi.'}[why]
         self.progress['local_mode'] = why
         return None
 
     def _ask(self, purpose, prompt, schema, images=(), max_tokens=2000):
+        """One AI request with a hard deadline. Until the engine has answered
+        once, all waiting together may take FIRST_ANSWER_SECONDS (then the
+        whole job continues locally); later, one request may take
+        REQUEST_SECONDS (then that look is skipped; twice in a row → local)."""
         if self.local or not self.ai: return None
-        for attempt in range(4):
-            try:
-                self.requests += 1
-                self.progress['ai_requests'] = self.requests
-                answer = self.ai.complete_json(purpose, prompt, schema, images=list(images), effort='low', max_tokens=max_tokens)
-                self.unusable = 0
+        self.last_error = None
+        for attempt in range(3):
+            limit = REQUEST_SECONDS if self.answered else FIRST_ANSWER_SECONDS - self.ai_waited
+            if limit <= 0:
+                return self._timed_out(limit)
+            self.requests += 1
+            self.progress['ai_requests'] = self.requests
+            started = clock()
+            done, answer, error = self._call_ai(purpose, prompt, schema, images, max_tokens, limit)
+            spent = clock() - started
+            if not done:  # no answer before the deadline: never wait longer
+                self.ai_waited += spent
+                return self._timed_out(limit)
+            if error is None:
+                self.unusable, self.skipped_looks, self.answered = 0, 0, True
+                self.progress.pop('ai_trying', None)
                 return answer
-            except ScriptProviderError as error:
-                category = getattr(error, 'category', '')
-                if category in UNUSABLE:
-                    # This one answer is unusable; the engine itself still works.
-                    self.unusable += 1
-                    if self.unusable >= UNUSABLE_LIMIT: self._go_local(error)
-                    return None
-                if category not in TRANSIENT or getattr(error, 'chain_exhausted', False):
-                    self._go_local(error)  # quota, key or model problem / whole chain down: continue locally
-                    return None
-                # Temporary (per-minute limit, time-out, 5xx): a short wait, then the same (or next) model again.
-                pause = min(60, max(5, int(getattr(error, 'retry_after', 0) or 20)))
-                if attempt >= 3 or self.waited + pause > WAIT_BUDGET:
-                    self._go_local(error)
-                    return None
-                self.progress['message'] = f'{self.label} geçici olarak yanıt vermiyor ({ERROR_TEXT.get(category, "geçici hata")}): {pause} sn bekleniyor, sonra devam edilecek'
-                self.service._checkpoint(self.job, self.progress, light=True)
-                getattr(self.service, 'ai_sleep', _sleep)(pause, self.service)
-                if self.service.closed: raise StockError('interrupted', 'İşlem durdu; tamamlanan yuvalar korundu. Medyayı Tamamla ile sürdürün.')
-                self.waited += pause
+            if not self.answered: self.ai_waited += spent
+            category = getattr(error, 'category', '')
+            self.last_error = category
+            if getattr(error, 'batch_rejected', False) and not self.single:
+                self.last_error = 'batch_rejected'  # the caller checks whether pictures one by one still work
+                return None
+            if category in UNUSABLE:
+                # This one answer is unusable; the engine itself still works.
+                self.unusable += 1
+                if self.unusable >= UNUSABLE_LIMIT: self._go_local(error)
+                return None
+            exhausted = getattr(error, 'chain_exhausted', False)
+            if category not in ('rate_limit', 'quota_limit') or exhausted:
+                if self.answered and category in TRANSIENT and not exhausted:
+                    return self._skip_look(error)
+                self._go_local(error)  # quota/key/model problem, the chain could not answer, or a time-out: continue locally
+                return None
+            # An explicit per-minute limit: a short wait inside the budget, then the same model again.
+            pause = min(30, max(5, int(getattr(error, 'retry_after', 0) or 10)))
+            if attempt >= 2 or self.waited + pause > WAIT_BUDGET or (not self.answered and self.ai_waited + pause >= FIRST_ANSWER_SECONDS):
+                self._go_local(error)
+                return None
+            self.progress['message'] = f'{self.label} kısa bir hız sınırına takıldı: {pause} sn bekleniyor, sonra devam edilecek'
+            self.service._checkpoint(self.job, self.progress, light=True)
+            getattr(self.service, 'ai_sleep', _sleep)(pause, self.service)
+            if self.service.closed: raise StockError('interrupted', 'İşlem durdu; tamamlanan yuvalar korundu. Medyayı Tamamla ile sürdürün.')
+            self.waited += pause
+            if not self.answered: self.ai_waited += pause
+        return None
+
+    def _call_ai(self, purpose, prompt, schema, images, max_tokens, limit):
+        """(finished, answer, error). The request runs in a helper thread so the
+        screen can show which model is being asked and how many seconds are
+        left; after `limit` seconds the job stops waiting for it."""
+        import contextvars
+        import threading
+        box = {'model': getattr(self.ai, 'model', ''), 'number': 1}
+        models = len(getattr(self.ai, 'models', []) or [1])
+        if hasattr(self.ai, 'on_try'):
+            self.ai.on_try = lambda model, number: box.update(model=model, number=number)
+        kwargs = {'images': list(images), 'effort': 'low', 'max_tokens': max_tokens}
+
+        def work():
+            try: box['answer'] = self.ai.complete_json(purpose, prompt, schema, **kwargs)
+            except ScriptProviderError as error: box['error'] = error
+            except Exception as error:  # never let a helper-thread crash stall the job
+                box['error'] = ScriptProviderError(f'{self.label} isteği tamamlanamadı.', category='network_error', exception_class=type(error).__name__)
+        thread = threading.Thread(target=contextvars.copy_context().run, args=(work,), daemon=True)
+        started = clock()
+        thread.start()
+        while True:
+            thread.join(min(PROGRESS_TICK, max(0.0, limit - (clock() - started))))
+            if not thread.is_alive(): break
+            left = limit - (clock() - started)
+            if left <= 0: break
+            model = str(box.get('model') or '').removeprefix('gemini-')
+            self.progress['ai_trying'] = {'model': box.get('model'), 'number': box.get('number'), 'seconds_left': int(left + .999)}
+            self.progress['message'] = (f'{self.label} {model} deneniyor ({min(box.get("number") or 1, MAX_MODELS)}/{min(models, MAX_MODELS)}) · '
+                                        f'en fazla {int(left + .999)} sn kaldı; cevap gelmezse yerel seçime geçilecek')
+            self.service._checkpoint(self.job, self.progress, light=True)
+            if self.service.closed: break
+        if thread.is_alive():
+            return False, None, None
+        return True, box.get('answer'), box.get('error')
+
+    def _timed_out(self, limit):
+        error = ScriptProviderError(f'{self.label} {int(REQUEST_SECONDS if self.answered else FIRST_ANSWER_SECONDS)} sn içinde yanıt vermedi.',
+                                    504, category='gemini_timeout' if self.engine == 'gemini' else 'timeout')
+        self.last_error = error.category
+        if self.answered:
+            return self._skip_look(error)
+        self._go_local(error)  # no answer at all in the first minute: the WHOLE job continues locally
+        return None
+
+    def _skip_look(self, error):
+        """The engine answered before; this one look is skipped (local scoring for it). Twice in a row → local."""
+        self.skipped_looks += 1
+        self.progress['ai_skipped_looks'] = self.progress.get('ai_skipped_looks', 0) + 1
+        if self.skipped_looks >= 2: self._go_local(error)
         return None
 
     # ---- previews ----------------------------------------------------------
@@ -357,22 +472,62 @@ class MediaDirector:
             else:
                 ask.append(media)
         if not ask: return verdicts
+        decided = self.clip_judge(slot, scene, ask)  # the local picture model first: clear matches / clear misses
+        verdicts.update(decided)
+        ask = [m for m in ask if key(m) not in decided]
+        if not ask: return verdicts
         if self.local:
             verdicts.update(self.local_judge(slot, scene, ask)); return verdicts
-        blocks, listed = [], []
+        entries = []
         for index, media in enumerate(ask, 1):
             frames = self.frames(media)
             if not frames:
                 director = slot.setdefault('director', {}) or {}
                 director['skipped_no_preview'] = director.get('skipped_no_preview', 0) + 1; slot['director'] = director
                 continue
+            entries.append((index, media, collage(frames)))
+        if not entries: return verdicts
+        model_before = None
+        start = 0
+        while start < len(entries):
+            # At most IMAGES_PER_REQUEST pictures per request (one after a picture batch was refused).
+            group = entries[start:start + (1 if self.single else IMAGES_PER_REQUEST)]
+            start += len(group)
+            if self.local:
+                verdicts.update(self.local_judge(slot, scene, [m for _, m, _ in group])); continue
+            answer = self._rate(slot, scene, group, batch)
+            if answer is None and self.last_error == 'batch_rejected' and not self.local:
+                if self.diagnose_batch():  # small text requests work: the picture batch was the problem
+                    start -= len(group); continue  # the same candidates again, one per request
+            if answer is None:  # skipped look or the AI went away: score these locally
+                verdicts.update(self.local_judge(slot, scene, [m for _, m, _ in group])); continue
+            model = getattr(self.ai, 'last_model', None) or getattr(self.ai, 'model', None) or model_before  # which model of the chain decided
+            model_before = model
+            listed = {index: media for index, media, _ in group}
+            fresh = {}
+            for item in answer.get('verdicts', []):
+                index = item.get('candidate')
+                if isinstance(index, int) and index in listed:
+                    try: score = max(0, min(10, round(float(item.get('score', 0)))))
+                    except (TypeError, ValueError): score = 0
+                    verdict = {'score': score, 'approved': item.get('approved') is not False and score >= APPROVE_SCORE,
+                               'reason': ' '.join(str(item.get('reason', '')).split())[:300],
+                               **({'model': model} if isinstance(model, str) and model else {})}
+                    verdicts[key(listed[index])] = verdict
+                    fresh[cache_key(listed[index], fingerprint)] = {**verdict, 'at': now()}
+            if cache: cache.put(fresh)
+        return verdicts
+
+    def _rate(self, slot, scene, group, batch):
+        blocks, listed = [], []
+        for index, media, picture in group:
             orientation = 'landscape' if media['width'] > media['height'] else 'portrait/square (will be shown on a blurred background)'
             blocks.append({'type': 'text', 'text': f'Candidate {index}: {media["media_type"]}, {media["width"]}x{media["height"]}, {orientation}'
                                                    + (f', {media["duration"]:.0f} s' if media.get('duration') else '')
-                                                   + f'. Provider tags: {media.get("description", "")[:200]}'})
-            blocks.append(collage(frames))
+                                                   + f'. Provider tags: {media.get("description", "")[:200]}'
+                                                   + (f'. Local image model (CLIP): {media["clip"]["verdict"]}' if media.get('clip') else '')})
+            blocks.append(picture)
             listed.append(index)
-        if not listed: return verdicts
         shots = (f'\nThis scene has {batch} shots; the candidates are pooled for all of them — rate each candidate for the scene.' if batch and batch > 1 else '')
         prompt = (self.brief(slot, scene) + shots + '\n\nYou are choosing documentary B-roll for this shot. For EVERY candidate above '
                   '(a video candidate is ONE picture with its start, middle and end frames side by side), give score 0-10 using these criteria: '
@@ -383,23 +538,57 @@ class MediaDirector:
                   'anachronistic, watermarked or low-quality footage scores at most 4. approved=true only for 7+ with nothing from '
                   'the MUST-NOT list. reason: ONE short sentence in Turkish for the channel owner. '
                   f'Candidates to rate: {listed}.')
-        answer = self._ask('media_select', prompt, JUDGE_SCHEMA, blocks)
-        if answer is None and self.local:  # the AI went away during this look: score these locally
-            verdicts.update(self.local_judge(slot, scene, ask)); return verdicts
-        model = getattr(self.ai, 'last_model', None) or getattr(self.ai, 'model', None)  # which model of the chain decided
-        fresh = {}
-        for item in (answer or {}).get('verdicts', []):
-            index = item.get('candidate')
-            if isinstance(index, int) and index in listed:
-                try: score = max(0, min(10, round(float(item.get('score', 0)))))
-                except (TypeError, ValueError): score = 0
-                verdict = {'score': score, 'approved': item.get('approved') is not False and score >= APPROVE_SCORE,
-                           'reason': ' '.join(str(item.get('reason', '')).split())[:300],
-                           **({'model': model} if isinstance(model, str) and model else {})}
-                verdicts[key(ask[index - 1])] = verdict
-                fresh[cache_key(ask[index - 1], fingerprint)] = {**verdict, 'at': now()}
-        if cache: cache.put(fresh)
-        return verdicts
+        return self._ask('media_select', prompt, JUDGE_SCHEMA, blocks)
+
+    def diagnose_batch(self):
+        """A picture batch got “server busy” (503): is it the server or the
+        batch? One tiny text request decides. Text works → pictures go one per
+        request from now on; text fails too → the job continues locally."""
+        self.progress['message'] = f'{self.label} görsel toplu isteğe “sunucu meşgul” dedi; küçük bir metin isteğiyle nedeni kontrol ediliyor'
+        self.service._checkpoint(self.job, self.progress, light=True)
+        answer = self._ask('media_probe', 'Connectivity check. Answer with {"ok": true}.', PROBE_SCHEMA, max_tokens=50)
+        works = isinstance(answer, dict)
+        self.progress['gemini_503_diagnosis'] = (
+            'Küçük metin isteği çalıştı, görsel toplu istek 503 verdi: neden toplu görsel isteği. Bundan sonra her istekte tek aday gönderildi.' if works else
+            'Küçük metin isteği de yanıt vermedi: neden Gemini sunucusunun genel yoğunluğu. Seçim yerel olarak sürdü.')
+        if works: self.single = True
+        elif not self.local: self._go_local(ScriptProviderError(f'{self.label} metin isteğine de yanıt vermedi.', 503, category='upstream_error'))
+        return works
+
+    def clip_judge(self, slot, scene, pool):
+        """CLIP scores (0-10) of the candidates' preview frames against the
+        sentence + [GÖRSEL] note. Clear match → approved, clear miss or below
+        CLIP_MIN → rejected; the rest stay undecided (marked on the media) for
+        Gemini (when switched on) or the local word check."""
+        if not self.clip or not self.clip.ready(): return {}
+        items = []
+        for media in pool:
+            frames = []
+            for block in self.frames(media):
+                try: frames.append(base64.b64decode(block['source']['data']))
+                except (KeyError, ValueError, TypeError): pass
+            if frames: items.append((key_text(media), frames))
+        if not items: return {}
+        descriptor = clip_descriptor(slot, scene, self.language)
+        self.progress['message'] = f'Yuva {slot["order"]} · yerel görüntü modeli (CLIP) {len(items)} adayı karşılaştırıyor'
+        self.service._checkpoint(self.job, self.progress, light=True)
+        scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid))
+        if not scores and self.clip.broken:
+            self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; bu işte medya etiket/kelime eşleşmesiyle seçildi.'
+        decided = {}
+        for media in pool:
+            result = scores.get(key_text(media))
+            if not result: continue
+            clip = {**result, 'descriptor': descriptor[:160]}
+            media['clip'] = clip
+            self.progress['clip_checked'] = self.progress.get('clip_checked', 0) + 1
+            if result['verdict'] == 'match' and result['score'] >= CLIP_APPROVE:
+                decided[key(media)] = {'score': result['score'], 'approved': True, 'local': True, 'clip': clip, 'clip_approved': True,
+                                       'reason': f'Yerel görüntü modeli (CLIP) kareleri cümleyle eşleştirdi: {result["score"]}/10.'}
+            elif result['verdict'] == 'mismatch' or result['score'] < CLIP_MIN:
+                decided[key(media)] = {'score': min(result['score'], 4), 'approved': False, 'local': True, 'clip': clip,
+                                       'reason': f'Yerel görüntü modeli (CLIP): kareler cümleyle ilgisiz ({result["score"]}/10), elendi.'}
+        return decided
 
     def verdict_cache(self):
         if not hasattr(self, '_verdicts'):
@@ -424,6 +613,7 @@ class MediaDirector:
             ok = relevance.acceptable(scored, profile) or len(shared) >= 2 or bool(strong)
             verdicts[key(media)] = {'score': min(9, APPROVE_SCORE + max(0, len(shared) - 1) + (value >= 40)) if ok else min(4, len(shared) * 2),
                                     'approved': ok, 'local': True, 'relevance_label': scored.get('relevance_label'),
+                                    **({'clip': media['clip']} if media.get('clip') else {}),
                                     'reason': (f'Etiketler sahneyle eşleşiyor ({", ".join(sorted(shared)[:4])})' if ok and shared else
                                                'Etiketler sahneyle eşleşiyor' if ok else 'Etiketler sahneyle eşleşmiyor') + ' — yerel kontrol, yapay zekâ onayı yok.'}
         return verdicts
@@ -451,6 +641,13 @@ class MediaDirector:
         return [n for n in names if n not in self.unavailable]
 
     def search(self, slot, kinds, query, log, scene=None):
+        from app.scripts.query_clean import english_query, generic_queries
+        language = self.language  # the narration language (German/Turkish words are translated)
+        english = english_query(query, language, limit=6)
+        if not english:  # nothing English left (an older plan's German words): a topic query instead
+            english = generic_queries(self.topic, language)[0]
+        if english != query: log.setdefault('translated', {})[query] = english
+        query = english
         found = []
         for kind in kinds:
             for name in self.providers(scene):
@@ -569,7 +766,8 @@ class MediaDirector:
         is searched (cached), at most CANDIDATES fresh candidates per slot are
         pooled (max 16) and judged in one request. Slots then reuse these
         verdicts; only a slot whose candidates all failed asks again."""
-        if self.local or not slots: return
+        clip = bool(self.clip and self.clip.ready())
+        if (self.local and not clip) or not slots: return
         memo = self.memo.setdefault(scene['scene_id'], {'judged': {}})
         pooled, seen = [], set()
         for slot in slots:
@@ -582,9 +780,10 @@ class MediaDirector:
                      if key(m) not in memo['judged'] and key(m) not in seen][:CANDIDATES]
             for media in fresh:
                 seen.add(key(media)); pooled.append(media)
-        pooled = pooled[:16]
+        pooled = pooled[:24 if clip else 16]
         if not pooled: return
-        self.progress['message'] = f'Sahne {scene.get("order", "")} · {self.label} {len(pooled)} adaya tek seferde bakıyor ({len(slots)} yuva)'
+        self.progress['message'] = (f'Sahne {scene.get("order", "")} · {"yerel görüntü modeli (CLIP)" if clip else self.label} '
+                                    f'{len(pooled)} adaya tek seferde bakıyor ({len(slots)} yuva)')
         self.service._checkpoint(self.job, self.progress, light=True)
         for k, verdict in self.judge(slots[0], scene, pooled, batch=len(slots)).items():
             memo['judged'][k] = verdict
@@ -647,8 +846,10 @@ class MediaDirector:
                     segment_start=segment, continuation_of=None,
                     ai_review=None if verdict.get('local') else {'approved': True, 'score': verdict['score'], 'reason': verdict['reason'], 'reviewed_at': now(),
                                                                  **({'model': verdict['model']} if verdict.get('model') else {})},
-                    local_review={'approved': True, 'score': verdict['score'], 'label': verdict.get('relevance_label'), 'reviewed_at': now()} if verdict.get('local') else None,
-                    needs_ai_review=bool(verdict.get('local')),
+                    local_review={'approved': True, 'score': verdict['score'], 'label': verdict.get('relevance_label'), 'reviewed_at': now(),
+                                  **({'clip': verdict['clip']} if verdict.get('clip') else {}),
+                                  'method': 'clip' if verdict.get('clip_approved') else 'words'} if verdict.get('local') else None,
+                    needs_ai_review=bool(verdict.get('local')) and not verdict.get('clip_approved'),
                     message=verdict['reason'])
         if saved['width'] <= saved['height']:
             slot['warnings'].append('Dikey/kare kaynak: yatay videoda bulanık arka planla gösterilir.')
@@ -979,6 +1180,7 @@ class MediaDirector:
         self.scene_text = {sc['scene_id']: sc.get('narration_text', '') for sc in ordered_scenes}
         project = service.projects.get(self.pid)
         self.topic = project.get('topic') or project.get('name', '')
+        self.language = project.get('language') or 'de'
         self.connect()
         single = job.get('slot_id')
         action = {'reselect': 'reselect', 'to_motion': 'to_motion', 'to_stock': 'to_stock', 'motion_edit': 'motion_edit'}.get(job['action'], 'reselect')
@@ -1020,6 +1222,8 @@ class MediaDirector:
             if single or slot['locked']: continue
             if is_generated(media):
                 if UNREACHABLE in slot.get('message', ''): targets.append((slot, 'retry_card'))
+            elif (slot.get('local_review') or {}).get('method') == 'clip' and self.local:
+                pass  # the local picture model approved it and Gemini's look is off: nothing to re-check
             elif not (slot.get('ai_review') or {}).get('approved') or (slot['ai_review'].get('score') or 0) < APPROVE_SCORE:
                 targets.append((slot, 'unreviewed'))  # below 7/10 is never kept
         # Infographics need no AI look: they are drawn first, so even if the AI
@@ -1033,7 +1237,7 @@ class MediaDirector:
             if not single and slot['scene_id'] not in prejudged and why in ('missing', 'retry_card'):
                 prejudged.add(slot['scene_id'])  # all of this scene's slots: ONE AI look at their pooled candidates
                 self.prejudge(scene, [t for t, w in targets if t['scene_id'] == slot['scene_id'] and w in ('missing', 'retry_card')])
-            self.progress.update(percent=int(done / total * 85), slot_id=slot['slot_id'],
+            self.progress.update(percent=max(1, int(done / total * 85)), slot_id=slot['slot_id'],
                                  message=f'Yuva {slot["order"]} ({done + 1}/{total}) hazırlanıyor')
             service._checkpoint(self.job, self.progress)
             try:
@@ -1096,7 +1300,12 @@ class MediaDirector:
             media = slot['selected_media']
             log = {'steps': [{'stage': 'kept', 'label': STAGES['kept'], 'judged': []}], 'searches': [], 'judged': {}}
             verdict = self.judge(slot, scene, [media]).get(key(media))
-            if verdict and verdict.get('local'):
+            if verdict and verdict.get('clip_approved'):  # the local picture model confirms it
+                slot.update(local_review={'approved': True, 'score': verdict['score'], 'clip': verdict['clip'], 'method': 'clip', 'reviewed_at': now()},
+                            needs_ai_review=False, message=verdict['reason'])
+                log['steps'][0]['result'] = 'kept'
+                return log
+            if verdict and verdict.get('local') and not (verdict.get('clip') and not verdict['approved']):
                 # No AI right now: a pick that still matches the scene's words stays (marked for a later AI look).
                 if verdict['approved'] or slot.get('local_review'):
                     if not slot.get('local_review'):
@@ -1237,9 +1446,11 @@ def local_words(text):
     return out
 
 
-def collage(blocks):
-    """Up to three preview frames side by side as ONE JPEG image block
-    (fewer images per request). A single frame is returned unchanged."""
+def collage(blocks, width=512):
+    """Up to three preview frames side by side as ONE JPEG image block, at
+    most `width` px wide (fewer and smaller pictures per request: busy
+    servers refuse big picture batches less often). A single frame is
+    returned as it is (already ≤512 px)."""
     if len(blocks) <= 1: return blocks[0]
     try:
         from io import BytesIO
@@ -1251,6 +1462,8 @@ def collage(blocks):
         x = 0
         for image in images:
             sheet.paste(image, (x, 0)); x += image.width + 8
+        if sheet.width > width:
+            sheet = sheet.resize((width, max(1, round(sheet.height * width / sheet.width))))
         out = BytesIO(); sheet.save(out, 'JPEG', quality=80)
         return {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.b64encode(out.getvalue()).decode()}}
     except Exception:
@@ -1379,16 +1592,17 @@ def extract_frames(url, duration, limit=15_000_000):
         return frames
 
 
-def shrink(data, width=640):
-    """Vision APIs bill images by size: a 640 px preview is plenty to judge
-    content and costs about a third of a 1280x720 cover. Unchanged on error."""
+def shrink(data, width=512):
+    """Every picture sent to the AI is a JPEG at most 512 px wide (small
+    requests: cheaper, and busy servers refuse them less). Unchanged on error."""
     try:
         from io import BytesIO
         from PIL import Image
         image = Image.open(BytesIO(data))
-        if image.width <= width: return data
-        image = image.convert('RGB').resize((width, max(1, round(image.height * width / image.width))))
-        out = BytesIO(); image.save(out, 'JPEG', quality=82)
+        if image.width <= width and data.startswith(b'\xff\xd8'): return data
+        if image.width > width:
+            image = image.resize((width, max(1, round(image.height * width / image.width))))
+        out = BytesIO(); image.convert('RGB').save(out, 'JPEG', quality=82)
         return out.getvalue()
     except Exception:
         return data

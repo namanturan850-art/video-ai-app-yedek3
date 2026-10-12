@@ -54,7 +54,7 @@ def map_infographic(block):
         return None
 
 
-def refine(blocks):
+def refine(blocks, language='de', topic=''):
     used = []  # normalized main queries in order
     counts = {}
     for index, block in enumerate(blocks):
@@ -82,4 +82,7 @@ def refine(blocks):
             alternatives = [' '.join(main.split()[:2] + ['closeup'])] if norm(main) != norm(' '.join(main.split()[:2] + ['closeup'])) else ['documentary landscape']
         block['stock_query'], block['alternative_stock_queries'] = main[:300], [a[:300] for a in alternatives[:5]]
         used.append(norm(main)); counts[norm(main)] = counts.get(norm(main), 0) + 1
+    from app.scripts.query_clean import clean_block
+    for block in blocks:  # stock sites are tagged in English: no German/Turkish word, number or “v. Chr.” in a search
+        clean_block(block, language, topic=topic)
     return blocks

@@ -53,6 +53,48 @@ def model_status(root):
     except (OSError,ValueError,KeyError,TypeError):return None
 
 
+# Medyayı Tamamla: never-wanted footage the owner named (dog, office, modern city …).
+FRAME_NEGATIVES=('a dog','people working in a modern office','a modern city skyline with skyscrapers','a laptop computer on a desk',
+                 'a smartphone screen','cars in modern street traffic','a business meeting','a selfie of a smiling person',
+                 'a supermarket','an empty white background','text on a plain background')
+
+
+def clip_score(target,margin):
+    """0-10 for the screen: 5 = no better than the unwanted pictures, 10 = clearly the described scene."""
+    return max(0,min(10,round(5+margin*120)-(2 if target<.20 else 0)))
+
+
+def score_frames(root,inputs):
+    """Preview frames (JPEG files the app already has) of up to 32 stock
+    candidates against one English description, one model load. Returns
+    per candidate: verdict match/mismatch/uncertain, similarity, margin, score 0-10."""
+    status=model_status(root)
+    if not status:raise ValueError('semantic_model_missing')
+    os.environ.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',TOKENIZERS_PARALLELISM='false')
+    from lib import clip_embedder
+    from lib.clip_embedder import embed_images,embed_texts
+    import torch
+    torch.set_num_threads(min(4,os.cpu_count() or 1))
+    if sha(status['weight'])!=status['version']:raise ValueError('semantic_model_changed')
+    clip_embedder._MODEL_ID=str(status['folder'])
+    descriptor=str(inputs['descriptor'])[:300]
+    words=set(re.findall(r'[a-z]+',descriptor.casefold()))-{'a','an','the','of','in','on','with'}
+    negatives=[n for n in FRAME_NEGATIVES+NEGATIVES if not set(re.findall(r'[a-z]+',n))&words] or ['unrelated footage']
+    texts=inference(embed_texts,[descriptor,*negatives],clip_embedder,torch)
+    results=[]
+    for item in inputs['candidates'][:32]:
+        frames=[Path(p) for p in item['frames'][:3]]
+        if not frames or any(not f.is_file() or f.is_symlink() or not f.is_absolute() for f in frames):raise ValueError('source_missing')
+        images=inference(embed_images,frames,clip_embedder,torch)
+        scores=images@texts.T;target=float(scores[:,0].mean());other=float(scores[:,1:].mean(axis=0).max())
+        margin=target-other
+        votes=int((scores[:,0]>scores[:,1:].max(axis=1)+.01).sum())
+        verdict='match' if target>=.20 and margin>=.015 and votes>=min(2,len(images)) else 'mismatch' if margin<=-.02 else 'uncertain'
+        results.append({'key':str(item['key'])[:200],'verdict':verdict,'similarity':round(target,4),'contrast_margin':round(margin,4),
+                        'score':clip_score(target,margin),'model':MODEL,'sample_count':len(images)})
+    return {'results':results}
+
+
 def analyse(root,inputs,command):
     status=model_status(root)
     if not status:raise ValueError('semantic_model_missing')

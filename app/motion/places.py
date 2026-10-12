@@ -1,8 +1,20 @@
-"""Local place list for map graphics: common places with their names in
-German, English, Turkish, Spanish and French (lat, lon in degrees). Places
-not listed here are asked from the AI (or the map is not drawn)."""
+"""Offline place data for the map infographics (no internet, no AI):
+1. the small hand-made list below (names in German, English, Turkish,
+   Spanish and French), checked first;
+2. ancient places, regions and seas with ancient ↔ modern names
+   (app/motion/places_extra.py);
+3. every country and every city with 15 000+ inhabitants, with their other
+   names (GeoNames CC BY 4.0 + Unicode CLDR names; app/motion/places_world.json.gz,
+   built by tools/build_places.py).
+A place found nowhere is reported to the owner (never guessed)."""
+import gzip
+import json
 import re
 import unicodedata
+from functools import lru_cache
+from pathlib import Path
+
+DATA = Path(__file__).resolve().parent / 'places_world.json.gz'
 
 PLACES = [
     # (lat, lon, names)
@@ -119,33 +131,115 @@ def plain(text):
     return ' '.join(re.sub(r'[^a-z0-9]+', ' ', ''.join(c for c in text if not unicodedata.combining(c))).split())
 
 
-INDEX = sorted(((plain(name), lat, lon, names.split('|')[0]) for lat, lon, names in PLACES for name in names.split('|')),
-               key=lambda item: -len(item[0]))
+# Common words that are also the name of some small town somewhere: never read as a place in narration.
+COMMON = {'essen', 'halle', 'hof', 'mark', 'marken', 'kiel', 'bad', 'stadt', 'land', 'berg', 'tal', 'see', 'feld', 'weil', 'lage', 'bergen',
+          'nur', 'ende', 'mission', 'victoria', 'union', 'liberty', 'independence', 'concord', 'progress', 'hope', 'paradise', 'eden', 'goshen',
+          'bethlehem', 'nazareth', 'salem', 'ariel', 'kale', 'kent', 'derince', 'bulut', 'deniz', 'yalova', 'ordu', 'van', 'mus', 'bar', 'bat',
+          'gaza', 'sur', 'dan', 'gat', 'ur', 'mari', 'saba', 'jordan', 'georgia', 'kongo', 'china', 'turkey', 'chad', 'niger', 'guinea'}
+
+
+# Hand-made entries are written “German|English|Turkish|…”; these start with the English name already.
+EN_FIRST = {'Babylon', 'Nimrud', 'Uruk', 'Nippur', 'Mari', 'Ebla', 'Persepolis', 'Pasargadae', 'Sumer', 'Akkad', 'Samaria', 'Sinai', 'Jericho',
+            'Megiddo', 'Hazor', 'Bethel', 'Dan', 'Hebron', 'Ekron', 'Masada', 'Qumran', 'Sidon', 'Byblos', 'Ugarit', 'Palmyra', 'Petra', 'Jordan',
+            'Tigris', 'Göbekli Tepe', 'Çatalhöyük', 'Tarsus', 'Edessa', 'Knossos', 'Olympia', 'Delphi', 'Memphis', 'Amarna', 'Tanis', 'Avaris',
+            'Abu Simbel', 'Meroe', 'Aksum', 'Timbuktu', 'Great Zimbabwe', 'Herculaneum', 'Ostia', 'Stonehenge', 'Harappa', 'Angkor', 'Samarkand',
+            'Cusco', 'Tenochtitlan', 'Mohenjo-Daro', 'Ur', 'Susa', 'Florida', 'Miami', 'Puerto Rico', 'Bahamas', 'Bermuda', 'Titanic', 'Sparta',
+            'Istanbul', 'Jerusalem', 'China', 'Japan', 'Mount Everest', 'North Sentinel', 'Hawaii', 'Tahiti', 'Machu Picchu', 'Peru', 'Chile',
+            'USA', 'New York', 'Washington', 'Texas', 'Alaska', 'Berlin', 'Paris', 'Madrid', 'Portugal', 'Gibraltar', 'England', 'London', 'Sahara',
+            'Sri Lanka'}
+
+
+def ascii_name(name):
+    return unicodedata.normalize('NFKD', name.replace('ß', 'ss').replace('ı', 'i')).encode('ascii', 'ignore').decode().strip()
+
+
+EN_OVERRIDE = {'Bermuda-Dreieck': 'Bermuda Triangle', 'Atlantik': 'Atlantic Ocean', 'Pazifik': 'Pacific Ocean', 'Ägäis': 'Aegean Sea',
+               'Adria': 'Adriatic Sea', 'Judäa': 'Judea', 'Indischer Ozean': 'Indian Ocean', 'Bermuda': 'Bermuda', 'Kreta': 'Crete'}
+
+
+def english_name(names, hand_made=True):
+    if hand_made and names[0] in EN_OVERRIDE: return EN_OVERRIDE[names[0]]
+    if hand_made and names[0] not in EN_FIRST and len(names) > 1 and names[1].isascii(): return names[1]
+    return names[0] if names[0].isascii() else ascii_name(names[0])
+
+
+@lru_cache(maxsize=1)
+def places():
+    """All places: dicts with name, lat, lon, kind, modern/country, extent_km, rank (lower wins)."""
+    out = []
+    for lat, lon, names in PLACES:
+        parts = names.split('|')
+        out.append({'name': parts[0], 'en': english_name(parts), 'aliases': parts, 'lat': lat, 'lon': lon, 'kind': 'manual', 'modern': '', 'extent_km': 0, 'rank': 0})
+    from app.motion.places_extra import EXTRA
+    for lat, lon, names, kind, modern, extent in EXTRA:
+        parts = names.split('|')
+        out.append({'name': parts[0], 'en': english_name(parts), 'aliases': parts, 'lat': lat, 'lon': lon, 'kind': kind, 'modern': modern, 'extent_km': extent, 'rank': 1})
+    try:
+        with gzip.open(DATA, 'rt', encoding='utf-8') as source:
+            world = json.load(source)['places']
+    except (OSError, ValueError, KeyError):
+        world = []
+    for name, lat, lon, kind, country, extent, population, others in world:
+        out.append({'name': name, 'en': english_name([name], False), 'aliases': [name, *others], 'lat': lat, 'lon': lon, 'kind': kind, 'modern': country if kind == 'city' else '',
+                    'extent_km': extent, 'population': population, 'rank': 2 if kind == 'country' else 3 + 1 / max(1, population) ** .25})
+    return out
+
+
+@lru_cache(maxsize=1)
+def index():
+    best = {}
+    for place in places():
+        for alias in place['aliases']:
+            key = plain(alias)
+            if len(key) < 2: continue
+            if key not in best or place['rank'] < best[key]['rank']: best[key] = place
+    return best
+
+
+def notable(place, key):
+    """Can this place be recognised in narration by itself? (hand-made lists, countries, big cities)"""
+    if place['rank'] <= 1: return True
+    if key in COMMON or len(key) < 4: return False
+    return place['kind'] == 'country' or place.get('population', 0) >= 300_000
+
+
+def find(name):
+    """The place for a name (any of its names, ancient or modern), or None:
+    {'name', 'lat', 'lon', 'kind', 'modern', 'extent_km'}."""
+    wanted = plain(name)
+    if not wanted: return None
+    table = index()
+    if wanted in table: return table[wanted]
+    tokens = wanted.split()
+    for size in range(min(4, len(tokens)), 0, -1):  # “die Bermuda-Inseln”, “Bermuda Triangle area”
+        for i in range(len(tokens) - size + 1):
+            key = ' '.join(tokens[i:i + size])
+            if len(key) >= 3 and key in table and (table[key]['rank'] <= 1 or size > 1 or notable(table[key], key)):
+                return table[key]
+    return None
 
 
 def lookup(name):
     """(lat, lon, display name) for a place name, or None."""
-    wanted = plain(name)
-    if not wanted: return None
-    for alias, lat, lon, _ in INDEX:
-        if alias == wanted: return lat, lon, name
-    for alias, lat, lon, _ in INDEX:  # “die Bermuda-Inseln”, “Bermuda Triangle area”
-        if len(alias) >= 3 and f' {alias} ' in f' {wanted} ': return lat, lon, name
-    return None
+    place = find(name)
+    return (place['lat'], place['lon'], name) if place else None
 
 
 def spoken_places(text):
-    """Places from the list spoken in the text: [(name exactly as written, lat, lon)] in reading order."""
+    """Places spoken in the text: [(name exactly as written, lat, lon)] in reading order.
+    Hand-made entries anywhere; other places only when written with a capital letter."""
     text = str(text or '')
-    spans = [(m.start(), m.end(), plain(m.group())) for m in re.finditer(r'[^\W_]+', text)]
-    found, taken, used = [], set(), set()
-    for alias, lat, lon, _ in INDEX:
-        size = len(alias.split())
-        if len(alias) < 3 or (lat, lon) in taken: continue
-        for i in range(len(spans) - size + 1):
-            if any(j in used for j in range(i, i + size)): continue
-            if ' '.join(w for _, _, w in spans[i:i + size]) == alias:
-                found.append((spans[i][0], text[spans[i][0]:spans[i + size - 1][1]], lat, lon))
-                taken.add((lat, lon)); used.update(range(i, i + size))
-                break
-    return [item[1:] for item in sorted(found)]
+    spans = [(m.start(), m.end(), plain(m.group()), m.group()[:1].isupper()) for m in re.finditer(r'[^\W_]+', text)]
+    table, found, taken, i = index(), [], set(), 0
+    while i < len(spans):
+        for size in range(min(4, len(spans) - i), 0, -1):
+            key = ' '.join(w for _, _, w, _ in spans[i:i + size])
+            place = table.get(key)
+            if not place or len(key) < 3 or not notable(place, key) or (place['rank'] > 1 and not spans[i][3]): continue
+            if (place['lat'], place['lon']) not in taken:
+                found.append((text[spans[i][0]:spans[i + size - 1][1]], place['lat'], place['lon']))
+                taken.add((place['lat'], place['lon']))
+            i += size - 1
+            break
+        i += 1
+    return found

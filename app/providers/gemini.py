@@ -12,6 +12,7 @@ from app.providers.base import ScriptProviderError, normalize_text, safe_excepti
 
 API_ROOT = 'https://generativelanguage.googleapis.com/v1beta'
 MODEL_LIST_TIMEOUT = 50
+IMAGE_TIMEOUT = 45   # requests with pictures (Medyayı Tamamla) never wait longer than this
 GEMINI_TIMEOUT_MESSAGE = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.'
 MODEL_UNAVAILABLE_MESSAGE = 'Kayıtlı model Gemini API listesinde bulunamadı. Modelleri Getir düğmesine basıp listeden geçerli bir model seçin ve Kaydet deyin.'
 ORIGINALITY_INSTRUCTION = (
@@ -226,7 +227,7 @@ class GeminiScriptProvider:
             raise ScriptProviderError('Senaryo isteğine API anahtarı eklemeyin.', 422, category='invalid_request', stage='configuration')
         return self._generate([{'text': prompt}])
 
-    def complete_json(self, purpose, prompt, schema, *, images=(), effort=None, max_tokens=None, system=None, video_url=None):
+    def complete_json(self, purpose, prompt, schema, *, images=(), effort=None, max_tokens=None, system=None, video_url=None, timeout=None):
         """Same contract as ClaudeProvider.complete_json, for the free Gemini tier.
 
         Images use the documented Part.inlineData (mimeType + base64 data);
@@ -251,7 +252,9 @@ class GeminiScriptProvider:
                       + json.dumps(schema, separators=(',', ':'))})
         if self._contains_key(json.dumps(parts[-1])):
             raise ScriptProviderError('İsteğe API anahtarı eklemeyin.', 422, category='invalid_request', stage='configuration')
-        text = self._generate(parts, json_mode=True, system=system)
+        if any('inlineData' in part for part in parts):  # picture requests: short HTTP time-out (a busy server must not stall the job)
+            timeout = min(timeout or IMAGE_TIMEOUT, IMAGE_TIMEOUT)
+        text = self._generate(parts, json_mode=True, system=system, timeout=timeout)
         try:
             data = parse_json_object(text)
         except ScriptProviderError:
@@ -263,14 +266,14 @@ class GeminiScriptProvider:
             raise ScriptProviderError('Gemini yanıtında gerekli alanlar eksik.', category='invalid_response', stage='response_json')
         return data
 
-    def _generate(self, parts, *, json_mode=False, system=None):
+    def _generate(self, parts, *, json_mode=False, system=None, timeout=None):
         started, category, stage, exception_class, status = time.monotonic(), 'success', 'request_build', 'none', None
         try:
             body = {'systemInstruction': {'parts': [{'text': system or ORIGINALITY_INSTRUCTION}]},
                     'contents': [{'role': 'user', 'parts': parts}]}
             if json_mode:
                 body['generationConfig'] = {'responseMimeType': 'application/json'}
-            with self._client(180 if json_mode else 120) as client:
+            with self._client(timeout or (180 if json_mode else 120)) as client:
                 stage = 'http_request'
                 data = self._request(client, 'POST', f'/models/{self.model}:generateContent', json=body)
             status, stage = 200, 'candidates'

@@ -6,18 +6,19 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   // Contextual = scene concepts matched (e.g. ship+ocean), not footage of the named event itself.
   const relevanceText=media=>media.relevance_basis==='contextual'?`${media.relevance_label} (bağlamsal görüntü — olayın kendisi değil)`:media.relevance_basis==='visual'?`${media.relevance_label} (görsel kontrol)`:media.relevance_label;
   const section=node('section','','settings-panel stock-controls');section.id='stock-controls';
-  section.append(node('h2','Stok Medya — yapay zekâ seçer, her yuva dolar'),node('p','Medyayı Tamamla: her boş yuva için sırayla (1) planlanan sorguyla stok video, (2) yapay zekânın yazdığı yeni sorgularla video, (3) stok görsel + hafif kamera hareketi, (4) daha geniş konu medyası denenir — her aday, yapay zekâ (varsayılan: Gemini, ücretsiz kota) önizleme karelerine bakıp onaylamadan kullanılmaz. Hiçbiri uymazsa yuva anlatımdan bir motion grafik olur. Metinde [HARİTA], [SAYI], [ÇİZELGE], [KARŞILAŞTIR] veya [LİSTE] işareti olan sahneler doğrudan infografik olur. Gemini’ye ulaşılamazsa (kota, sunucu meşgul) veya Ayarlar’da yapay zekâ görsel kontrolü kapalıysa iş durmaz: adaylar yerel kelime/etiket eşleşmesiyle seçilir ve “yapay zekâ onayı yok” diye işaretlenir; Gemini dönünce tek tıkla yeniden kontrol edilir. Sahne başına adaylar tek istekte değerlendirilir, önceki kararlar tekrar sorulmaz. Seslendirme ve altyazılar değişmez.'));
+  section.append(node('h2','Stok Medya — her yuva dolar'),node('p','Medyayı Tamamla: her boş yuva için sırayla (1) planlanan İngilizce sorguyla stok video, (2) yeni sorgularla video, (3) stok görsel + hafif kamera hareketi, (4) daha geniş konu medyası denenir. Her adayın başlangıç/orta/son kareleri yerel görüntü modeliyle (CLIP, internet ve kota gerekmez) cümleyle ve [GÖRSEL] notunuzla karşılaştırılır; puanı düşük olanlar (köpek, ofis, modern şehir gibi ilgisiz kareler) elenir. CLIP kurulu değilse etiket/kelime eşleşmesi kullanılır. Gemini görsel kontrolü varsayılan olarak kapalıdır; Ayarlar’dan açarsanız yalnızca CLIP’in kararsız kaldığı adaylara bakar ve 60 sn içinde yanıt gelmezse atlanır. Hiçbir stok uymazsa yuva anlatımdan bir infografik olur. Metindeki [HARİTA], [SAYI], [ÇİZELGE], [KARŞILAŞTIR], [LİSTE], [ROTA], [İMPARATORLUK], [YAKINLAŞ], [İŞARETLE], [ÖNCESONRA], [İKON], [ORAN], [HANEDAN] ve [BİLGİ] işaretleri doğrudan infografik olur. Seslendirme ve altyazılar değişmez.'));
   const message=node('p','Güncel sahne planı kontrol ediliyor…');message.setAttribute('role','status');
   const controls=node('div','','settings-actions'),warningList=node('ul');section.append(message,controls,warningList);root.insertBefore(section,blocks);
   const recovery=node('section');recovery.id='stock-recovery-report';section.append(recovery);const mix=node('details'),recent=node('details');recent.append(node('summary','Son arama tanısı'));section.append(mix,recent);
   let state=null,pending=false,timer=null,loading=false,previewSlot=null;
   const active=()=>pending||['queued','running'].includes(state?.job?.status);
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.disabled=disabled;b.addEventListener('click',fn);parent.append(b);return b;}
-  const complete=button(controls,'Medyayı Tamamla',()=>{if(window.confirm(`Boş ve yapay zekâ onayı olmayan yuvalar doldurulacak. Kilitli ve onaylı seçimler korunur, eski dosyalar silinmez.${state?.ai_engine==='claude'?' Claude çağrıları ücretlidir.':' Gemini ücretsiz kotası kullanılır; hız sınırında kısa beklemeler olabilir.'} Devam edilsin mi?`))start('complete_media');},true);complete.id='stock-complete';
+  const complete=button(controls,'Medyayı Tamamla',()=>{if(window.confirm(`Boş ve kontrol edilmemiş yuvalar doldurulacak. Kilitli ve onaylı seçimler korunur, eski dosyalar silinmez.${state?.ai_engine==='claude'?' Claude görsel kontrolü açıksa çağrılar ücretlidir.':''} Devam edilsin mi?`))start('complete_media');},true);complete.id='stock-complete';
   const recheck=button(controls,'Yapay zekâyla yeniden kontrol et',()=>{if(window.confirm('Yapay zekâ onayı olmadan (yerel kelime eşleşmesiyle) seçilen yuvalara Gemini yeniden bakacak; uymayanlar değiştirilir. Devam edilsin mi?'))start('complete_media');});recheck.id='stock-recheck';recheck.hidden=true;
   const download=node('a','Tanılama dosyası indir');download.href=`${base}/diagnostics`;download.id='stock-diagnostics';download.setAttribute('download','');
   controls.append(download);
   const summaryLine=node('p','','provider-status');summaryLine.id='stock-summary';section.insertBefore(summaryLine,controls);
+  const clipNote=node('p','','note stock-clip-warning');clipNote.id='stock-clip-warning';clipNote.hidden=true;section.insertBefore(clipNote,controls);
   const stamp=()=>({plan_id:state.plan_id,revision:state.revision});
   async function request(url,method='GET',body){
     let response;
@@ -27,7 +28,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     if(!response.ok){const error=new Error(result.message||'Medya işlemi tamamlanamadı.');error.category=result.category;throw error;}
     return result;
   }
-  function sync(){complete.disabled=active()||!state;const unchecked=state?.media_summary?.unchecked||0;recheck.hidden=!unchecked;recheck.textContent=`Yapay zekâyla yeniden kontrol et (${unchecked} yuva)`;recheck.disabled=active()||!state;}
+  function sync(){complete.disabled=active()||!state;const unchecked=state?.media_summary?.unchecked||0;recheck.hidden=!unchecked||state?.job?.progress?.local_mode==='off';recheck.textContent=`Yapay zekâyla yeniden kontrol et (${unchecked} yuva)`;recheck.disabled=active()||!state;}
   async function operate(fn){if(active()||!state)return;pending=true;sync();try{await fn();await load();}catch(error){message.textContent=error.message;}finally{pending=false;render();}}
   function start(action){return operate(()=>request(base+'/jobs','POST',{...stamp(),action}));}
   function slotJob(slot,action,extra={}){return operate(()=>request(`${base}/slots/${slot.slot_id}/jobs`,'POST',{...stamp(),action,...extra}));}
@@ -81,7 +82,9 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const stage=slot.director?.stage_label||(slot.locked&&media?'Kilitli (sizin seçiminiz)':media?(slot.ai_review?.approved?'Yapay zekâ onayladı':'Yapay zekâ onayı bekliyor — Medyayı Tamamla deyin'):'Boş — Medyayı Tamamla deyin');
     const stageLine=node('p',`Aşama: ${stage}`,'provider-status');stageLine.className+=' stock-stage';card.append(stageLine);
     if(Number.isFinite(score)){const rel=node('p',`Alaka puanı: ${score}/10${score<9?' — önce buna bakın':''} · ${slot.ai_review.reason||''}`,'stock-relevance');if(slot.ai_review.model)rel.append(node('small',` · ${slot.ai_review.model.replace(/^gemini-/,'')} ile seçildi`,'stock-model'));card.append(rel);}
-    if(media&&media.provider!=='generated'&&!slot.ai_review?.approved&&!slot.continuation_of)card.append(node('p','⚠ Yapay zekâ onayı yok — yerel kelime eşleşmesiyle seçildi. Gemini dönünce “Yapay zekâyla yeniden kontrol et” deyin.','stock-unchecked'));
+    const clip=slot.local_review?.clip;
+    if(media&&media.provider!=='generated'&&clip&&!slot.ai_review?.approved){const line=node('p',`Yerel görüntü modeli (CLIP): ${clip.score}/10 · ${{match:'kareler cümleyle eşleşti',uncertain:'kararsız — etiketlerle de kontrol edildi',mismatch:'uyumsuz'}[clip.verdict]||''}`,'stock-relevance stock-clip');card.append(line);}
+    if(media&&media.provider!=='generated'&&!slot.ai_review?.approved&&!slot.continuation_of&&slot.local_review?.method!=='clip')card.append(node('p','⚠ Görüntüsü bir modelle kontrol edilmedi — etiket/kelime eşleşmesiyle seçildi. Önizleyip bakın.','stock-unchecked'));
     if(slot.message)card.append(node('p',`Neden: ${slot.message}`));
     if(media&&!(media.provider==='generated'&&media.media_type==='video'))card.append(thumbnail(media));
     const top=node('div','','settings-actions');card.append(top);
@@ -100,7 +103,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const keep=card;card=more;
     card.append(node('p',`${slot.status_label} · ${slot.duration.toFixed(1)} sn`),node('p',`Görsel amaç: ${slot.visual_goal}`),node('p',`Planlanan arama: ${slot.search_query}`));
     for(const step of slot.director?.steps||[]){card.append(node('p',`${step.label}: ${step.queries?.length?'“'+step.queries.join('”, “')+'” · ':''}${{chosen:'seçildi',no_approved_candidate:'onaylanan aday yok',ai_unavailable:'Yapay zekâya ulaşılamadı',kept:'korundu',kept_no_better_option:'daha iyisi yok, korundu'}[step.result]||step.result||''}`));
-      for(const j of step.judged||[])card.append(node('p',`· ${j.provider} ${j.media_type==='video'?'video':'görsel'} ${j.media_id} — AI ${j.score}/10 ${j.approved?'✓':'✗'} ${j.reason}`,'note'));}
+      for(const j of step.judged||[])card.append(node('p',`· ${j.provider} ${j.media_type==='video'?'video':'görsel'} ${j.media_id} — ${j.clip_approved||j.clip&&j.local?'CLIP':j.local?'Yerel':'AI'} ${j.score}/10 ${j.approved?'✓':'✗'} ${j.reason}`,'note'));}
     for(const s of (slot.director?.searches||[]).filter(s=>s.error))card.append(node('p',`${s.provider} “${s.query}”: ${s.error_text}`,'note'));
     card.append(node('p',`Tekrar durumu: ${slot.repeat_status||'Benzersiz'}`));
     if(slot.subject_anchor)card.append(node('p',`Ana konu: ${slot.subject_anchor}`));
@@ -127,6 +130,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
       const media=node('section','','stock-scene');media.append(node('h3',`Medya Yuvaları · ${slots.length} görsel çekim`));for(const slot of slots)media.append(slotCard(slot));sceneCard.append(media);
     }
     summaryLine.textContent=state?.media_summary?.text||'';
+    const clipWarning=state?.job?.progress?.clip_warning;clipNote.hidden=!clipWarning;clipNote.textContent=clipWarning?'ℹ '+clipWarning:'';
     recovery.replaceChildren();const diag=state?.missing_media_diagnostics;if(diag?.unresolved_raw_slots){for(const d of diag.reasons||[])recovery.append(node('p',`${d.count} eksik yuva: ${d.message}`));}
     const counts=state?.media_mix;mix.replaceChildren();if(counts){mix.append(node('summary','Ayrıntılı sayılar'),node('p',`Yapay zekâ isteği: son işte ${state.ai_requests?.last_job??0}, bu projede toplam ${state.ai_requests?.total??0}${state.ai_requests?.cached?` (önbellekten ${state.ai_requests.cached} karar)`:''} · Stok video oranı %${counts.video_ratio_percent} · Motion grafik oranı %${counts.motion_ratio_percent??0} · Ortalama çekim ${counts.average_used_duration} sn · En uzun ${counts.maximum_used_duration} sn · Farklı medya ${counts.unique_media_count}${state.selection_version?' · Seçim sürümü '+state.selection_version:''}`,'note'));}mix.hidden=!counts;
     while(recent.children.length>1)recent.lastChild.remove();for(const d of state?.job?.progress?.search_diagnostics||[])recent.append(node('p',`${d.query} · ${d.summary}`));recent.hidden=recent.children.length===1;
@@ -135,7 +139,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   async function load(){
     if(loading)return;loading=true;
     try{state=await request(base);const job=state.job;
-      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pixabay&&!state.providers.wikimedia&&!state.providers.openmontage?'Ayarlar → Pixabay anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}${job?.status==='completed'&&job.progress?.local_reason&&state.media_summary?.unchecked?' ⚠ '+job.progress.local_reason:''}`;
+      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pixabay&&!state.providers.wikimedia&&!state.providers.openmontage?'Ayarlar → Pixabay anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}${job?.status==='completed'&&job.progress?.local_reason&&state.media_summary?.unchecked&&job.progress.local_mode!=='off'?' ⚠ '+job.progress.local_reason:''}${job?.progress?.gemini_503_diagnosis?' ℹ '+job.progress.gemini_503_diagnosis:''}`;
       render();
     }catch(error){state=null;message.textContent=error.message;render();}
     finally{loading=false;clearTimeout(timer);if(['queued','running'].includes(state?.job?.status))timer=setTimeout(load,1200);}

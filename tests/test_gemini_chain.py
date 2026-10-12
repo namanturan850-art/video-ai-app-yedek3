@@ -61,6 +61,7 @@ def build(tmp_path, monkeypatch, key='rome'):
     for name, value in (('pexels', 'synthetic-pexels-key-1111'), ('pixabay', 'synthetic-pixabay-key-2222')):
         assert client.put(f'/api/settings/{name}', json={'api_key': value}, headers=SETTINGS).status_code == 200
     s.save('gemini', {'api_key': 'synthetic-gemini-key-3333'}); s.record_gemini_models(s.gemini_config(), LISTED); s.save('gemini', {'model': 'gemini-3.0-flash'})
+    s.save('general', {'ai_visual_check': True})  # Gemini looks at the candidates (off by default)
     view = client.get('/api/settings', headers=SETTINGS).json()['gemini']
     assert [m['model'] for m in view['fallback_chain']] == ['gemini-3.0-flash', 'gemini-2.5-flash', 'gemini-3.0-flash-lite', 'gemini-2.5-flash-lite',
                                                             'gemini-2.5-pro', 'gemini-2.5-flash-preview-05-20']
@@ -125,9 +126,9 @@ def test_model_switch_mid_job_continues_and_all_used_up_goes_local_keeping_finis
         class Counting(original):  # the first model runs out after a few looks, the next one later, the last one too
             def complete_json(self, *args, **kwargs):
                 used = len(calls) - start
-                if self.model == CHAIN[0] and used >= 2: dead.add(CHAIN[0])
-                if self.model == CHAIN[1] and used >= 4: dead.add(CHAIN[1])
-                if self.model == CHAIN[2] and used >= 6: dead.add(CHAIN[2])  # (one look per scene: few requests)
+                if self.model == CHAIN[0] and used >= 3: dead.add(CHAIN[0])
+                if self.model == CHAIN[1] and used >= 6: dead.add(CHAIN[1])
+                if self.model == CHAIN[2] and used >= 9: dead.add(CHAIN[2])  # (≤4 pictures per request)
                 return super().complete_json(*args, **kwargs)
         monkeypatch.setattr(factory, 'GeminiScriptProvider', Counting)
         view = T.complete(client, pid)
@@ -138,7 +139,7 @@ def test_model_switch_mid_job_continues_and_all_used_up_goes_local_keeping_finis
         assert answered >= {CHAIN[0], CHAIN[1]}  # the job moved down the chain and went on (every attempt is logged)
         kept = {s['slot_id']: s['selected_media']['media_id'] for s in view['slots'] if s.get('selected_media') and s['selected_media']['provider'] != 'generated'}
         assert kept and not any(s['status'] == 'error' for s in view['slots'])
-        assert view['media_summary']['unchecked'] > 0  # the rest was chosen locally and waits for an AI look
+        assert view['media_summary']['unchecked'] > 0, (view['media_summary'], job['progress'].get('local_reason'), [(a['model'], a['result']) for a in job['progress']['ai_attempts']])  # the rest was chosen locally and waits for an AI look
         assert all((s.get('director') or {}).get('stage') in (None, 'motion_planned') or s['selected_media']['provider'] != 'generated'
                    for s in view['slots'] if s.get('selected_media'))  # nothing fell to motion
         # Next day (or after clearing the marks in Settings) the job continues where it stopped.
@@ -170,6 +171,7 @@ def test_chain_order_settings_validation(tmp_path):
     with TestClient(create_app(tmp_path / 'data'), headers=HEADERS) as client:
         s = client.app.state.settings
         s.save('gemini', {'api_key': 'synthetic-gemini-key-3333'}); s.record_gemini_models(s.gemini_config(), LISTED); s.save('gemini', {'model': 'gemini-2.5-flash'})
+        s.save('general', {'ai_visual_check': True})  # Gemini looks at the candidates (off by default)
         r = client.put('/api/settings/gemini', json={'fallback_models': ['gemini-2.5-flash', 'gemini-4.0-flash']}, headers=SETTINGS)
         assert r.status_code == 422 and 'Modelleri Getir' in r.json()['message']
         r = client.put('/api/settings/gemini', json={'fallback_models': None}, headers=SETTINGS)

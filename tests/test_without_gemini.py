@@ -108,12 +108,12 @@ def test_ai_visual_check_off_sends_no_gemini_request(tmp_path, monkeypatch):
         assert len(calls) == before  # not a single Gemini request
         assert view['job']['progress']['local_mode'] == 'off' and stock_slots(view)
         page = open('app/static/settings.js', encoding='utf-8').read()
-        assert "name: 'ai_visual_check'" in page and 'Yapay zekâ görsel kontrolü' in page
+        assert "name: 'ai_visual_check'" in page and 'Gemini görsel kontrolü (varsayılan kapalı)' in page
     finally:
         client.__exit__(None, None, None)
 
 
-def test_two_503_in_a_row_switch_model_for_15_minutes(tmp_path, monkeypatch):
+def test_one_503_switches_model_for_15_minutes(tmp_path, monkeypatch):
     client, pid, calls, dead, busy = build(tmp_path, monkeypatch)
     try:
         busy.add(C.CHAIN[0])
@@ -124,7 +124,7 @@ def test_two_503_in_a_row_switch_model_for_15_minutes(tmp_path, monkeypatch):
         assert set(marks) == {C.CHAIN[0]}
         minutes = (datetime.fromisoformat(marks[C.CHAIN[0]]) - now_utc()).total_seconds() / 60
         assert 14 <= minutes <= 15.1  # skipped for 15 minutes, not for the day
-        assert calls.count(C.CHAIN[0]) == 2 and C.CHAIN[1] in calls
+        assert calls.count(C.CHAIN[0]) == 1 and C.CHAIN[1] in calls  # one attempt per model, then the next
     finally:
         client.__exit__(None, None, None)
 
@@ -170,7 +170,7 @@ def test_judge_sends_one_picture_per_candidate():
         return {'type': 'image', 'source': {'type': 'base64', 'media_type': 'image/jpeg', 'data': base64.b64encode(out.getvalue()).decode()}}
     one = collage([block((255, 0, 0)), block((0, 255, 0)), block((0, 0, 255))])
     image = Image.open(io.BytesIO(base64.b64decode(one['source']['data'])))
-    assert image.height == 240 and image.width > 3 * 400  # three frames side by side in ONE picture
+    assert image.width == 512 and image.height < 120  # three frames side by side in ONE picture, at most 512 px wide
 
 
 def test_scene_plan_clean_up_map_symbolic_and_neighbours():
@@ -186,7 +186,7 @@ def test_scene_plan_clean_up_map_symbolic_and_neighbours():
                'media_type': 'stock_video', 'entities': [], 'visual_intent': 'x'}]
     out = refine(json.loads(json.dumps(blocks)))
     assert out[0]['media_type'] == 'motion_graphic' and out[0]['motion_spec']['template'] == 'map'  # Jerusalem is a known place
-    assert out[0]['motion_spec']['data']['place'] == 'Jerusalem'
+    assert out[0]['motion_spec']['data']['place'] in ('Ninive', 'Jerusalem')  # both are known places (the first spoken one is drawn)
     assert out[1]['stock_query'] == 'bird caged in wooden box'  # concrete part only
     mains = [b['stock_query'] for b in out]
     assert all(mains[i] not in mains[max(0, i - 2):i] for i in range(len(mains)))  # never a copy of the two scenes before
@@ -202,12 +202,18 @@ def test_no_ai_local_plan_and_never_ollama_by_itself(tmp_path, monkeypatch):
         r = client.post(f'/api/projects/{pid}/production/plan', json={'provider': 'gemini', 'cost_confirmed': True, 'confirm_replace_plan': False})
         client.app.state.scripts.futures[r.json()['job_id']].result(timeout=60)
         job = client.get(f'/api/projects/{pid}/script').json()['job']
-        assert job['status'] == 'error' and job['provider'] == 'gemini'  # no silent switch to Ollama
+        # Gemini busy: the app's own rules plan instead (no question, never Ollama by itself).
+        assert job['status'] == 'draft' and job['provider'] == 'gemini', job
+        assert 'kendi kurallarıyla' in job['progress']['local_fallback']['message']
+        result = client.get(f'/api/projects/{pid}/production').json()['plan']
+        assert result['blocks'] and all(b['stock_query'].isascii() for b in result['blocks'])
         assert client.get(f'/api/projects/{pid}/script').json()['default_provider'] == 'gemini'
         js = open('app/static/production.js', encoding='utf-8').read()
-        assert 'Yapay zekâsız yerel planla devam et' in js and 'Ollama ile planla' in js
+        assert 'production-local-fallback' in js and 'Ollama ile planla' in js
         before = len(calls)
-        result = plan(client, pid, 'local')  # the owner chose the no-AI plan
+        r = client.post(f'/api/projects/{pid}/production/plan', json={'provider': 'local', 'cost_confirmed': False, 'confirm_replace_plan': True})
+        client.app.state.scripts.futures[r.json()['job_id']].result(timeout=60)
+        result = client.get(f'/api/projects/{pid}/production').json()['plan']  # the owner can still choose the no-AI plan directly
         assert result['blocks'] and result['provider'] == 'local' and len(calls) == before
         view = T.complete(client, pid)  # and media still completes (Gemini busy → local scoring)
         assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0

@@ -357,6 +357,7 @@ def build(tmp_path, monkeypatch, key, engine='gemini'):
         s.save('gemini', {'api_key': 'synthetic-gemini-key-3333'})
         s.record_gemini_models(s.gemini_config(), ['gemini-test-model'])
         s.save('gemini', {'model': 'gemini-test-model'})
+    s.save('general', {'ai_visual_check': True})  # the AI looks at the candidates (off by default)
     assert s.ai_engine() == engine
     client.app.state.stock.ai_sleep = lambda seconds, service: client.app.state.stock.__dict__.setdefault('slept', []).append(seconds)
     pid = client.post('/api/projects', json={'name': key, 'topic': data['topic'], 'language': 'de', 'target_duration_minutes': 3}).json()['id']

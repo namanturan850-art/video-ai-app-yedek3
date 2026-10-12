@@ -100,6 +100,7 @@ def test_wizard_uses_preset_without_ai_and_gemini_when_configured(client, monkey
     assert r['source'] == 'preset' and r['style']['palette'] == PRESETS['enerjik']['palette']
     s = client.app.state.settings
     s.save('gemini', {'api_key': 'synthetic-gemini-key-9999'}); s.record_gemini_models(s.gemini_config(), ['gemini-test']); s.save('gemini', {'model': 'gemini-test'})
+    s.save('general', {'ai_visual_check': True})  # Gemini looks at the candidates (off by default)
     answers = [{'background': '#0A0A14', 'primary': '#FFFFFF', 'accent': '#00D1FF', 'text': '#FFFFFF', 'heading_font': 'oswald', 'body_font': 'inter',
                 'motion_duration': 0.5, 'easing': 'snappy', 'subtitle_font': 'montserrat', 'subtitle_position': 'bottom', 'reason': 'Uzay için soğuk mavi vurgu.'},
                {'background': '#FFFFFF', 'primary': '#FFFFFF', 'accent': '#FFFFFF', 'text': '#FFFFFF', 'heading_font': 'x', 'body_font': 'y',

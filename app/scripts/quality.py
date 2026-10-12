@@ -10,6 +10,12 @@ from app.scripts.engine import YouTubeScriptEngine, SecretGuard, translation_chu
 from app.scripts.models import ScriptError
 from app.scripts.storage import dumps
 from app.providers.base import ScriptProviderError
+
+PLAN_DEADLINE = 90  # seconds one Gemini plan request may take before the local rules plan
+# Gemini cannot plan right now → the local rules plan instead (no question asked).
+PLAN_FALLBACK = {'free_quota_exhausted': 'günlük ücretsiz kota doldu', 'quota_limit': 'kota sınırı', 'rate_limit': 'hız sınırı',
+                 'upstream_error': 'sunucu meşgul', 'gemini_timeout': 'zaman aşımı', 'generation_timeout': 'zaman aşımı',
+                 'network_error': 'bağlantı hatası', 'no_internet': 'internet bağlantısı yok', 'model_unavailable': 'model kullanılamıyor'}
 from app.production import (SCENE_ERRORS, SCENE_FIELDS, SCENE_METADATA_ERRORS, scene_error, scene_references,
                             narration_units, exact_source_slices, visual_blocks, scene_checks)
 
@@ -296,10 +302,33 @@ class QualityService:
             prompt=instructions
             if repair:
                 prompt='Correct only scene metadata for required_unit_groups. Do not change groups or narration. '+self._visual_example(units[0]['unit_id'])+' Return JSON only. Do not explain.'
-            try: return engine.structured('visual',payload,prompt)
+            if progress.get('local_fallback'):
+                return local_engine().structured('visual',payload,prompt)
+            try: return gemini_with_deadline(payload,prompt) if job['provider']=='gemini' else engine.structured('visual',payload,prompt)
             except (ScriptError,ScriptProviderError) as error:
+                if job['provider']=='gemini' and isinstance(error,ScriptProviderError) and error.category in PLAN_FALLBACK:
+                    # Gemini could not plan (quota, busy, time-out): the app's own rules plan this and
+                    # every later part; [GÖRSEL]/[HARİTA]… markers still win. Nothing is asked.
+                    progress['local_fallback']={'category':error.category,'segment_index':index,
+                        'message':'Gemini plan hazırlayamadı ('+PLAN_FALLBACK[error.category]+'); plan uygulamanın kendi kurallarıyla (yapay zekâsız) hazırlandı. Metindeki işaretleriniz yine önceliklidir.'}
+                    checkpoint('analyzing')
+                    return local_engine().structured('visual',payload,prompt)
                 if error.category in ('invalid_json','schema_invalid'): raise scene_error('invalid_scene_schema','json') from None
                 raise
+        def gemini_with_deadline(payload,prompt):
+            # A hanging Gemini never holds the plan for minutes: after PLAN_DEADLINE s the local rules plan.
+            import contextvars,threading
+            box={}
+            def work():
+                try: box['raw']=engine.structured('visual',payload,prompt)
+                except BaseException as error: box['error']=error
+            thread=threading.Thread(target=contextvars.copy_context().run,args=(work,),daemon=True);thread.start();thread.join(PLAN_DEADLINE)
+            if thread.is_alive(): raise ScriptProviderError(f'Gemini {PLAN_DEADLINE} sn içinde plan yanıtı vermedi.',504,category='gemini_timeout')
+            if 'error' in box: raise box['error']
+            return box['raw']
+        def local_engine():
+            from app.scripts.local_plan import LocalPlanner
+            return YouTubeScriptEngine(LocalPlanner(self.projects.get(job['project_id'])['topic']), engine.guard)
         def reconstruct(raw):
             return visual_blocks(raw,source,options['language'],(options['words_per_minute_min']+options['words_per_minute_max'])/2,start,units=units,single=single,previous=data.get('previous_visuals'))
         repair=progress.get('visual_repair')

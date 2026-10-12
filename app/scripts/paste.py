@@ -106,7 +106,7 @@ def clean(raw):
     return {'text': '\n\n'.join(paragraphs), 'markers': markers, 'warnings': list(dict.fromkeys(warnings))}
 
 
-def apply_markers(blocks, markers):
+def apply_markers(blocks, markers, language='de'):
     """Owner hints on the scene plan: [GÖRSEL] becomes the first search query
     and what must be shown; the infographic markers ([HARİTA], [SAYI],
     [ÇİZELGE], [KARŞILAŞTIR], [LİSTE]) are kept with their sentence and become a
@@ -122,12 +122,15 @@ def apply_markers(blocks, markers):
         hints.append({'type': marker['type'], 'value': marker['value'], 'sentence': sentence[:600]})
         old = [q for q in [block.get('stock_query', ''), *block.get('alternative_stock_queries', [])] if q]
         if marker['type'] == 'visual':
-            block['stock_query'] = marker['value'][:300]
-            block['alternative_stock_queries'] = [q for q in old if q.casefold() != marker['value'].casefold()][:5] or [marker['value']]
+            from app.scripts.query_clean import english_query
+            query = english_query(marker['value'], language, limit=6) or marker['value']  # the note in English search words
+            block['stock_query'] = query[:300]
+            block['alternative_stock_queries'] = [q for q in old if q.casefold() != query.casefold()][:5] or [query]
             block['must_show'] = marker['value'][:300]
             block['visual_intent'] = (marker['value'] + ' — ' + block.get('visual_intent', ''))[:1500]
         elif marker['type'] == 'map':
-            extra = f'{marker["value"]} map'
+            from app.scripts.query_clean import english_query
+            extra = f'{english_query(marker["value"], language, strict=True, limit=3) or "old"} map'
             if extra.casefold() not in (q.casefold() for q in old):
                 block['alternative_stock_queries'] = (block.get('alternative_stock_queries', []) + [extra[:300]])[-5:]
     return blocks

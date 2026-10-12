@@ -1,5 +1,15 @@
 # AI Video Studio — Durum
 
+## 2026-10-12 — “Senaryo yazılamadı: JSON … eksik/geçersiz” düzeltmesi
+
+- Yapay zekânın senaryo planı/konsept cevabındaki küçük biçim kaymaları artık otomatik onarılıyor:
+  - fazla uzun alan kısaltılır;
+  - yazı yerine liste gelirse birleştirilir;
+  - fazla anahtar atılır;
+  - sayı yazı olarak gelirse okunur.
+- Onarılamayan bir cevapta yalnız bu iki adım (konsept ve bölüm planı) bir kez otomatik yeniden sorulur. Kurgu planının kendi onaylı onarım akışı değişmedi.
+- “Yönetmeni Devam Ettir” kaldığı yerden sürer; tamamlanan adımlar korunur.
+
 ## 2026-10-11 — Referans video analizi + YouTube kartı kuralları
 
 - **Kaynak analizi**: referans YouTube linki ve isteğe bağlı transkript ile bir kart oluşur.

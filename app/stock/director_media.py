@@ -210,6 +210,7 @@ class MediaDirector:
         """From now on this job judges candidates locally (provider tags and
         words, as before the AI look existed). Those slots are marked “yapay
         zekâ onayı yok” and the AI looks at them again on a later press."""
+        if self.ai is not None: self.chain = self.ai  # keep its attempt log for the diagnostics file
         self.ai, self.local = None, True
         if error is not None:
             category = getattr(error, 'category', '') or 'provider_error'
@@ -1192,7 +1193,8 @@ class MediaDirector:
             service._mirror(state)
         result = state['media_summary']
         self.count_requests()
-        if getattr(self.ai, 'attempts', None): self.progress['ai_attempts'] = self.ai.attempts[-150:]  # model + result of every try
+        engine = self.ai or getattr(self, 'chain', None)
+        if getattr(engine, 'attempts', None): self.progress['ai_attempts'] = engine.attempts[-150:]  # model + result of every try
         self.progress.update(percent=100, category='none', media_summary=result,
                              message=result['text'] + (' · Bütün video incelemesi atlandı: ' + self.progress['review_skipped'].split('.')[0] if self.progress.get('review_skipped') else '')
                              + (' · Görüntü yeri kalmadığı için gösterilemeyen işaretler: ' + ', '.join(self.progress['owner_unplaced']) if self.progress.get('owner_unplaced') else '')

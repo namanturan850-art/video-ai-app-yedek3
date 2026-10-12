@@ -125,13 +125,14 @@ def test_marked_scenes_become_infographics_even_when_the_ai_quota_is_gone(tmp_pa
     try:
         fake.fail = lambda n: T.gemini_429(free=True)  # no AI at all during Medyayı Tamamla
         view = T.complete(client, pid)
-        assert view['job']['progress']['category'] == 'ai_paused'
+        assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0  # never stops
+        assert view['job']['progress']['local_mode'] == 'down'
         templates = sorted(s['selected_media']['source_metadata']['motion']['template'] for s in owner_slots(view))
         assert templates == ['compare', 'list', 'map', 'stat', 'timeline']  # every marker drawn, none as a text card
         pin = next(s for s in owner_slots(view) if s['selected_media']['source_metadata']['motion']['template'] == 'map')
         assert (pin['selected_media']['source_metadata']['motion']['data']['lat'], pin['selected_media']['source_metadata']['motion']['data']['lon']) == (25.0, -71.0)
-        assert all(s['selected_media']['provider'] != 'generated' or (s.get('director') or {}).get('stage') in ('motion_owner', 'motion_planned')
-                   for s in view['slots'] if s.get('selected_media'))  # nothing else fell to motion
+        stock = [s for s in view['slots'] if s['selected_media']['provider'] != 'generated']
+        assert stock and all(s.get('needs_ai_review') or s.get('continuation_of') for s in stock)  # chosen locally, marked for the AI
     finally:
         client.__exit__(None, None, None)
 

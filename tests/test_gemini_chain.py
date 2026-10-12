@@ -30,7 +30,7 @@ def test_default_chain_selected_then_flash_then_lite_newest_first_and_never_unsu
     # The owner's order wins; removed or no-longer-listed models and anything below 2.5 are dropped.
     config = {'model': 'gemini-2.5-flash', 'available_models': LISTED,
               'fallback_models': ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-9.9-flash', 'gemini-2.5-flash-preview-05-20']}
-    assert chain_models(config) == ['gemini-2.5-flash-lite', 'gemini-2.5-flash']
+    assert chain_models(config) == ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-flash-preview-05-20']  # preview allowed, but only last by default
     assert chain_models({**config, 'fallback_models': ['gemini-2.5-flash-lite']}) == ['gemini-2.5-flash', 'gemini-2.5-flash-lite']  # selected stays in
     assert gemini_chain.pacific_midnight().hour in (7, 8)  # 00:00 in Los Angeles is 07:00/08:00 UTC
 
@@ -115,7 +115,7 @@ def test_first_two_models_used_up_the_third_finishes_plan_and_media(tmp_path, mo
         client.__exit__(None, None, None)
 
 
-def test_model_switch_mid_job_continues_and_all_used_up_stops_keeping_finished_slots(tmp_path, monkeypatch):
+def test_model_switch_mid_job_continues_and_all_used_up_goes_local_keeping_finished_slots(tmp_path, monkeypatch):
     client, pid, calls, dead, minute = build(tmp_path, monkeypatch)
     try:
         plan(client, pid)
@@ -125,19 +125,20 @@ def test_model_switch_mid_job_continues_and_all_used_up_stops_keeping_finished_s
         class Counting(original):  # the first model runs out after a few looks, the next one later, the last one too
             def complete_json(self, *args, **kwargs):
                 used = len(calls) - start
-                if self.model == CHAIN[0] and used >= 4: dead.add(CHAIN[0])
-                if self.model == CHAIN[1] and used >= 8: dead.add(CHAIN[1])
-                if self.model == CHAIN[2] and used >= 12: dead.add(CHAIN[2])
+                if self.model == CHAIN[0] and used >= 2: dead.add(CHAIN[0])
+                if self.model == CHAIN[1] and used >= 4: dead.add(CHAIN[1])
+                if self.model == CHAIN[2] and used >= 6: dead.add(CHAIN[2])  # (one look per scene: few requests)
                 return super().complete_json(*args, **kwargs)
         monkeypatch.setattr(factory, 'GeminiScriptProvider', Counting)
         view = T.complete(client, pid)
         job = view['job']
-        assert job['status'] == 'error' and job['progress']['category'] == 'ai_paused', job
-        assert 'yedek zincirindeki tüm modellerin (3.0-flash, 2.5-flash, 2.5-flash-lite) günlük ücretsiz kotası doldu' in job['error_message']
-        decided = {s['ai_review']['model'] for s in view['slots'] if (s.get('ai_review') or {}).get('model')}
-        assert decided >= {CHAIN[0], CHAIN[1]}  # the job moved down the chain and went on
+        assert job['status'] == 'completed' and view['media_summary']['missing'] == 0, job  # never stops
+        assert 'yedek zincirindeki tüm modellerin (3.0-flash, 2.5-flash, 2.5-flash-lite) günlük ücretsiz kotası doldu' in job['progress']['message']
+        answered = {a['model'] for a in job['progress']['ai_attempts'] if a['result'] == 'ok'}
+        assert answered >= {CHAIN[0], CHAIN[1]}  # the job moved down the chain and went on (every attempt is logged)
         kept = {s['slot_id']: s['selected_media']['media_id'] for s in view['slots'] if s.get('selected_media') and s['selected_media']['provider'] != 'generated'}
-        assert kept and not any(s['status'] == 'error' for s in view['slots'])  # finished slots stay; the rest wait
+        assert kept and not any(s['status'] == 'error' for s in view['slots'])
+        assert view['media_summary']['unchecked'] > 0  # the rest was chosen locally and waits for an AI look
         assert all((s.get('director') or {}).get('stage') in (None, 'motion_planned') or s['selected_media']['provider'] != 'generated'
                    for s in view['slots'] if s.get('selected_media'))  # nothing fell to motion
         # Next day (or after clearing the marks in Settings) the job continues where it stopped.
@@ -145,7 +146,8 @@ def test_model_switch_mid_job_continues_and_all_used_up_stops_keeping_finished_s
         assert client.post('/api/settings/gemini/quota-reset', headers=SETTINGS).status_code == 200
         view = T.complete(client, pid)
         assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
-        assert all(next(s for s in view['slots'] if s['slot_id'] == k)['selected_media']['media_id'] == v for k, v in kept.items())
+        changed = [k for k, v in kept.items() if next(s for s in view['slots'] if s['slot_id'] == k)['selected_media']['media_id'] != v]
+        assert len(changed) <= max(2, view['media_summary']['total'] // 4)  # AI-approved picks stay; local picks the AI rejects are replaced
     finally:
         client.__exit__(None, None, None)
 

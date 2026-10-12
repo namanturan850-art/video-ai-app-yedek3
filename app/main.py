@@ -282,10 +282,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         except Exception:
             result['narration'] = None
         # Gemini (free tier) everywhere by default; Claude only when the owner
-        # ticked it in Settings. Without a configured engine the project's own
-        # choice (Ollama backup) is kept.
-        if result['director']['engine']:
-            result['default_provider'] = result['director']['engine']
+        # ticked it in Settings. Never Ollama on its own: when Gemini cannot
+        # plan, the screen asks (Ollama or the no-AI local plan).
+        result['default_provider'] = result['director']['engine'] or 'gemini'
         return result
 
     @application.post('/api/projects/{project_id}/script/tools/{kind}', status_code=202)

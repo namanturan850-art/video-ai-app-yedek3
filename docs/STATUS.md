@@ -1,5 +1,28 @@
 # AI Video Studio — Durum
 
+## 2026-10-12 — Gemini olmadan da çalışır
+
+- **Medyayı Tamamla Gemini'ye bağlı değil.**
+  - Gemini 429 kota, 503 sunucu meşgul veya zaman aşımı verirse iş durmaz.
+  - Adaylar yerel kelime/etiket eşleşmesiyle seçilir ve “yapay zekâ onayı yok” diye işaretlenir.
+  - Gemini dönünce “Yapay zekâyla yeniden kontrol et (N yuva)” düğmesi yalnız bu yuvalara bakar.
+- **Ayarlar → Genel → “Yapay zekâ görsel kontrolü”:** kapalıyken Medyayı Tamamla hiç Gemini isteği göndermez.
+- **Model zinciri:**
+  - Günlük kota dolarsa sıradaki modele geçilir. Art arda 2 kez 5xx, zaman aşımı veya açıklamasız 429 gelirse de geçilir; o model 15 dk atlanır.
+  - Varsayılan sıra: kararlı Flash → Flash-Lite → en sonda preview/Pro.
+  - Her denemenin modeli ve sonucu tanılama dosyasına yazılır (`gemini_models_tried`, `gemini_attempts`).
+- **Daha az istek:**
+  - Bir sahnedeki yuvaların adayları tek istekte değerlendirilir; yuva başına en fazla 4 aday gönderilir.
+  - Bir videonun başlangıç/orta/son kareleri tek kolaj görsel olarak gider.
+  - Kararlar projeler arası önbellekte tutulur.
+  - Medya ekranı istek sayısını gösterir: son iş ve proje toplamı.
+- **Sahne planı:**
+  - Gemini plan yapamazsa Ollama'ya kendiliğinden geçilmez; ekran ne yapılacağını sorar: “Yapay zekâsız yerel plan” (internet gerekmez) veya Ollama.
+  - Plan sorguları temizlenir: “map/harita” geçen sorgu, anlatımda bilinen bir yer varsa harita infografiği olur.
+  - Sembolik sorgular somut kısmına indirilir (“bird caged … symbolizing …” → “bird caged in wooden box”).
+  - Bir sahnenin sorgusu önceki iki sahnenin sorgusunun kopyası olamaz.
+- **Stok:** tarih/arkeoloji sahnelerinde Wikimedia önce aranır; Pixabay'den modern sonuçlar (araba, telefon, ofis…) elenir.
+
 ## 2026-10-12 — Wikimedia Commons kaynağı, Pexels kapalı
 
 - **Pexels kapalı:** yeni anahtar verilmediği için aramalarda kullanılmıyor. Anahtar alanı duruyor; boşsa uyarı çıkmıyor. Kodda tek satırla yeniden açılabilir.

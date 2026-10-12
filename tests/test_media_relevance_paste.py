@@ -107,15 +107,14 @@ def test_pasted_topic_fills_every_slot_and_never_picks_irrelevant_media(key, tmp
             tags = tags_of(world, slot['selected_media'])
             assert not (set(re.findall(r'[a-z]+', tags)) & NOISE_WORDS), (key, tags)  # nothing irrelevant, nothing watermarked
             assert (slot.get('ai_review') or {}).get('score', 0) >= 7  # only 7+/10 stock media
-        # Every video candidate shown to the AI came with three frames (start/middle/end).
+        # Every video candidate shown to the AI came as ONE picture (its start/middle/end frames side by side).
         for request in fake.requests:
             parts = request['contents'][0]['parts']
             if not any('Candidate' in p.get('text', '') for p in parts): continue
             for i, part in enumerate(parts):
                 if re.match(r'Candidate \d+: video', part.get('text', '')):
-                    following = [p for p in parts[i + 1:i + 4]]
-                    assert all('inlineData' in p for p in following), (key, part['text'][:60])
-            assert sum(1 for p in parts if re.match(r'Candidate \d+:', p.get('text', ''))) <= 6  # at most 6 candidates per look
+                    assert 'inlineData' in parts[i + 1] and 'inlineData' not in parts[i + 2], (key, part['text'][:60])
+            assert sum(1 for p in parts if re.match(r'Candidate \d+:', p.get('text', ''))) <= 16  # one look per scene: ≤4 per slot, ≤16 in all
         progress = view['job']['progress']
         filtered = progress.get('irrelevant_filtered', 0)
         assert filtered > 0  # the irrelevant ones were seen and dropped
@@ -151,7 +150,7 @@ def test_owner_rejection_is_remembered_and_explained_to_the_ai(tmp_path, monkeyp
 
 def test_prefilter_threshold_and_tiers_unit():
     from app.stock.director_media import APPROVE_SCORE, CANDIDATES, MediaDirector, relevance_summary
-    assert APPROVE_SCORE == 7 and CANDIDATES == 6
+    assert APPROVE_SCORE == 7 and CANDIDATES == 4
     d = MediaDirector.__new__(MediaDirector)
     d.rejected_keys, d.rejected_hashes = {('pexels', 'video', '9')}, set()
     scene = {'must_not_show': 'modern cars, modern buildings, office, people talking to camera'}

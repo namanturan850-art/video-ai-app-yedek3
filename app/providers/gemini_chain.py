@@ -1,31 +1,45 @@
 """Gemini model backup chain.
 
-When one model's quota is used up (daily free quota), the next model of the
-owner's chain answers instead, inside the same call, so scene planning,
-Medyayı Tamamla and every other Gemini job simply continue. A used-up model
-is skipped until its quota resets (US Pacific midnight) instead of being
-tried on every request. A per-minute limit is not a reason to switch: the
-error goes back to the caller, which waits briefly and asks the same model
-again. Only when every model of the chain is used up does the error reach
-the job (which then stops with a plain message).
+When a model cannot answer, the next model of the owner's chain answers
+instead, inside the same call, so scene planning, Medyayı Tamamla and every
+other Gemini job simply continue:
+- daily quota used up → that model is skipped until US Pacific midnight;
+- two failures in a row with “server busy” (5xx/503), a time-out or an
+  unexplained 429 → that model is skipped for 15 minutes;
+- an explicit per-minute limit is not a reason to switch: the caller waits
+  briefly and asks the same model again.
+Only when every model of the chain is skipped does the error reach the job.
+Every attempt (model, result, time) is kept for the diagnostics file.
 
-Default chain (from the model list the API returned): the selected model,
-then the other Flash models (newest first), then the Flash-Lite models
-(newest first). Never in the chain: preview/experimental builds, TTS, image,
-embedding, live/audio models, and anything older than Gemini 2.5.
+Default chain (from the model list the API returned): stable Flash models,
+then Flash-Lite, then — last — preview and Pro models (each group newest
+first; the selected model leads its group). Never in the chain: experimental
+builds, TTS, image, embedding, live/audio models, anything older than 2.5.
 """
+from collections import deque
 from datetime import datetime, timedelta, timezone
 import re
+import threading
 
 from app.providers.base import ScriptProviderError
 
 MIN_VERSION = 2.5
-EXCLUDED = ('preview', 'exp', 'tts', 'image', 'embedding', 'embed', 'live', 'audio', 'native', 'thinking', 'aqa', 'learnlm',
+EXCLUDED = ('exp', 'tts', 'image', 'embedding', 'embed', 'live', 'audio', 'native', 'thinking', 'aqa', 'learnlm',
             'gemma', 'imagen', 'veo', 'vision', 'computer-use', 'robotics')
 # Daily quota used up: switch to the next model and skip this one until the reset.
 SWITCH = {'free_quota_exhausted'}
 # The model itself cannot be used (removed/renamed): next model, no day-long mark.
 SKIP = {'model_unavailable', 'model_unsupported'}
+# Busy server, time-out or a 429 Google does not explain: twice in a row → 15 minutes off.
+SHAKY = {'upstream_error', 'gemini_timeout', 'generation_timeout', 'timeout', 'quota_limit', 'network_error'}
+SHAKY_LIMIT, SHAKY_MINUTES, SHAKY_WAIT = 2, 15, 3
+
+
+def PAUSE(seconds):  # replaced in tests
+    import time
+    time.sleep(seconds)
+ATTEMPTS = deque(maxlen=400)   # every model attempt of this app run (diagnostics)
+_strikes, _lock = {}, threading.Lock()
 
 
 def now_utc():
@@ -50,13 +64,15 @@ def version(model):
 
 
 def kind(model):
-    """'flash', 'flash-lite' or None (not a chain model)."""
+    """'flash', 'flash-lite', 'extra' (preview or Pro: last resort) or None."""
     name = (model or '').casefold()
     if not name.startswith('gemini-') or any(word in name for word in EXCLUDED):
         return None
     number = version(name)
     if number is None or number < MIN_VERSION:
         return None
+    if 'preview' in name or 'pro' in name.split('-'):
+        return 'extra'
     if 'flash-lite' in name or 'flash-8b' in name:
         return 'flash-lite'
     if 'flash' in name:
@@ -69,11 +85,13 @@ def eligible(model):
 
 
 def default_chain(selected, available):
-    """Selected model, other Flash (newest first), then Flash-Lite (newest first)."""
-    newest = lambda m: (-(version(m) or 0), len(m), m)
-    flash = sorted({m for m in available if kind(m) == 'flash' and m != selected}, key=newest)
-    lite = sorted({m for m in available if kind(m) == 'flash-lite' and m != selected}, key=newest)
-    return [m for m in [selected, *flash, *lite] if m]
+    """Stable Flash → Flash-Lite → preview/Pro (newest first; the selected model leads its group).
+    A selected model outside these groups (e.g. a custom name) still comes first."""
+    newest = lambda m: (m != selected, -(version(m) or 0), len(m), m)
+    pool = set(available) | ({selected} if selected else set())
+    groups = [sorted((m for m in pool if kind(m) == k), key=newest) for k in ('flash', 'flash-lite', 'extra')]
+    chain = [m for group in groups for m in group]
+    return chain if selected in chain or not selected else [selected, *chain]
 
 
 def chain_models(config):
@@ -103,7 +121,7 @@ class GeminiChain:
         self._key, self.models, self.settings, self._make = api_key, list(models), settings, make
         self._providers = {}
         self.provider(self.models[0])  # key/model problems surface right away, as before
-        self.last_model, self.switches = None, []
+        self.last_model, self.switches, self.attempts = None, [], []
 
     @property
     def model(self):
@@ -118,34 +136,57 @@ class GeminiChain:
         marks = getattr(self.settings, 'gemini_exhausted', None)
         return marks() if marks else {}
 
-    def _mark(self, model):
+    def _mark(self, model, until=None):
         mark = getattr(self.settings, 'mark_gemini_exhausted', None)
-        if mark: mark(model, pacific_midnight().isoformat())
+        if mark: mark(model, until or pacific_midnight().isoformat())
+
+    def _note(self, model, result):
+        entry = {'model': model, 'result': result, 'at': now_utc().isoformat()}
+        self.attempts.append(entry); ATTEMPTS.append(entry)
 
     def _call(self, method, *args, **kwargs):
         skipped, last_error = [], None
         for model in self.models:
             if model in self.exhausted():
                 skipped.append(model); continue
-            try:
-                result = getattr(self.provider(model), method)(*args, **kwargs)
-            except ScriptProviderError as error:
-                if error.category in SWITCH:
-                    self._mark(model); skipped.append(model); last_error = error
-                    self.switches.append({'from': model, 'reason': error.category, 'at': now_utc().isoformat()})
-                    continue
-                if error.category in SKIP and len(self.models) > 1:
-                    skipped.append(model); last_error = error
-                    continue
-                raise  # per-minute limit, time-out, key problem…: the caller decides (waits / stops)
-            if self.last_model and self.last_model != model:
-                self.switches.append({'to': model, 'at': now_utc().isoformat()})
-            self.last_model = model
-            return result
+            for attempt in range(SHAKY_LIMIT):
+                try:
+                    result = getattr(self.provider(model), method)(*args, **kwargs)
+                except ScriptProviderError as error:
+                    self._note(model, error.category)
+                    if error.category in SWITCH:
+                        self._mark(model); skipped.append(model); last_error = error
+                        self.switches.append({'from': model, 'reason': error.category, 'at': now_utc().isoformat()})
+                        break
+                    if error.category in SHAKY and len(self.models) > 1:
+                        with _lock:
+                            _strikes[model] = _strikes.get(model, 0) + 1
+                            strikes = _strikes[model]
+                        if strikes >= SHAKY_LIMIT:  # twice in a row: 15 minutes off, next model
+                            with _lock: _strikes[model] = 0
+                            self._mark(model, (now_utc() + timedelta(minutes=SHAKY_MINUTES)).isoformat())
+                            skipped.append(model); last_error = error
+                            self.switches.append({'from': model, 'reason': error.category, 'at': now_utc().isoformat()})
+                            break
+                        PAUSE(SHAKY_WAIT)  # a short breath, then the same model once more
+                        continue
+                    if error.category in SKIP and len(self.models) > 1:
+                        skipped.append(model); last_error = error
+                        break
+                    raise  # per-minute limit, key problem, one-model chain…: the caller decides (waits / goes local)
+                self._note(model, 'ok')
+                with _lock: _strikes.pop(model, None)
+                if self.last_model and self.last_model != model:
+                    self.switches.append({'to': model, 'at': now_utc().isoformat()})
+                self.last_model = model
+                return result
+        daily = getattr(last_error, 'category', 'free_quota_exhausted') == 'free_quota_exhausted' or last_error is None
         error = ScriptProviderError(
-            f'Gemini yedek zincirindeki tüm modellerin ({", ".join(short(m) for m in self.models)}) günlük ücretsiz kotası doldu.',
-            429, category='free_quota_exhausted', retry_after=getattr(last_error, 'retry_after', 0) or 0,
+            f'Gemini yedek zincirindeki tüm modellerin ({", ".join(short(m) for m in self.models)}) '
+            + ('günlük ücretsiz kotası doldu.' if daily else 'şu anda yanıt vermiyor (sunucu meşgul / zaman aşımı); biraz sonra yeniden denenir.'),
+            429 if daily else 503, category='free_quota_exhausted' if daily else 'upstream_error', retry_after=getattr(last_error, 'retry_after', 0) or 0,
             upstream_status=getattr(last_error, 'upstream_status', None))
+        error.chain_exhausted = True
         error.chain_models = list(self.models)
         raise error
 

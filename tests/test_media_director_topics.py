@@ -462,7 +462,17 @@ def no_fallback_motion(view):
                for s in view['slots'] if s.get('selected_media'))
 
 
-def test_claude_outage_pauses_instead_of_motion_and_next_press_continues(tmp_path, monkeypatch):
+def ai_never_blamed(view):
+    """Motion only where no stock fitted, never “because the AI was unreachable”."""
+    return not any('ulaşılamadı' in (s.get('message') or '') for s in view['slots'])
+
+
+def local_slots(view):
+    return [s for s in view['slots'] if s.get('selected_media') and s['selected_media']['provider'] != 'generated' and not s.get('continuation_of')
+            and not (s.get('ai_review') or {}).get('approved')]
+
+
+def test_claude_outage_continues_locally_and_next_press_rechecks(tmp_path, monkeypatch):
     import anthropic
     from fake_anthropic import api_error
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'deepsea', 'claude')
@@ -471,57 +481,58 @@ def test_claude_outage_pauses_instead_of_motion_and_next_press_continues(tmp_pat
         fake.responder = lambda request: api_error(anthropic.APIConnectionError, 0)
         view = complete(client, pid)
         job = view['job']
-        assert job['status'] == 'error' and job['progress']['category'] == 'ai_paused', job
-        assert 'Claude şu anda yanıt vermiyor' in job['error_message'] and 'kaldığı yerden devam' in job['error_message']
-        assert client.app.state.stock.slept  # temporary error: waited and retried before stopping
-        assert no_fallback_motion(view)
-        assert not any(s['status'] == 'error' for s in view['slots'])  # the rest stays “Bekliyor”
+        assert job['status'] == 'completed' and view['media_summary']['missing'] == 0, job  # never stops
+        assert 'Claude şu anda yanıt vermiyor' in job['progress']['message'] and 'Medya seçimi durmadı' in job['progress']['message']
+        assert client.app.state.stock.slept  # temporary error: waited and retried before going local
+        assert ai_never_blamed(view)
+        assert local_slots(view) and all(s['needs_ai_review'] for s in local_slots(view))  # “yapay zekâ onayı yok”
         fake.responder = healthy
-        view = complete(client, pid)
+        view = complete(client, pid)  # one click: the AI looks at them
         summary = check(client, pid, claude, view)
-        assert summary['videos'] + summary['images'] > 0
+        assert summary['videos'] + summary['images'] > 0 and not local_slots(view)
     finally:
         client.__exit__(None, None, None)
 
 
-def test_gemini_quota_mid_job_stops_without_motion_and_resumes(tmp_path, monkeypatch):
+def test_gemini_quota_mid_job_continues_locally_and_rechecks(tmp_path, monkeypatch):
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'bermuda')
     try:
         start = len(fake.requests)
         fake.fail = lambda n: gemini_429(free=True) if n > start + 6 else None  # daily free quota runs out mid-job
         view = complete(client, pid)
         job = view['job']
-        assert job['status'] == 'error' and job['progress']['category'] == 'ai_paused', job
-        assert 'Gemini günlük ücretsiz kotası doldu' in job['error_message'] and 'dk sonra tekrar deneyin' in job['error_message']
+        assert job['status'] == 'completed' and view['media_summary']['missing'] == 0, job
+        assert 'günlük ücretsiz kotası doldu' in job['progress']['message']
         assert job['progress']['ai_failure']['category'] == 'free_quota_exhausted'  # the real error is kept for the diagnostics file
-        assert no_fallback_motion(view)  # no slot fell to motion
-        done = {s['slot_id']: s['selected_media']['media_id'] for s in view['slots'] if s.get('selected_media') and s['selected_media']['provider'] != 'generated'}
-        assert done  # what was approved before the quota ran out is kept
-        pending = [s for s in view['slots'] if not s.get('selected_media')]
-        assert pending and all(s['status'] == 'pending' and s['status_label'] == 'Bekliyor' for s in pending)
+        assert ai_never_blamed(view)  # no slot fell to motion because of the AI
+        approved = {s['slot_id']: s['selected_media']['media_id'] for s in view['slots']
+                    if (s.get('ai_review') or {}).get('approved') and not s.get('continuation_of')}
+        assert approved and local_slots(view)  # AI-approved before the quota ran out, local after
+        assert view['media_summary']['unchecked'] == len(local_slots(view))
         assert not client.app.state.stock.__dict__.get('slept')  # a daily quota is not waited out
         diag = client.get(f'/api/projects/{pid}/production/stock/diagnostics').json()
         assert diag['jobs'][0]['progress']['ai_failure']['category'] == 'free_quota_exhausted'
         assert set(client.app.state.settings.gemini_exhausted()) == {'gemini-test-model'}  # skipped until the Pacific-midnight reset
         fake.fail = None
         assert client.post('/api/settings/gemini/quota-reset', headers=SETTINGS).status_code == 200  # “next day”
-        view = complete(client, pid)  # pressing again continues
+        view = complete(client, pid)  # the re-check
         summary = check(client, pid, claude, view)
-        assert all(next(s for s in view['slots'] if s['slot_id'] == k)['selected_media']['media_id'] == v for k, v in done.items())
-        assert summary['videos'] > 0
+        changed = [k for k, v in approved.items() if next(s for s in view['slots'] if s['slot_id'] == k)['selected_media']['media_id'] != v]
+        assert len(changed) <= 1  # AI-approved picks stay (the whole-video look may swap one near-duplicate shot)
+        assert summary['videos'] > 0 and not local_slots(view)
     finally:
         client.__exit__(None, None, None)
 
 
-def test_gemini_minute_limit_that_does_not_clear_pauses_with_minutes(tmp_path, monkeypatch):
+def test_gemini_minute_limit_that_does_not_clear_goes_local_after_short_waits(tmp_path, monkeypatch):
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'rome')
     try:
         start = len(fake.requests)
         fake.fail = lambda n: gemini_429() if n > start + 3 else None
         view = complete(client, pid)
-        assert view['job']['progress']['category'] == 'ai_paused'
-        assert 'Gemini kotası doldu' in view['job']['error_message'] and '1 dk sonra' in view['job']['error_message']
-        assert len(client.app.state.stock.slept) == 5 and no_fallback_motion(view)
+        assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
+        assert 'kota/hız sınırına takıldı' in view['job']['progress']['message']
+        assert len(client.app.state.stock.slept) == 3 and ai_never_blamed(view)
     finally:
         client.__exit__(None, None, None)
 
@@ -538,12 +549,14 @@ def test_gemini_per_minute_limit_waits_and_still_chooses_stock(tmp_path, monkeyp
         client.__exit__(None, None, None)
 
 
-def test_without_any_ai_engine_the_button_explains_instead_of_failing(tmp_path, monkeypatch):
+def test_without_any_ai_engine_media_is_chosen_locally(tmp_path, monkeypatch):
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'rome')
     try:
         monkeypatch.setattr(client.app.state.settings, 'ai_engine', lambda: None)
-        view = client.get(f'/api/projects/{pid}/production/stock').json()
-        r = client.post(f'/api/projects/{pid}/production/stock/jobs', json={'plan_id': view['plan_id'], 'revision': view['revision'], 'action': 'complete_media'})
-        assert r.status_code == 422 and 'Ayarlar → Gemini' in r.json()['message']
+        before = len(fake.requests)
+        view = complete(client, pid)
+        assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
+        assert view['job']['progress']['local_mode'] == 'no_engine' and len(fake.requests) == before
+        assert local_slots(view)
     finally:
         client.__exit__(None, None, None)

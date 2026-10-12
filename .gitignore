@@ -8,7 +8,6 @@ venv/
 # Secrets
 .env
 .env.*
-!.env.example
 secrets.json
 data/secrets*
 *.key

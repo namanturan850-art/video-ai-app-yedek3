@@ -158,7 +158,7 @@ def public_project(row: sqlite3.Row, detail: bool = False) -> dict:
     project['language_label'] = LANGUAGE_LABELS[project['language']]
     project['script_engine_label'] = SCRIPT_ENGINE_LABELS[project['script_engine']]
     if detail:
-        project['pipeline'] = [{'name': stage, 'status': 'Bekliyor', 'message': 'Hazır değil — sonraki aşamada eklenecek.'} for stage in STAGES]
+        project['pipeline'] = [{'name': stage, 'status': 'Bekliyor', 'message': 'Henüz yapılmadı.'} for stage in STAGES]
     return project
 
 

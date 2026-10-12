@@ -45,7 +45,6 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
           'motion_edit': 'Motion grafik (sizin düzenlemeniz)', 'motion_owner': 'İnfografik (metindeki işaretiniz)',
           'motion_balance': 'Motion grafik (dengeli kurgu)'}  # older projects only
-MOTION_SHARE = .20      # planned motion graphics: ~20% of the video; motion is otherwise only used when no stock fits
 MOTION_WARN = 25        # % of slots: above this the screen warns (too little stock footage)
 QUOTE_SHARE = .30       # at most this share of motion slots may be a plain text (quote) card
 CANDIDATES = 6          # at most this many candidates go to the AI per look (after a metadata pre-filter)

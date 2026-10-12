@@ -286,7 +286,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     }
     async function load() {
       feedback.textContent = 'Proje yükleniyor…';
-      try { render(await request(`/api/projects/${id}`)); feedback.textContent = 'Proje bilgileri yüklendi. Üretim özellikleri sonraki aşamalarda eklenecek.'; }
+      try { render(await request(`/api/projects/${id}`)); feedback.textContent = 'Proje bilgileri yüklendi.'; }
       catch (error) { feedback.textContent = error.message; }
     }
     const retry = make('button', 'Projeyi tekrar yükle', 'secondary'); retry.type = 'button';

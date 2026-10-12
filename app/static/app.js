@@ -1,15 +1,14 @@
 const pages = {
   '/new-project': ['Yeni Proje', 'Video fikrinizi ve tercihlerinizi kaydedin. Bu adım video veya senaryo üretmez.'],
   '/projects': ['Projeler', 'Kaydettiğiniz projeleri açın veya istemediklerinizi silin.'],
-  '/channels': ['Kanallar', 'Her YouTube kanalının dili, sesi, hedef süresi ve “Tarzım” kiti (renk, font, hareket, ses efekti, altyazı).'],
   '/settings': ['Ayarlar', 'Kullanmak istediğiniz hizmetlerin bilgilerini buradan kaydedin. İstemediğiniz bölümleri boş bırakabilirsiniz.'],
   '/settings/ai-diagnostics': ['AI Tanılama', 'Ayar kaydını, bağlantıyı, kısa üretimi, JSON biçimini ve tek senaryo bölümünü ayrı ayrı kontrol edin.'],
   '/diagnostics': ['Tanılama', 'Bilgisayarınızın ve uygulamanın durumunu buradan kontrol edebilirsiniz.']
 };
 const path = window.location.pathname;
-if (/^\/projects\/[^/]+$/.test(path)) pages[path] = ['Proje', 'Proje bilgileri ve ileride kullanılacak üretim aşamaları.'];
+if (/^\/projects\/[^/]+$/.test(path)) pages[path] = ['Proje', 'Proje bilgileri ve üretim adımları.'];
 if (/^\/projects\/[^/]+\/script$/.test(path)) pages[path] = document.body.dataset.scriptGeneration === '1' ? ['Senaryo', 'Konuya uygun özgün bir YouTube senaryosu oluşturun, düzenleyin ve onaylayın.'] : ['Metin', 'Kendi metninizi yapıştırın; seslendirme ve altyazı bu metni kelimesi kelimesine kullanır.'];
-if (/^\/projects\/[^/]+\/production$/.test(path)) pages[path] = ['Görsel ve Kurgu Hazırlığı', 'Planları ve eksikleri inceleyin. Medya arama, seslendirme ve render henüz çalıştırılmaz.'];
+if (/^\/projects\/[^/]+\/production$/.test(path)) pages[path] = ['Görsel ve Kurgu Hazırlığı', 'Sahne planı ve her sahnenin medyası (stok video, görsel, infografik).'];
 if (/^\/projects\/[^/]+\/narration$/.test(path)) pages[path]=['Seslendirme','Onaylı senaryonuz için ses seçin, görev durumunu izleyin ve ses dosyanızı dinleyin.'];
 if (/^\/projects\/[^/]+\/subtitles$/.test(path)) pages[path]=['Altyazı ve Zamanlama','Yerel sesinizin süresine göre yaklaşık altyazı zamanlarını oluşturun, dinleyin ve düzenleyin.'];
 if (/^\/projects\/[^/]+\/youtube$/.test(path)) pages[path]=['YouTube','Başlık, açıklama ve etiket hazırlığı. Otomatik yükleme yapılmaz.'];

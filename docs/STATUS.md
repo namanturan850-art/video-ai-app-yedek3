@@ -1,5 +1,24 @@
 # AI Video Studio — Durum
 
+## 2026-10-12 — Stok video düzeltmesi, infografikler, temizlik
+
+- **Yapay zekâ hatası artık videoyu motion'a çevirmiyor.**
+  - Geçici hatalarda (zaman aşımı, sunucu hatası, dakika sınırı) uygulama bekleyip yeniden dener.
+  - Kota dolarsa veya anahtar/model sorunu varsa Medyayı Tamamla durur. Ekranda ne olduğu ve ne zaman tekrar deneneceği yazar.
+  - Tamamlanan yuvalar korunur, kalanlar “Bekliyor” olur. Medyayı Tamamla'ya tekrar basınca kaldığı yerden devam eder.
+  - Asıl hata tanılama dosyasına yazılır (`ai_failure`).
+- **Motion yalnız gerektiğinde:** stok bulunamayan, planlanan veya işaretli sahneler. %40 dengeleyici kaldırıldı; yönetmene ~%20 hedefi verilir; %25 üstünde uyarı çıkar.
+- **Sayaçlar düzeldi:** stok video, görsel ve motion ayrı sayılır; özet satırı ve ayrıntılar aynı rakamları gösterir.
+- **İnfografikler:** yazıyla yazılmış sayılar tanınır. `[HARİTA]` ve `[SAYI]` doğrudan şablon üretir. Yeni işaretler: `[ÇİZELGE]`, `[KARŞILAŞTIR]`, `[LİSTE]`. Yazı kartı son seçenektir. Çubuk grafik ortalandı, büyük sayılar ayraçlı yazılır, harita iğnesi yerin üstündedir.
+- **Render:** OpenMontage kurulu değilse ekran kendiliğinden Yerel Adaptif motoru seçer; “Videoyu Oluştur” artık kilitli kalmaz.
+- **Temizlik:**
+  - Medya ekranından hiç aday göstermeyen “Değiştir” ve aynı işi yapan “Devam Et” / “Medya Durumunu Yenile” düğmeleri kaldırıldı.
+  - Sahne planındaki eski “Sonraki aşamalar için eksikler” kutusu kaldırıldı.
+  - Gizli Kanallar ekranı (`/channels`, `channels.js`) kaldırıldı; kanal verileri ve API'si duruyor.
+  - Kullanılmayan `/api/languages`, `.env.example`, `UPLOAD_TO_GITHUB.txt`, `CODEX_FIRST_TASK.md` kaldırıldı.
+  - “sonraki aşamada eklenecek” gibi yanıltıcı yazılar ve ekrandaki iç kodlar/model adları sadeleşti.
+- **Hâlâ taklit (mock) olanlar:** testlerde Gemini, Pexels, Pixabay ve AI33 gerçek çağrılmaz.
+
 ## 2026-10-12 — Metni yapıştır + güçlü medya alakası
 
 - **Senaryo yazımı ekrandan kalktı** (kod duruyor, bayrak varsayılan kapalı).

@@ -15,13 +15,13 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.disabled=disabled;b.addEventListener('click',fn);parent.append(b);return b;}
   const complete=button(controls,'Medyayı Tamamla',()=>{if(window.confirm(`Boş ve yapay zekâ onayı olmayan yuvalar doldurulacak. Kilitli ve onaylı seçimler korunur, eski dosyalar silinmez.${state?.ai_engine==='claude'?' Claude çağrıları ücretlidir.':' Gemini ücretsiz kotası kullanılır; hız sınırında kısa beklemeler olabilir.'} Devam edilsin mi?`))start('complete_media');},true);complete.id='stock-complete';
   const download=node('a','Tanılama dosyası indir');download.href=`${base}/diagnostics`;download.id='stock-diagnostics';download.setAttribute('download','');
-  button(controls,'Medya Durumunu Yenile',load);controls.append(download);
+  controls.append(download);
   const summaryLine=node('p','','provider-status');summaryLine.id='stock-summary';section.insertBefore(summaryLine,controls);
   const stamp=()=>({plan_id:state.plan_id,revision:state.revision});
   async function request(url,method='GET',body){
     let response;
     try{response=await fetch(url,{method,cache:'no-store',signal:AbortSignal.timeout(15000),headers:{'X-AI-Video-Studio':'projects','Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});}
-    catch{throw new Error('Yerel medya isteği tamamlanamadı. Uygulama penceresini kontrol edip Medya Durumunu Yenile deyin.');}
+    catch{throw new Error('Yerel medya isteği tamamlanamadı. Uygulama penceresini kontrol edip Ekranı Yenile deyin.');}
     let result;try{result=await response.json();}catch{throw new Error('Medya yanıtı okunamadı. Sayfayı yenileyin.');}
     if(!response.ok){const error=new Error(result.message||'Medya işlemi tamamlanamadı.');error.category=result.category;throw error;}
     return result;

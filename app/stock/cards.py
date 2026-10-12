@@ -15,7 +15,6 @@ W, H = 1920, 1080
 BACKGROUND = ((14, 22, 38), (28, 44, 70))
 ACCENT = (242, 178, 62)
 TEXT = (245, 247, 250)
-MUTED = (170, 184, 204)
 FONTS = ('C:/Windows/Fonts/segoeuib.ttf', 'C:/Windows/Fonts/arialbd.ttf', 'C:/Windows/Fonts/arial.ttf',
          '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf', '/usr/share/fonts/truetype/freefont/FreeSansBold.ttf',
          '/System/Library/Fonts/Supplemental/Arial Bold.ttf', '/Library/Fonts/Arial Bold.ttf')

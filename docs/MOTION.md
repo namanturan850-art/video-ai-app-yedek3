@@ -17,8 +17,11 @@ Yapay zekâ yalnızca alanları doldurur; uygulama doğrular. **Sayı, tarih, ye
 Harita verisi: Natural Earth 1:110m kara poligonları (kamu malı).
 
 ## Nerede kullanılır?
-- **Yönetmen** (kurgu planı) her sahne için stok mu motion mı karar verir; hedef %60 stok, %40 motion; az planlanırsa uygulama aralıklı motion ekleyip %40’a tamamlar (rakam, tarih, yer, liste, karşılaştırma, önemli cümle).
-- **Medyayı Tamamla**: planlanmış motion sahneleri doğrudan çizilir. Zincirin son basamağı artık basit kart değil, anlatımdan seçilen motion şablonudur (dış servise bağlı değildir, başarısız olmaz).
+- **Yönetmen** (kurgu planı) motion grafiği yalnız sayı, tarih, yer, liste veya karşılaştırma geçen sahnelerde ister: en fazla ~%20 (en az %80 stok video). Yazı kartı (alıntı) son seçenektir.
+- **Metindeki işaretler** (`[HARİTA]`, `[SAYI]`, `[ÇİZELGE]`, `[KARŞILAŞTIR]`, `[LİSTE]`) doğrudan ilgili şablonu üretir.
+- **Medyayı Tamamla**: işaretli ve planlanmış motion sahneleri önce çizilir. Diğer yuvalar motion'a yalnız onaylı stok bulunamazsa düşer; o zaman da önce sayı/harita/çizelge aranır, yazı kartı motion yuvalarının en fazla ~%30'u olur.
+- Motion oranı yuvaların %25'ini aşarsa ekranda uyarı çıkar. Eski “%40'a tamamlama” kaldırıldı.
+- **Sayılar yazıyla da tanınır**: “neunzehnhundertfünfundvierzig” = 1945, “vierzig Prozent” = %40 (Almanca; İngilizce, İspanyolca, Fransızca ve Türkçe temel düzeyde).
 - Medya ekranında her yuvada: **Yeniden seçtir**, **Motion’a çevir** / **Stok videoyla değiştir**, motion önizlemesi ve **Motion metnini düzenle**.
 
 ## Zamanlama ve ses

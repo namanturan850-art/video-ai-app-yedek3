@@ -47,6 +47,11 @@ def place_spoken(place, text, entities=()):
     return any(len(w) >= 4 and re.search(r'(?<!\w)' + re.escape(w) + r'(?!\w)', text, re.I) for w in re.findall(r'[^\W\d_]+', place))
 
 
+from app.motion.templates_extra import TEMPLATES_EXTRA  # noqa: E402  (the nine marker infographics)
+TEMPLATES.update(TEMPLATES_EXTRA)
+BASIC = ('stat', 'map', 'quote', 'timeline', 'compare', 'list')  # also drawn by OpenMontage (motion.tsx)
+
+
 def validate(spec, narration, entities=(), *, trusted=False):
     """Return a clean spec or raise MotionError. Numbers, dates, places and
     quotes must be spoken in the narration (digits or words, e.g.
@@ -57,6 +62,10 @@ def validate(spec, narration, entities=(), *, trusted=False):
     if not isinstance(spec, dict) or spec.get('template') not in TEMPLATES or not isinstance(spec.get('data'), dict):
         raise MotionError('template')
     t, d = spec['template'], spec['data']
+    if t in TEMPLATES_EXTRA:
+        from app.motion.templates_extra import validate_extra
+        try: return validate_extra(spec)
+        except (ValueError, TypeError, KeyError) as error: raise MotionError(str(error)) from None
     text = ' '.join(narration.split())
     spoken = lambda v: trusted or (bool(v) and in_narration(v, text))
     number = lambda v: bool(NUMBER.search(v)) and (trusted or is_spoken(NUMBER.search(v).group(2), text))
@@ -270,6 +279,9 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
     E, D, md = s.E, s.D, s.md
     s.add('rect', x=0, y=0, w=W, h=H, fill=s.bg, opacity=1)
     t, d = spec['template'], spec['data']
+    if t in TEMPLATES_EXTRA:
+        from app.motion.templates_extra import build_extra
+        return build_extra(s, spec, language).result()
     if t == 'stat':
         d = {**d, 'value': grouped(d['value'], language)}
         match = NUMBER.search(d['value'])

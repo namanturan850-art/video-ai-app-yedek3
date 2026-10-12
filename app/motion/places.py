@@ -174,15 +174,34 @@ def places():
     for lat, lon, names, kind, modern, extent in EXTRA:
         parts = names.split('|')
         out.append({'name': parts[0], 'en': english_name(parts), 'aliases': parts, 'lat': lat, 'lon': lon, 'kind': kind, 'modern': modern, 'extent_km': extent, 'rank': 1})
+    for name, lat, lon, kind, code, extent, population, others in world_data().get('places', []):
+        out.append({'name': name, 'en': english_name([name], False), 'aliases': [name, *others], 'lat': lat, 'lon': lon, 'kind': kind,
+                    'modern': '', 'country': code, 'extent_km': extent, 'population': population,
+                    'rank': 2 if kind == 'country' else 3 + 1 / max(1, population) ** .25})
+    return out
+
+
+@lru_cache(maxsize=1)
+def world_data():
     try:
         with gzip.open(DATA, 'rt', encoding='utf-8') as source:
-            world = json.load(source)['places']
+            return json.load(source)
     except (OSError, ValueError, KeyError):
-        world = []
-    for name, lat, lon, kind, country, extent, population, others in world:
-        out.append({'name': name, 'en': english_name([name], False), 'aliases': [name, *others], 'lat': lat, 'lon': lon, 'kind': kind, 'modern': country if kind == 'city' else '',
-                    'extent_km': extent, 'population': population, 'rank': 2 if kind == 'country' else 3 + 1 / max(1, population) ** .25})
-    return out
+        return {}
+
+
+def country_name(place, language='de'):
+    """Today's country of a place in the video language ('' when unknown)."""
+    countries = world_data().get('countries', {})
+    code = place.get('country') or ''
+    if not code and place.get('modern'):  # hand-made list: “Hillah, Irak” (Turkish country name)
+        last = plain(place['modern'].split(',')[-1])
+        code = SHORT.get(last) or next((c for c, names in countries.items() if plain(names.get('tr', '')) == last or plain(names.get('en', '')) == last), '')
+    names = countries.get(code) or {}
+    return names.get(language) or names.get('en') or ''  # never a Turkish name in a German video
+
+
+SHORT = {'abd': 'US', 'bati seria': 'PS', 'ingiltere': 'GB', 'britanya': 'GB', 'filistin': 'PS'}
 
 
 @lru_cache(maxsize=1)
@@ -214,8 +233,12 @@ def find(name):
     for size in range(min(4, len(tokens)), 0, -1):  # “die Bermuda-Inseln”, “Bermuda Triangle area”
         for i in range(len(tokens) - size + 1):
             key = ' '.join(tokens[i:i + size])
-            if len(key) >= 3 and key in table and (table[key]['rank'] <= 1 or size > 1 or notable(table[key], key)):
-                return table[key]
+            if len(key) < 3 or key not in table: continue
+            place = table[key]
+            # Part of a longer name: only the hand-made lists, or a notable place covering most of the name
+            # (“Kennedy Space Center” is not the Bogotá district “Kennedy”).
+            if place['rank'] <= 1 or (notable(place, key) and size * 2 >= len(tokens)):
+                return place
     return None
 
 

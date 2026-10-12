@@ -31,7 +31,7 @@ test('opening existing stock state never starts a search',async()=>{
 });
 test('Medyayı Tamamla requires confirmation and explains what is protected and that Claude is paid',async()=>{
  const {calls,find,confirmations}=await harness({confirm:false});find('stock-complete').listeners.click();await settle();assert.equal(calls.length,1);
- assert.match(confirmations[0],/Kilitli ve onaylı seçimler korunur/);assert.match(confirmations[0],/eski dosyalar silinmez/);assert.match(confirmations[0],/Gemini ücretsiz kotası/);
+ assert.match(confirmations[0],/Kilitli ve onaylı seçimler korunur/);assert.match(confirmations[0],/eski dosyalar silinmez/);assert.match(confirmations[0],/kontrol edilmemiş yuvalar doldurulacak/);
 });
 test('confirmed Medyayı Tamamla posts the single action and current revision only',async()=>{
  const {calls,find}=await harness();find('stock-complete').listeners.click();await settle();

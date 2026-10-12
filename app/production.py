@@ -92,6 +92,8 @@ class VisualBlock(BaseModel):
     card_text: str = Field(default='',max_length=150)
     # Motion-graphic template (app/motion/templates.py) for motion_graphic scenes.
     motion_spec: dict | None = None
+    # The app suggested this infographic itself (numbers, dates, places, lists); the owner approves or changes it on the media screen.
+    motion_suggested: bool = False
     # Owner's own markers from the pasted text ([GÖRSEL]/[HARİTA]/[SAYI]).
     owner_hints: list[dict] = Field(default_factory=list, max_length=10)
 
@@ -827,7 +829,7 @@ class ProductionService:
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
                 'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
                 'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query','semantic_descriptor',
-                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec','owner_hints') if b.get(key)}} for b in plan['blocks']]}
+                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec','motion_suggested','owner_hints') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

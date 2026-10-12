@@ -85,4 +85,72 @@ def refine(blocks, language='de', topic=''):
     from app.scripts.query_clean import clean_block
     for block in blocks:  # stock sites are tagged in English: no German/Turkish word, number or “v. Chr.” in a search
         clean_block(block, language, topic=topic)
+    suggest_infographics(blocks, language)
+    return blocks
+
+
+SHARE = .25  # at most this share of the scenes become infographics by default (owner markers and plan included)
+ROUTE_WORDS = re.compile(r'(?i)\b(nach|von|über|bis|zog\w*|marschier\w*|reist\w*|segelt\w*|flog|to|from|via|sailed|marched|travell?ed|'
+                         r'hasta|desde|vers|depuis)\b|\w+(?:’|\')?(?:[dt][ae]n|[ye]a)\b')
+
+
+def suggestion(narration, entities=(), language='de'):
+    """(score, spec) of the best infographic for a narration, or None: years → timeline,
+    a percentage → pie, a counted thing → icons, two places with a movement → route, a number, a place."""
+    from app.motion.places import spoken_places
+    from app.motion.templates import MotionError, from_narration, validate
+    from app.motion.templates_extra import icon_for, validate_extra
+    best = None
+    sentences = [s.strip() for s in re.split(r'(?<=[.!?…])\s+', narration) if s.strip()]
+    for sentence in sentences:
+        options = []
+        places = spoken_places(sentence)
+        if len(places) >= 2 and ROUTE_WORDS.search(sentence):
+            stops = [{'name': name[:40], 'lat': lat, 'lon': lon} for name, lat, lon in places[:5]]
+            options.append((3, {'template': 'route', 'data': {'stops': stops, 'missing': [], 'source': ' > '.join(s['name'] for s in stops)}, 'emphasis': ''}))
+        spec = from_narration(sentence, entities)
+        if spec['template'] == 'stat':
+            value = spec['data']['value']
+            percent = re.search(r'(\d+(?:[.,]\d+)?)\s*%|%\s*(\d+(?:[.,]\d+)?)', value)
+            following = sentence[sentence.find(spec['emphasis']) + len(spec['emphasis']):].split()[:2] if spec.get('emphasis') and spec['emphasis'] in sentence else []
+            thing = next((w.strip(',.;:') for w in following if icon_for(w.strip(',.;:')) != 'dot'), '')
+            digits = re.sub(r'\D', '', value)
+            if percent and 0 < float((percent.group(1) or percent.group(2)).replace(',', '.')) <= 100:
+                number = float((percent.group(1) or percent.group(2)).replace(',', '.'))
+                options.append((3, {'template': 'ratio', 'data': {'value': value, 'percent': number, 'label': spec['data']['label'], 'source': sentence[:120]}, 'emphasis': spec['emphasis']}))
+            elif thing and digits and 2 <= int(digits) <= 10 ** 9 and not re.fullmatch(r'1\d{3}|20\d{2}', digits):
+                options.append((3, {'template': 'icons', 'data': {'value': value, 'number': int(digits), 'object': thing[:40], 'icon': icon_for(thing), 'source': f'{value} {thing}'}, 'emphasis': spec['emphasis']}))
+            else:
+                options.append((2, spec))
+        elif spec['template'] == 'timeline':
+            options.append((3, spec))
+        elif spec['template'] == 'map':
+            options.append((1, spec))
+        for score, option in options:
+            try:
+                checked = validate_extra(option) if option['template'] in ('route', 'ratio', 'icons') else validate(option, narration, entities)
+            except (MotionError, ValueError, TypeError, KeyError):
+                continue
+            if best is None or score > best[0]: best = (score, checked)
+    return best
+
+
+def suggest_infographics(blocks, language='de', share=SHARE):
+    """Sentences with numbers, dates, places or routes get an infographic the
+    owner can approve or change on the media screen — at most `share` of the
+    scenes are infographics in total (markers and the plan's own included)."""
+    limit = int(len(blocks) * share)
+    used = sum(1 for b in blocks if b.get('motion_spec') or any(h.get('type') not in ('visual',) for h in b.get('owner_hints') or []))
+    if used >= limit: return blocks
+    ranked = []
+    for index, block in enumerate(blocks):
+        if block.get('motion_spec') or block.get('owner_hints') or block.get('locked'): continue
+        found = suggestion(block.get('narration', ''), block.get('entities') or [], language)
+        if found: ranked.append((-found[0], index, found[1]))
+    taken = []
+    for _, index, spec in sorted(ranked):
+        if used >= limit: break
+        if any(abs(index - other) < 2 for other in taken): continue  # never two infographic scenes in a row
+        blocks[index].update(media_type='motion_graphic', motion_spec=spec, motion_suggested=True)
+        taken.append(index); used += 1
     return blocks

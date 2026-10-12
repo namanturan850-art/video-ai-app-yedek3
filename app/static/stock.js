@@ -38,7 +38,12 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const img=node('img');img.className='stock-thumbnail';img.alt=`${media.provider} ${media.media_type==='video'?'video':'görsel'} önizlemesi`;
     img.src=media.preview_url;img.loading='lazy';img.referrerPolicy='no-referrer';return img;
   }
-  const TEMPLATE_LABELS={stat:'Büyüyen sayı',map:'Harita + işaret',quote:'Başlık / alıntı',timeline:'Zaman çizelgesi',compare:'Karşılaştırma',list:'Madde listesi'};
+  const TEMPLATE_LABELS={stat:'Büyüyen sayı',map:'Harita + işaret',quote:'Başlık / alıntı',timeline:'Zaman çizelgesi',compare:'Karşılaştırma',list:'Madde listesi',
+    route:'Rota (haritada)',empire:'İmparatorluk sınırı',zoom:'Yakınlaşma (dünya → yer)',mark:'Görselde işaretle',beforeafter:'Önce / sonra',icons:'İkonlarla sayı',ratio:'Oran (pasta)',dynasty:'Hanedan ağacı',fact:'Biliyor muydunuz?'};
+  // The nine marker infographics are edited as marker text (same writing as in the pasted text).
+  const MARKER_HELP={route:'Yerler, “>” ile: Ninive > Babil > Kudüs',empire:'Ad ve yıllar; isterseniz “|” sonra başkent ve sınır yerleri: Assyrien 911-612 v. Chr. | Ninive, Memphis, Susa',zoom:'Bir yer adı: Babil',
+    mark:'Görselde gösterilecek şeyin kısa açıklaması',beforeafter:'İki şey, “|” ile: Antik liman | Bugünkü kıyı',icons:'Sayı ve nesne: 10000 asker',ratio:'Yüzde ve etiket: %40 nüfus kıyıda yaşıyor',
+    dynasty:'Kuşaklar “>” ile, kardeşler “,” ile: Davud > Süleyman > Rehavam, Yeroboam',fact:'Kısa bir bilgi cümlesi'};
   function motionForm(slot){
     const spec=slot.selected_media?.source_metadata?.motion||{template:'quote',data:{text:''},emphasis:''};
     const form=node('form','','settings-panel stock-motion-form');form.noValidate=true;
@@ -54,10 +59,13 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
       if(t==='quote')add('text','Metin (anlatımdan birebir)',d.text,true);
       if(t==='timeline')add('events','Her satıra: tarih | açıklama (2–5 satır)',d.events?d.events.map(e=>`${e.date} | ${e.label}`).join('\n'):'',true);
       if(t==='compare'){add('title','Başlık',d.title);add('items','Her satıra: ad | değer (değer isteğe bağlı)',d.items?d.items.map(e=>`${e.label} | ${e.value||''}`).join('\n'):'',true);}
-      if(t==='list'){add('title','Başlık',d.title);add('items','Her satıra bir madde (2–4)',d.items?d.items.join('\n'):'',true);}}
+      if(t==='list'){add('title','Başlık',d.title);add('items','Her satıra bir madde (2–4)',d.items?d.items.join('\n'):'',true);}
+      if(MARKER_HELP[t]){add('source',`İşaret metni — ${MARKER_HELP[t]}`,spec.template===t?(d.source||''):'',true);
+        if(t==='mark'){add('fx','Odak noktası yatay (0 = sol, 1 = sağ)',spec.template===t?d.fx??.5:.5);add('fy','Odak noktası dikey (0 = üst, 1 = alt)',spec.template===t?d.fy??.5:.5);}}}
     sel.addEventListener('change',draw);draw();
-    const save=node('button','Motion metnini kaydet ve yeniden çiz');save.type='submit';form.append(save,node('p','Sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmelidir; uydurma bilgi kabul edilmez.','note'));
+    const save=node('button','Motion metnini kaydet ve yeniden çiz');save.type='submit';form.append(save,node('p','Sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmelidir; uydurma bilgi kabul edilmez. İşaret şablonlarında yerler uygulamanın çevrimdışı yer listesinden bulunur; bulunamayan yer için uyarı gösterilir.','note'));
     form.addEventListener('submit',event=>{event.preventDefault();const t=sel.value,v=k=>inputs[k]?.value.trim()||'';const rows=k=>v(k).split('\n').map(x=>x.split('|').map(y=>y.trim())).filter(x=>x[0]);
+      if(MARKER_HELP[t]){slotJob(slot,'motion_edit',{motion:{template:t,data:{source:v('source'),...(t==='mark'?{fx:Number(v('fx')||.5),fy:Number(v('fy')||.5)}:{})},emphasis:emphasis.value.trim()}});return;}
       const data=t==='stat'?{value:v('value'),label:v('label')}:t==='map'?{place:v('place'),lat:Number(v('lat')),lon:Number(v('lon')),label:v('label')}:t==='quote'?{text:v('text')}
         :t==='timeline'?{events:rows('events').map(x=>({date:x[0],label:x[1]||''}))}:t==='compare'?{title:v('title'),items:rows('items').map(x=>({label:x[0],value:x[1]||''}))}:{title:v('title'),items:rows('items').map(x=>x[0])};
       slotJob(slot,'motion_edit',{motion:{template:t,data,emphasis:emphasis.value.trim()}});});
@@ -97,6 +105,8 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const isMotion=media?.provider==='generated'&&media?.media_type==='video';
     if(isMotion)button(top,'Stok videoyla değiştir',()=>slotJob(slot,'to_stock'),active()||slot.locked).className='stock-to-stock';
     else button(top,'Motion’a çevir',()=>slotJob(slot,'to_motion'),active()||slot.locked).className='stock-to-motion';
+    if(isMotion&&media.source_metadata?.suggested&&!slot.locked){const tip=node('p','💡 Bu infografiği uygulama cümledeki sayı/tarih/yer bilgisinden önerdi. Uygunsa onaylayın; değilse metnini düzenleyin veya stok videoyla değiştirin.','stock-suggested');card.append(tip);
+      button(top,'Öneriyi onayla',()=>slotAction(slot,'lock'),active()).className='stock-approve-suggestion';}
     if(isMotion){const preview=node('video');preview.className='stock-preview';preview.src=`${base}/slots/${slot.slot_id}/preview`;preview.controls=true;preview.preload='metadata';preview.muted=true;card.append(preview);
       const edit=node('details');edit.append(node('summary','Motion metnini düzenle'),motionForm(slot));card.append(edit);}
     const more=node('details','','stock-slot-details');more.append(node('summary','Ayrıntılar'));card.append(more);
@@ -139,7 +149,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   async function load(){
     if(loading)return;loading=true;
     try{state=await request(base);const job=state.job;
-      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pixabay&&!state.providers.wikimedia&&!state.providers.openmontage?'Ayarlar → Pixabay anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}${job?.status==='completed'&&job.progress?.local_reason&&state.media_summary?.unchecked&&job.progress.local_mode!=='off'?' ⚠ '+job.progress.local_reason:''}${job?.progress?.gemini_503_diagnosis?' ℹ '+job.progress.gemini_503_diagnosis:''}`;
+      message.textContent=job?.status==='error'?`⚠ ${job.error_message}`:job&&['queued','running'].includes(job.status)?`${job.progress.percent}% · ${job.progress.message}`:`${state.slots.filter(s=>s.status==='complete').length}/${state.slots.length} medya tamamlandı. ${!state.providers.pixabay&&!state.providers.wikimedia&&!state.providers.openmontage?'Ayarlar → Pixabay anahtarını kaydedin.':'Seçimleri önizleyip anlatıma uygunluğu kontrol edin.'}${job?.status==='completed'&&job.progress?.local_reason&&state.media_summary?.unchecked&&job.progress.local_mode!=='off'?' ⚠ '+job.progress.local_reason:''}${job?.progress?.gemini_503_diagnosis?' ℹ '+job.progress.gemini_503_diagnosis:''}${job?.progress?.marker_warnings?.length?' ⚠ Çizilemeyen/eksik işaretler: '+job.progress.marker_warnings.join(' · '):''}`;
       render();
     }catch(error){state=null;message.textContent=error.message;render();}
     finally{loading=false;clearTimeout(timer);if(['queued','running'].includes(state?.job?.status))timer=setTimeout(load,1200);}

@@ -89,7 +89,8 @@ JUDGE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['v
 PROBE_SCHEMA = {'type': 'object', 'required': ['ok'], 'properties': {'ok': {'type': 'boolean'}}}
 PLACE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['found', 'lat', 'lon'],
                 'properties': {'found': {'type': 'boolean'}, 'lat': {'type': 'number'}, 'lon': {'type': 'number'}}}
-INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list')
+INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact')
+NEW_MARKERS = ('route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact')
 QUERY_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['queries'],
                 'properties': {'queries': {'type': 'array', 'items': {'type': 'string'}}}}
 REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['replace'],
@@ -214,7 +215,7 @@ class MediaDirector:
         self.ai, self.ai_error, self.waited, self.unusable = None, '', 0, 0
         self.local, self.requests = False, 0
         self.answered, self.ai_waited, self.skipped_looks, self.last_error, self.single = False, 0.0, 0, None, False
-        self.clip = None
+        self.clip, self.marker_error, self.marker_note = None, '', ''
         self.unavailable = dict(self.progress.get('unavailable_providers', {}))
         self.rejected, self.rejected_keys, self.rejected_hashes = [], set(), set()
         self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
@@ -547,7 +548,7 @@ class MediaDirector:
         self.progress['message'] = f'{self.label} görsel toplu isteğe “sunucu meşgul” dedi; küçük bir metin isteğiyle nedeni kontrol ediliyor'
         self.service._checkpoint(self.job, self.progress, light=True)
         answer = self._ask('media_probe', 'Connectivity check. Answer with {"ok": true}.', PROBE_SCHEMA, max_tokens=50)
-        works = isinstance(answer, dict)
+        works = isinstance(answer, dict) or self.last_error in UNUSABLE  # any reply (even an odd one) means text requests get through
         self.progress['gemini_503_diagnosis'] = (
             'Küçük metin isteği çalıştı, görsel toplu istek 503 verdi: neden toplu görsel isteği. Bundan sonra her istekte tek aday gönderildi.' if works else
             'Küçük metin isteği de yanıt vermedi: neden Gemini sunucusunun genel yoğunluğu. Seçim yerel olarak sürdü.')
@@ -950,6 +951,17 @@ class MediaDirector:
         narration = scene.get('narration_text', '')
         split = lambda text, signs: [x.strip() for x in re.split(signs, text) if x.strip()]
         spec = None
+        self.marker_error = ''
+        if kind in NEW_MARKERS:
+            from app.motion.templates_extra import MarkerError, parse
+            try:
+                spec = parse(kind, value, sentence, self.language)
+            except MarkerError as error:
+                self.marker_error = error.message
+                return None
+            if spec['data'].get('missing'):
+                self.marker_note = f'Yer listesinde bulunamadı, rotaya eklenmedi: {", ".join(spec["data"]["missing"])}.'
+            return spec
         if kind == 'map':
             where = self.place(value)
             if where: spec = {'template': 'map', 'data': {'place': value[:60], 'label': '', 'lat': where[0], 'lon': where[1]}, 'emphasis': value.split()[0]}
@@ -987,6 +999,35 @@ class MediaDirector:
         except MotionError:
             pass
         return None  # unusable marker: the narration decides (see motion_spec)
+
+    def pictures(self, spec, slot, scene):
+        """İŞARETLE / ÖNCESONRA need photos: stock pictures for the note (English
+        search, checked like any candidate) are downloaded into the project."""
+        from app.scripts.query_clean import english_query
+        data = spec['data']
+        if spec['template'] == 'mark':
+            if data.get('image'): return True
+            wanted = [english_query(data['label'], self.language, limit=5) or scene.get('primary_stock_query') or self.topic]
+        else:
+            if len(data.get('images') or []) == 2: return True
+            wanted = [english_query(data['before'], self.language, limit=5), english_query(data['after'], self.language, limit=5)]
+        names = []
+        slot['relevance_profile'] = slot.get('relevance_profile') or relevance.profile(scene, slot)
+        for query in wanted:
+            log = {'steps': [{'stage': 'motion_owner', 'label': STAGES['motion_owner'], 'judged': []}], 'searches': [], 'judged': {}, 'rejected': {}}
+            pool = [m for m in self.pool(slot, self.search(slot, ['image'], query or self.topic, log, scene), log, set(), scene)
+                    if m['media_type'] == 'image'][:CANDIDATES]
+            verdicts = self.judge(slot, scene, pool) if pool else {}
+            ranked = sorted((m for m in pool if verdicts.get(key(m), {}).get('approved')), key=lambda m: -verdicts[key(m)]['score'])
+            saved = None
+            for media in ranked:
+                try: saved = self.service.downloader.download(self.pid, media); break
+                except StockError: continue
+            if not saved: return False
+            names.append(saved['local_path'].rsplit('/', 1)[-1])
+        if spec['template'] == 'mark': data['image'] = names[0]
+        else: data['images'] = names
+        return True
 
     def motion_spec(self, slot, scene, repeat=False):
         """Last-resort motion from the narration spoken during the slot;
@@ -1243,7 +1284,7 @@ class MediaDirector:
             try:
                 log = self.handle(slot, scene, why)
             except StockError as error:
-                if error.category in ('stale_plan', 'interrupted', 'locked', 'ai_paused'): raise
+                if error.category in ('stale_plan', 'interrupted', 'locked', 'ai_paused') or (single and error.category == 'invalid_input'): raise
                 log = {'steps': [], 'searches': [], 'judged': {}, 'error': error.category}
                 self.motion(slot, scene, log)
             self.finish_slot(slot, log)
@@ -1261,12 +1302,20 @@ class MediaDirector:
             hint = self.owner[slot['slot_id']]
             spec = self.owner_spec(hint, scene)
             self._release(slot); log = empty()
+            if spec is not None and spec['template'] in ('mark', 'beforeafter') and not self.pictures(spec, slot, scene):
+                self.marker_error = 'bu sahne için uygun görsel bulunamadı'
+                spec = None
             if spec is None:  # e.g. a place nobody could locate: the narration decides
                 log = self.fill(slot, scene)
-                slot['message'] = f'[{hint["type"]}: {hint["value"]}] işareti çizilemedi ({"yer haritada bulunamadı" if hint["type"] == "map" else "işaret biçimi okunamadı"}). ' + slot.get('message', '')
+                why = getattr(self, 'marker_error', '') or ('yer haritada bulunamadı' if hint['type'] == 'map' else 'işaret biçimi okunamadı')
+                slot['message'] = f'⚠ [{hint["type"]}: {hint["value"]}] işareti çizilemedi ({why.rstrip(".")}). ' + slot.get('message', '')
+                self.progress.setdefault('marker_warnings', []).append(f'[{hint["value"][:60]}]: {why}')
                 return log
             self.motion(slot, scene, log, spec, 'motion_owner')
             slot['selected_media'].setdefault('source_metadata', {})['owner_hint'] = hint
+            if getattr(self, 'marker_note', ''):
+                slot['message'] = f'⚠ {self.marker_note} ' + slot.get('message', '')
+                self.progress.setdefault('marker_warnings', []).append(self.marker_note); self.marker_note = ''
             return log
         if why == 'motion_planned':
             planned, spec = scene['motion_spec'], scene['motion_spec']
@@ -1276,13 +1325,18 @@ class MediaDirector:
                 if other['template'] != 'quote': spec = other
                 elif self.quote_full(): return self.fill(slot, scene)  # enough text cards: stock footage instead
             self.motion(slot, scene, log, spec, 'motion_planned')
-            if is_generated(slot.get('selected_media')): slot['selected_media'].setdefault('source_metadata', {})['planned'] = planned
+            if is_generated(slot.get('selected_media')):
+                slot['selected_media'].setdefault('source_metadata', {})['planned'] = planned
+                if scene.get('motion_suggested'): slot['selected_media']['source_metadata']['suggested'] = True  # the owner approves or changes it
             return log
         if why == 'to_motion':
             self._release(slot); slot.pop('manual_stock', None); log = empty()
             self.motion(slot, scene, log, scene.get('motion_spec') or None, 'motion_planned' if scene.get('motion_spec') else 'motion'); return log
         if why == 'motion_edit':
-            self._release(slot); log = empty(); self.motion(slot, scene, log, self.progress['motion'], 'motion_edit'); slot['motion_edited'] = True; return log
+            spec = self.progress['motion']
+            if spec['template'] in ('mark', 'beforeafter') and not self.pictures(spec, slot, scene):
+                raise StockError('invalid_input', 'Bu işaret için uygun görsel bulunamadı; metni değiştirip yeniden deneyin. Mevcut medya korundu.')
+            self._release(slot); log = empty(); self.motion(slot, scene, log, spec, 'motion_edit'); slot['motion_edited'] = True; return log
         if why == 'to_stock':
             backup = deepcopy(slot); old = slot.get('selected_media')
             self._release(slot)

@@ -303,8 +303,25 @@ class StockService:
                 if action=='motion_edit':
                     from app.motion.templates import validate as motion_validate,MotionError
                     scene=next(sc for sc in handoff['scenes'] if sc['scene_id']==slot['scene_id'])
-                    try: progress['motion']=motion_validate(payload.get('motion'),scene['narration_text'],scene.get('entities',[]))
-                    except MotionError: raise StockError('invalid_input','Motion bilgisini kontrol edin: sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmeli; liste 2–4, zaman çizelgesi 2–5 öğe.',422) from None
+                    from app.motion.templates_extra import TEMPLATES_EXTRA,MarkerError,parse as parse_marker
+                    motion=payload.get('motion') if isinstance(payload.get('motion'),dict) else {}
+                    if motion.get('template') in TEMPLATES_EXTRA and isinstance((motion.get('data') or {}).get('source'),str):
+                        # The nine marker infographics are edited as marker text; pictures already chosen are kept.
+                        language=self.projects.get(project_id).get('language') or 'de'
+                        try: edited=parse_marker(motion['template'],motion['data']['source'][:300],'',language)
+                        except MarkerError as error: raise StockError('invalid_input',error.message,422) from None
+                        old=((slot.get('selected_media') or {}).get('source_metadata') or {}).get('motion') or {}
+                        if old.get('template')==edited['template']=='mark' and old['data'].get('image'): edited['data']['image']=old['data']['image']
+                        if old.get('template')==edited['template']=='beforeafter' and (old['data'].get('before'),old['data'].get('after'))==(edited['data']['before'],edited['data']['after']):
+                            edited['data']['images']=old['data'].get('images') or []
+                        if edited['template']=='mark':
+                            for axis in ('fx','fy'):
+                                try: edited['data'][axis]=min(.95,max(.05,float(motion['data'].get(axis,.5))))
+                                except (TypeError,ValueError): pass
+                        progress['motion']=edited
+                    else:
+                        try: progress['motion']=motion_validate(motion,scene['narration_text'],scene.get('entities',[]))
+                        except MotionError: raise StockError('invalid_input','Motion bilgisini kontrol edin: sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmeli; liste 2–4, zaman çizelgesi 2–5 öğe.',422) from None
                 if action=='reselect' and slot.get('selected_media') and slot['selected_media'].get('provider') in ('pexels','pixabay'):
                     # The owner rejected this pick: never offer it again in this project; the reason guides the next choice.
                     reason=' '.join(str(payload.get('reason') or '').split())[:200]

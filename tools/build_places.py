@@ -52,18 +52,19 @@ def main():
         city = capital.get((code, country.get('capital', '')))
         if not city or not names: continue
         extent = max(30, round((country.get('areakm2') or 1000) ** .5))
-        places.append([names[0], round(city['latitude'], 3), round(city['longitude'], 3), 'country', '', extent, 10**9, names[1:]])
+        places.append([names[0], round(city['latitude'], 3), round(city['longitude'], 3), 'country', code, extent, 10**9, names[1:]])
     # Cities: the bigger ones carry their other (also ancient) names.
     for city in sorted(cities.values(), key=lambda c: -c['population']):
         others = latin_names(city.get('alternatenames') or [], 40 if city['population'] >= 100_000 else 6)
         names = latin_names([city['name']] + others, 41)
         if not names: continue
-        country = locales['tr'].get(city['countrycode'], city['countrycode'])
+        country = city['countrycode']
         extent = 25 if city['population'] >= 1_000_000 else 12 if city['population'] >= 100_000 else 6
         places.append([names[0], round(city['latitude'], 3), round(city['longitude'], 3), 'city', country, extent, city['population'], names[1:]])
     target = ROOT / 'app' / 'motion' / 'places_world.json.gz'
     data = json.dumps({'source': 'GeoNames (CC BY 4.0, geonames.org) via geonamescache; Unicode CLDR via Babel',
-                       'fields': ['name', 'lat', 'lon', 'kind', 'country', 'extent_km', 'population', 'other_names'],
+                       'fields': ['name', 'lat', 'lon', 'kind', 'country_code', 'extent_km', 'population', 'other_names'],
+                       'countries': {code: {lang: locales[lang].get(code, '') for lang in LANGS} for code in countries},
                        'places': places}, ensure_ascii=False, separators=(',', ':'))
     with gzip.open(target, 'wt', encoding='utf-8', compresslevel=9) as out:
         out.write(data)

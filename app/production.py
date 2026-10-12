@@ -456,6 +456,17 @@ def coverage(blocks, text):
     return normalize(' '.join(block.get('narration','') for block in blocks)) == normalize(text)
 
 
+def grouped_warnings(warnings):
+    """“Sahne 3: X”, “Sahne 4: X”, … → one line “Sahne 3, 4, …: X”."""
+    order, scenes = [], {}
+    for warning in warnings:
+        match = re.match(r'Sahne (\d+): (.+)$', warning)
+        key = match.group(2) if match else warning
+        if key not in scenes: order.append(key); scenes[key] = []
+        if match: scenes[key].append(match.group(1))
+    return [f'Sahne {", ".join(scenes[k])}: {k}' if scenes[k] else k for k in order]
+
+
 def scene_checks(blocks, text):
     warnings = []
     if not coverage(blocks,text): warnings.append('Sahne anlatımı onaylı senaryoyu tam ve aynı sırayla kapsamıyor.')
@@ -489,7 +500,7 @@ def scene_checks(blocks, text):
             warnings.append(label+'aynı kişi/özne art arda kullanılıyor; bağlama uygun çeşitlilik kontrolü yapın.')
     if len(blocks)>=3 and len({b['composition'] for b in blocks})==1:
         warnings.append('Plan boyunca kompozisyon değişmiyor; bağlama uygun çeşitlilik kontrolü yapın.')
-    return list(dict.fromkeys(warnings))
+    return grouped_warnings(list(dict.fromkeys(warnings)))
 
 
 def visual_blocks(raw, source, language, words_per_minute, start=0, *, units=None, single=False, previous=None):
@@ -519,7 +530,7 @@ def production_checks(plan, current, project):
     if current:
         from app.scripts.engine import repetition_warnings
         warnings.extend(repetition_warnings(current.get('text', '')))
-    if not plan: return warnings + ['Görsel plan henüz oluşturulmadı.', 'Seslendirme ve render sonraki çalıştırma aşaması için hazırlanıyor.']
+    if not plan: return warnings + ['Görsel plan henüz oluşturulmadı.']
     if not current or plan['version_id'] != current['id']: warnings.append('Görsel plan eski senaryo sürümüne ait. Yeniden planlayın.')
     blocks = plan['blocks']
     if current and current.get('text'): warnings.extend(scene_checks(blocks,current['text']))
@@ -577,7 +588,7 @@ class ProductionService:
                      'scene_count':len(json.loads(item['plan_json'])['blocks']),
                      'status':status(item['version_id'],json.loads(item['plan_json'])['language']),
                      'active':bool(plan and plan['plan_id']==item['id'])} for item in history]
-        state = 'Plan hazır — çalıştırma daha sonra' if plan else 'Plan henüz hazırlanmadı'
+        state = 'Plan hazır.' if plan else 'Plan henüz hazırlanmadı'
         if plan and plan['status']!='ready': state='Plan eski veya senaryo onaysız. Yeni onaylı senaryodan plan hazırlayın.'
         warnings=production_checks(plan,current,project)
         if not current or current['status']!='approved': warnings.insert(0,'Önce metni kaydedip onaylayın (Metin ekranı).')

@@ -7,10 +7,13 @@ at the candidates' preview frames; irrelevant media is never used to fill):
   2. stock video with queries the AI rewrites for this slot
   3. stock image (rendered with light camera motion)
   4. media for the broader topic (still approved by the AI)
-  6. very short slots (<1.5 s): continue the neighbouring shot
-  5. code-generated card (title/quote, number, simple location map) — local,
-     cannot fail, text always taken from the narration
-Provider errors and timeouts only skip that provider; the chain continues.
+  5. very short slots (<1.5 s): continue the neighbouring shot
+  6. motion graphic from the narration (only when no stock fits)
+Scenes the owner marked ([HARİTA], [SAYI], [ÇİZELGE], [KARŞILAŞTIR], [LİSTE])
+and scenes the director planned as motion become infographics directly.
+Stock provider errors only skip that provider. AI errors never turn the rest
+of the video into motion: temporary ones are waited out and retried; a
+quota/key problem stops the job (finished slots stay) with a plain message.
 Every search, candidate, verdict and reason is kept per slot for the screen
 and for the downloadable diagnostics file.
 """
@@ -40,8 +43,10 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
           'merged': '6 · Komşu çekimin devamı (çok kısa yuva)', 'card': '5 · Üretilmiş kart',
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
-          'motion_edit': 'Motion grafik (sizin düzenlemeniz)', 'motion_balance': 'Motion grafik (dengeli kurgu: %40 motion)'}
-MOTION_SHARE = .40      # owner's target: ~40% motion graphics, ~60% stock footage
+          'motion_edit': 'Motion grafik (sizin düzenlemeniz)', 'motion_owner': 'İnfografik (metindeki işaretiniz)',
+          'motion_balance': 'Motion grafik (dengeli kurgu)'}  # older projects only
+MOTION_WARN = 25        # % of slots: above this the screen warns (too little stock footage)
+QUOTE_SHARE = .30       # at most this share of motion slots may be a plain text (quote) card
 CANDIDATES = 6          # at most this many candidates go to the AI per look (after a metadata pre-filter)
 APPROVE_SCORE = 7       # 0-10: only 7+ stock media is ever used
 SIMILAR_FRAMING = 6     # dHash bits: closer than this to the previous shot of the scene = same framing
@@ -49,17 +54,29 @@ SIMILAR_FRAMING = 6     # dHash bits: closer than this to the previous shot of t
 RED_FLAGS = {'watermark', 'watermarked', 'logo', 'logos', 'subscribe', 'intro', 'outro', 'template', 'lower third', 'green screen', 'chroma key'}
 MERGE_SECONDS = 1.5
 WAIT_BUDGET = 900       # seconds of rate-limit waiting per job (free tier)
-UNREACHABLE = 'Yapay zekâya ulaşılamadı'
+UNREACHABLE = 'Yapay zekâya ulaşılamadı'  # older motion picks made while the AI was down carry this; they are retried
 REVIEW_MAX = 8
+# Temporary AI problems: wait and ask again (never switch the engine off).
+TRANSIENT = {'rate_limit', 'quota_limit', 'upstream_error', 'gemini_timeout', 'generation_timeout', 'timeout',
+             'no_internet', 'network_error', 'connection_error'}
+# One answer was unusable (the engine works): that look is skipped; this many in a row stops the job.
+UNUSABLE = {'invalid_response', 'incomplete_response', 'response_schema_mismatch', 'empty_response', 'thought_only_response',
+            'output_limit', 'unexpected_finish_reason', 'blocked_response', 'invalid_json', 'refusal'}
+UNUSABLE_LIMIT = 4
 PROVIDER_DOWN = {'rate_limit', 'key_rejected', 'missing_key', 'timeout', 'connection_error', 'upstream_error', 'invalid_request', 'invalid_response'}
 ERROR_TEXT = {'rate_limit': 'kullanım sınırı', 'key_rejected': 'anahtar kabul edilmedi', 'missing_key': 'anahtar yok',
               'timeout': 'zaman aşımı', 'connection_error': 'bağlantı kurulamadı', 'upstream_error': 'sunucu hatası',
-              'invalid_response': 'okunamayan yanıt', 'invalid_request': 'istek reddedildi'}
+              'invalid_response': 'okunamayan yanıt', 'invalid_request': 'istek reddedildi', 'quota_limit': 'kota/hız sınırı',
+              'gemini_timeout': 'zaman aşımı', 'generation_timeout': 'zaman aşımı', 'no_internet': 'internet bağlantısı yok',
+              'network_error': 'bağlantı hatası'}
 JUDGE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['verdicts'],
                 'properties': {'verdicts': {'type': 'array', 'items': {
                     'type': 'object', 'additionalProperties': False, 'required': ['candidate', 'score', 'approved', 'reason'],
                     'properties': {'candidate': {'type': 'integer'}, 'score': {'type': 'integer'},
                                    'approved': {'type': 'boolean'}, 'reason': {'type': 'string'}}}}}}
+PLACE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['found', 'lat', 'lon'],
+                'properties': {'found': {'type': 'boolean'}, 'lat': {'type': 'number'}, 'lon': {'type': 'number'}}}
+INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list')
 QUERY_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['queries'],
                 'properties': {'queries': {'type': 'array', 'items': {'type': 'string'}}}}
 REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['replace'],
@@ -161,11 +178,11 @@ class MediaDirector:
     def __init__(self, service, job):
         self.service, self.job, self.pid = service, job, job['project_id']
         self.progress = job['progress']
-        self.ai, self.ai_error, self.waited = None, '', 0
+        self.ai, self.ai_error, self.waited, self.unusable = None, '', 0, 0
         self.unavailable = dict(self.progress.get('unavailable_providers', {}))
         self.rejected, self.rejected_keys, self.rejected_hashes = [], set(), set()
         self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
-        self.scene_order, self.scene_text, self.topic = [], {}, ''
+        self.scene_order, self.scene_text, self.topic, self.owner = [], {}, '', {}
 
     # ---- AI engine---------------------------------------------------------
     def connect(self):
@@ -179,33 +196,44 @@ class MediaDirector:
                 factory = lambda: make_script_provider(self.engine, self.service.settings)
             self.ai = factory()
         except ScriptProviderError as error:
-            self._ai_failed(error)
+            self._pause(error)
 
-    def _ai_failed(self, error):
-        self.ai = None
+    def _pause(self, error, waited_out=False):
+        """The AI cannot judge right now: the job stops instead of filling the
+        remaining slots with motion. Finished slots stay; the rest stay
+        pending, and Medyayı Tamamla / Devam Et continues from there."""
+        category = getattr(error, 'category', '') or 'provider_error'
+        retry = int(getattr(error, 'retry_after', 0) or 0)
         self.ai_error = str(error)
-        self.progress['ai_error'] = self.ai_error
+        self.progress['ai_failure'] = {'category': category, 'message': str(error)[:300], 'upstream_status': getattr(error, 'upstream_status', None),
+                                       'stage': getattr(error, 'stage', ''), 'waited_seconds': self.waited, 'at': now(),
+                                       'slot_id': self.progress.get('slot_id')}
+        raise StockError('ai_paused', pause_message(self.label, category, retry, waited_out))
 
     def _ask(self, purpose, prompt, schema, images=(), max_tokens=2000):
-        if not self.ai: return None
-        for attempt in range(5):
+        for attempt in range(6):
             try:
-                return self.ai.complete_json(purpose, prompt, schema, images=list(images), effort='low', max_tokens=max_tokens)
+                answer = self.ai.complete_json(purpose, prompt, schema, images=list(images), effort='low', max_tokens=max_tokens)
+                self.unusable = 0
+                return answer
             except ScriptProviderError as error:
                 category = getattr(error, 'category', '')
-                if category in ('invalid_response', 'incomplete_response', 'response_schema_mismatch', 'empty_response',
-                                'thought_only_response', 'output_limit', 'unexpected_finish_reason', 'blocked_response'):
-                    return None  # this one answer is unusable; the engine itself still works
-                # Free-tier per-minute limit: wait and retry (bounded per job).
-                if category in ('rate_limit', 'quota_limit', 'upstream_error', 'gemini_timeout') and attempt < 4 and self.waited < WAIT_BUDGET:
-                    pause = min(60, max(5, int(getattr(error, 'retry_after', 0) or 20)))
-                    self.progress['message'] = f'{self.label} hız sınırı: {pause} sn bekleniyor, sonra devam edilecek'
-                    self.service._checkpoint(self.job, self.progress, light=True)
-                    getattr(self.service, 'ai_sleep', _sleep)(pause, self.service)
-                    self.waited += pause
-                    continue
-                self._ai_failed(error)
-                return None
+                if category in UNUSABLE:
+                    # This one answer is unusable; the engine itself still works.
+                    self.unusable += 1
+                    if self.unusable >= UNUSABLE_LIMIT: self._pause(error)
+                    return None
+                if category not in TRANSIENT:
+                    self._pause(error)  # daily quota, key or model problem: waiting here does not help
+                # Temporary (per-minute limit, time-out, 5xx, network): wait and try again.
+                pause = min(60, max(5, int(getattr(error, 'retry_after', 0) or 20)))
+                if attempt >= 5 or self.waited + pause > WAIT_BUDGET:
+                    self._pause(error, waited_out=True)
+                self.progress['message'] = f'{self.label} geçici olarak yanıt vermiyor ({ERROR_TEXT.get(category, "geçici hata")}): {pause} sn bekleniyor, sonra devam edilecek'
+                self.service._checkpoint(self.job, self.progress, light=True)
+                getattr(self.service, 'ai_sleep', _sleep)(pause, self.service)
+                if self.service.closed: raise StockError('interrupted', 'İşlem durdu; tamamlanan yuvalar korundu. Medyayı Tamamla ile sürdürün.')
+                self.waited += pause
         return None
 
     # ---- previews ----------------------------------------------------------
@@ -463,9 +491,6 @@ class MediaDirector:
         reaches 7/10 does the next tier start."""
         step = {'stage': stage, 'label': STAGES[stage], 'queries': list(queries), 'judged': []}
         log['steps'].append(step)
-        if not self.ai:
-            step['result'] = 'ai_unavailable'
-            return None
         for query in queries:
             pool = self.pool(slot, self.search(slot, kinds, query, log), log, exclude, scene)
             # The AI already approved these for this scene (another slot):
@@ -498,8 +523,6 @@ class MediaDirector:
             for media in self.order(slot, approved, verdicts):
                 chosen = self.take(slot, media, verdicts[key(media)], stage, log)
                 if chosen: return chosen
-            if not self.ai:
-                break
         step['result'] = step.get('result') or 'no_approved_candidate'
         return None
 
@@ -533,7 +556,8 @@ class MediaDirector:
         self.media_by_key[key(media)] = media
 
     # ---- other steps -------------------------------------------------------
-    def merge(self, slot, log):
+    def merge(self, slot, log, limit=MERGE_SECONDS):
+        if used_seconds(slot) > limit: return False
         ordered = sorted(self.slots, key=lambda s: s['estimated_start'])
         index = next(i for i, s in enumerate(ordered) if s['slot_id'] == slot['slot_id'])
         for neighbour in (ordered[index - 1] if index else None, ordered[index + 1] if index + 1 < len(ordered) else None):
@@ -544,7 +568,7 @@ class MediaDirector:
             if chain + .6 > float(media.get('duration') or 0): continue
             slot.update(selected_media=deepcopy(media), status='complete', continuation_of=neighbour['slot_id'], segment_start=None,
                         missing_reasons=[], warnings=[], ai_review=deepcopy(neighbour.get('ai_review')),
-                        message='Çok kısa yuva: komşu çekim kesintisiz devam ediyor.')
+                        message='Çok kısa yuva: komşu çekim kesintisiz devam ediyor.' if limit <= MERGE_SECONDS else 'Komşu çekim kesintisiz devam ediyor (yazı kartı yerine).')
             log['steps'].append({'stage': 'merged', 'label': STAGES['merged'], 'result': 'chosen', 'neighbour': neighbour['order']})
             return True
         return False
@@ -568,7 +592,95 @@ class MediaDirector:
         spoken = scene['start_estimate'] + span * len(text[:position].split()) / max(1, len(text.split()))
         return min(max(spoken - slot['estimated_start'], .6), max(.6, need - .35))
 
-    def motion_spec(self, slot, scene):
+    # ---- the owner's infographic markers ---------------------------------------
+    def owner_slots(self, scenes):
+        """{slot_id: hint}: each infographic marker goes to the free slot nearest
+        to the moment its sentence is spoken (same scene first, else a
+        neighbouring slot within 8 s). Markers with no slot left are reported."""
+        wanted = []
+        for scene in scenes:
+            words = ' '.join(scene.get('narration_text', '').split())
+            span = max(.001, scene['end_estimate'] - scene['start_estimate'])
+            for hint in scene.get('owner_hints') or []:
+                if hint.get('type') not in INFOGRAPHIC or not hint.get('value'): continue
+                where = words.find(' '.join(str(hint.get('sentence', '')).split())) if hint.get('sentence') else -1
+                at = scene['start_estimate'] + span * (len(words[:where].split()) / max(1, len(words.split())) if where >= 0 else 0) + .3
+                wanted.append((at, scene['scene_id'], hint))
+        out, unplaced = {}, []
+        for at, scene_id, hint in sorted(wanted, key=lambda w: w[0]):
+            free = [s for s in self.slots if s['slot_id'] not in out and not s.get('locked') and not s.get('manual_stock')]
+            gap = lambda s: 0 if s['estimated_start'] <= at < s['estimated_end'] else min(abs(at - s['estimated_start']), abs(at - s['estimated_end']))
+            near = [s for s in free if s['scene_id'] == scene_id] or [s for s in free if gap(s) <= 8]
+            if not near:
+                unplaced.append(f'[{hint["type"]}: {hint["value"]}]'); continue
+            out[min(near, key=gap)['slot_id']] = hint
+        self.progress['owner_unplaced'] = unplaced
+        return out
+
+    def place(self, name):
+        """(lat, lon) from the local place list, else from the AI, else None."""
+        from app.motion.places import lookup
+        found = lookup(name)
+        if found: return found[:2]
+        try:
+            answer = self._ask('motion_place', f'Give the latitude and longitude (decimal degrees) of this place: "{name}". '
+                               'If it is not a real, locatable place, set found=false.', PLACE_SCHEMA, max_tokens=200)
+        except StockError as error:
+            if error.category != 'ai_paused': raise
+            return None
+        if answer and answer.get('found') and isinstance(answer.get('lat'), (int, float)) and isinstance(answer.get('lon'), (int, float)) \
+                and -85 <= answer['lat'] <= 85 and -180 <= answer['lon'] <= 180:
+            return float(answer['lat']), float(answer['lon'])
+        return None
+
+    def owner_spec(self, hint, scene):
+        """The marker's own values become the infographic (only the shape is checked)."""
+        from app.motion.numbers import spoken_numbers
+        from app.motion.templates import MotionError, short, validate
+        kind, value = hint['type'], ' '.join(str(hint['value']).split())
+        sentence = ' '.join(str(hint.get('sentence') or sentence_at(scene.get('narration_text', ''), 0)).split()).rstrip('.!?…')
+        narration = scene.get('narration_text', '')
+        split = lambda text, signs: [x.strip() for x in re.split(signs, text) if x.strip()]
+        spec = None
+        if kind == 'map':
+            where = self.place(value)
+            if where: spec = {'template': 'map', 'data': {'place': value[:60], 'label': '', 'lat': where[0], 'lon': where[1]}, 'emphasis': value.split()[0]}
+        elif kind == 'number':
+            if not re.search(r'\d', value):
+                numbers = sorted(spoken_numbers(value))
+                if numbers: value = f'{numbers[-1]} %' if re.search(r'(?i)prozent|percent|ciento|cent|yüzde', value) else str(numbers[-1])
+            spec = {'template': 'stat', 'data': {'value': value[:24], 'label': short(sentence)}, 'emphasis': value}
+        elif kind == 'timeline':
+            events = []
+            for item in split(value, r';' if ';' in value else r','):
+                match = re.match(r'\s*(\S*\d\S*(?:\s+(?:v\.|n\.)\s*Chr\.|\s+(?:BC|AD|BCE|CE|MÖ|MS)\b)?)\s*[:\-–]?\s*(.*)', item)
+                if not match: continue
+                date, label = match.group(1)[:20], match.group(2)
+                if not label:
+                    at = narration.find(date)
+                    label = ' '.join(w for w in narration[at + len(date):].split()[:3] if not re.search(r'\d', w)) if at >= 0 else ''
+                events.append({'date': date, 'label': label.strip(' ,;:.')[:50]})
+            if len(events) >= 2: spec = {'template': 'timeline', 'data': {'events': events[:5]}, 'emphasis': ''}
+            elif events: spec = {'template': 'stat', 'data': {'value': events[0]['date'], 'label': short(sentence)}, 'emphasis': events[0]['date']}
+        elif kind == 'compare':
+            items = []
+            for item in split(value, r'\||\bvs\.?\b|\bgegen\b|\bkarşı\b'):
+                label, _, number = item.rpartition(':') if ':' in item else item.rpartition('=') if '=' in item else (item, '', '')
+                items.append({'label': label.strip()[:40], 'value': number.strip()[:24] if re.search(r'\d', number) else ''})
+            if len(items) > 2 and not all(i['value'] for i in items):
+                spec = {'template': 'list', 'data': {'title': '', 'items': [i['label'] for i in items[:4]]}, 'emphasis': ''}
+            elif len(items) >= 2:
+                spec = {'template': 'compare', 'data': {'title': '', 'items': items[:5]}, 'emphasis': ''}
+        elif kind == 'list':
+            items = split(value, r';' if ';' in value else r',')
+            if len(items) >= 2: spec = {'template': 'list', 'data': {'title': '', 'items': [i[:60] for i in items[:4]]}, 'emphasis': ''}
+        try:
+            if spec: return validate(spec, narration, scene.get('entities', []), trusted=True)
+        except MotionError:
+            pass
+        return None  # unusable marker: the narration decides (see motion_spec)
+
+    def motion_spec(self, slot, scene, repeat=False):
         """Last-resort motion from the narration spoken during the slot;
         a sentence not shown yet is preferred."""
         from app.motion.templates import from_narration, validate, MotionError
@@ -584,7 +696,15 @@ class MediaDirector:
             try: options.append(validate(from_narration(sentence, scene.get('entities', [])), narration, scene.get('entities', [])))
             except MotionError: continue
         fresh = [o for o in options if json.dumps(o, sort_keys=True) not in self.card_texts]
-        return (fresh or options or [{'template': 'quote', 'data': {'text': narration.split('.')[0][:120] or scene.get('visual_intent', '')}, 'emphasis': ''}])[0]
+        # A plain text card is the last choice; repeat=True: a graphic already shown beats a text card.
+        ranked = sorted(options, key=lambda o: (o['template'] == 'quote', o not in fresh)) if repeat else sorted(fresh or options, key=lambda o: o['template'] == 'quote')
+        return (ranked or [{'template': 'quote', 'data': {'text': narration.split('.')[0][:120] or scene.get('visual_intent', '')}, 'emphasis': ''}])[0]
+
+    def quote_full(self):
+        """At most ~30% of the motion graphics may be plain text cards."""
+        motion = [s for s in self.slots if is_generated(s.get('selected_media')) and s['selected_media']['media_type'] == 'video' and not s.get('continuation_of')]
+        quotes = sum(((s['selected_media'].get('source_metadata') or {}).get('motion') or {}).get('template') == 'quote' for s in motion)
+        return quotes + 1 > max(1, QUOTE_SHARE * (len(motion) + 1))
 
     def motion(self, slot, scene, log, spec=None, stage='motion'):
         from app.motion.clips import render_clip, media_record
@@ -607,12 +727,12 @@ class MediaDirector:
         media = media_record(path, spec, scene_data, engine)
         from app.motion.templates import TEMPLATES
         why = {'motion_planned': 'yönetmen bu sahneyi motion grafik olarak planladı', 'motion_edit': 'sizin düzenlediğiniz motion grafik',
-               'motion_balance': 'videonun %40’ı motion grafik olsun diye seçildi'}.get(
-            stage, UNREACHABLE if not self.ai else 'onaylanan stok medya bulunamadı')
+               'motion_owner': 'metindeki işaretinize göre'}.get(
+            stage, 'onaylanan stok medya bulunamadı')
         slot.update(selected_media=media, status='complete', continuation_of=None, segment_start=None, missing_reasons=[], warnings=[],
                     ai_review=None, message=f'{TEMPLATES[spec["template"]]}: “{media["description"][:80]}” ({why}).')
         log['steps'].append({'stage': stage, 'label': STAGES[stage], 'result': 'chosen', 'template': spec['template'], 'engine': engine,
-                             'because': 'ai_unavailable' if not self.ai and stage == 'motion' else stage})
+                             'because': 'no_approved_stock' if stage == 'motion' else stage})
         return True
 
     def card(self, slot, scene, log):
@@ -632,12 +752,12 @@ class MediaDirector:
                  'local_path': 'stock/' + name, 'file_size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
                  'downloaded_at': now(), 'content_type': 'image/png'}
         names = {'map': 'Konum kartı', 'number': 'Sayı kartı', 'quote': 'Alıntı kartı', 'title': 'Başlık kartı'}
-        why = UNREACHABLE if not self.ai else 'onaylanan stok medya bulunamadı'
+        why = 'onaylanan stok medya bulunamadı'
         slot.update(selected_media=media, status='complete', continuation_of=None, segment_start=None, missing_reasons=[],
                     warnings=[] if drawn == 'drawn' else ['Yazı tipi bulunamadı; kart yazısız çizildi.'], ai_review=None,
                     message=f'{names[kind]}: “{text}” ({why}).')
         log['steps'].append({'stage': 'card', 'label': STAGES['card'], 'result': 'chosen', 'card_kind': kind, 'card_text': text,
-                             'because': 'ai_unavailable' if not self.ai else 'no_approved_stock'})
+                             'because': 'no_approved_stock'})
         return True
 
     # ---- per slot ----------------------------------------------------------
@@ -651,14 +771,14 @@ class MediaDirector:
         video_first = ['video'] if slot.get('preferred_type') != 'stock_image' else ['image', 'video']
         chosen = self.try_step(slot, scene, 'stock_video', video_first, planned, log, exclude)
         rewritten = []
-        if not chosen and self.ai:
+        if not chosen:
             if 'rewritten' not in memo: memo['rewritten'] = self.rewrite(slot, scene, planned)
             rewritten = memo['rewritten']
             log['rewritten_queries'] = rewritten
             if rewritten: chosen = self.try_step(slot, scene, 'rewritten_video', ['video'], rewritten, log, exclude)
         if not chosen:
             chosen = self.try_step(slot, scene, 'stock_image', ['image'], (rewritten + planned)[:5], log, exclude)
-        if not chosen and self.ai:
+        if not chosen:
             if 'broader' not in memo: memo['broader'] = self.rewrite(slot, scene, planned + rewritten, broader=True)
             broader = memo['broader']
             log['broader_queries'] = broader
@@ -669,8 +789,28 @@ class MediaDirector:
         if not chosen and used_seconds(slot) < MERGE_SECONDS and self.merge(slot, log):
             chosen = True
         if not chosen:
-            self.motion(slot, scene, log)
+            spec = self.motion_spec(slot, scene)
+            if spec['template'] == 'quote' and self.quote_full():
+                # Enough text cards already: a longer neighbouring shot, another
+                # nearby infographic or this scene's graphic again instead.
+                if self.merge(slot, log, limit=6.0): return log
+                spec = self.nearby_infographic(slot, scene) or self.motion_spec(slot, scene, repeat=True)
+            self.motion(slot, scene, log, spec)
         return log
+
+    def nearby_infographic(self, slot, scene):
+        """A number/place/date infographic from the neighbouring scenes' narration."""
+        from app.motion.templates import from_narration, validate, MotionError
+        index = self.scene_order.index(scene['scene_id']) if scene['scene_id'] in self.scene_order else 0
+        for other in sorted(range(len(self.scene_order)), key=lambda i: abs(i - index))[:5]:
+            text = self.scene_text.get(self.scene_order[other], '')
+            for f in range(11):
+                sentence = sentence_at(text, f / 10)
+                if not sentence: continue
+                try: spec = validate(from_narration(sentence, scene.get('entities', [])), text, scene.get('entities', []))
+                except MotionError: continue
+                if spec['template'] != 'quote' and json.dumps(spec, sort_keys=True) not in self.card_texts: return spec
+        return None
 
     def finish_slot(self, slot, log):
         stage = next((s['stage'] for s in reversed(log['steps']) if s.get('result') in ('chosen', 'kept', 'kept_no_better_option')), 'motion')
@@ -738,6 +878,8 @@ class MediaDirector:
         first = {}
         for slot in sorted(self.slots, key=lambda s: s['estimated_start']):
             first.setdefault(slot['scene_id'], slot['slot_id'])
+        # The owner's infographic markers ([HARİTA], [SAYI], …) win over the director's motion plan.
+        self.owner = self.owner_slots(handoff['scenes']) if not single else {}
         # Keep what is valid and already approved (or locked / generated).
         targets = []
         for slot in sorted(self.slots, key=lambda s: s['estimated_start']):
@@ -745,14 +887,25 @@ class MediaDirector:
             if single and slot['slot_id'] == single:
                 targets.append((slot, action))
                 continue
-            planned = scenes[slot['scene_id']].get('motion_spec')
+            hint = self.owner.get(slot['slot_id'])
+            if hint and not slot['locked'] and not slot.get('manual_stock') and not slot.get('motion_edited') and (
+                    not self.valid(slot) or not is_generated(media) or (media.get('source_metadata') or {}).get('owner_hint') != hint
+                    or UNREACHABLE in slot.get('message', '')):
+                targets.append((slot, 'motion_owner'))
+                continue
+            planned = scenes[slot['scene_id']].get('motion_spec') if not any(h.get('type') in INFOGRAPHIC for h in scenes[slot['scene_id']].get('owner_hints') or []) else None
             if not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and (
                     not self.valid(slot) or not is_generated(media) and not (slot.get('ai_review') or {}).get('approved')
-                    or is_generated(media) and (media.get('source_metadata') or {}).get('motion') != planned and not slot.get('motion_edited')):
+                    or is_generated(media) and ((media.get('source_metadata') or {}).get('planned') or (media.get('source_metadata') or {}).get('motion')) != planned
+                    and not slot.get('motion_edited')):
                 targets.append((slot, 'motion_planned'))
                 continue
             if not self.valid(slot):
                 if not slot['locked']: targets.append((slot, 'missing'))
+                continue
+            if not single and not slot['locked'] and not is_generated(media) and (
+                    key(media) in self.rejected_keys or (media.get('sha256') and media['sha256'] in self.rejected_hashes)):
+                targets.append((slot, 'reselect'))  # the owner rejected this clip elsewhere: never kept anywhere
                 continue
             if slot.get('continuation_of'):
                 continue
@@ -762,6 +915,9 @@ class MediaDirector:
                 if UNREACHABLE in slot.get('message', ''): targets.append((slot, 'retry_card'))
             elif not (slot.get('ai_review') or {}).get('approved') or (slot['ai_review'].get('score') or 0) < APPROVE_SCORE:
                 targets.append((slot, 'unreviewed'))  # below 7/10 is never kept
+        # Infographics need no AI look: they are drawn first, so even if the AI
+        # quota runs out later every marked/planned scene already has its graphic.
+        targets.sort(key=lambda t: t[1] not in ('motion_owner', 'motion_planned'))
         total = max(1, len(targets))
         for done, (slot, why) in enumerate(targets):
             if service.closed: raise StockError('interrupted', 'İşlem durdu; tamamlanan yuvalar korundu. Medyayı Tamamla ile sürdürün.')
@@ -772,61 +928,41 @@ class MediaDirector:
             try:
                 log = self.handle(slot, scene, why)
             except StockError as error:
-                if error.category in ('stale_plan', 'interrupted', 'locked'): raise
+                if error.category in ('stale_plan', 'interrupted', 'locked', 'ai_paused'): raise
                 log = {'steps': [], 'searches': [], 'judged': {}, 'error': error.category}
                 self.motion(slot, scene, log)
             self.finish_slot(slot, log)
-        if not single:
-            for slot in self.balance_motion([s for s, w in targets if w == 'missing'], scenes):
-                self.progress.update(message=f'Yuva {slot["order"]} · dengeli kurgu için motion grafik')
-                service._checkpoint(self.job, self.progress)
-                self._release(slot); log = {'steps': [], 'searches': [], 'judged': {}}
-                self.motion(slot, scenes[slot['scene_id']], log, None, 'motion_balance'); self.finish_slot(slot, log)
-        if targets and not single and self.ai:  # nothing new chosen: nothing to re-review
-            self.review(scenes)
+        if targets and not single:  # nothing new chosen: nothing to re-review
+            try:
+                self.review(scenes)
+            except StockError as error:
+                if error.category != 'ai_paused': raise
+                self.progress['review_skipped'] = str(error)  # every slot is already filled; only the extra look is skipped
         self.finalize()
-
-    def balance_motion(self, filled, scenes):
-        """Bring motion graphics to ~40% of the running time (owner's target).
-        Runs after the stock search, so slots that had to become motion
-        already count; only slots filled with stock in this run are converted,
-        spread out (never three in a row), preferring a number, date or place."""
-        span = lambda s: max(0., s['estimated_end'] - s['estimated_start'])
-        ordered = sorted(self.slots, key=lambda s: s['estimated_start'])
-        total = sum(span(s) for s in ordered)
-        if not total: return []
-        index = {s['slot_id']: i for i, s in enumerate(ordered)}
-        def is_motion(s):
-            m = s.get('selected_media')
-            return is_generated(m) and (m.get('source_metadata') or {}).get('kind') == 'motion'
-        motion = {index[s['slot_id']] for s in ordered if is_motion(s)}
-        share = sum(span(ordered[i]) for i in motion) / total
-        if share >= MOTION_SHARE - .02: return []
-        planned = {ordered[i]['scene_id'] for i in motion}
-        candidates = []
-        for s in filled:
-            if is_generated(s.get('selected_media')) or not self.valid(s) or s['locked'] or s.get('manual_stock') or s.get('continuation_of') \
-                    or any(o.get('continuation_of') == s['slot_id'] for o in ordered) or span(s) > 12 or s['scene_id'] in planned: continue
-            try: template = self.motion_spec(s, scenes[s['scene_id']])['template']
-            except Exception: continue
-            candidates.append((s, 2 if template != 'quote' else 1))
-        chosen = []
-        while share < MOTION_SHARE and candidates:
-            def score(item):
-                i = index[item[0]['slot_id']]
-                return (min(min((abs(i - j) for j in motion), default=99), 4), item[1], -i)
-            def crowded(i):
-                return {i - 1, i - 2} <= motion or {i + 1, i + 2} <= motion or {i - 1, i + 1} <= motion
-            allowed = [c for c in candidates if not crowded(index[c[0]['slot_id']])]
-            if not allowed: break
-            best = max(allowed, key=score)
-            candidates.remove(best); motion.add(index[best[0]['slot_id']]); chosen.append(best[0]); share += span(best[0]) / total
-        return sorted(chosen, key=lambda s: s['estimated_start'])
 
     def handle(self, slot, scene, why):
         empty = lambda: {'steps': [], 'searches': [], 'judged': {}}
+        if why == 'motion_owner':
+            hint = self.owner[slot['slot_id']]
+            spec = self.owner_spec(hint, scene)
+            self._release(slot); log = empty()
+            if spec is None:  # e.g. a place nobody could locate: the narration decides
+                log = self.fill(slot, scene)
+                slot['message'] = f'[{hint["type"]}: {hint["value"]}] işareti çizilemedi ({"yer haritada bulunamadı" if hint["type"] == "map" else "işaret biçimi okunamadı"}). ' + slot.get('message', '')
+                return log
+            self.motion(slot, scene, log, spec, 'motion_owner')
+            slot['selected_media'].setdefault('source_metadata', {})['owner_hint'] = hint
+            return log
         if why == 'motion_planned':
-            self._release(slot); log = empty(); self.motion(slot, scene, log, scene['motion_spec'], 'motion_planned'); return log
+            planned, spec = scene['motion_spec'], scene['motion_spec']
+            self._release(slot); log = empty()
+            if planned['template'] == 'quote':  # a text card is the last choice
+                other = self.motion_spec(slot, scene)
+                if other['template'] != 'quote': spec = other
+                elif self.quote_full(): return self.fill(slot, scene)  # enough text cards: stock footage instead
+            self.motion(slot, scene, log, spec, 'motion_planned')
+            if is_generated(slot.get('selected_media')): slot['selected_media'].setdefault('source_metadata', {})['planned'] = planned
+            return log
         if why == 'to_motion':
             self._release(slot); slot.pop('manual_stock', None); log = empty()
             self.motion(slot, scene, log, scene.get('motion_spec') or None, 'motion_planned' if scene.get('motion_spec') else 'motion'); return log
@@ -848,14 +984,10 @@ class MediaDirector:
             slot['relevance_profile'] = relevance.profile(scene, slot)
             media = slot['selected_media']
             log = {'steps': [{'stage': 'kept', 'label': STAGES['kept'], 'judged': []}], 'searches': [], 'judged': {}}
-            verdict = self.judge(slot, scene, [media]).get(key(media)) if self.ai else None
+            verdict = self.judge(slot, scene, [media]).get(key(media))
             if verdict and verdict['approved'] and verdict['score'] >= APPROVE_SCORE:
                 slot.update(ai_review={'approved': True, **verdict, 'reviewed_at': now()}, message=verdict['reason'])
                 log['steps'][0]['result'] = 'kept'
-                return log
-            if not self.ai:
-                log['steps'][0]['result'] = 'kept_no_better_option'
-                slot['message'] = UNREACHABLE + '; mevcut seçim henüz onaylanmadı.'
                 return log
             self._release(slot)
             log2 = self.fill(slot, scene, exclude={key(media)})
@@ -928,8 +1060,47 @@ class MediaDirector:
             service._mirror(state)
         result = state['media_summary']
         self.progress.update(percent=100, category='none', media_summary=result,
-                             message=result['text'] + (f' · {UNREACHABLE} ({self.label}): ' + self.ai_error if self.ai_error else ''))
+                             message=result['text'] + (' · Bütün video incelemesi atlandı: ' + self.progress['review_skipped'].split('.')[0] if self.progress.get('review_skipped') else '')
+                             + (' · Görüntü yeri kalmadığı için gösterilemeyen işaretler: ' + ', '.join(self.progress['owner_unplaced']) if self.progress.get('owner_unplaced') else ''))
         service._checkpoint(job, self.progress, status='completed')
+
+
+TEMPLATE_WORDS = {'stat': 'sayı', 'map': 'harita', 'timeline': 'çizelge', 'compare': 'karşılaştırma', 'list': 'liste', 'quote': 'yazı'}
+
+
+def pause_message(label, category, retry, waited_out):
+    """Plain Turkish: what happened, what was kept and when to try again."""
+    kept = ' Tamamlanan yuvalar korundu, kalanlar “Bekliyor” durumunda; Medyayı Tamamla’ya tekrar basınca kaldığı yerden devam eder.'
+    if category == 'free_quota_exhausted':
+        minutes = minutes_to_pacific_midnight()
+        when = f'yaklaşık {minutes // 60} saat {minutes % 60} dk sonra' if minutes >= 60 else f'yaklaşık {minutes} dk sonra'
+        return f'{label} günlük ücretsiz kotası doldu; kota her gün ABD Pasifik saatiyle gece yarısı yenilenir. {when.capitalize()} tekrar deneyin.' + kept
+    if category in ('rate_limit', 'quota_limit'):
+        minutes = max(1, -(-max(retry, 60) // 60))
+        return f'{label} kotası doldu (dakikalık/kısa süreli sınır). {minutes} dk sonra tekrar deneyin.' + kept
+    if category in TRANSIENT:
+        return f'{label} şu anda yanıt vermiyor ({ERROR_TEXT.get(category, "geçici hata")}); bekleyip birkaç kez yeniden denendi. 5 dk sonra tekrar deneyin.' + kept
+    if category in UNUSABLE:
+        return f'{label} art arda okunamayan yanıt verdi. Birkaç dk sonra tekrar deneyin; sorun sürerse Ayarlar’dan başka bir model seçin.' + kept
+    if category in ('key_rejected', 'missing_key', 'invalid_settings'):
+        return f'{label} API anahtarı kabul edilmedi veya kayıtlı değil. Ayarlar → {label} bölümünde anahtarı kontrol edip Kaydet deyin.' + kept
+    if category in ('model_unavailable', 'model_unsupported', 'invalid_request'):
+        return f'Seçili {label} modeli bu isteği kabul etmedi. Ayarlar → {label} bölümünde Modelleri Getir ile başka bir model seçin.' + kept
+    if category == 'billing_quota':
+        return f'{label} hesabınızda bakiye/kota yok. Hesap bakiyesini kontrol edin.' + kept
+    return f'{label} ile medya seçimi durdu ({category}). Birkaç dk sonra tekrar deneyin.' + kept
+
+
+def minutes_to_pacific_midnight():
+    from datetime import datetime, timedelta, timezone
+    try:
+        from zoneinfo import ZoneInfo
+        zone = ZoneInfo('America/Los_Angeles')
+    except Exception:  # no time-zone data (some Windows installs): standard offset
+        zone = timezone(timedelta(hours=-8))
+    here = datetime.now(zone)
+    midnight = (here + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return max(1, round((midnight - here).total_seconds() / 60))
 
 
 def summary(slots):
@@ -943,12 +1114,20 @@ def summary(slots):
     total_seconds = sum(used_seconds(s) for s in slots) or 1
     missing = [s for s in slots if s not in filled]
     seconds = round(sum(used_seconds(s) for s in missing), 2)
-    text = f'{len(filled)}/{len(slots)} yuva dolu · {videos} video · {images} görsel · {motion} motion grafik' + (f' · {cards} kart' if cards else '')
+    templates = {}
+    for s in filled:
+        if is_generated(s['selected_media']) and s['selected_media']['media_type'] == 'video' and not s.get('continuation_of'):
+            name = ((s['selected_media'].get('source_metadata') or {}).get('motion') or {}).get('template', 'quote')
+            templates[name] = templates.get(name, 0) + 1
+    kinds = ', '.join(f'{n} {TEMPLATE_WORDS.get(t, t)}' for t, n in sorted(templates.items(), key=lambda kv: -kv[1]))
+    text = (f'{len(filled)}/{len(slots)} yuva dolu · {videos} stok video · {images} görsel · {motion} motion grafik'
+            + (f' ({kinds})' if kinds else '') + (f' · {cards} kart' if cards else ''))
     if merged: text += f' (bunların {merged} tanesi önceki çekimin devamı)'
     if missing: text += f' · {len(missing)} eksik ({seconds} sn)'
     average = relevance_summary(filled)['relevance_average']
     if average is not None: text += f' · ortalama alaka {average}/10'
     return {'total': len(slots), 'filled': len(filled), 'videos': videos, 'images': images, 'cards': cards, 'motion': motion, 'merged': merged,
+            'motion_templates': templates, 'motion_slot_percent': round(100 * (motion + cards) / len(slots)) if slots else 0,
             'motion_seconds': motion_seconds, 'motion_percent': round(100 * motion_seconds / total_seconds, 1),
             'missing': len(missing), 'missing_seconds': seconds, 'text': text,
             'ai_approved': sum(bool((s.get('ai_review') or {}).get('approved')) for s in filled if not is_generated(s['selected_media'])),
@@ -1047,7 +1226,7 @@ def diagnostics(service, project_id):
                       'missing_reasons': s.get('missing_reason_messages', [])})
     with closing(service.projects._connection()) as c:
         jobs = [{'id': r['id'], 'action': r['action'], 'status': r['status'], 'error': r['error_message'], 'created_at': r['created_at'],
-                 'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'ai_error', 'unavailable_providers', 'review', 'media_summary')}}
+                 'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary')}}
                 for r in c.execute('SELECT * FROM stock_jobs WHERE project_id=? ORDER BY created_at DESC LIMIT 10', (project_id,))]
     return {'generated_at': now(), 'project_id': project_id, 'plan_id': state['plan_id'], 'summary': state.get('media_summary'),
             'providers_configured': state['providers'], 'warnings': state['warnings'], 'jobs': jobs, 'slots': slots}

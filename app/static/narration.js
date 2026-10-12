@@ -101,7 +101,7 @@ if (/^\/projects\/[^/]+\/narration$/.test(window.location.pathname)) {
   async function load(){
     if(loading)return;loading=true;
     try{state=await request(base);if(!initialized){provider.value=state.settings.voice_provider;speed.value=String(state.settings.speed);initialized=true;}voiceChoices();
-      const job=state.job;status.textContent=job?job.status==='error'?`${job.error_message} · Tanı: ${job.progress.category}`:job.progress.message:'Seslendirme bilgileri hazır.';
+      const job=state.job;status.textContent=job?job.status==='error'?`⚠ ${job.error_message}`:job.progress.message:'Seslendirme bilgileri hazır.';
       diagnostic.textContent=job?.progress?.diagnostic?JSON.stringify(job.progress.diagnostic,null,2):'';
       render();
     }catch(error){status.textContent=error.message;}finally{loading=false;clearTimeout(timer);if(RUNNING.includes(state?.job?.status))timer=setTimeout(load,1200);}

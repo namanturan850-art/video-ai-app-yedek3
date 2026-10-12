@@ -271,7 +271,8 @@ class Director:
 
     def queries(self, text):
         must = re.search(r'MUST show: (.*)', text).group(1)
-        theme = next(t for t in self.data['themes'] if t[2] == must)
+        themes = self.data['themes']  # the owner's [GÖRSEL] note can replace the planned MUST show
+        theme = next((t for t in themes if t[2] == must), None) or next((t for t in themes if t[0] in must), themes[0])
         if 'BROADER' in text:
             return message(json.dumps({'queries': [theme[3].split()[0] + ' landscape', must, 'documentary atmosphere']}))
         return message(json.dumps({'queries': [theme[3], theme[3].split()[-1] + ' closeup', must + ' cinematic']}))
@@ -435,10 +436,11 @@ def test_three_minute_topic_fills_every_slot_with_approved_or_generated_media(ke
         assert 'synthetic-pexels-key' not in diag.text and 'sk-ant' not in diag.text
         calls = len(fake.requests)
         print(f'\nRESULT {engine} {key}: {summary["text"]} · motion {summary["motion_percent"]}% of time · AI calls {calls} · paid ${usage["total_cost_usd"]:.4f}')
-        # Owner's target ~40% motion / 60% stock: met wherever stock exists;
-        # stock-scarce topics go higher only because no slot may stay empty.
-        assert summary['motion_percent'] >= 36
-        if key in ('bermuda', 'rome'): assert summary['motion_percent'] <= 46
+        # Motion only where the director planned it or no stock fits: with a
+        # stock-rich library the screen's 25% warning never shows.
+        if key in ('bermuda', 'rome'):
+            assert summary['motion_slot_percent'] <= 25 and not any('motion grafik (hedef' in w for w in again['warnings'])
+        assert not any((s.get('director') or {}).get('stage') == 'motion_balance' for s in again['slots'])  # no forced motion
         planned = [s for s in again['slots'] if (s.get('director') or {}).get('stage') == 'motion_planned']
         assert planned and all(s['selected_media']['media_type'] == 'video' for s in planned)
         if engine == 'gemini': assert usage['total_cost_usd'] == 0  # nothing billed through Claude
@@ -451,7 +453,13 @@ def sqlite3_connect(client):
     return sqlite3.connect(client.app.state.database)
 
 
-def test_claude_outage_still_fills_every_slot_and_next_press_upgrades_cards(tmp_path, monkeypatch):
+def no_fallback_motion(view):
+    """Nothing became motion because the AI was down: only director-planned motion."""
+    return all((s.get('director') or {}).get('stage') in (None, 'motion_planned') or s['selected_media']['provider'] != 'generated'
+               for s in view['slots'] if s.get('selected_media'))
+
+
+def test_claude_outage_pauses_instead_of_motion_and_next_press_continues(tmp_path, monkeypatch):
     import anthropic
     from fake_anthropic import api_error
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'deepsea', 'claude')
@@ -459,31 +467,56 @@ def test_claude_outage_still_fills_every_slot_and_next_press_upgrades_cards(tmp_
         healthy = fake.responder
         fake.responder = lambda request: api_error(anthropic.APIConnectionError, 0)
         view = complete(client, pid)
-        assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
-        # Nothing unapproved: during the outage only generated cards are used.
-        assert all(s['selected_media']['provider'] == 'generated' for s in view['slots'])
-        assert 'Yapay zekâya ulaşılamadı (Claude)' in view['job']['progress']['message']
-        # Director-planned motion graphics need no AI, so they are drawn as planned.
-        assert all('Yapay zekâya ulaşılamadı' in s['message'] or s.get('continuation_of') or s['director']['stage'] == 'motion_planned' for s in view['slots'])
+        job = view['job']
+        assert job['status'] == 'error' and job['progress']['category'] == 'ai_paused', job
+        assert 'Claude şu anda yanıt vermiyor' in job['error_message'] and 'kaldığı yerden devam' in job['error_message']
+        assert client.app.state.stock.slept  # temporary error: waited and retried before stopping
+        assert no_fallback_motion(view)
+        assert not any(s['status'] == 'error' for s in view['slots'])  # the rest stays “Bekliyor”
         fake.responder = healthy
         view = complete(client, pid)
         summary = check(client, pid, claude, view)
-        assert summary['videos'] + summary['images'] > 0  # cards made during the outage were retried
+        assert summary['videos'] + summary['images'] > 0
     finally:
         client.__exit__(None, None, None)
 
 
-def test_gemini_daily_free_quota_fills_with_cards_then_upgrades_next_day(tmp_path, monkeypatch):
+def test_gemini_quota_mid_job_stops_without_motion_and_resumes(tmp_path, monkeypatch):
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'bermuda')
     try:
-        fake.fail = lambda n: gemini_429(free=True)
+        start = len(fake.requests)
+        fake.fail = lambda n: gemini_429(free=True) if n > start + 6 else None  # daily free quota runs out mid-job
         view = complete(client, pid)
-        assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
-        assert all(s['selected_media']['provider'] == 'generated' for s in view['slots'])
-        assert 'ücretsiz API kotası' in view['job']['progress']['message']
+        job = view['job']
+        assert job['status'] == 'error' and job['progress']['category'] == 'ai_paused', job
+        assert 'Gemini günlük ücretsiz kotası doldu' in job['error_message'] and 'dk sonra tekrar deneyin' in job['error_message']
+        assert job['progress']['ai_failure']['category'] == 'free_quota_exhausted'  # the real error is kept for the diagnostics file
+        assert no_fallback_motion(view)  # no slot fell to motion
+        done = {s['slot_id']: s['selected_media']['media_id'] for s in view['slots'] if s.get('selected_media') and s['selected_media']['provider'] != 'generated'}
+        assert done  # what was approved before the quota ran out is kept
+        pending = [s for s in view['slots'] if not s.get('selected_media')]
+        assert pending and all(s['status'] == 'pending' and s['status_label'] == 'Bekliyor' for s in pending)
+        assert not client.app.state.stock.__dict__.get('slept')  # a daily quota is not waited out
+        diag = client.get(f'/api/projects/{pid}/production/stock/diagnostics').json()
+        assert diag['jobs'][0]['progress']['ai_failure']['category'] == 'free_quota_exhausted'
         fake.fail = None
-        summary = check(client, pid, claude, complete(client, pid))
-        assert summary['videos'] + summary['images'] > 0
+        view = complete(client, pid)  # pressing again continues
+        summary = check(client, pid, claude, view)
+        assert all(next(s for s in view['slots'] if s['slot_id'] == k)['selected_media']['media_id'] == v for k, v in done.items())
+        assert summary['videos'] > 0
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_gemini_minute_limit_that_does_not_clear_pauses_with_minutes(tmp_path, monkeypatch):
+    client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'rome')
+    try:
+        start = len(fake.requests)
+        fake.fail = lambda n: gemini_429() if n > start + 3 else None
+        view = complete(client, pid)
+        assert view['job']['progress']['category'] == 'ai_paused'
+        assert 'Gemini kotası doldu' in view['job']['error_message'] and '1 dk sonra' in view['job']['error_message']
+        assert len(client.app.state.stock.slept) == 5 and no_fallback_motion(view)
     finally:
         client.__exit__(None, None, None)
 

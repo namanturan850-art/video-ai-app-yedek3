@@ -7,7 +7,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.dataset.unavailable=String(disabled);b.addEventListener('click',fn);parent.append(b);return b;}
   const back=node('a','← Projeye dön');back.href=`/projects/${id}`;root.append(back);
-  root.append(node('p','Onaylı senaryodan anlamlı sahneler ve kurgu önerileri hazırlayın. Stok medyayı aşağıdaki medya yuvalarına indirin. Seslendirme ve video oluşturma sonraki aşamalardadır.'));
+  root.append(node('p','Kayıtlı metninizden sahne planını hazırlayın, sonra Medyayı Tamamla ile her sahneye stok video, görsel veya infografik seçtirin. Video, Render ekranında oluşturulur.'));
   root.append(node('p','Yukarı/Aşağı taşı yalnızca görsel tasarımı taşır; onaylı anlatım aynı sırada kalır. Kilitli sahneler yeniden planlamada korunur.','note'));
   const status=node('p','Yükleniyor…');status.id='production-status';status.setAttribute('role','status');root.append(status);
   const provider=node('select');provider.id='production-provider';
@@ -16,12 +16,11 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const label=node('label','Planlama AI sağlayıcısı');label.htmlFor=provider.id;root.append(label,provider);
   const actions=node('div','','settings-actions');root.append(actions);
   const planButton=button(actions,'Görsel / Kurgu Planını Hazırla',generate);
-  button(actions,'Kalite Kontrolünü Yenile',()=>{if(!editing)load();});
+  button(actions,'Ekranı Yenile',()=>{if(!editing)load();});
   const resume=button(actions,'Plan İşlemine Devam Et',continueJob);resume.hidden=true;
   const versions=node('select');versions.id='production-versions';const vl=node('label','Plan sürümleri');vl.htmlFor=versions.id;root.append(vl,versions);
   const summary=node('p');summary.id='production-summary';root.append(summary);
   const warnings=node('ul');warnings.id='production-warnings';root.append(node('h2','Sahne Planı Kontrolü'),warnings);
-  const later=node('details');later.append(node('summary','Sonraki aşamalar için eksikler — hazırlık'));const laterWarnings=node('ul');later.append(laterWarnings);root.append(later);
   const blocks=node('div');blocks.id='visual-blocks';root.append(blocks);
   const music=node('form','','settings-panel');music.id='production-music';music.append(node('h2','Lisanslı Yerel Müzik — sonraki çalıştırma tercihleri'));
   for(const [name,text,type] of [['enabled','Müzik açık','checkbox'],['mood','Duygu / tür','text'],['local_file_label','Lisanslı müzik adı (dosya işleme daha sonra)','text'],['license_confirmed','Müziğin kullanım lisansını kontrol ettim','checkbox'],['volume','Ses seviyesi (0–1)','number'],['fade_in','Başlangıç fade (saniye)','number'],['fade_out','Bitiş fade (saniye)','number'],['ducking','Seslendirme sırasında müziği azalt','checkbox']]){
@@ -82,10 +81,10 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   }
   async function load(){
     try{[view,job]=await Promise.all([request(base),request(`/api/projects/${id}/script`).then(x=>{if(!providerChosen&&x.default_provider)provider.value=x.default_provider;return x.job;})]);
-      status.textContent=job&&['visual','visual_scene'].includes(job.action)&&['queued','analyzing','planning','generating','checking','error'].includes(job.status)?`${job.status_label} · ${job.progress.percent}% ${job.error_message||''}${job.status==='error'&&job.progress.error_category?' · Tanı: '+(job.progress.error_diagnostic||job.progress.error_category):''}`:view.state;
-      warnings.replaceChildren();for(const text of view.scene_warnings)warnings.append(node('li',text));laterWarnings.replaceChildren();for(const text of view.warnings)laterWarnings.append(node('li',text));if(!view.approved_script)warnings.prepend(node('li','Önce senaryo sürümünü onaylayın.'));
+      status.textContent=job&&['visual','visual_scene'].includes(job.action)&&['queued','analyzing','planning','generating','checking','error'].includes(job.status)?`${job.status_label} · ${job.progress.percent}% ${job.error_message||''}`:view.state;
+      warnings.replaceChildren();for(const text of view.scene_warnings)warnings.append(node('li',text));if(!view.approved_script)warnings.prepend(node('li','Önce metni kaydedin (Metin ekranı).'));
       versions.replaceChildren();for(const v of view.versions){const option=node('option',`Plan Sürümü ${v.plan_version}${v.active?' · Aktif plan':''} · ${v.scene_count} sahne · ${v.status==='outdated'?'Eski plan':v.status==='approval_required'?'Onay gerekli':'Hazır'} · ${v.provider} · ${new Date(v.created_at).toLocaleString('tr-TR')}`);option.value=v.plan_id;versions.append(option);}
-      if(view.plan){versions.value=view.plan.plan_id;summary.textContent=`Plan Sürümü ${view.plan.plan_version} · Aktif plan · Senaryo Sürümü ${view.plan.source_script_version||'eski'} · ${view.plan.blocks.length} sahne · ${view.plan.model||'Eski kayıt'} · ${view.coverage_complete?'Onaylı anlatım tam ve aynı sırayla kapsanıyor.':'Güncel senaryo kapsamı doğrulanamadı.'}${view.plan.status==='outdated'?' Bu plan eski senaryoya/dile ait.':''}`;for(const input of music.elements){if(!input.name)continue;if(input.type==='checkbox')input.checked=view.plan.music[input.name];else input.value=view.plan.music[input.name];}}
+      if(view.plan){versions.value=view.plan.plan_id;summary.textContent=`Plan Sürümü ${view.plan.plan_version} · Aktif plan · Senaryo Sürümü ${view.plan.source_script_version||'eski'} · ${view.plan.blocks.length} sahne · ${view.coverage_complete?'Onaylı anlatım tam ve aynı sırayla kapsanıyor.':'Güncel senaryo kapsamı doğrulanamadı.'}${view.plan.status==='outdated'?' Bu plan eski senaryoya/dile ait.':''}`;for(const input of music.elements){if(!input.name)continue;if(input.type==='checkbox')input.checked=view.plan.music[input.name];else input.value=view.plan.music[input.name];}}
       else summary.textContent='Onaylı senaryodan ilk planınızı hazırlayın.';
       if(!editing)renderCards();sync();clearTimeout(timer);if(busy()&&!inFlight)timer=setTimeout(load,1000);
     }catch(error){status.textContent=error.message;}

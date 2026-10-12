@@ -5,7 +5,8 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname) && document.bod
   const root = document.querySelector('#script-content'); root.hidden = false;
   const node = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
   const LANG = {de: 'Almanca', en: 'İngilizce', es: 'İspanyolca', fr: 'Fransızca', tr: 'Türkçe'};
-  const KNOWN = /^(GÖRSEL|GORSEL|HARİTA|HARITA|SAYI)\s*:\s*\S/i;
+  const KNOWN = /^(G[ÖO]RSEL|HAR[İI]TA|SAYI|[ÇC][İI]ZELGE|KAR[ŞS]ILA[ŞS]TIR|L[İI]STE)\s*:\s*\S/i;
+  const plainUpper = text => text.toLocaleUpperCase('tr-TR');
   async function request(url, method = 'GET', body) {
     let response;
     try { response = await fetch(url, {method, cache: 'no-store', signal: AbortSignal.timeout(30000), headers: {'Content-Type': 'application/json', 'X-AI-Video-Studio': 'projects'}, ...(body === undefined ? {} : {body: JSON.stringify(body)})}); }
@@ -17,7 +18,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname) && document.bod
   const back = node('a', '← Projeye dön', 'back'); back.href = `/projects/${id}`;
   const status = node('p', 'Metin yükleniyor…', 'provider-status'); status.id = 'paste-status'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const panel = node('section', '', 'settings-panel'); panel.id = 'paste-panel';
-  panel.append(node('h2', 'Metni yapıştır'), node('p', 'Senaryonuzu buraya yapıştırın. Fazla boşluklar, Markdown işaretleri (#, **, -, 1.) ve başlık/numara satırları otomatik temizlenir; seslendirme ve altyazı bu metni kelimesi kelimesine kullanır. İsterseniz köşeli parantezle not ekleyin: [GÖRSEL: airplane cockpit at night], [HARİTA: Bermuda Triangle], [SAYI: %40] — bunlar okunmaz, yalnız görsel seçimine yardım eder.', 'note'));
+  panel.append(node('h2', 'Metni yapıştır'), node('p', 'Senaryonuzu buraya yapıştırın. Fazla boşluklar, Markdown işaretleri (#, **, -, 1.) ve başlık/numara satırları otomatik temizlenir; seslendirme ve altyazı bu metni kelimesi kelimesine kullanır. İsterseniz köşeli parantezle not ekleyin — bunlar okunmaz, altyazıya da girmez: [GÖRSEL: airplane cockpit at night] o cümlede aranacak görüntü; [HARİTA: Bermuda Triangle] harita; [SAYI: %40] büyüyen sayı; [ÇİZELGE: 1945, 1962, 1991] zaman çizelgesi; [KARŞILAŞTIR: Rom | Karthago] karşılaştırma; [LİSTE: Stürme; Strömungen; Fehler] madde listesi. İşaret, hemen önündeki cümleye (paragraf başındaysa sonraki cümleye) bağlanır.', 'note'));
   // Highlight editor: a coloured backdrop behind a transparent textarea.
   const editor = node('div', '', 'paste-editor');
   const backdrop = node('div', '', 'paste-backdrop'); backdrop.setAttribute('aria-hidden', 'true');
@@ -38,7 +39,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname) && document.bod
     const text = area.value, re = /\[([^\[\]\n]{0,300})\]/g; let last = 0, m;
     while ((m = re.exec(text))) {
       backdrop.append(document.createTextNode(text.slice(last, m.index)));
-      backdrop.append(node('mark', m[0], KNOWN.test(m[1].trim()) ? 'marker-ok' : 'marker-bad'));
+      backdrop.append(node('mark', m[0], (KNOWN.test(m[1].trim()) || KNOWN.test(plainUpper(m[1].trim()))) ? 'marker-ok' : 'marker-bad'));
       last = m.index + m[0].length;
     }
     backdrop.append(document.createTextNode(text.slice(last) + '\n'));

@@ -25,7 +25,6 @@ from app.providers.factory import make_script_provider
 from app.scripts.service import ScriptService
 from app.scripts.models import ScriptError
 from app.scripts.quality import QualityService
-from app.languages import LANGUAGES
 from app.production import ProductionService
 from app.providers.images import LocalGPUImageProvider, GeminiImageProvider, OpenAIImageProvider
 from app.provider_diagnostics import ProviderDiagnostics, DiagnosticInputError
@@ -289,10 +288,6 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             result['default_provider'] = result['director']['engine']
         return result
 
-    @application.get('/api/languages')
-    def languages():
-        return LANGUAGES
-
     @application.post('/api/projects/{project_id}/script/tools/{kind}', status_code=202)
     def script_tool(project_id: str, kind: str, payload: dict):
         return quality.start(project_id, kind, payload)
@@ -410,7 +405,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         scene_plan = production.view(project_id)['plan']
         if scene_plan:
             project['pipeline'][2].update(status='Plan hazır' if scene_plan['status']=='ready' else 'Eski plan / onay gerekli',
-                                         message='Sahne planını açıp düzenleyebilirsiniz. Video render daha sonra eklenecek.')
+                                         message='Sahne planını açıp düzenleyebilirsiniz.')
         voice=narration.view(project_id)
         if voice['active'] or voice['job']:project['pipeline'][4].update(status='Eski senaryo sürümüne ait' if voice['active'] and voice['active']['stale'] else 'Hazır' if voice['active'] else voice['job']['status_label'] if voice['job'] else 'Bekliyor',
                                      message='Seslendirme ekranından ses seçimini, görev durumunu ve ses sürümlerini inceleyin.')
@@ -722,7 +717,6 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/projects/{project_id}/subtitles')
     @application.get('/projects/{project_id}/render')
     @application.get('/projects/{project_id}/youtube')
-    @application.get('/channels')
     @application.get("/settings")
     @application.get('/settings/ai-diagnostics')
     @application.get("/diagnostics")

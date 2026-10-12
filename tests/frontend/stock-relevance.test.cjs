@@ -19,7 +19,8 @@ async function harness({confirm=true,busy=false,selected=true,locked=false}={}){
  const media={provider:'pixabay',media_type:'image',media_id:'map',width:1920,height:1080,page_url:'https://pixabay.com/photos/map/',description:'Bermuda Triangle map',provider_query:'Bermuda Triangle map',query_used:'Bermuda Triangle map',search_tier:1,relevance_score:90,relevance_label:'Çok ilgili',local_path:'stock/map.jpg'};
  const state={plan_id:'plan',revision:7,selection_version:2,providers:{pexels:false,pixabay:true},warnings:[],search_options:{video_duration_tolerance_seconds:1.25},
   job:busy?{id:'job',status:'running',progress:{percent:20,message:'Aranıyor',search_diagnostics:[]}}:null,
-  media_mix:{total_slots:1,selected_videos:0,selected_images:selected?1:0,unresolved_slots:selected?0:1,video_ratio_percent:selected?0:null},
+  media_mix:{total_slots:1,selected_videos:0,selected_images:selected?1:0,motion_graphics:0,generated_cards:0,unresolved_slots:selected?0:1,video_ratio_percent:0,motion_ratio_percent:0,average_used_duration:5,maximum_used_duration:5,unique_media_count:1},
+  media_summary:{text:selected?'1/1 yuva dolu · 0 stok video · 1 görsel · 0 motion grafik':'0/1 yuva dolu · 0 stok video · 0 görsel · 0 motion grafik · 1 eksik (5 sn)'},
   slots:[{slot_id:'slot',scene_id:'scene',order:1,estimated_start:0,estimated_end:5,duration:5,status:selected?'complete':'ai_needed',status_label:selected?'Tamamlandı':'Uygun stok medya bulunamadı',subject_anchor:'Bermuda Triangle',visual_goal:'ocean map',search_query:'Bermuda Triangle',preferred_type:'stock_video',locked,selected_media:selected?media:null,candidates:[media],warnings:[]}]};
  const fetch=async(url,opts)=>{calls.push({url,method:opts.method,body:opts.body});return {ok:true,json:async()=>state};};
  vm.runInContext(source,vm.createContext({document:{querySelector:s=>s==='#production-content'?root:blocks,createElement:tag=>new Element(tag)},window:{location:{pathname:'/projects/abc/production'},addEventListener(){},confirm:text=>{confirmations.push(text);return confirm;}},AbortSignal:{timeout(){}},fetch,setTimeout(){},clearTimeout(){}}));
@@ -42,12 +43,18 @@ test('one media button, diagnostics download, stage and source details visible',
  const buttons=root.walk().filter(n=>n.tag==='button').map(n=>n.textContent);
  assert.ok(!buttons.includes('Alakaya Göre Medyayı Yeniden Ara')&&!buttons.includes('Medyayı Otomatik Bul')&&!buttons.includes('Eksik Medyaları Akıllı Tamamla'));
  assert.equal(find('stock-diagnostics').href,'/api/projects/abc/production/stock/diagnostics');
- assert.match(root.textContent,/Aşama: Yapay zekâ onayı bekliyor/);assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Medya seçim sürümü 2/);assert.doesNotMatch(root.textContent,/güven oranı|görsel olarak doğrulandı/i);
+ assert.match(root.textContent,/Aşama: Yapay zekâ onayı bekliyor/);assert.match(root.textContent,/Ana konu: Bermuda Triangle/);assert.match(root.textContent,/Çok ilgili/);assert.match(root.textContent,/Sorgu: Bermuda Triangle map/);assert.match(root.textContent,/Seçim sürümü 2/);assert.doesNotMatch(root.textContent,/güven oranı|görsel olarak doğrulandı/i);
 });
 test('active job disables the button',async()=>{
  const {find}=await harness({busy:true});assert.equal(find('stock-complete').disabled,true);
 });
-test('empty slot is explained, manual choice stays possible and locks are respected',async()=>{
- const {root,button}=await harness({selected:false});assert.match(root.textContent,/Boş — Medyayı Tamamla deyin/);assert.equal(button('Değiştir').disabled,false);assert.equal(button('Yeniden seçtir').disabled,false);
- const locked=await harness({locked:true});assert.equal(locked.button('Değiştir').disabled,true);assert.equal(locked.button('Yeniden seçtir').disabled,true);
+test('empty slot is explained, re-selection stays possible and locks are respected',async()=>{
+ const {root,button}=await harness({selected:false});assert.match(root.textContent,/Boş — Medyayı Tamamla deyin/);assert.equal(button('Yeniden seçtir').disabled,false);
+ assert.equal(button('Değiştir'),undefined);assert.equal(button('Devam Et'),undefined);  // one way to continue: Medyayı Tamamla
+ const locked=await harness({locked:true});assert.equal(locked.button('Yeniden seçtir').disabled,true);
+});
+test('counts: stock video, image and motion apart; the summary line and details agree',async()=>{
+ const {root}=await harness();
+ assert.match(root.textContent,/1\/1 yuva dolu · 0 stok video · 1 görsel · 0 motion grafik/);assert.match(root.textContent,/Stok video oranı %0 · Motion grafik oranı %0/);
+ assert.doesNotMatch(root.textContent,/Video: |Tanı: /);
 });

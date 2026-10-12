@@ -16,8 +16,15 @@ Yeni proje (başlık, dil) → **Metni yapıştır** → Seslendirme → Altyaz�
 | İşaret | Etkisi |
 |---|---|
 | `[GÖRSEL: airplane cockpit at night]` | O cümlenin sahnesinde ilk arama sorgusu ve “mutlaka görünmeli” notu olur. |
-| `[HARİTA: Bermuda Triangle]` | Görsel ipucu olarak saklanır ve “… map” araması eklenir (ileride motion şablonu). |
-| `[SAYI: %40]` | Görsel ipucu olarak saklanır (ileride motion şablonu). |
+| `[HARİTA: Bermuda Triangle]` | O cümle söylenirken **harita** infografiği (iğne yerin üstünde). Konum uygulamanın yer listesinden, yoksa yapay zekâdan alınır. |
+| `[SAYI: %40]` | **Büyüyen sayı** infografiği. Yazıyla yazılmış sayı da olur: `[SAYI: vierzig Prozent]`. |
+| `[ÇİZELGE: 1945, 1962, 1991]` | **Zaman çizelgesi** (2–5 tarih). `1945 Flug 19; 1962 Tanker` gibi açıklama da eklenebilir. |
+| `[KARŞILAŞTIR: Rom \| Karthago]` | **Karşılaştırma** (A ile B). Sayı da verilebilir: `Rom: 1000000 \| Karthago: 400000` → çubuk grafik. |
+| `[LİSTE: Stürme; Strömungen; Fehler]` | **Madde listesi** (2–4 madde). |
+
+- İnfografik işaretleri Medyayı Tamamla'da **önce** çizilir; yapay zekâ kotası dolsa bile işaretli sahneler infografik olur.
+- İşaret adı büyük/küçük harf ve Türkçe harf fark etmez (`[cizelge: …]`, `[Liste: …]`).
+- Bir sahnede görüntü yeri kalmazsa işaret en yakın yuvaya gider; hiç yer yoksa ekranda yazılır.
 
 - **Hangi cümleye bağlanır?**
   - Bir cümlenin hemen arkasına yazılan işaret o cümleye aittir.

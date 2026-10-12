@@ -208,7 +208,7 @@ class MediaDirector:
         self.progress['ai_failure'] = {'category': category, 'message': str(error)[:300], 'upstream_status': getattr(error, 'upstream_status', None),
                                        'stage': getattr(error, 'stage', ''), 'waited_seconds': self.waited, 'at': now(),
                                        'slot_id': self.progress.get('slot_id')}
-        raise StockError('ai_paused', pause_message(self.label, category, retry, waited_out))
+        raise StockError('ai_paused', pause_message(self.label, category, retry, waited_out, getattr(error, 'chain_models', None)))
 
     def _ask(self, purpose, prompt, schema, images=(), max_tokens=2000):
         for attempt in range(6):
@@ -345,6 +345,7 @@ class MediaDirector:
                   'the MUST-NOT list. reason: ONE short sentence in Turkish for the channel owner. '
                   f'Candidates to rate: {listed}.')
         answer = self._ask('media_select', prompt, JUDGE_SCHEMA, blocks)
+        model = getattr(self.ai, 'last_model', None) or getattr(self.ai, 'model', None)  # which model of the chain decided
         verdicts = {}
         for item in (answer or {}).get('verdicts', []):
             index = item.get('candidate')
@@ -353,7 +354,8 @@ class MediaDirector:
                 except (TypeError, ValueError): score = 0
                 verdicts[key(pool[index - 1])] = {'score': score,
                                                   'approved': item.get('approved') is not False and score >= APPROVE_SCORE,
-                                                  'reason': ' '.join(str(item.get('reason', '')).split())[:300]}
+                                                  'reason': ' '.join(str(item.get('reason', '')).split())[:300],
+                                                  **({'model': model} if isinstance(model, str) and model else {})}
         return verdicts
 
     def rewrite(self, slot, scene, tried, broader=False):
@@ -541,7 +543,8 @@ class MediaDirector:
         self.register(slot['slot_id'], saved, segment or 0., need)
         slot.update(selected_media=saved, status='complete', missing_reasons=[], warnings=[], local_validation={},
                     segment_start=segment, continuation_of=None,
-                    ai_review={'approved': True, 'score': verdict['score'], 'reason': verdict['reason'], 'reviewed_at': now()},
+                    ai_review={'approved': True, 'score': verdict['score'], 'reason': verdict['reason'], 'reviewed_at': now(),
+                               **({'model': verdict['model']} if verdict.get('model') else {})},
                     message=verdict['reason'])
         if saved['width'] <= saved['height']:
             slot['warnings'].append('Dikey/kare kaynak: yatay videoda bulanık arka planla gösterilir.')
@@ -1068,13 +1071,15 @@ class MediaDirector:
 TEMPLATE_WORDS = {'stat': 'sayı', 'map': 'harita', 'timeline': 'çizelge', 'compare': 'karşılaştırma', 'list': 'liste', 'quote': 'yazı'}
 
 
-def pause_message(label, category, retry, waited_out):
+def pause_message(label, category, retry, waited_out, models=None):
     """Plain Turkish: what happened, what was kept and when to try again."""
     kept = ' Tamamlanan yuvalar korundu, kalanlar “Bekliyor” durumunda; Medyayı Tamamla’ya tekrar basınca kaldığı yerden devam eder.'
     if category == 'free_quota_exhausted':
         minutes = minutes_to_pacific_midnight()
         when = f'yaklaşık {minutes // 60} saat {minutes % 60} dk sonra' if minutes >= 60 else f'yaklaşık {minutes} dk sonra'
-        return f'{label} günlük ücretsiz kotası doldu; kota her gün ABD Pasifik saatiyle gece yarısı yenilenir. {when.capitalize()} tekrar deneyin.' + kept
+        which = (f'{label} yedek zincirindeki tüm modellerin ({", ".join(m.removeprefix("gemini-") for m in models)}) günlük ücretsiz kotası doldu'
+                 if models and len(models) > 1 else f'{label} günlük ücretsiz kotası doldu')
+        return f'{which}; kota her gün ABD Pasifik saatiyle gece yarısı yenilenir. {when.capitalize()} tekrar deneyin.' + kept
     if category in ('rate_limit', 'quota_limit'):
         minutes = max(1, -(-max(retry, 60) // 60))
         return f'{label} kotası doldu (dakikalık/kısa süreli sınır). {minutes} dk sonra tekrar deneyin.' + kept
@@ -1126,8 +1131,14 @@ def summary(slots):
     if missing: text += f' · {len(missing)} eksik ({seconds} sn)'
     average = relevance_summary(filled)['relevance_average']
     if average is not None: text += f' · ortalama alaka {average}/10'
+    models = {}
+    for s in filled:
+        model = (s.get('ai_review') or {}).get('model')
+        if model and not is_generated(s['selected_media']) and not s.get('continuation_of'): models[model] = models.get(model, 0) + 1
+    if models:
+        text += ' · seçen model' + ('ler' if len(models) > 1 else '') + ': ' + ', '.join(f'{m.removeprefix("gemini-")} ({n})' for m, n in sorted(models.items(), key=lambda kv: -kv[1]))
     return {'total': len(slots), 'filled': len(filled), 'videos': videos, 'images': images, 'cards': cards, 'motion': motion, 'merged': merged,
-            'motion_templates': templates, 'motion_slot_percent': round(100 * (motion + cards) / len(slots)) if slots else 0,
+            'motion_templates': templates, 'models': models, 'motion_slot_percent': round(100 * (motion + cards) / len(slots)) if slots else 0,
             'motion_seconds': motion_seconds, 'motion_percent': round(100 * motion_seconds / total_seconds, 1),
             'missing': len(missing), 'missing_seconds': seconds, 'text': text,
             'ai_approved': sum(bool((s.get('ai_review') or {}).get('approved')) for s in filled if not is_generated(s['selected_media'])),

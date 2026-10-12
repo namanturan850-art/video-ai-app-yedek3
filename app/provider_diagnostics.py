@@ -115,7 +115,7 @@ def result_status(category):
 class ProviderDiagnostics:
     def __init__(self, settings):
         self.settings = settings
-        self.provider_factory = make_script_provider
+        self.provider_factory = lambda engine, settings: make_script_provider(engine, settings, chain=False)  # test the chosen model itself
         self.lock = RLock()
         self.executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='ai-diagnostics')
         self.futures = {}

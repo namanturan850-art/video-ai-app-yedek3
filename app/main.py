@@ -645,6 +645,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         message='Canlı AI33 TTS görev yapısı doğrulandı. Mevcut görev salt okunur incelendi; yeni ücretli görev oluşturulmadı.'
         return {'diagnostic':diagnostic,'message':message}
 
+    @application.post('/api/settings/gemini/quota-reset')
+    def gemini_quota_reset():
+        # The owner says the quota is back (e.g. billing turned on): try every chain model again.
+        return settings.clear_gemini_exhausted()
+
     @application.post("/api/settings/gemini/models")
     def gemini_models():
         config = settings.gemini_config()

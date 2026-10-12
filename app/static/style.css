@@ -65,3 +65,10 @@
 .paste-backdrop{position:absolute;inset:0;overflow:hidden;color:transparent;border:1px solid transparent;pointer-events:none}.paste-editor textarea{position:relative;display:block;min-height:420px;background:transparent;border:1px solid #9cb2a8;color:#192c38;resize:vertical}
 .paste-backdrop mark{color:transparent;border-radius:4px}.paste-backdrop .marker-ok{background:#cfe9ff}.paste-backdrop .marker-bad{background:#ffd3cc}.paste-stats{font-weight:600}.paste-clean{white-space:pre-wrap;background:#f4f7f6;padding:14px;border-radius:8px}
 .stock-slot-check{border-left:4px solid #e0a800;background:#fffaf0}.stock-relevance{font-weight:600}
+
+.gemini-chain-list{padding-left:1.4rem}
+.gemini-chain-item{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;padding:.3rem .4rem;border:1px solid #d6dee6;border-radius:6px;margin:.25rem 0;background:#fff;cursor:grab}
+.gemini-chain-item span{flex:1 1 12rem}
+.gemini-chain-item.dragging{opacity:.5}
+.gemini-chain-item button{padding:.15rem .5rem}
+.stock-model{color:#5b6b7a}

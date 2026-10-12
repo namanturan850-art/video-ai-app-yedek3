@@ -11,11 +11,19 @@ def safe_model(config, settings):
         raise ScriptProviderError('Model alanında gizli anahtar var. Modeli Ayarlar ekranında düzeltin.', 422, category='invalid_settings')
 
 
-def make_script_provider(engine: str, settings, *, discovery: bool = False) -> ScriptProvider:
+def make_script_provider(engine: str, settings, *, discovery: bool = False, chain: bool = True) -> ScriptProvider:
     if engine == 'gemini':
         config = settings.gemini_config()
-        if not discovery: safe_model(config, settings)
-        return GeminiScriptProvider(config.get('api_key', ''), '' if discovery else config['model'])
+        if discovery: return GeminiScriptProvider(config.get('api_key', ''), '')
+        safe_model(config, settings)
+        if not chain:  # diagnostics test exactly the selected model
+            return GeminiScriptProvider(config.get('api_key', ''), config['model'])
+        from app.providers.gemini_chain import GeminiChain, chain_models
+        # The backup chain: a model whose daily quota is used up hands over to the next one.
+        models = chain_models(config)
+        if not models: return GeminiScriptProvider(config.get('api_key', ''), config['model'])  # no model chosen yet: same message as before
+        return GeminiChain(config.get('api_key', ''), models, settings,
+                           lambda key, model: GeminiScriptProvider(key, model))
     if engine == 'ollama':
         config = settings.script_config(engine)
         safe_model(config, settings)

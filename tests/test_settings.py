@@ -34,7 +34,7 @@ def test_no_keys_required_and_no_vault_created(settings_client, tmp_path):
         assert not data[section]['has_api_key']
     assert data['ollama']['base_url'] == 'http://127.0.0.1:11434'
     assert not data['openai']['enabled']
-    assert data['youtube']['status'] == 'Daha sonra'
+    assert data['youtube']['status'] == 'Yapılandırılmadı' and not data['youtube']['has_api_key']  # optional YouTube Data API key
     assert not (tmp_path / 'data/secrets').exists()
 
 
@@ -122,7 +122,7 @@ def test_persistence_after_application_restart(tmp_path):
     ('ollama', {'base_url': ''}),
     ('ollama', {'model': 'model with spaces'}),
     ('pexels', {'unexpected_field': SECRET}),
-    ('youtube', {'api_key': SECRET}),
+    ('youtube', {'unexpected_field': SECRET}),
 ])
 def test_invalid_input_is_safe_and_does_not_persist(settings_client, section, payload, tmp_path):
     response = settings_client.put(f'/api/settings/{section}', json=payload)

@@ -17,8 +17,6 @@ class ImageSettings(BaseModel):
     height: int = Field(default=1080, ge=144, le=2160)
     gemini_model: str = Field(default='', max_length=157)
     openai_model: str = Field(default='', max_length=150)
-    # YouTube thumbnail: optional Gemini background (quota/cost), off by default.
-    thumbnail_ai: bool = False
 
     @field_validator('local_url')
     @classmethod

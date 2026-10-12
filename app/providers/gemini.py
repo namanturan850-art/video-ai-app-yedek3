@@ -226,7 +226,7 @@ class GeminiScriptProvider:
             raise ScriptProviderError('Senaryo isteğine API anahtarı eklemeyin.', 422, category='invalid_request', stage='configuration')
         return self._generate([{'text': prompt}])
 
-    def complete_json(self, purpose, prompt, schema, *, images=(), effort=None, max_tokens=None, system=None):
+    def complete_json(self, purpose, prompt, schema, *, images=(), effort=None, max_tokens=None, system=None, video_url=None):
         """Same contract as ClaudeProvider.complete_json, for the free Gemini tier.
 
         Images use the documented Part.inlineData (mimeType + base64 data);
@@ -242,6 +242,11 @@ class GeminiScriptProvider:
                 parts.append({'text': block['text']})
             elif block.get('type') == 'image' and block.get('source', {}).get('type') == 'base64':
                 parts.append({'inlineData': {'mimeType': block['source']['media_type'], 'data': block['source']['data']}})
+        if video_url:
+            # Public YouTube link as documented for video understanding
+            # (ai.google.dev/gemini-api/docs/video-understanding, preview):
+            # a separate part {"file_data": {"file_uri": URL}}; nothing is downloaded.
+            parts.append({'file_data': {'file_uri': video_url}})
         parts.append({'text': prompt + '\n\nReturn ONLY one JSON object (no Markdown) that matches this JSON Schema: '
                       + json.dumps(schema, separators=(',', ':'))})
         if self._contains_key(json.dumps(parts[-1])):

@@ -31,11 +31,13 @@ STEPS = {'purpose': 'Amaç belirleniyor', 'script': 'Senaryo yazılıyor', 'appr
 BUSY = ('queued', 'running')
 
 
-def purpose_prompt(project):
+def purpose_prompt(project, brief=''):
     language = LANGUAGES.get(project['language'], project['language'])
+    source = (f'A successful reference video was analysed. Adapt its structure and hook TYPE; do not copy it:\n{brief[:3000]}\n\n'
+              if brief else '')
     return (f'Plan the PURPOSE of a new, original YouTube video before any writing.\n'
             f'Topic: {project["topic"]}\nSpoken language of the video: {project["language"]} ({language})\n'
-            f'Target duration: {project["target_duration_minutes"]} minutes\n\n'
+            f'Target duration: {project["target_duration_minutes"]} minutes\n\n' + source +
             'Return JSON with: audience (who watches and why), main_message (the one idea viewers keep), '
             'tone (2-4 words), hook (the opening question/tension in one sentence), viewer_promise '
             '(what the viewer will understand by the end), content_type (e.g. documentary explainer), '
@@ -58,7 +60,7 @@ def clean_purpose(data):
     return purpose
 
 
-def script_payload(project, purpose, provider):
+def script_payload(project, purpose, provider, brief=''):
     low, high = PACE.get(project['language'], (125, 145))
     instructions = (f'VIDEO PURPOSE (decided by the director; the notes are in Turkish, write the script in the project language):\n'
                     f'- Main message: {purpose["main_message"]}\n- Opening hook idea: {purpose["hook"]}\n'
@@ -67,7 +69,8 @@ def script_payload(project, purpose, provider):
                     'actions and people; avoid long abstract stretches.')
     return {'provider': provider, 'mode': 'original', 'content_type': purpose['content_type'][:150],
             'tone': (purpose['tone'] or 'Otomatik')[:150], 'audience': purpose['audience'][:500],
-            'instructions': instructions[:4000], 'words_per_minute_min': low, 'words_per_minute_max': high}
+            'instructions': instructions[:4000], 'words_per_minute_min': low, 'words_per_minute_max': high,
+            **({'reference_notes': brief[:8000]} if brief else {})}
 
 
 class DirectorService:
@@ -182,6 +185,8 @@ class DirectorService:
         provider = state['provider']
         try:
             project = self.projects.get(project_id)
+            sources = getattr(self, 'sources', None)
+            brief = sources.brief(project_id) if sources else ''
             # 1) Purpose (editable summary). Owner edits are kept.
             purpose = self.purpose(project_id) or {}
             if not purpose.get('main_message'):
@@ -189,7 +194,7 @@ class DirectorService:
                 if provider in ('claude', 'gemini'):
                     from app.providers.factory import make_script_provider
                     engine = (self.provider_factory or make_script_provider)(provider, self.settings)
-                    purpose = clean_purpose(engine.complete_json('purpose', purpose_prompt(project), PURPOSE_SCHEMA, effort='medium', max_tokens=4000))
+                    purpose = clean_purpose(engine.complete_json('purpose', purpose_prompt(project, brief), PURPOSE_SCHEMA, effort='medium', max_tokens=4000))
                 else:  # backup engines: a plain purpose from the topic, still editable
                     purpose = clean_purpose({'audience': 'Genel izleyici', 'main_message': project['topic'], 'tone': 'Merak uyandıran, sakin',
                                              'hook': '', 'viewer_promise': '', 'content_type': 'Belgesel anlatım',
@@ -203,7 +208,7 @@ class DirectorService:
                 if old and old['status'] == 'error':
                     started = self.scripts.resume(project_id, old['id'], True)
                 else:
-                    started = self.scripts.start(project_id, {**script_payload(project, purpose, provider), 'confirm_replace_approved': True}, 'generate')
+                    started = self.scripts.start(project_id, {**script_payload(project, purpose, provider, brief), 'confirm_replace_approved': True}, 'generate')
                 state['script_job_id'] = started['job_id']
                 self._save_state(project_id, state)
                 job = self._wait(started['job_id'], 'Senaryo yazılamadı')

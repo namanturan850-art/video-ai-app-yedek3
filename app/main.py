@@ -112,6 +112,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     from app.director import DirectorService
     director = DirectorService(scripts, quality, production, settings)
     application.state.director = director
+    from app.source_analysis import SourceService
+    sources = SourceService(projects, settings, scripts.repository)
+    application.state.sources = scripts.sources = director.sources = sources
     channels = ChannelService(projects, settings)
     application.state.channels = channels
     stock = StockService(production,settings)
@@ -450,23 +453,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def youtube_update(project_id: str, payload: dict):
         return youtube.update(project_id, payload)
 
-    @application.post('/api/projects/{project_id}/youtube/frames')
-    def youtube_frames(project_id: str):
-        return {'frames': youtube.frames(project_id)}
-
-    @application.post('/api/projects/{project_id}/youtube/ai-background')
-    def youtube_ai_background(project_id: str, payload: dict):
-        return {'frames': youtube.ai_background(project_id, payload.get('cost_confirmed'))}
-
-    @application.post('/api/projects/{project_id}/youtube/thumbnails')
-    def youtube_thumbnails(project_id: str, payload: dict):
-        return youtube.thumbnails(project_id, payload)
-
-    @application.get('/api/projects/{project_id}/youtube/files/{kind}/{name}')
-    def youtube_file(project_id: str, kind: str, name: str, download: bool = False):
-        path = youtube.file(project_id, kind, name)
-        headers = {'Cache-Control': 'no-store', **({'Content-Disposition': f'attachment; filename="kapak-{name}"'} if download else {})}
-        return FileResponse(path, media_type='image/png' if name.endswith('.png') else 'image/jpeg', headers=headers)
+    @application.post('/api/projects/{project_id}/youtube/check')
+    def youtube_check(project_id: str):
+        return youtube.proofread(project_id)
 
     @application.get('/api/channels')
     def list_channels():
@@ -475,6 +464,18 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.post('/api/channels', status_code=201)
     def create_channel(payload: dict):
         return channels.create(payload)
+
+    @application.get('/api/projects/{project_id}/source')
+    def get_source(project_id: str):
+        return sources.view(project_id)
+
+    @application.put('/api/projects/{project_id}/source/transcript')
+    def save_transcript(project_id: str, payload: dict):
+        return sources.save_transcript(project_id, payload.get('transcript') if isinstance(payload, dict) else None)
+
+    @application.post('/api/projects/{project_id}/source/analyze')
+    def analyze_source(project_id: str):
+        return sources.analyze(project_id)
 
     @application.get('/api/projects/{project_id}/look')
     def get_look(project_id: str):
@@ -583,6 +584,12 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             detected = ffmpeg_status()
             outcome = {'status':'Hazır' if detected['found'] else 'Hata','message':detected['message']}
             return {"result": outcome, "settings": settings.safe_view()}
+        if section == 'youtube':
+            from app.integrations.youtube_data import YouTubeDataError
+            config = settings.stock_config('youtube')
+            try:outcome = sources.youtube_factory(config.get('api_key','')).test()
+            except YouTubeDataError as error:outcome = {'status':'Hata','message':str(error),'category':error.category}
+            return {'result':outcome,'settings':settings.record_stock_test('youtube',config,outcome)}
         if section in ('pexels','pixabay'):
             from app.stock.providers import make_stock_provider
             from datetime import datetime, timedelta, timezone

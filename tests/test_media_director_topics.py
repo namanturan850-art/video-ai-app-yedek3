@@ -202,6 +202,12 @@ class Director:
         if isinstance(content, list):
             return self.judge(content)
         fmt = request['output_config'].get('format')
+        if fmt and 'issues' in fmt['schema']['properties']:  # YouTube language check: echo, nothing to fix
+            return message(json.dumps({**json.loads(content.rsplit('\n', 1)[1]), 'issues': []}))
+        if fmt and fmt['schema'].get('required') == ['titles']:  # shorten over-long titles
+            return message(json.dumps({'titles': [t[:90].rsplit(' ', 1)[0] for t in content.split('TITLES:\n', 1)[1].splitlines()]}))
+        if fmt and 'viewer_questions' in fmt['schema']['properties']:  # reference video analysis
+            return message(json.dumps(SOURCE_ANALYSIS))
         if fmt and 'titles' in fmt['schema']['properties']:
             chapters = len(re.findall(r'^\d+\. ', content.split('CHAPTERS:')[1].split('SCRIPT:')[0], re.M))
             topic = self.data['topic']
@@ -210,8 +216,7 @@ class Director:
                                                   f'Das Rätsel um {topic} – was die Wissenschaft heute sagt'],
                                        'hook': 'Was steckt wirklich dahinter?\nDie Antwort überrascht.', 'summary': f'Ein kompakter Überblick über {topic}.',
                                        'tags': [f'{topic}', 'Doku', 'Wissen', 'Fakten', 'Erklärung', 'Geschichte', 'Wissenschaft', 'Rätsel', 'Mythen', 'Deutsch', 'Video', 'Erklärvideo'],
-                                       'hashtags': ['#Doku', '#Wissen', '#Fakten'], 'chapter_titles': [f'Teil {i + 1}' for i in range(chapters)],
-                                       'thumbnail_texts': ['Niemand kam zurück', 'Die Wahrheit', 'Unglaublich', 'Endlich erklärt']}))
+                                       'hashtags': ['#Doku', '#Wissen', '#Fakten'], 'chapter_titles': [f'Teil {i + 1}' for i in range(chapters)]}))
         if fmt and 'queries' in fmt['schema']['properties']:
             return self.queries(content)
         if fmt:  # purpose
@@ -272,6 +277,15 @@ class Director:
         return message(json.dumps({'queries': [theme[3], theme[3].split()[-1] + ' closeup', must + ' cinematic']}))
 
 
+SOURCE_ANALYSIS = {'summary': 'Bermuda Üçgeni’ndeki kayıpları ve olası açıklamaları anlatıyor.', 'topic': 'Bermuda Üçgeni',
+                   'sections': [{'title': 'Gizem', 'summary': 'Kaybolan uçaklar'}, {'title': 'Açıklamalar', 'summary': 'Hava ve okyanus akıntıları'}, {'title': 'Sonuç', 'summary': 'Gerçek risk düşük'}],
+                   'hook': {'type': 'şaşırtıcı soru', 'description': 'Neden bu kadar çok gemi kayboldu?'}, 'pacing': 'hızlı', 'tone': 'merak uyandıran',
+                   'ending': 'efsaneyi çürüten kapanış', 'facts': [{'claim': '1945’te beş uçak kayboldu', 'doubtful': False, 'note': ''},
+                                                                   {'claim': 'Bölgede manyetik anomali uçakları düşürür', 'doubtful': True, 'note': 'kanıt yok'}],
+                   'why_it_works': ['Merak uyandıran başlık', 'Yüksek beğeni oranı'], 'title_strategy': 'Soru + gizem kelimesi',
+                   'audience_reactions': ['İzleyiciler sonucu sevdi'], 'viewer_questions': ['Bugün hâlâ tehlikeli mi?']}
+
+
 class FakeGemini:
     """Gemini generateContent over httpx.MockTransport, answered by the same
     fake director so both engines face identical decisions."""
@@ -289,7 +303,8 @@ class FakeGemini:
         if 'generationConfig' in body:
             prompt, schema = last.split('\n\nReturn ONLY one JSON object (no Markdown) that matches this JSON Schema: ')
             schema = json.loads(schema)
-            blocks = [{'type': 'image'} if 'inlineData' in p else {'type': 'text', 'text': p['text']} for p in parts[:-1]]
+            self.video_urls = getattr(self, 'video_urls', []) + [p['file_data']['file_uri'] for p in parts if 'file_data' in p]
+            blocks = [{'type': 'image'} if 'inlineData' in p else {'type': 'text', 'text': p['text']} for p in parts[:-1] if 'file_data' not in p]
             props = schema['properties']
             if 'verdicts' in props or 'replace' in props:
                 content = blocks + [{'type': 'text', 'text': prompt}]

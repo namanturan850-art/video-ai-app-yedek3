@@ -61,10 +61,10 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       form.querySelector('[data-field="max_scene_duration_seconds"]').textContent = details.scene_range;
     }
   }
-  async function request(url, method = 'GET', body) {
+  async function request(url, method = 'GET', body, timeout = 15000) {
     let response;
     try {
-      response = await fetch(url, {method, cache: 'no-store', signal: AbortSignal.timeout(15000),
+      response = await fetch(url, {method, cache: 'no-store', signal: AbortSignal.timeout(timeout),
         headers: {'Content-Type': 'application/json', 'X-AI-Video-Studio': 'projects'},
         ...(body !== undefined ? {body: JSON.stringify(body)} : {})});
     } catch {
@@ -97,13 +97,70 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     } catch (error) { feedback.textContent = error.message; button.disabled = false; }
   }
 
+  // “Kaynak analizi”: reference video → why it worked + what it tells.
+  function sourceCard(project) {
+    const card = make('section', '', 'settings-panel source-card'); card.id = 'source-analysis';
+    const status = make('p', '', 'provider-status'); status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
+    const body = make('div'); body.id = 'source-result';
+    const urlForm = make('form', '', 'project-form'); urlForm.id = 'source-form'; urlForm.noValidate = true;
+    field(urlForm, 'reference_url', 'Referans YouTube linki', 'url', project.reference_url || '', {maxLength: 2000});
+    field(urlForm, 'transcript', 'Transkript (yapıştır, isteğe bağlı — varsa önce bu kullanılır)', 'textarea', '', {maxLength: 60000});
+    const save = make('button', 'Kaydet'); save.type = 'submit';
+    const analyze = make('button', 'Kaynağı analiz et'); analyze.type = 'button'; analyze.id = 'source-analyze';
+    urlForm.append(save, analyze);
+    card.append(make('h2', 'Kaynak analizi'), make('p', 'Tutmuş bir videoyu kaynak alın: yapı, kanca, bilgiler ve izleyici tepkisi analiz edilir; senaryo hedef dilde yeni cümlelerle yazılır (çeviri değil). Şüpheli bilgiler işaretlenir.', 'note'), urlForm, status, body);
+    const transcript = urlForm.elements.namedItem('transcript');
+    const list = (title, items, cls) => { if (!items?.length) return null; const box = make('div'); box.append(make('h3', title)); const ul = make('ul', '', cls || ''); for (const t of items) ul.append(make('li', t)); box.append(ul); return box; };
+    function show(view) {
+      transcript.value = view.transcript || '';
+      body.replaceChildren();
+      const a = view.analysis;
+      const warnings = [...(a?.warnings || [])]; if (!a && view.hint) warnings.push(view.hint);
+      if (!view.youtube_key && view.reference_url && !a) warnings.push('YouTube API anahtarı yok: sayılar ve yorumlar atlanacak, analiz Gemini ile sürecek.');
+      if (warnings.length) { const w = make('ul', '', 'source-warnings'); for (const t of warnings) w.append(make('li', '⚠ ' + t)); body.append(w); }
+      if (!a) { status.textContent = view.reference_url || view.has_transcript ? 'Henüz analiz edilmedi. “Kaynağı analiz et” deyin.' : ''; return; }
+      const r = a.analysis, m = a.metadata;
+      status.textContent = a.mode === 'title_only' ? 'Kaynak yok: senaryo yalnız konudan/başlıktan üretilecek.' : a.status === 'needs_transcript' ? 'İçerik okunamadı. Transkripti yapıştırıp yeniden analiz edin.' :
+        `✓ Analiz hazır (${{video: 'Gemini videoyu okudu', transcript: 'transkriptten', metadata: 'yalnız başlık/açıklama/yorumlardan'}[a.mode]}). Yönetmen ve Senaryo ekranı bu analizi otomatik kullanır.`;
+      if (m) {
+        const nf = n => n == null ? '—' : Number(n).toLocaleString('tr-TR');
+        body.append(make('h3', 'Kaynak video'), information([['Başlık', m.title], ['Kanal', m.channel || '—'], ['Süre', m.duration_seconds ? `${Math.floor(m.duration_seconds / 60)}:${String(m.duration_seconds % 60).padStart(2, '0')} dk` : '—'],
+          ['İzlenme', nf(m.views)], ['Beğeni', nf(m.likes)], ['Yorum', nf(m.comments)], ['Okunan yorum', String(a.comments_used || 0)]]));
+      }
+      if (!r) return;
+      body.append(make('h3', 'Neden tuttu?'));
+      for (const part of [list('', r.why_it_works), r.title_strategy ? make('p', 'Başlık stratejisi: ' + r.title_strategy) : null, list('İzleyici tepkisi (yorumlar)', r.audience_reactions)]) if (part) body.append(part);
+      body.append(make('h3', 'Ne anlatıyor?'), make('p', r.summary));
+      if (r.hook?.type) body.append(make('p', `Açılış kancası: ${r.hook.type} — ${r.hook.description}`));
+      body.append(make('p', `Tempo: ${r.pacing || '—'} · Ton: ${r.tone || '—'} · Kapanış: ${r.ending || '—'}`));
+      const sections = list('Bölüm sırası', r.sections.map((x, i) => `${i + 1}. ${x.title}: ${x.summary}`)); if (sections) body.append(sections);
+      const facts = list('Bilgiler (⚠ = şüpheli, senaryoda kesin bilgi gibi sunulmaz)', r.facts.map(f => (f.doubtful ? '⚠ ' : '✓ ') + f.claim + (f.note ? ` (${f.note})` : '')), 'source-facts'); if (facts) body.append(facts);
+      const questions = list('İzleyicilerin sorduğu / eksik bulduğu (senaryoya eklenir)', r.viewer_questions); if (questions) body.append(questions);
+    }
+    async function load() { try { show(await request(`/api/projects/${project.id}/source`)); } catch (error) { status.textContent = error.message; } }
+    async function store() {
+      const url = urlForm.elements.namedItem('reference_url').value.trim();
+      if (url !== (project.reference_url || '')) { project = await request(`/api/projects/${project.id}`, 'PATCH', {reference_url: url}); }
+      return request(`/api/projects/${project.id}/source/transcript`, 'PUT', {transcript: transcript.value});
+    }
+    urlForm.addEventListener('submit', async event => { event.preventDefault(); errors(urlForm); try { show(await store()); status.textContent = 'Kaydedildi.'; } catch (error) { status.textContent = error.message; errors(urlForm, error.fields); } });
+    analyze.addEventListener('click', async () => {
+      analyze.disabled = save.disabled = true; status.textContent = 'Analiz ediliyor… Gemini videoyu okurken 1–3 dakika sürebilir. Sayfayı kapatmayın.';
+      try { await store(); show(await request(`/api/projects/${project.id}/source/analyze`, 'POST', {}, 300000)); }
+      catch (error) { status.textContent = error.message; } finally { analyze.disabled = save.disabled = false; }
+    });
+    load();
+    return card;
+  }
+
   if (window.location.pathname === '/new-project') {
     const form = make('form', '', 'settings-panel project-form');
     form.id = 'new-project-form'; form.noValidate = true;
     field(form, 'name', 'Proje adı', 'text', '', {maxLength: 120, required: true});
     field(form, 'topic', 'Konu', 'textarea', '', {maxLength: 5000, required: true});
     field(form, 'reference_url', "Referans YouTube URL’si (isteğe bağlı)", 'url', '', {maxLength: 2000});
-    form.append(make('p', 'Referans yalnızca kaydedilir. Video analiz edilmez, indirilmez veya kopyalanmaz.', 'note'));
+    field(form, 'reference_transcript', 'Transkript (yapıştır, isteğe bağlı)', 'textarea', '', {maxLength: 60000});
+    form.append(make('p', 'Referans video analiz edilir ama indirilmez: Gemini herkese açık linki okur (transkript yapıştırdıysanız o kullanılır), YouTube API anahtarınız varsa izlenme/beğeni sayıları ve en çok beğenilen yorumlar da okunur. Senaryo bu analizden yeni cümlelerle, hedef dilde yazılır; birebir çeviri yapılmaz. Link ve transkript boşsa senaryo yalnız konudan üretilir.', 'note'));
     field(form, 'language', 'Hedef Dil', 'select', 'de', {choices: [['de', 'Almanca'], ['es', 'İspanyolca'], ['en', 'İngilizce'], ['fr', 'Fransızca'], ['tr', 'Türkçe']]});
     field(form, 'script_engine', 'Senaryo motoru (Script Engine)', 'select', 'gemini', {choices: [['gemini', 'Gemini (ücretsiz kota — önerilen)'], ['ollama', 'Ollama (yerel yedek)'], ['openai', 'OpenAI']]});
     field(form, 'target_duration_minutes', 'Hedef video süresi (dakika)', 'number', 5, {min: 1, max: 180});
@@ -112,7 +169,6 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     field(form, 'max_scene_duration_seconds', 'Maksimum sahne süresi (saniye)', 'number', 8, {min: 1, max: 120});
     field(form, 'subtitles_enabled', 'Altyazı planlansın', 'checkbox', true);
     field(form, 'background_music_enabled', 'Arka plan müziği planlansın', 'checkbox', false);
-    field(form, 'thumbnail_planning_enabled', 'Küçük resim (thumbnail) planlansın', 'checkbox', true);
     form.append(make('p', 'Proje oluşturduktan sonra Senaryo aşamasını açabilirsiniz. Ses ve video üretimi daha sonra eklenecek.', 'note'));
     const submit = make('button', 'Proje Oluştur'); submit.type = 'submit';
     form.append(submit); container.append(form);
@@ -123,8 +179,10 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       for (const input of form.querySelectorAll('input, textarea, select')) {
         data[input.name] = input.type === 'checkbox' ? input.checked : input.type === 'number' ? Number(input.value) : input.value;
       }
+      const transcript = (data.reference_transcript || '').trim(); delete data.reference_transcript;
       try {
         const project = await request('/api/projects', 'POST', data);
+        if (transcript) await request(`/api/projects/${project.id}/source/transcript`, 'PUT', {transcript});
         window.location.assign(`/projects/${project.id}`);
       } catch (error) {
         feedback.textContent = error.message; errors(form, error.fields); busy(form, false);
@@ -171,7 +229,6 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         ['Senaryo motoru', project.script_engine_label], ['İçerik türü / stil', project.content_style],
         ['Sahne süresi', `${project.min_scene_duration_seconds} – ${project.max_scene_duration_seconds} saniye`],
         ['Altyazı', project.subtitles_enabled ? 'Açık' : 'Kapalı'], ['Arka plan müziği', project.background_music_enabled ? 'Açık' : 'Kapalı'],
-        ['Küçük resim planlama', project.thumbnail_planning_enabled ? 'Açık' : 'Kapalı'],
         ['Durum', project.status_label], ...timestamps(project)
       ]));
       const edit = make('details', '', 'settings-panel');
@@ -189,6 +246,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
           render(updated); feedback.textContent = 'Proje bilgileri kaydedildi.';
         } catch (error) { feedback.textContent = error.message; errors(form, error.fields); busy(form, false); }
       });
+      detail.append(sourceCard(project));
       detail.append(make('h2', 'Üretim aşamaları'), make('p', 'Senaryo aşamasını açıp metninizi hazırlayabilirsiniz. Diğer üretim aşamaları daha sonra eklenecek.', 'note'));
       const pipeline = make('ol', '', 'pipeline'); pipeline.id = 'project-pipeline';
       for (const stage of project.pipeline) {
@@ -199,11 +257,11 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         if(stage.name==='Altyazı')item.append(link('Altyazı ve Zamanlama',`/projects/${id}/subtitles`,'action-link'));
         pipeline.append(item);
       }
-      // Last step of every project: YouTube title, description, tags, thumbnail.
+      // Last step of every project: YouTube title, description, tags.
       const youtube = make('li', '', 'pipeline-youtube'); youtube.id = 'project-youtube';
-      youtube.append(make('h3', 'YouTube'), make('span', 'Başlık · Açıklama · Kapak', 'badge'),
-        make('p', '5 başlık önerisi, bölüm zamanlı açıklama, etiketler ve 1280×720 kapak. Video oluşturulduktan sonra en iyi sonucu verir.', 'note'),
-        link('YouTube Başlık, Açıklama ve Kapak', `/projects/${id}/youtube`, 'action-link'));
+      youtube.append(make('h3', 'YouTube'), make('span', 'Başlık · Açıklama · Etiketler', 'badge'),
+        make('p', '5 başlık önerisi (en fazla 97 karakter), bölüm zamanlı açıklama ve etiketler (en fazla 500 karakter), yapay zekâ dil kontrolüyle.', 'note'),
+        link('YouTube Başlık, Açıklama ve Etiketler', `/projects/${id}/youtube`, 'action-link'));
       pipeline.append(youtube);
       detail.append(pipeline);
       const removeButton = make('button', 'Projeyi Sil', 'danger'); removeButton.type = 'button';

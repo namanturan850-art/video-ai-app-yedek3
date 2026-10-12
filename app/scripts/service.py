@@ -44,6 +44,9 @@ class ScriptService:
             raise ScriptError('Senaryo alanlarını kontrol edin. Konuşma hızı 80–220 arasında olmalı; minimum maksimumdan büyük olamaz. Çeviri için kendi metninizi ve sahiplik onayını girin.') from None
 
     def _provider(self, name):
+        if name == 'local':  # the no-AI scene plan (app/scripts/local_plan.py)
+            from app.scripts.local_plan import LocalPlanner
+            return LocalPlanner(), 'yerel', SecretGuard(self.settings.secret_values())
         config = self.settings.script_config(name)
         guard = SecretGuard(self.settings.secret_values())
         guard.validate(config.get('model', ''))

@@ -150,7 +150,7 @@ class QualityService:
             if kind == 'apply':
                 self.repo.protect(connection, project_id, payload['confirm_replace_approved'])
             provider, model, guard = self.scripts._provider(payload['provider'])
-            if payload['provider'] != 'ollama' and not payload['cost_confirmed']:
+            if payload['provider'] not in ('ollama', 'local') and not payload['cost_confirmed']:
                 raise ScriptError('Bu AI işlemi API kotası veya ücret kullanabilir. İşlemi başlatmadan önce onay verin.', 409)
             inputs = {'version_id': current['id'], 'text': current['text'], 'content_type': current['content_type'], 'selected': selected, 'confirm_replace_plan': payload.get('confirm_replace_plan', False)}
             if payload.get('director'): inputs['director'] = True
@@ -312,14 +312,14 @@ class QualityService:
                 groups=scene_references(raw,units)
                 if single: groups=[[uid for group in groups for uid in group]]
                 repair={'segment_index':index,'unit_groups':groups,'error_category':error.category,'error_field':getattr(error,'field',None),
-                        'attempted':False,'status':'ready' if job['provider'] in ('ollama','claude') else 'awaiting_cost_confirmation'}
+                        'attempted':False,'status':'ready' if job['provider'] in ('ollama','claude','local') else 'awaiting_cost_confirmation'}
                 progress['visual_repair']=repair;checkpoint('analyzing')
         if repair.get('attempted'):
             error=scene_error(repair['error_category'],repair.get('error_field')) if repair['error_category'] in SCENE_ERRORS else ScriptError('Tek görsel düzeltme tamamlanamadı.',category=repair['error_category'])
             error.args=(str(error)+' Tek görsel düzeltme denemesi kullanıldı; isterseniz yeni plan işlemi başlatın.',)
             raise error
         # Claude (director) repairs once automatically, as the owner asked.
-        if job['provider'] not in ('ollama','claude') and repair['status']!='confirmed':
+        if job['provider'] not in ('ollama','claude','local') and repair['status']!='confirmed':
             error=scene_error(repair['error_category'],repair.get('error_field'))
             error.args=(str(error)+' Tek düzeltme ek API kotası veya ücret kullanabilir; Plan İşlemine Devam Et ile onay verin.',)
             raise error

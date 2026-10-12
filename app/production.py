@@ -665,6 +665,8 @@ class ProductionService:
         existing = self.view(project_id)['plan']
         if existing and not confirmed: raise ScriptError('Mevcut görsel plan korunuyor. Yenisiyle değiştirmek için açık onay verin.', 409)
         if not coverage(blocks,current['text']): raise ScriptError('Sahne anlatımı onaylı senaryoyu tam ve aynı sırayla kapsamıyor.',422)
+        from app.scripts.query_refine import refine
+        blocks=refine(deepcopy(blocks))  # map → infographic, symbolic → concrete, no copied neighbour queries
         markers=getattr(self.scripts,'markers',None)
         if markers:  # the owner's [GÖRSEL]/[HARİTA]/[SAYI] notes win over the AI's queries
             from app.scripts.paste import apply_markers

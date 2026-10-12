@@ -24,7 +24,9 @@ CHAIN = ['gemini-3.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']
 
 
 def test_default_chain_selected_then_flash_then_lite_newest_first_and_never_unsuitable():
-    assert default_chain('gemini-2.5-flash', LISTED) == ['gemini-2.5-flash', 'gemini-3.0-flash', 'gemini-3.0-flash-lite', 'gemini-2.5-flash-lite']
+    # Stable Flash → Flash-Lite → (last) preview/Pro; never exp/TTS/image/embedding/live or below 2.5.
+    assert default_chain('gemini-2.5-flash', LISTED) == ['gemini-2.5-flash', 'gemini-3.0-flash', 'gemini-3.0-flash-lite', 'gemini-2.5-flash-lite',
+                                                         'gemini-2.5-pro', 'gemini-2.5-flash-preview-05-20']
     # The owner's order wins; removed or no-longer-listed models and anything below 2.5 are dropped.
     config = {'model': 'gemini-2.5-flash', 'available_models': LISTED,
               'fallback_models': ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-9.9-flash', 'gemini-2.5-flash-preview-05-20']}
@@ -60,7 +62,8 @@ def build(tmp_path, monkeypatch, key='rome'):
         assert client.put(f'/api/settings/{name}', json={'api_key': value}, headers=SETTINGS).status_code == 200
     s.save('gemini', {'api_key': 'synthetic-gemini-key-3333'}); s.record_gemini_models(s.gemini_config(), LISTED); s.save('gemini', {'model': 'gemini-3.0-flash'})
     view = client.get('/api/settings', headers=SETTINGS).json()['gemini']
-    assert [m['model'] for m in view['fallback_chain']] == ['gemini-3.0-flash', 'gemini-2.5-flash', 'gemini-3.0-flash-lite', 'gemini-2.5-flash-lite']
+    assert [m['model'] for m in view['fallback_chain']] == ['gemini-3.0-flash', 'gemini-2.5-flash', 'gemini-3.0-flash-lite', 'gemini-2.5-flash-lite',
+                                                            'gemini-2.5-pro', 'gemini-2.5-flash-preview-05-20']
     r = client.put('/api/settings/gemini', json={'fallback_models': CHAIN}, headers=SETTINGS)  # the owner's own order
     assert r.status_code == 200 and [m['model'] for m in r.json()['gemini']['fallback_chain']] == CHAIN and r.json()['gemini']['fallback_custom']
     stock = client.app.state.stock

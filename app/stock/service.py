@@ -218,6 +218,11 @@ class StockService:
             from app.stock.director_media import summary as media_summary
             public['missing_media_diagnostics']=report(public['slots'])
             public['media_summary']=media_summary(public['slots'])
+            try:
+                counted=json.loads((self.projects._path(project_id)/'stock'/'ai_requests.json').read_text(encoding='utf-8'))
+                public['ai_requests']={'total':int(counted.get('total',0)),'last_job':int(counted.get('last_job',0)),'cached':int(counted.get('cached',0))}
+            except (OSError,ValueError,TypeError):
+                public['ai_requests']={'total':0,'last_job':0,'cached':0}
             public['ai_engine']=self.settings.ai_engine()
             public['media_mix'].update(average_used_duration=round(sum(s['used_duration'] for s in public['slots'])/max(1,len(public['slots'])),2),
                 maximum_used_duration=round(max((s['used_duration'] for s in public['slots']),default=0),2),
@@ -285,8 +290,7 @@ class StockService:
             action = payload.get('action')
             if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery','complete_media','reselect','to_motion','to_stock','motion_edit'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
             if (action in ('search','select','search_videos','reselect','to_motion','to_stock','motion_edit')) != bool(slot_id): raise StockError('invalid_input','Geçerli medya yuvasını seçin.',422)
-            if action in ('complete_media','reselect','to_stock') and not self.settings.ai_engine():
-                raise StockError('ai_required','Medyayı Tamamla, stok medyayı yapay zekânın onayıyla seçer. Ayarlar → Gemini bölümünde ücretsiz API anahtarınızı kaydedip Modelleri Getir ile bir model seçin.',422)
+            # No AI engine (or the AI look switched off) is fine: candidates are then scored locally.
             tolerance = payload.get('video_duration_tolerance_seconds',state.get('search_options',{}).get('video_duration_tolerance_seconds',DEFAULT_VIDEO_TOLERANCE))
             if type(tolerance) not in (int,float) or not math.isfinite(tolerance) or not 0<=tolerance<=1.5:
                 raise StockError('invalid_input','Kısa video toleransı 0 ile 1,5 saniye arasında olmalı.',422)

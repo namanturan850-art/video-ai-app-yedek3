@@ -23,6 +23,9 @@ class GeneralSettings(StrictModel):
     # AI script writing (Senaryo oluştur, AI Yönetmen purpose/script, source
     # analysis) is kept in the code but OFF: the owner pastes their own text.
     script_generation: bool = False
+    # The AI (Gemini) looks at stock candidates before they are used. Off: no
+    # Gemini request at all from Medyayı Tamamla; local tag/word scoring only.
+    ai_visual_check: bool = True
     _language = field_validator('content_language')(validate_language)
 
 
@@ -234,7 +237,8 @@ class SettingsService:
             from app.scripts.engine import SecretGuard
             secrets = stored_secrets(values)
             guard = SecretGuard(secrets)
-            result = {"general": {"content_language": values["general"]["content_language"]}}
+            result = {"general": {"content_language": values["general"]["content_language"],
+                                  "ai_visual_check": bool(values["general"].get("ai_visual_check", True))}}
             for name in PROVIDERS:
                 config = values[name]
                 public_fields = MODELS[name]().model_dump(exclude={"api_key"})
@@ -420,6 +424,10 @@ class SettingsService:
     def secret_values(self) -> tuple[str, ...]:
         with self.store.lock:
             return stored_secrets(self._values())
+
+    def ai_visual_check(self):
+        with self.store.lock:
+            return bool(self._values()['general'].get('ai_visual_check', True))
 
     def script_generation(self):
         """Owner flag (default off). AVS_SCRIPT_GENERATION=1 also turns it on."""

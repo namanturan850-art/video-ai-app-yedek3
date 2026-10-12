@@ -4,9 +4,10 @@ import math
 import re
 from urllib.parse import quote
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.scripts.models import ConceptBlueprint, ScriptPlan, ScriptError, word_count
+from app.providers.base import ScriptProviderError
 from app.providers.json_output import parse_json_object
 from app.scripts.review import safe_review_issues
 
@@ -37,6 +38,53 @@ class SecretGuard:
         if isinstance(value, list):
             return [self.clean(item) for item in value]
         return value
+
+
+def _flat(value):
+    if isinstance(value, dict):
+        return '; '.join(_flat(v) for v in value.values() if v not in (None, ''))
+    if isinstance(value, (list, tuple)):
+        return '; '.join(_flat(v) for v in value if v not in (None, ''))
+    return '' if value is None else str(value)
+
+
+def fit(schema, data):
+    """Repair harmless shape slips against a pydantic schema before strict
+    validation: over-long text is shortened, lists/objects given for text are
+    joined, text given for a list becomes one item, numbers given as text are
+    read, list lengths are capped and unknown keys are dropped where the
+    schema forbids them. Missing required content is NOT invented."""
+    from typing import get_args, get_origin
+    if not isinstance(data, dict):
+        return data
+    bound = lambda field, name: next((getattr(m, name) for m in field.metadata if getattr(m, name, None) is not None), None)
+    out = {k: v for k, v in data.items() if k in schema.model_fields} if schema.model_config.get('extra') == 'forbid' else dict(data)
+    for name, field in schema.model_fields.items():
+        if name not in out:
+            continue
+        value, kind, limit = out[name], field.annotation, bound(field, 'max_length')
+        if kind is str:
+            value = value if isinstance(value, str) else _flat(value)
+            out[name] = value[:limit] if limit else value
+        elif kind is int and not isinstance(value, bool):
+            try:
+                number = int(round(float(value)))
+            except (TypeError, ValueError):
+                continue
+            low, high = bound(field, 'ge'), bound(field, 'le')
+            out[name] = max(low, number) if low is not None else number
+            out[name] = min(high, out[name]) if high is not None else out[name]
+        elif get_origin(kind) is list:
+            items = value if isinstance(value, list) else [value] if isinstance(value, (str, dict)) else value
+            if not isinstance(items, list):
+                continue
+            inner = (get_args(kind) or (None,))[0]
+            if inner is str:
+                items = [(i if isinstance(i, str) else _flat(i))[:500] for i in items if _flat(i).strip()]
+            elif isinstance(inner, type) and issubclass(inner, BaseModel):
+                items = [fit(inner, i) for i in items]
+            out[name] = items[:limit] if limit else items
+    return out
 
 
 def phrases(text, size=15):
@@ -94,7 +142,7 @@ class ContentAnalyzer:
             'only when appropriate; factual formats must not become fiction. Clearly mark uncertain facts. '
             'Return one JSON object with content_type, core_topic, target_audience, main_hook, viewer_promise, '
             'tone, pacing, section_strategy, retention_strategy, information_density, visual_opportunities '
-            '(array), key_topics (array), cta_style. Additional abstract fields allowed.', ConceptBlueprint)
+            '(array), key_topics (array), cta_style. Additional abstract fields allowed.', ConceptBlueprint, retry=True)
 
 
 class YouTubeScriptEngine:
@@ -111,15 +159,26 @@ class YouTubeScriptEngine:
             raise ScriptError('Sağlayıcı kullanılabilir metin döndürmedi. Tekrar deneyin.')
         return self.guard.clean(result.strip())
 
-    def structured(self, task, data, instructions, schema=None):
-        text = self.ask(task, data, instructions + ' Return JSON only, without Markdown fences.')
-        try:
-            result = parse_json_object(text)
-            if schema:
-                result = schema.model_validate(result).model_dump()
-            return self.guard.clean(result)
-        except (ValueError, TypeError, ValidationError):
-            raise ScriptError('Sağlayıcı JSON yanıtında gerekli alanlar veya alan türleri eksik/geçersiz. Eksik alanlar tamamlanmadı; tamamlanan bölümler korundu.', category='schema_invalid') from None
+    def structured(self, task, data, instructions, schema=None, retry=False):
+        # Small shape slips (a field a bit too long, a list where text was
+        # asked, an extra key) are repaired locally; anything else gets ONE
+        # automatic retry with a short correction note before it fails.
+        note = ''
+        for attempt in ((1, 2) if retry else (2,)):
+            text = self.ask(task, data, instructions + note + ' Return JSON only, without Markdown fences.')
+            try:
+                result = parse_json_object(text)
+                if schema:
+                    result = schema.model_validate(fit(schema, result)).model_dump()
+                return self.guard.clean(result)
+            except ScriptProviderError:  # not one valid JSON object
+                if attempt == 2: raise
+                note = ' IMPORTANT: your previous answer was not one valid JSON object. Return exactly one JSON object.'
+            except (ValueError, TypeError, ValidationError):
+                if attempt == 2: break
+                note = (' IMPORTANT: your previous answer did not match the required JSON shape. Return exactly the '
+                        'requested keys with the requested types; keep every text field short.')
+        raise ScriptError('Sağlayıcı JSON yanıtında gerekli alanlar veya alan türleri eksik/geçersiz. Eksik alanlar tamamlanmadı; tamamlanan bölümler korundu.', category='schema_invalid')
 
     def plan(self, blueprint, project, options):
         target = project['target_duration_minutes'] * (options['words_per_minute_min'] + options['words_per_minute_max']) / 2
@@ -130,7 +189,7 @@ class YouTubeScriptEngine:
             'an engaging intro, useful main sections, appropriate ending and optional CTA. Keep individual '
             'sections 20–900 words, usually 400–700. Divide long videos across many sections. '
             'Total target_words should approximate the requested total. Return JSON {"sections": '
-            '[{"title":"...","purpose":"...","key_points":["..."],"target_words":500,"transition":"..."}]}.', ScriptPlan)
+            '[{"title":"...","purpose":"...","key_points":["..."],"target_words":500,"transition":"..."}]}.', ScriptPlan, retry=True)
         total = sum(section['target_words'] for section in result['sections'])
         if len(json.dumps(result, ensure_ascii=False)) > 50000 or len(result['sections']) < math.ceil(target / 900) or not target * .65 <= total <= target * 1.4:
             raise ScriptError('Plan hedef süreye uygun bölüm uzunlukları içermiyor. Plan hazırlanmasını yeniden deneyin.')

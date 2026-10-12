@@ -120,6 +120,7 @@ def wiki_handler(world, log):
 
 def test_commons_in_medyayi_tamamla_same_relevance_check_and_youtube_sources(tmp_path, monkeypatch):
     client, pid, world, fake = R.build(tmp_path, monkeypatch, 'rome')
+    monkeypatch.setattr('app.stock.providers.ACTIVE', ('pixabay', 'wikimedia'))  # the real setting: Pexels off
     try:
         assert client.put('/api/settings/pexels', json={'api_key': 'synthetic-pexels-key-1111'}, headers=SETTINGS).status_code == 200  # a saved key
         log, stock = [], client.app.state.stock

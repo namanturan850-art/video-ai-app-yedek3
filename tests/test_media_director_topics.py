@@ -332,6 +332,9 @@ def fast_motion(scene, output, ffmpeg):
 
 def build(tmp_path, monkeypatch, key, engine='gemini'):
     monkeypatch.setattr('app.motion.clips.raster_render', fast_motion)
+    # These tests exercise the choosing logic on a synthetic two-provider library;
+    # Commons and the Pexels switch have their own tests (test_wikimedia.py).
+    monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))
     data = TOPICS[key]
     world, claude = World(key, data), Director(data)
     if engine == 'claude':
@@ -499,7 +502,9 @@ def test_gemini_quota_mid_job_stops_without_motion_and_resumes(tmp_path, monkeyp
         assert not client.app.state.stock.__dict__.get('slept')  # a daily quota is not waited out
         diag = client.get(f'/api/projects/{pid}/production/stock/diagnostics').json()
         assert diag['jobs'][0]['progress']['ai_failure']['category'] == 'free_quota_exhausted'
+        assert set(client.app.state.settings.gemini_exhausted()) == {'gemini-test-model'}  # skipped until the Pacific-midnight reset
         fake.fail = None
+        assert client.post('/api/settings/gemini/quota-reset', headers=SETTINGS).status_code == 200  # “next day”
         view = complete(client, pid)  # pressing again continues
         summary = check(client, pid, claude, view)
         assert all(next(s for s in view['slots'] if s['slot_id'] == k)['selected_media']['media_id'] == v for k, v in done.items())

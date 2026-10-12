@@ -317,8 +317,10 @@ def test_factory_returns_optional_gemini_and_no_silent_fallback(client):
     save(client)
     settings = client.app.state.settings
     gemini = make_script_provider('gemini', settings)
-    assert isinstance(gemini, GeminiScriptProvider)
+    from app.providers.gemini_chain import GeminiChain
+    assert isinstance(gemini, GeminiChain) and gemini.models[0] == settings.gemini_config()['model']  # selected model first, then its backups
     assert isinstance(gemini, ScriptProvider)
+    assert isinstance(make_script_provider('gemini', settings, chain=False), GeminiScriptProvider)  # diagnostics: exactly the chosen model
     for engine in ('ollama', 'openai', 'unknown'):
         with pytest.raises(ScriptProviderError):
             make_script_provider(engine, settings)

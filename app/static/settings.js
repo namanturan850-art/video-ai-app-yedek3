@@ -111,7 +111,55 @@ if (window.location.pathname === '/settings') {
         finally { setBusy(form, false, definition); }
       });
       actions.append(models);
-      form.append(element('p', 'Önce anahtarı Kaydet, sonra Modelleri Getir. Listeden model seçip tekrar Kaydet. Bağlantı testi senaryo üretmez; internet durumuna göre 60 saniyeye kadar sürebilir.', 'note'));
+      form.append(element('p', 'Önce anahtarı Kaydet, sonra Modelleri Getir. Listeden model seçip tekrar Kaydet. Bağlantı testi senaryo üretmez; internet durumuna göre 60 saniyeye kadar sürebilir.', 'note'));      // Backup chain: a model whose daily quota is used up hands over to the next one.
+      const chainBox = element('section', '', 'setting-field gemini-chain'); chainBox.id = 'gemini-chain';
+      chainBox.append(element('h3', 'Yedek model sırası'), element('p', 'Bir modelin günlük kotası dolarsa iş durmaz, sıradaki modele geçilir. Kotası dolan model o gün (ABD Pasifik gece yarısına kadar) atlanır. Dakika sınırında kısa beklenip aynı modelle devam edilir. Sırayı sürükleyerek veya ↑ ↓ ile değiştirin; istemediğinizi çıkarın. 2.5’ten eski, deneme (preview/exp), ses, görsel ve gömme modelleri listeye girmez.', 'note'));
+      const chainList = element('ol', '', 'gemini-chain-list'); chainList.id = 'gemini-chain-list';
+      const addRow = element('div', '', 'settings-actions'); const addSelect = element('select'); addSelect.id = 'gemini-chain-add'; addSelect.setAttribute('aria-label', 'Zincire model ekle');
+      const addButton = element('button', 'Ekle', 'secondary'); addButton.type = 'button';
+      const saveChain = element('button', 'Sırayı Kaydet'); saveChain.type = 'button'; saveChain.id = 'gemini-chain-save';
+      const resetChain = element('button', 'Varsayılan sıraya dön', 'secondary'); resetChain.type = 'button';
+      const clearQuota = element('button', 'Kota işaretlerini temizle', 'secondary'); clearQuota.type = 'button'; clearQuota.id = 'gemini-chain-clear';
+      const chainStatus = element('p', '', 'note'); chainStatus.setAttribute('role', 'status');
+      addRow.append(addSelect, addButton); chainBox.append(chainList, addRow, saveChain, resetChain, clearQuota, chainStatus); form.append(chainBox);
+      let dragged = null;
+      const order = () => [...chainList.children].map(li => li.dataset.model);
+      chainBox.draw = data => {
+        chainList.replaceChildren();
+        for (const item of data.fallback_chain || []) {
+          const li = element('li', '', 'gemini-chain-item'); li.dataset.model = item.model; li.draggable = true;
+          const until = item.exhausted_until ? ` — bugün kotası doldu, ${new Date(item.exhausted_until).toLocaleTimeString('tr-TR', {hour: '2-digit', minute: '2-digit'})}’e kadar atlanır` : '';
+          li.append(element('span', `${item.label}${item.model === data.model ? ' (seçili model)' : ''}${until}`));
+          const up = element('button', '↑', 'secondary'); up.type = 'button'; up.setAttribute('aria-label', `${item.label} yukarı`);
+          const down = element('button', '↓', 'secondary'); down.type = 'button'; down.setAttribute('aria-label', `${item.label} aşağı`);
+          const remove = element('button', 'Çıkar', 'secondary'); remove.type = 'button';
+          up.addEventListener('click', () => { if (li.previousElementSibling) chainList.insertBefore(li, li.previousElementSibling); chainStatus.textContent = 'Sıra değişti; Sırayı Kaydet deyin.'; });
+          down.addEventListener('click', () => { if (li.nextElementSibling) chainList.insertBefore(li.nextElementSibling, li); chainStatus.textContent = 'Sıra değişti; Sırayı Kaydet deyin.'; });
+          remove.addEventListener('click', () => { if (item.model === data.model) { chainStatus.textContent = 'Seçili model zincirden çıkarılamaz; önce başka bir model seçip kaydedin.'; return; } li.remove(); const o = element('option', item.label); o.value = item.model; addSelect.append(o); chainStatus.textContent = 'Model çıkarıldı; Sırayı Kaydet deyin.'; });
+          li.addEventListener('dragstart', () => { dragged = li; li.classList.add('dragging'); });
+          li.addEventListener('dragend', () => { li.classList.remove('dragging'); dragged = null; });
+          li.addEventListener('dragover', event => { event.preventDefault(); if (dragged && dragged !== li) { const after = event.offsetY > li.offsetHeight / 2; chainList.insertBefore(dragged, after ? li.nextSibling : li); chainStatus.textContent = 'Sıra değişti; Sırayı Kaydet deyin.'; } });
+          li.append(up, down, remove); chainList.append(li);
+        }
+        addSelect.replaceChildren(element('option', (data.fallback_candidates || []).length ? 'Zincire model ekle…' : 'Eklenecek başka model yok'));
+        addSelect.firstChild.value = '';
+        for (const item of data.fallback_candidates || []) { const o = element('option', item.label); o.value = item.model; addSelect.append(o); }
+        chainBox.hidden = !(data.fallback_chain || []).length;
+        chainStatus.textContent = data.fallback_custom ? 'Sizin kaydettiğiniz sıra kullanılıyor.' : 'Otomatik sıra kullanılıyor (seçili model, sonra Flash, sonra Flash-Lite; yeniden eskiye).';
+      };
+      addButton.addEventListener('click', () => {
+        const model = addSelect.value; if (!model) return;
+        const label = addSelect.selectedOptions[0].textContent; addSelect.selectedOptions[0].remove();
+        const li = element('li', '', 'gemini-chain-item'); li.dataset.model = model; li.append(element('span', label)); chainList.append(li); chainStatus.textContent = 'Model eklendi; Sırayı Kaydet deyin.';
+      });
+      const chainRequest = async (url, method, body, done) => {
+        chainStatus.textContent = 'Kaydediliyor…';
+        try { const result = await request(url, method, body); showSettings(result.settings || result); chainStatus.textContent = done; }
+        catch (error) { chainStatus.textContent = `Hata · ${error.message}`; }
+      };
+      saveChain.addEventListener('click', () => chainRequest('/api/settings/gemini', 'PUT', {fallback_models: order()}, 'Yedek model sırası kaydedildi.'));
+      resetChain.addEventListener('click', () => chainRequest('/api/settings/gemini', 'PUT', {fallback_models: null}, 'Otomatik sıraya dönüldü.'));
+      clearQuota.addEventListener('click', () => chainRequest('/api/settings/gemini/quota-reset', 'POST', undefined, 'Kota işaretleri temizlendi; bir sonraki istekte tüm modeller yeniden denenir.'));
     }
     if(definition.id==='ai33'){
       const browserArea=element('section','','setting-field');browserArea.append(element('h3','Ses listesi'));
@@ -256,6 +304,7 @@ if (window.location.pathname === '/settings') {
       const reset = !loaded || resetSection === definition.id;
       const previousVoice=definition.id==='ai33'?form.elements.namedItem('voice_id').value:'';
       if (definition.id === 'gemini') showGeminiModels(data.models, reset ? data.model : form.elements.namedItem('model').value);
+      if (definition.id === 'gemini') form.querySelector('#gemini-chain').draw(data);
       if (reset) {
         for (const field of definition.fields) {
           const input = form.elements.namedItem(field.name);

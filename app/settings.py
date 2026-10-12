@@ -101,11 +101,18 @@ class OpenAISettings(KeySettings):
 
 class GeminiSettings(KeySettings):
     model: str = Field(default="", max_length=157)
+    # Backup chain order chosen by the owner; None = automatic from the model list.
+    fallback_models: list[str] | None = Field(default=None, max_length=20)
 
     @field_validator("model")
     @classmethod
     def model_name(cls, value):
         return normalize_model(value)
+
+    @field_validator("fallback_models")
+    @classmethod
+    def chain_names(cls, value):
+        return None if value is None else [normalize_model(v) for v in value if isinstance(v, str) and v.strip()]
 
     @field_validator("api_key")
     @classmethod
@@ -241,6 +248,12 @@ class SettingsService:
                     public['models'] = [model for model in self._gemini_models(config) if not any(secret in model for secret in secrets)]
                     public['model_verified'] = bool(key and public['model'] in public['models'])
                     configured = public['model_verified']
+                    from app.providers.gemini_chain import chain_models, eligible, short
+                    chain = chain_models({**config, 'available_models': public['models']}) if public['model_verified'] else []
+                    used_up = self._active_exhausted(config)
+                    public['fallback_chain'] = [{'model': m, 'label': short(m), 'exhausted_until': used_up.get(m)} for m in chain]
+                    public['fallback_candidates'] = [{'model': m, 'label': short(m)} for m in public['models'] if eligible(m) and m not in chain]
+                    public['fallback_custom'] = isinstance(config.get('fallback_models'), list)
                 if name == "openai":
                     configured = configured and config['enabled'] and bool(public['model'])
                 if name == 'wikimedia':
@@ -320,6 +333,12 @@ class SettingsService:
                 if key_changed:
                     values[section].pop('available_models', None)
                     values[section]['model'] = ''
+                    values[section]['fallback_models'] = None
+                    values[section].pop('exhausted', None)
+                if 'fallback_models' in model.model_fields_set and model.fallback_models is not None:
+                    unknown = [m for m in model.fallback_models if m not in self._gemini_models(values[section])]
+                    if unknown:
+                        raise SettingsInputError('Yedek model sırasında listede olmayan model var. Modelleri Getir deyip yeniden düzenleyin.')
             updated = model.model_dump(exclude_unset=True, exclude={"api_key"})
             if section=='ai33':
                 config=values[section]
@@ -356,6 +375,35 @@ class SettingsService:
     def ollama_config(self) -> dict:
         with self.store.lock:
             return self._values()["ollama"].copy()
+
+    @staticmethod
+    def _active_exhausted(config) -> dict:
+        from datetime import datetime
+        from app.providers.gemini_chain import now_utc
+        marks = config.get('exhausted') if isinstance(config.get('exhausted'), dict) else {}
+        active = {}
+        for model, until in marks.items():
+            try:
+                if datetime.fromisoformat(until) > now_utc(): active[model] = until
+            except (TypeError, ValueError):
+                continue
+        return active
+
+    def gemini_exhausted(self) -> dict:
+        """{model: reset time} for models whose daily quota is used up today."""
+        with self.store.lock:
+            return self._active_exhausted(self._values()['gemini'])
+
+    def mark_gemini_exhausted(self, model: str, until: str) -> None:
+        with self.store.lock:
+            values = self._values()
+            values['gemini']['exhausted'] = {**self._active_exhausted(values['gemini']), model: until}
+            self.store.write(values)
+
+    def clear_gemini_exhausted(self) -> dict:
+        with self.store.lock:
+            values = self._values(); values['gemini'].pop('exhausted', None); self.store.write(values)
+        return self.safe_view()
 
     def gemini_config(self) -> dict:
         """Backend-only credentials; this snapshot is never an HTTP response."""

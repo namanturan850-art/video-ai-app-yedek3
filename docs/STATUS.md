@@ -12,6 +12,18 @@
 - **Ayarlar:** “Wikimedia Commons” bölümünde Bağlantıyı Test Et düğmesi var. Ayrıntı: [WIKIMEDIA_COMMONS.md](WIKIMEDIA_COMMONS.md).
 - **Not:** canlı API bu geliştirme ortamından denenemedi (ağ kapalı). Testler belgelenmiş yanıt biçimini taklit eder.
 
+## 2026-10-12 — Gemini yedek model zinciri
+
+- **Bir modelin günlük kotası dolarsa iş durmaz;** aynı istek sıradaki modele gider. Sahne planı, Medyayı Tamamla ve diğer tüm Gemini işlerinde çalışır.
+- **Ayarlar → Gemini → “Yedek model sırası”:**
+  - Varsayılan sıra, Modelleri Getir listesinden kurulur: seçili model, sonra diğer Flash modelleri, sonra Flash-Lite modelleri (yeniden eskiye).
+  - preview/exp, ses (TTS), görsel, gömme (embedding), live modelleri ve 2.5'ten eski modeller zincire girmez.
+  - Sıra sürükleyerek veya ↑ ↓ ile değişir; “Çıkar” ile model çıkarılır; “Varsayılan sıraya dön” ve “Kota işaretlerini temizle” düğmeleri var.
+- **Kotası dolan model** o gün ABD Pasifik gece yarısına kadar atlanır ve ayarlarda saatiyle görünür. **Dakika sınırında** kısa beklenip aynı modelle devam edilir.
+- **Zincirdeki tüm modellerin kotası dolarsa** iş durur, hangi modellerin denendiği Türkçe yazılır, tamamlanan yuvalar korunur.
+- **Her yuvada** kararı veren model kayıtlıdır (“2.5-flash ile seçildi”); özet satırında hangi modellerin kaç yuva seçtiği yazar.
+- AI Tanılama ekranı zinciri kullanmaz; yalnız seçili modeli test eder.
+
 ## 2026-10-12 — Stok video düzeltmesi, infografikler, temizlik
 
 - **Yapay zekâ hatası artık videoyu motion'a çevirmiyor.**

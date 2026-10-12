@@ -79,7 +79,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     card.append(node('h4',`Medya ${slot.order}${slot.locked?' · Kilitli':''} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
     const stage=slot.director?.stage_label||(slot.locked&&media?'Kilitli (sizin seçiminiz)':media?(slot.ai_review?.approved?'Yapay zekâ onayladı':'Yapay zekâ onayı bekliyor — Medyayı Tamamla deyin'):'Boş — Medyayı Tamamla deyin');
     const stageLine=node('p',`Aşama: ${stage}`,'provider-status');stageLine.className+=' stock-stage';card.append(stageLine);
-    if(Number.isFinite(score)){const rel=node('p',`Alaka puanı: ${score}/10${score<9?' — önce buna bakın':''} · ${slot.ai_review.reason||''}`,'stock-relevance');card.append(rel);}
+    if(Number.isFinite(score)){const rel=node('p',`Alaka puanı: ${score}/10${score<9?' — önce buna bakın':''} · ${slot.ai_review.reason||''}`,'stock-relevance');if(slot.ai_review.model)rel.append(node('small',` · ${slot.ai_review.model.replace(/^gemini-/,'')} ile seçildi`,'stock-model'));card.append(rel);}
     if(slot.message)card.append(node('p',`Neden: ${slot.message}`));
     if(media&&!(media.provider==='generated'&&media.media_type==='video'))card.append(thumbnail(media));
     const top=node('div','','settings-actions');card.append(top);

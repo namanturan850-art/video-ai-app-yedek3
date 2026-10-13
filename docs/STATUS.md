@@ -1,5 +1,17 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (6) — Dönem ve yer uyumu (tüm videolar)
+
+- **Plan, metinden dönemi ve yeri çıkarır** (yapay zekâ gerekmez): örn. “antik Mezopotamya”, “1960'lar ABD”, “günümüz okyanus”. Yıllar (“im Jahr 605 v. Chr.”, “1453 yılında”, “1960'lar”), dönem kelimeleri (antik, Orta Çağ, firavun, şövalye…) ve yer adları (Babil, Fırat, Mısır, New York…) 5 dilde okunur. “1200 Kilometer” gibi sayılar yıl sayılmaz. Plan ekranında ve Medya ekranında “Dönem ve yer: …” görünür. Bir sahne kendi yılını söylüyorsa (geriye dönüş) o sahne kendi dönemine göre denetlenir.
+- **CLIP bu bilgiyle kontrol eder:** her aday ayrıca şunlarla karşılaştırılır — döneme aykırı öğeler (antik konuda modern insan, araba, modern şehir, alışveriş, elektrik hattı, uçak, ekran), tarih belgeselinde aynı konunun karikatür / 3D / oyun görüntüsü, videonun hiç anmadığı yerlerin simgeleri (Paskalya Adası moai, Giza piramitleri, Kolezyum, Machu Picchu…). Kare bunlardan birine kendi açıklamasından daha çok benziyorsa aday elenir; nedeni Türkçe yazılır (“dönemle çelişiyor (modern alışveriş)”, “yanlış coğrafya (Paskalya Adası)”, “belgesel üslubuna uymuyor (3D çizim)”).
+- **CLIP kurulu değilken** aynı kurallar sağlayıcı etiketlerine uygulanır (mall, moai, cartoon, 3d…). Wikimedia arşiv açıklamalarındaki modern kelimeler dönem nedeniyle elemez.
+- **Önceki seçimler:** Medyayı Tamamla, önceki işlerde seçilmiş (kilitsiz) stok medyayı bir kez dönem/yer açısından yeniden denetler; çelişen yuvalar yeniden seçilir (ekranda “önceki N seçim yenilendi”).
+- **Uygun aday yoksa:** sayı/yer/tarih içeren cümle infografik olur; yoksa komşu çekim + alt bant; o da olmazsa dönemin/yerin **nötr görüntüsü** (manzara, gökyüzü, doku; örn. “desert landscape”, “old stone texture”) aranır, ancak bu da yoksa yazı kartı. Nötr görüntü de aynı onaydan geçer (CLIP / açıksa Gemini / etiketler; dönem-yer kuralları ve “görünmemeli” listesi geçerli) ve ekranda “Nötr görüntü” olarak işaretlenir.
+- Gemini görsel kontrolü açıksa, isteğe videonun dönemi/yeri ve bu kurallar da yazılır.
+- Görsel toplu isteği 503 alındığında (tek tek gönderim modu) sondaki “videonun bütününe bakış” artık atlanır (çok görselli istek göndermez).
+- **Testler:** `tests/test_setting_check.py` (dönem/yer çıkarımı, ceza listesi, etiket kontrolü, CLIP çatışma kararı, uçtan uca eleme, nötr görüntü, önceki seçimlerin bir kez yeniden denetlenmesi). `test_media_relevance_paste.py`'deki ret nedeni testi güncellendi: modern ofis/trafik klipleri artık etiketten elendiği için yapay zekâya hiç sorulmayabilir; sorulan her istekte ret nedeni hâlâ zorunlu. Örnek hatalarınız (1:44 modern alışveriş, 3:44 Paskalya Adası, 3:40 karikatür, 4:20 3D iskelet) bu kural türlerine karşılık gelir.
+- **Henüz doğrulanmadı:** gerçek CLIP modeliyle eşik değerleri (bu ortamda model indirilemiyor; testlerde sahte puanlayıcı ve sayı dizileri kullanıldı). Yanlış eleme veya kaçan görüntü görürseniz video saniyesini yazın; eşikler `app/integrations/openmontage/visual_engine.py → setting_conflict` içindedir. Liste dışındaki yerler/dönemler `app/stock/setting.py` dosyasına tek satırla eklenir.
+
 ## 2026-10-13 (5) — Hibrit render + kanal anları (giriş / kapanış / bitiş ekranı)
 
 **1. Render hızı**

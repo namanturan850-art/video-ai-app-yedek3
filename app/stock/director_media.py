@@ -8,7 +8,12 @@ at the candidates' preview frames; irrelevant media is never used to fill):
   3. stock image (rendered with light camera motion)
   4. media for the broader topic (still approved by the AI)
   5. very short slots (<1.5 s): continue the neighbouring shot
-  6. motion graphic from the narration (only when no stock fits)
+  6. motion graphic from the narration (only when no stock fits); a scene
+     with no number/place/date: neutral footage of the setting (landscape,
+     sky, texture) before a plain text card
+Every candidate is also checked against the video's period and place
+(app/stock/setting.py): modern things in an ancient topic, cartoon/3D in a
+history documentary, landmarks of places the video never names are dropped.
 Scenes the owner marked ([HARİTA], [SAYI], [ÇİZELGE], [KARŞILAŞTIR], [LİSTE])
 and scenes the director planned as motion become infographics directly.
 Stock provider errors only skip that provider. AI errors never turn the rest
@@ -48,6 +53,7 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
           'merged': '6 · Komşu çekimin devamı (çok kısa yuva)', 'card': '5 · Üretilmiş kart',
+          'neutral': '5 · Nötr görüntü (manzara / gökyüzü / doku)',
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
           'motion_edit': 'Motion grafik (sizin düzenlemeniz)', 'motion_owner': 'İnfografik (metindeki işaretiniz)',
           'motion_balance': 'Motion grafik (dengeli kurgu)'}  # older projects only
@@ -128,9 +134,10 @@ def key_text(media):
     return f'{media["provider"]}:{media["media_type"]}:{media["media_id"]}'
 
 
-def clip_descriptor(slot, scene, language='de'):
+def clip_descriptor(slot, scene, language='de', setting=None):
     """English description for the picture model: the owner's [GÖRSEL] note,
-    the slot's planned query and the sentence's filmable words."""
+    the slot's planned query and the sentence's filmable words (+ the video's
+    period and place, e.g. “ancient Mesopotamia”)."""
     from app.scripts.query_clean import english_query
     hints = [h.get('value', '') for h in scene.get('owner_hints') or [] if h.get('type') == 'visual']
     narration = sentence_at(scene.get('narration_text', ''), .5) if used_seconds(slot) < 6 else scene.get('narration_text', '')[:400]
@@ -141,7 +148,9 @@ def clip_descriptor(slot, scene, language='de'):
     for part in parts:
         for word in part.split():
             if word.casefold() not in seen: seen.add(word.casefold()); words.append(word)
-    return ('a photo of ' + ' '.join(words[:16])) if words else 'a documentary photo'
+    where = [w for w in str((setting or {}).get('label_en') or '').split() if w.casefold() not in seen and w.isascii()]
+    if words: return 'a photo of ' + ' '.join(words[:16]) + (', ' + ' '.join(where) if where else '')
+    return ('a photo of ' + ' '.join(where)) if where else 'a documentary photo'
 
 
 def key(media):
@@ -220,6 +229,7 @@ class MediaDirector:
         self.rejected, self.rejected_keys, self.rejected_hashes = [], set(), set()
         self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
         self.scene_order, self.scene_text, self.topic, self.owner, self.language = [], {}, '', {}, 'de'
+        self.setting, self.scene_settings, self.setting_seen = None, {}, set()
 
     # ---- AI engine---------------------------------------------------------
     def connect(self):
@@ -409,7 +419,11 @@ class MediaDirector:
         after = self.scene_text.get(self.scene_order[index + 1], '') if 0 <= index < len(self.scene_order) - 1 else ''
         hints = '; '.join(f'{h.get("type")}: {h.get("value")}' for h in scene.get('owner_hints') or [])
         owner = '; '.join(f'“{r.get("description", "")[:60]}” ({r.get("reason") or "neden yazılmadı"})' for r in self.rejected[-6:])
+        where = self.where(scene)
         return (f'Video topic: {self.topic}\n'
+                + (f'Period and place of this video: {where["label_en"]}. Footage that contradicts it is wrong '
+                   '(modern people, cars, shops or cities in an older period; cartoons or 3D renders in a history documentary; '
+                   'landmarks of other places such as Easter Island or the pyramids of Giza).\n' if where and where.get('label_en') else '') +
                 f'Previous sentence: "{sentence_at(before, 1.0)}"\nNext sentence: "{sentence_at(after, 0.0)}"\n'
                 + (f'Proper names (priority): {", ".join(scene.get("entities") or [])}\n' if scene.get('entities') else '')
                 + (f'Owner’s own visual note (top priority): {hints}\n' if hints else '')
@@ -556,7 +570,7 @@ class MediaDirector:
         elif not self.local: self._go_local(ScriptProviderError(f'{self.label} metin isteğine de yanıt vermedi.', 503, category='upstream_error'))
         return works
 
-    def clip_judge(self, slot, scene, pool):
+    def clip_judge(self, slot, scene, pool, descriptor=None):
         """CLIP scores (0-10) of the candidates' preview frames against the
         sentence + [GÖRSEL] note. Clear match → approved, clear miss or below
         CLIP_MIN → rejected; the rest stay undecided (marked on the media) for
@@ -570,10 +584,11 @@ class MediaDirector:
                 except (KeyError, ValueError, TypeError): pass
             if frames: items.append((key_text(media), frames))
         if not items: return {}
-        descriptor = clip_descriptor(slot, scene, self.language)
+        descriptor = descriptor or clip_descriptor(slot, scene, self.language, self.where(scene))
+        from app.stock.setting import penalties
         self.progress['message'] = f'Yuva {slot["order"]} · yerel görüntü modeli (CLIP) {len(items)} adayı karşılaştırıyor'
         self.service._checkpoint(self.job, self.progress, light=True)
-        scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid))
+        scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid), penalties(self.where(scene), descriptor))
         if not scores and self.clip.broken:
             self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; bu işte medya etiket/kelime eşleşmesiyle seçildi.'
         decided = {}
@@ -583,7 +598,12 @@ class MediaDirector:
             clip = {**result, 'descriptor': descriptor[:160]}
             media['clip'] = clip
             self.progress['clip_checked'] = self.progress.get('clip_checked', 0) + 1
-            if result['verdict'] == 'match' and result['score'] >= CLIP_APPROVE:
+            if isinstance(result.get('conflict'), dict):  # looks like something the period/place rules out
+                from app.stock.setting import reason
+                self.setting_rejected(media, result['conflict'])
+                decided[key(media)] = {'score': min(result['score'], 2), 'approved': False, 'local': True, 'clip': clip, 'setting_conflict': result['conflict'],
+                                       'reason': f'Yerel görüntü modeli (CLIP): {reason(result["conflict"])} — videonun dönemi/yeri: {self.where(scene).get("label", "")}; elendi.'}
+            elif result['verdict'] == 'match' and result['score'] >= CLIP_APPROVE:
                 decided[key(media)] = {'score': result['score'], 'approved': True, 'local': True, 'clip': clip, 'clip_approved': True,
                                        'reason': f'Yerel görüntü modeli (CLIP) kareleri cümleyle eşleştirdi: {result["score"]}/10.'}
             elif result['verdict'] == 'mismatch' or result['score'] < CLIP_MIN:
@@ -714,6 +734,11 @@ class MediaDirector:
             return 'watermark_or_logo'
         if media.get('provider') != 'wikimedia' and historic(scene) and any(f' {w} ' in tags or f' {w}s ' in tags for w in MODERN):
             return 'modern_in_history'  # a history/museum scene never gets modern stock (cars, phones, offices …)
+        from app.stock.setting import tag_conflict
+        conflict = tag_conflict(self.where(scene), tags, media.get('provider', ''))
+        if conflict:  # the provider's own tags contradict the video's period/place (works without CLIP)
+            self.setting_rejected(media, {'kind': conflict[0], 'label': conflict[1], 'source': 'tags'})
+            return 'setting_conflict'
         for phrase in re.split(r'[,;/]| or | and ', relevance.normalized(scene.get('must_not_show') or '')):
             words = [w for w in re.findall(r'[a-z0-9]+', phrase) if len(w) > 2 and w not in relevance.STOP and w not in ('any', 'modern', 'people')]
             if words and all(f' {w} ' in tags or f' {w}s ' in tags for w in words[-2:]):
@@ -733,7 +758,7 @@ class MediaDirector:
             if reason is None: reason = self.prefilter(media, scene or {})
             if reason:
                 rejected[reason] = rejected.get(reason, 0) + 1
-                if reason in ('owner_rejected', 'watermark_or_logo', 'must_not_show', 'modern_in_history') and k not in self.filtered_keys:
+                if reason in ('owner_rejected', 'watermark_or_logo', 'must_not_show', 'modern_in_history', 'setting_conflict') and k not in self.filtered_keys:
                     self.filtered_keys.add(k); self.progress['irrelevant_filtered'] = len(self.filtered_keys) + self.progress.get('ai_rejected', 0)
                 continue
             pool.append(relevance.annotate(media, slot['relevance_profile'], 1, media.get('query_used', '')))
@@ -874,6 +899,8 @@ class MediaDirector:
         if segment is not None:
             slot['warnings'].append('Aynı uzun klibin başka bir bölümü kullanılıyor (çakışma yok).')
         log['steps'][-1]['result'] = 'chosen'
+        where = self.where(self.scene_by_id.get(slot['scene_id'], {}) if hasattr(self, 'scene_by_id') else {})
+        if where.get('label'): slot['setting_check'] = {'label': where['label'], 'clip': bool(verdict.get('clip'))}
         self.scene_last[slot['scene_id']] = media  # next shot of this scene: same mood, different framing
         return saved
 
@@ -1191,11 +1218,64 @@ class MediaDirector:
                     slot['lower_third'] = highlight(' '.join(spec['data']['text'].split()))
                     slot['message'] = 'Komşu çekim devam ediyor; yazı video üstünde alt bant olarak gösterilir.'
                     return log
+                # No number/place/date to draw: neutral footage of the setting (landscape, sky, texture) before a text card.
+                if self.neutral(slot, scene, log, exclude):
+                    return log
                 if self.quote_full():
                     # Enough text cards already: another nearby infographic or this scene's graphic again instead.
                     spec = self.nearby_infographic(slot, scene) or self.motion_spec(slot, scene, repeat=True)
             self.motion(slot, scene, log, spec)
         return log
+
+    def where(self, scene):
+        """The period/place this scene is checked against (the video's, or the
+        scene's own when it names other years, e.g. a flashback)."""
+        if not getattr(self, 'setting', None): return {}  # (unit tests build the director without run())
+        sid = scene.get('scene_id')
+        if not hasattr(self, 'scene_settings'): self.scene_settings = {}
+        if sid not in self.scene_settings:
+            from app.stock.setting import for_scene
+            self.scene_settings[sid] = for_scene(self.setting, scene.get('narration_text', ''))
+        return self.scene_settings[sid] or {}
+
+    def setting_rejected(self, media, conflict):
+        counts = self.progress.setdefault('setting_rejected', {})
+        kind = conflict.get('kind', 'other')
+        if not hasattr(self, 'setting_seen'): self.setting_seen = set()
+        if key_text(media) not in self.setting_seen:
+            self.setting_seen.add(key_text(media))
+            counts[kind] = counts.get(kind, 0) + 1
+
+    def neutral(self, slot, scene, log, exclude):
+        """No candidate fits the sentence: neutral footage of the setting
+        (landscape, sky, texture). Judged like any shot (CLIP, the AI when it
+        is on, else the tags) — but against the neutral picture itself, with
+        the scene's period/place rules and MUST-NOT list still in force."""
+        from app.stock.setting import neutral_queries
+        where = self.where(scene)
+        queries = neutral_queries(where)
+        step = {'stage': 'neutral', 'label': STAGES['neutral'], 'queries': queries, 'judged': []}
+        log['steps'].append(step)
+        label = where.get('label') or 'videonun konusu'
+        for query in queries:
+            # Earlier verdicts were about the sentence, not this neutral picture: only a period/place conflict still counts.
+            conflicts = {k for k, v in log['judged'].items() if v.get('setting_conflict')}
+            pool = self.pool(slot, self.search(slot, ['video', 'image'], query, log, scene), {**log, 'judged': {}}, exclude | conflicts, scene)[:CANDIDATES]
+            if not pool: continue
+            goal = f'Neutral filler shot: {query} ({where.get("label_en") or "fitting the video"}). It does not need to show what is said.'
+            shot = {**scene, 'narration_text': query, 'visual_intent': goal, 'must_show': query, 'primary_stock_query': query,
+                    'alternative_stock_queries': [], 'owner_hints': [], 'entities': []}
+            probe = {**slot, 'search_query': query, 'fallback_queries': [], 'visual_goal': goal}
+            probe['relevance_profile'] = relevance.profile(shot, probe)
+            verdicts = self.judge(probe, shot, pool)
+            for media in self.order(slot, [m for m in pool if verdicts.get(key(m), {}).get('approved') and verdicts[key(m)]['score'] >= APPROVE_SCORE], verdicts):
+                verdict = {**verdicts[key(media)], 'reason': f'Nötr görüntü (“{query}”): cümleye birebir uyan, döneme/yere uygun aday bulunamadı ({label}).'}
+                step['judged'].append({'provider': media['provider'], 'media_type': media['media_type'], 'media_id': media['media_id'], 'query': query,
+                                       **{k: v for k, v in verdict.items() if k != 'clip'}})
+                if self.take(slot, media, verdict, 'neutral', log):
+                    return True
+        step['result'] = 'no_approved_candidate'
+        return False
 
     def nearby_infographic(self, slot, scene):
         """A number/place/date infographic from the neighbouring scenes' narration."""
@@ -1255,6 +1335,7 @@ class MediaDirector:
             state = service._load(c, self.pid, job['plan_id'])
         handoff = service._handoff(self.pid)
         scenes = {s['scene_id']: s for s in handoff['scenes']}
+        self.scene_by_id = scenes
         timing = (getattr(service, 'timing_handoff', lambda pid: None)(self.pid) or {}).get('stock_slots', [])
         actual = {s['slot_id']: s['duration'] for s in timing}
         self.slots = deepcopy(state['slots'])
@@ -1272,6 +1353,11 @@ class MediaDirector:
         project = service.projects.get(self.pid)
         self.topic = project.get('topic') or project.get('name', '')
         self.language = project.get('language') or 'de'
+        from app.stock.setting import infer
+        self.setting = infer([sc.get('narration_text', '') for sc in ordered_scenes], self.topic)
+        self.scene_settings, self.setting_seen = {}, set()
+        if self.setting.get('label'):
+            self.progress['setting'] = {k: self.setting.get(k) for k in ('label', 'label_en', 'era', 'decade', 'regions')}
         self.connect()
         single = job.get('slot_id')
         action = {'reselect': 'reselect', 'to_motion': 'to_motion', 'to_stock': 'to_stock', 'motion_edit': 'motion_edit'}.get(job['action'], 'reselect')
@@ -1317,6 +1403,7 @@ class MediaDirector:
                 pass  # the local picture model approved it and Gemini's look is off: nothing to re-check
             elif not (slot.get('ai_review') or {}).get('approved') or (slot['ai_review'].get('score') or 0) < APPROVE_SCORE:
                 targets.append((slot, 'unreviewed'))  # below 7/10 is never kept
+        if not single: targets += self.recheck_setting(scenes, {t['slot_id'] for t, _ in targets})
         # Infographics need no AI look: they are drawn first, so even if the AI
         # quota runs out later every marked/planned scene already has its graphic.
         targets.sort(key=lambda t: t[1] not in ('motion_owner', 'motion_planned'))
@@ -1426,7 +1513,7 @@ class MediaDirector:
             log2 = self.fill(slot, scene, exclude={key(media)})
             log2['previous_rejected'] = verdict
             return log2
-        if why == 'reselect':
+        if why in ('reselect', 'setting'):
             old = slot.get('selected_media')
             exclude = {key(old)} if old and not is_generated(old) else set()
             self._release(slot)
@@ -1434,6 +1521,60 @@ class MediaDirector:
         if why == 'retry_card':
             self._release(slot)
         return self.fill(slot, scene)
+
+    def recheck_setting(self, scenes, already):
+        """Stock picks kept from earlier runs are checked once against the
+        video's period/place (tags, and CLIP when installed); a clear conflict
+        (modern shop in an ancient topic, Easter Island in a Babylon video,
+        cartoon/3D in a history documentary) is chosen again."""
+        from app.stock.setting import penalties, tag_conflict
+        out, groups = [], {}
+        clip = bool(self.clip and self.clip.ready())
+        for slot in self.slots:
+            media = slot.get('selected_media')
+            if (slot['slot_id'] in already or slot.get('locked') or slot.get('manual_stock') or slot.get('continuation_of')
+                    or not media or is_generated(media) or not self.valid(slot)):
+                continue
+            where = self.where(self.scene_by_id.get(slot['scene_id'], {}))
+            done = slot.get('setting_check') or {}
+            if not where.get('label') or (isinstance(done, dict) and done.get('label') == where['label'] and (done.get('clip') or not clip)): continue
+            tags = ' ' + relevance.normalized(f'{media.get("description", "")} {media.get("query_used", "")}') + ' '
+            conflict = tag_conflict(where, tags, media.get('provider', ''))
+            if conflict:
+                self.setting_rejected(media, {'kind': conflict[0], 'label': conflict[1]})
+                out.append((slot, 'setting')); continue
+            groups.setdefault(slot['scene_id'], (where, []))[1].append(slot)
+        if clip:
+            for scene_id, (where, slots) in groups.items():
+                label = where['label']
+                # The scene's own description (the whole narration), as when the pick was made.
+                descriptor = clip_descriptor({'duration': 99}, self.scene_by_id.get(scene_id, {}), self.language, where)
+                items, by_key = [], {}
+                for slot in slots:
+                    frames = []
+                    for block in self.frames(slot['selected_media']):
+                        try: frames.append(base64.b64decode(block['source']['data']))
+                        except (KeyError, ValueError, TypeError): pass
+                    if frames:
+                        name = key_text(slot['selected_media'])
+                        if name not in by_key: items.append((name, frames))
+                        by_key.setdefault(name, []).append(slot)
+                if not items: continue
+                self.progress['message'] = f'Önceki seçimler videonun dönemi/yeriyle karşılaştırılıyor ({label}, sahne {self.scene_by_id.get(scene_id, {}).get("order", "")}, {len(items)} yuva)'
+                self.service._checkpoint(self.job, self.progress, light=True)
+                scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid), penalties(where, descriptor))
+                for name, result in scores.items():
+                    for slot in by_key.get(name, []):
+                        if isinstance(result.get('conflict'), dict):
+                            self.setting_rejected(slot['selected_media'], result['conflict'])
+                            out.append((slot, 'setting'))
+                        else:
+                            slot['setting_check'] = {'label': label, 'clip': True}
+        else:
+            for where, slots in groups.values():
+                for slot in slots: slot['setting_check'] = {'label': where['label'], 'clip': False}
+        if out: self.progress['setting_reselected'] = len(out)
+        return out
 
     def _release(self, slot):
         media = slot.get('selected_media')
@@ -1443,8 +1584,9 @@ class MediaDirector:
         slot.update(selected_media=None, status='pending', ai_review=None, segment_start=None, continuation_of=None)
 
     def review(self, scenes):
-        """Whole-video look: repeated or too similar shots, tone breaks."""
-        if self.local: return
+        """Whole-video look: repeated or too similar shots, tone breaks.
+        Skipped when the server refused picture batches (one picture per request)."""
+        if self.local or self.single: return
         stock = [s for s in sorted(self.slots, key=lambda s: s['estimated_start'])
                  if s.get('status') == 'complete' and s.get('selected_media') and not is_generated(s['selected_media'])
                  and not s['locked'] and not s.get('continuation_of')]
@@ -1501,6 +1643,12 @@ class MediaDirector:
             # Every raw slot is now filled: the old render-only reflow plan
             # (built for gaps) is obsolete and must not hide new selections.
             state.pop('recovery_plan', None)
+            # Kept picks checked against the period/place this run: remembered, so the next run skips them.
+            checked = {s['slot_id']: s for s in self.slots if s.get('setting_check') and s.get('selected_media')}
+            for slot in state['slots']:
+                mine = checked.get(slot['slot_id'])
+                if mine and slot.get('selected_media') and key(slot['selected_media']) == key(mine['selected_media']):
+                    slot['setting_check'] = mine['setting_check']
             state['media_summary'] = summary(state['slots'])
             service._save(c, state)
             service._mirror(state)

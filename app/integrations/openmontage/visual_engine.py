@@ -80,19 +80,51 @@ def score_frames(root,inputs):
     descriptor=str(inputs['descriptor'])[:300]
     words=set(re.findall(r'[a-z]+',descriptor.casefold()))-{'a','an','the','of','in','on','with'}
     negatives=[n for n in FRAME_NEGATIVES+NEGATIVES if not set(re.findall(r'[a-z]+',n))&words] or ['unrelated footage']
-    texts=inference(embed_texts,[descriptor,*negatives],clip_embedder,torch)
+    penalties=setting_penalties(inputs.get('penalties'),descriptor)
+    texts=inference(embed_texts,[descriptor,*negatives,*(p['text'] for p in penalties)],clip_embedder,torch)
+    split=1+len(negatives)
     results=[]
     for item in inputs['candidates'][:32]:
         frames=[Path(p) for p in item['frames'][:3]]
         if not frames or any(not f.is_file() or f.is_symlink() or not f.is_absolute() for f in frames):raise ValueError('source_missing')
         images=inference(embed_images,frames,clip_embedder,torch)
-        scores=images@texts.T;target=float(scores[:,0].mean());other=float(scores[:,1:].mean(axis=0).max())
+        scores=images@texts.T;target=float(scores[:,0].mean());other=float(scores[:,1:split].mean(axis=0).max())
         margin=target-other
-        votes=int((scores[:,0]>scores[:,1:].max(axis=1)+.01).sum())
+        votes=int((scores[:,0]>scores[:,1:split].max(axis=1)+.01).sum())
         verdict='match' if target>=.20 and margin>=.015 and votes>=min(2,len(images)) else 'mismatch' if margin<=-.02 else 'uncertain'
-        results.append({'key':str(item['key'])[:200],'verdict':verdict,'similarity':round(target,4),'contrast_margin':round(margin,4),
-                        'score':clip_score(target,margin),'model':MODEL,'sample_count':len(images)})
+        result={'key':str(item['key'])[:200],'verdict':verdict,'similarity':round(target,4),'contrast_margin':round(margin,4),
+                'score':clip_score(target,margin),'model':MODEL,'sample_count':len(images)}
+        conflict=setting_conflict(scores[:,0],scores[:,split:],penalties)
+        if conflict:result.update(verdict='mismatch',score=min(result['score'],2),conflict=conflict)
+        results.append(result)
     return {'results':results}
+
+
+def setting_penalties(raw,descriptor):
+    """Prompts for what contradicts the video's period/place (app/stock/setting.py).
+    '{subject}' becomes the shot's own subject: “a cartoon drawing of <subject>”
+    against “a photo of <subject>” leaves only the look to decide."""
+    subject=re.sub(r'^(a|an)\s+(documentary\s+)?photo\s+of\s+','',descriptor,flags=re.I).strip() or 'a scene'
+    out=[]
+    for item in (raw or [])[:30]:
+        if not isinstance(item,dict) or not isinstance(item.get('text'),str) or item.get('kind') not in ('anachronism','style','place'):continue
+        text=item['text'].replace('{subject}',subject)[:200]
+        out.append({'kind':item['kind'],'text':text,'label':str(item.get('label',''))[:60]})
+    return out
+
+
+def setting_conflict(target,scores,penalties):
+    """The penalty prompt the frames resemble MORE than the shot's description
+    (on average and in at least half of the frames), or None."""
+    if not penalties:return None
+    best=None
+    for index,item in enumerate(penalties):
+        column=scores[:,index];lead=float(column.mean())-float(target.mean())
+        frames=int((column>target).sum())
+        need=.0 if item['kind']=='style' else .005  # style prompts carry the same subject: any lead counts
+        if lead>need and frames*2>=len(target) and float(column.mean())>=.18 and (best is None or lead>best['lead']):
+            best={'kind':item['kind'],'label':item['label'],'text':item['text'][:120],'similarity':round(float(column.mean()),4),'lead':round(lead,4)}
+    return best
 
 
 def analyse(root,inputs,command):

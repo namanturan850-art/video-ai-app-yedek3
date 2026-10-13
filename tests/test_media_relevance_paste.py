@@ -132,6 +132,7 @@ def test_owner_rejection_is_remembered_and_explained_to_the_ai(tmp_path, monkeyp
         view = T.complete(client, pid)
         slot = next(s for s in view['slots'] if s.get('selected_media', {}).get('provider') in ('pexels', 'pixabay'))
         old = slot['selected_media']
+        before = len(fake.requests)
         base = f'/api/projects/{pid}/production/stock'
         r = client.post(f'{base}/slots/{slot["slot_id"]}/jobs', json={'plan_id': view['plan_id'], 'revision': view['revision'], 'action': 'reselect',
                                                                        'reason': 'modern bina görünüyor'})
@@ -140,8 +141,11 @@ def test_owner_rejection_is_remembered_and_explained_to_the_ai(tmp_path, monkeyp
         after = client.get(base).json()
         new = next(s for s in after['slots'] if s['slot_id'] == slot['slot_id'])['selected_media']
         assert (new['provider'], new['media_id']) != (old['provider'], old['media_id'])
-        sent = [p.get('text', '') for r in fake.requests for p in r['contents'][0]['parts']]
-        assert any('REJECTED' in t and 'modern bina görünüyor' in t for t in sent)  # the reason guides the next choice
+        # Every candidate look after the rejection carries the reason (none is needed when the rest is decided
+        # without the AI: cached verdicts, or modern office/traffic clips that the period check drops by their tags).
+        looks = [' '.join(p.get('text', '') for p in r['contents'][0]['parts']) for r in fake.requests[before:]]
+        looks = [t for t in looks if 'Candidate' in t]
+        assert all('REJECTED' in t and 'modern bina görünüyor' in t for t in looks)
         T.complete(client, pid)  # a whole new pass never brings it back
         final = client.get(base).json()
         assert not any(s.get('selected_media', {}).get('media_id') == old['media_id'] and s['selected_media']['provider'] == old['provider'] for s in final['slots'])

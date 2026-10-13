@@ -585,6 +585,9 @@ class ProductionService:
         if plan:
             enrich_blocks(plan['blocks'])
             plan['status']=status(plan['version_id'],plan['language'])
+            if not plan.get('setting'):  # older plans: period/place read from the same narration
+                from app.stock.setting import infer
+                plan['setting']=infer([b.get('narration','') for b in plan['blocks']],project.get('topic') or project.get('name',''))
         versions = [{'plan_id':item['id'],'plan_version':item['version'],'version_id':item['version_id'],
                      'provider':item['provider'],'model':item['model'],'created_at':item['created_at'],
                      'scene_count':len(json.loads(item['plan_json'])['blocks']),
@@ -679,7 +682,9 @@ class ProductionService:
         from app.scripts.query_refine import suggest_infographics
         blocks=suggest_infographics(blocks,language)  # after the markers: they count toward the 25% share
         image_config = self.scripts.settings.image_config()
-        plan = {'version_id': current['id'], 'source_script_version':current['version'], 'language': language,
+        from app.stock.setting import infer
+        setting = infer([b.get('narration','') for b in blocks],topic or self.projects.get(project_id).get('name',''))  # e.g. "antik Mezopotamya": every stock pick is checked against it
+        plan = {'setting': setting, 'version_id': current['id'], 'source_script_version':current['version'], 'language': language,
                 'provider':provider,'model':model,'status':'ready','width': image_config['width'], 'height': image_config['height'], 'blocks': deepcopy(blocks),
                 'media_priority': MEDIA_PRIORITY, 'timing_source': 'estimated', 'voice': None, 'subtitles': None,
                 'music': {'enabled': self.projects.get(project_id)['background_music_enabled'], 'mood': 'neutral', 'local_file_label': '', 'license_confirmed': False, 'volume': .15, 'fade_in': 2., 'fade_out': 3., 'ducking': True, 'section_changes': []}}

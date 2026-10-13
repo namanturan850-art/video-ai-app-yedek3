@@ -20,6 +20,8 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const summaryLine=node('p','','provider-status');summaryLine.id='stock-summary';section.insertBefore(summaryLine,controls);
   const clipNote=node('p','','note stock-clip-warning');clipNote.id='stock-clip-warning';clipNote.hidden=true;section.insertBefore(clipNote,controls);
   const settingNote=node('p','','note stock-setting');settingNote.id='stock-setting';settingNote.hidden=true;section.insertBefore(settingNote,controls);
+  // Kontrol edilmesi gerekenler: low CLIP score, tags only, close to a period/place problem.
+  const reviewBox=node('section','','stock-review');reviewBox.id='stock-review';reviewBox.hidden=true;section.insertBefore(reviewBox,summaryLine);
   const stamp=()=>({plan_id:state.plan_id,revision:state.revision});
   async function request(url,method='GET',body){
     let response;
@@ -103,6 +105,9 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const clip=slot.local_review?.clip;
     if(media&&media.provider!=='generated'&&clip&&!slot.ai_review?.approved){const line=node('p',`Yerel görüntü modeli (CLIP): ${clip.score}/10 · ${{match:'kareler cümleyle eşleşti',uncertain:'kararsız — etiketlerle de kontrol edildi',mismatch:'uyumsuz'}[clip.verdict]||''}`,'stock-relevance stock-clip');card.append(line);}
     if(media&&media.provider!=='generated'&&!slot.ai_review?.approved&&!slot.continuation_of&&slot.local_review?.method!=='clip')card.append(node('p','⚠ Görüntüsü bir modelle kontrol edilmedi — etiket/kelime eşleşmesiyle seçildi. Önizleyip bakın.','stock-unchecked'));
+    if(slot.sentence)card.append(node('p',`Cümle: ${slot.sentence}`,'stock-sentence'));
+    if(slot.sentence_tr&&slot.sentence_tr!==slot.sentence)card.append(node('p',`Türkçesi: ${slot.sentence_tr}`,'stock-sentence-tr'));
+    if(slot.visual_note)card.append(node('p',`[GÖRSEL] notu: ${slot.visual_note_tr||slot.visual_note}`,'stock-visual-note'));
     if(slot.message)card.append(node('p',`Neden: ${slot.message}`));
     if(media&&!(media.provider==='generated'&&media.media_type==='video'))card.append(thumbnail(media));
     const top=node('div','','settings-actions');card.append(top);
@@ -143,7 +148,25 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     }
     return keep;
   }
+  function renderReview(){
+    reviewBox.replaceChildren();const slots=state?.slots||[];reviewBox.hidden=!slots.length;if(!slots.length)return;
+    reviewBox.append(node('h3','Kontrol edilmesi gerekenler'));
+    if(!slots.some(s=>Array.isArray(s.review_flags))){reviewBox.append(node('p','Liste Medyayı Tamamla bittikten sonra görünür.','note'));return;}
+    const list=slots.filter(s=>(s.review_flags||[]).length);
+    if(!list.length){reviewBox.append(node('p','Kontrol gerekmiyor.','stock-review-none'));return;}
+    for(const slot of list){
+      const item=node('article','','stock-review-item');item.dataset.slotId=slot.slot_id;
+      item.append(node('h4',`Medya ${slot.order} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
+      for(const flag of slot.review_flags)item.append(node('p','⚠ '+flag,'stock-review-flag'));
+      const sentence=slot.sentence_tr||slot.sentence;if(sentence)item.append(node('p',`Cümle: ${sentence}`,'stock-sentence-tr'));
+      if(slot.selected_media)item.append(thumbnail(slot.selected_media));
+      const actions=node('div','','settings-actions');item.append(actions);
+      button(actions,'Yeniden seç',()=>slotJob(slot,'reselect',{}),active()||slot.locked).className='stock-review-reselect';
+      reviewBox.append(item);
+    }
+  }
   function render(){
+    renderReview();
     for(const old of blocks.querySelectorAll('.stock-scene'))old.remove();
     for(const sceneCard of blocks.querySelectorAll('[data-scene-id]')){
       const slots=state?.slots.filter(s=>s.scene_id===sceneCard.dataset.sceneId)||[];if(!slots.length)continue;

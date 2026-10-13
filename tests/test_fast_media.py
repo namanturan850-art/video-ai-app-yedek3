@@ -216,7 +216,9 @@ def test_clip_drops_irrelevant_candidates_and_shows_the_score(tmp_path, monkeypa
         view = T.complete(client, pid)
         job = view['job']
         assert job['status'] == 'completed' and view['media_summary']['missing'] == 0
-        assert len(fake.requests) == before  # Gemini's picture check is off by default: no request
+        after = fake.requests[before:]
+        assert not any(p.get('inline_data') or p.get('inlineData') for r in after for p in r['contents'][0]['parts'])  # picture check off by default: no picture sent
+        assert len(after) <= 1  # only the one Turkish translation request of the media screen
         chosen = stock_slots(view)
         assert chosen and not any(s['selected_media']['media_id'] in noise_ids(world) for s in chosen)
         assert all(s['local_review']['method'] == 'clip' and s['local_review']['clip']['score'] >= 7 and not s['needs_ai_review'] for s in chosen)

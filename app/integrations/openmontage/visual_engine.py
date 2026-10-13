@@ -96,6 +96,10 @@ def score_frames(root,inputs):
                 'score':clip_score(target,margin),'model':MODEL,'sample_count':len(images)}
         conflict=setting_conflict(scores[:,0],scores[:,split:],penalties)
         if conflict:result.update(verdict='mismatch',score=min(result['score'],2),conflict=conflict)
+        elif penalties:  # how close the nearest period/place problem came (for the owner's check list)
+            leads=[float(scores[:,split+i].mean())-target for i in range(len(penalties))]
+            i=max(range(len(leads)),key=leads.__getitem__)
+            result.update(setting_margin=round(leads[i],4),setting_closest=penalties[i]['label'])
         results.append(result)
     return {'results':results}
 

@@ -1685,10 +1685,38 @@ class MediaDirector:
         except (OSError, ValueError, StockError):
             pass
 
+    def owner_help(self, slots):
+        """Per slot: the sentence spoken there, its Turkish translation and the
+        [GÖRSEL] note in Turkish (one AI request per video, saved; none → empty)."""
+        from app.stock.translate import turkish
+        scenes = getattr(self, 'scene_by_id', {})
+        spoken, notes = {}, {}
+        for slot in slots:
+            scene = scenes.get(slot['scene_id'])
+            if not scene: continue
+            span = max(.001, scene['end_estimate'] - scene['start_estimate'])
+            middle = (slot['estimated_start'] + slot['estimated_end']) / 2
+            spoken[slot['slot_id']] = sentence_at(scene.get('narration_text', ''), min(1, max(0, (middle - scene['start_estimate']) / span)))
+            notes[slot['slot_id']] = '; '.join(str(h.get('value', '')) for h in scene.get('owner_hints') or [] if h.get('type') == 'visual' and h.get('value'))
+        self.progress['message'] = 'Cümlelerin Türkçesi hazırlanıyor (video başına tek istek; yapay zekâ yoksa boş kalır)'
+        self.service._checkpoint(self.job, self.progress, light=True)
+        try:
+            tr = turkish(self.service, self.pid, self.language, [*spoken.values(), *notes.values()])
+        except Exception:  # translation is only a help: never stops the job
+            LOG.warning('stock operation=translate category=unexpected')
+            tr = {}
+        clean = lambda text: ' '.join(str(text or '').split())
+        return {sid: {'sentence': spoken[sid], 'sentence_tr': tr.get(clean(spoken[sid]), ''),
+                      'visual_note': notes.get(sid, ''), 'visual_note_tr': tr.get(clean(notes.get(sid, '')), '')} for sid in spoken}
+
     def finalize(self):
         service, job = self.service, self.job
+        help_text = self.owner_help(self.slots) if getattr(self, 'slots', None) else {}
         with service.projects.lock, closing(service.projects._connection()) as c, c:
             state = service._load(c, self.pid, job['plan_id'])
+            for slot in state['slots']:
+                if slot['slot_id'] in help_text: slot.update(help_text[slot['slot_id']])
+                slot['review_flags'] = review_flags(slot)
             # Every raw slot is now filled: the old render-only reflow plan
             # (built for gaps) is obsolete and must not hide new selections.
             state.pop('recovery_plan', None)
@@ -1710,6 +1738,29 @@ class MediaDirector:
                              + (' · Görüntü yeri kalmadığı için gösterilemeyen işaretler: ' + ', '.join(self.progress['owner_unplaced']) if self.progress.get('owner_unplaced') else '')
                              + (' · ' + self.progress['local_reason'] if self.progress.get('local_reason') else ''))
         service._checkpoint(job, self.progress, status='completed')
+
+
+def review_flags(slot):
+    """Why the owner should look at this pick (Turkish), [] when nothing stands out:
+    a low CLIP score, chosen by tags/words only, or close to a period/place problem."""
+    media = slot.get('selected_media')
+    if not media or is_generated(media) or slot.get('continuation_of') or slot.get('locked') or slot.get('status') != 'complete':
+        return []
+    review, ai = slot.get('local_review') or {}, slot.get('ai_review') or {}
+    clip = review.get('clip') or {}
+    flags = []
+    if not ai.get('approved'):
+        if isinstance(clip.get('score'), int) and clip['score'] < CLIP_APPROVE:
+            flags.append(f'CLIP puanı düşük ({clip["score"]}/10)')
+        elif not clip and review.get('method') != 'clip':
+            flags.append('Yalnız etiket/kelime eşleşmesiyle seçildi (görüntü modeli bakmadı)')
+    margin = clip.get('setting_margin')
+    if isinstance(margin, (int, float)) and margin > SETTING_NEAR:
+        flags.append(f'Dönem/yer kontrolünde sınıra yakın ({clip.get("setting_closest") or "uygunsuz öğe"} benzerliği)')
+    return flags
+
+
+SETTING_NEAR = -.01  # CLIP: the nearest period/place problem is within this of the shot's own description
 
 
 TEMPLATE_WORDS = {'stat': 'sayı', 'map': 'harita', 'timeline': 'çizelge', 'compare': 'karşılaştırma', 'list': 'liste', 'quote': 'yazı',

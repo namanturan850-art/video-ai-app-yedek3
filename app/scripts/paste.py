@@ -29,15 +29,15 @@ import re
 # Marker names are compared without Turkish letters, so [çizelge: …] and [CIZELGE: …] work too.
 KINDS = {'GORSEL': 'visual', 'HARITA': 'map', 'SAYI': 'number', 'CIZELGE': 'timeline', 'KARSILASTIR': 'compare', 'LISTE': 'list',
          'ROTA': 'route', 'IMPARATORLUK': 'empire', 'YAKINLAS': 'zoom', 'ISARETLE': 'mark', 'ONCESONRA': 'beforeafter', 'IKON': 'icons',
-         'ORAN': 'ratio', 'HANEDAN': 'dynasty', 'BILGI': 'fact', 'GIRIS': 'intro', 'KAPANIS': 'outro'}
+         'ORAN': 'ratio', 'HANEDAN': 'dynasty', 'BILGI': 'fact', 'GIRIS': 'intro', 'KAPANIS': 'outro', 'BOLGE': 'region', 'OK': 'arrow'}
 NO_VALUE = ('intro', 'outro')  # [GİRİŞ] / [KAPANIŞ] need no text: the title and channel come from the project
 LABELS = {'visual': 'GÖRSEL', 'map': 'HARİTA', 'number': 'SAYI', 'timeline': 'ÇİZELGE', 'compare': 'KARŞILAŞTIR', 'list': 'LİSTE',
           'route': 'ROTA', 'empire': 'İMPARATORLUK', 'zoom': 'YAKINLAŞ', 'mark': 'İŞARETLE', 'beforeafter': 'ÖNCESONRA', 'icons': 'İKON',
-          'ratio': 'ORAN', 'dynasty': 'HANEDAN', 'fact': 'BİLGİ', 'intro': 'GİRİŞ', 'outro': 'KAPANIŞ'}
+          'ratio': 'ORAN', 'dynasty': 'HANEDAN', 'fact': 'BİLGİ', 'intro': 'GİRİŞ', 'outro': 'KAPANIŞ', 'region': 'BÖLGE', 'arrow': 'OK'}
 ASCII = str.maketrans({'İ': 'I', 'Ş': 'S', 'Ç': 'C', 'Ö': 'O', 'Ü': 'U', 'Ğ': 'G', '\u0307': None})
 AVAILABLE = ('[GÖRSEL: …], [HARİTA: …], [SAYI: …], [ÇİZELGE: 1945, 1962], [KARŞILAŞTIR: A | B], [LİSTE: bir; iki; üç], [ROTA: A > B], '
              '[İMPARATORLUK: ad yıl-yıl], [YAKINLAŞ: yer], [İŞARETLE: açıklama], [ÖNCESONRA: A | B], [İKON: sayı nesne], [ORAN: %değer etiket], '
-             '[HANEDAN: A > B > C], [BİLGİ: kısa metin], [GİRİŞ], [KAPANIŞ]')
+             '[HANEDAN: A > B > C], [BİLGİ: kısa metin], [BÖLGE: Bretagne], [OK: A > B], [GİRİŞ], [KAPANIŞ]')
 MARKER = re.compile(r'\[([^\[\]\n]{0,300})\]')
 HEADING_WORDS = r'(?:bölüm|kısım|sahne|kapitel|teil|abschnitt|szene|chapter|section|part|scene|capítulo|sección|parte|escena|chapitre|partie|scène)'
 SENTENCE_END = re.compile(r'(?<=[.!?…])["“”»’)]*\s+')

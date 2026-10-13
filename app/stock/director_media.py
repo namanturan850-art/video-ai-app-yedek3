@@ -96,8 +96,8 @@ JUDGE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['v
 PROBE_SCHEMA = {'type': 'object', 'required': ['ok'], 'properties': {'ok': {'type': 'boolean'}}}
 PLACE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['found', 'lat', 'lon'],
                 'properties': {'found': {'type': 'boolean'}, 'lat': {'type': 'number'}, 'lon': {'type': 'number'}}}
-INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'intro', 'outro')
-NEW_MARKERS = ('route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact')
+INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'intro', 'outro', 'region', 'arrow')
+NEW_MARKERS = ('route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'region', 'arrow')
 QUERY_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['queries'],
                 'properties': {'queries': {'type': 'array', 'items': {'type': 'string'}}}}
 REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['replace'],

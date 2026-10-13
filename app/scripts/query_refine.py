@@ -140,7 +140,7 @@ def suggest_infographics(blocks, language='de', share=SHARE):
     owner can approve or change on the media screen — at most `share` of the
     scenes are infographics in total (markers and the plan's own included)."""
     limit = int(len(blocks) * share)
-    used = sum(1 for b in blocks if b.get('motion_spec') or any(h.get('type') not in ('visual',) for h in b.get('owner_hints') or []))
+    used = sum(max(1 if b.get('motion_spec') else 0, sum(1 for h in b.get('owner_hints') or [] if h.get('type') != 'visual')) for b in blocks)  # every marker counts
     if used >= limit: return blocks
     ranked = []
     for index, block in enumerate(blocks):

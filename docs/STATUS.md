@@ -1,5 +1,12 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (7) — Başka medeniyet eserleri, kısa yazı kartları, açılış kartı
+
+- **Yer kontrolü genişledi:** videoda geçmeyen medeniyetlerin belirgin eserleri (Çin Terracotta askerleri, Paskalya moai, Giza piramitleri/Sfenks/firavun heykeli, Maya/Aztek, samuray…) hem CLIP'te hem etiketlerde elenir. Cümlede “ordu/asker” geçmesi Terracotta kontrolünü artık kapatmaz; yalnız sahnenin kendisi o yeri adlandırırsa kontrol atlanır. “pyramid” etiketli zikkurat elenmez.
+- **Yazı kartları:** tüm kart türlerinde (alıntı, sayı kartı etiketi, eski PNG kartlar) yalnız 2–5 kelimelik vurgu; tam cümle yok. Kart kutuları ve tırnak işareti tam opak (önceki %90 saydamlık kaldırıldı).
+- **Açılış:** ilk sahnede 4 sn'den uzun bir kart yuvası tam ekran kart olmaz; yuvaya hareketli görüntü (stok, komşu çekimin devamı ya da nötr görüntü) konur ve kartın 2–5 kelimesi üstünde en çok 4 sn alt bant olarak görünür. Hareketli görüntü bulunamazsa kart eskisi gibi çizilir.
+- **Testler:** `tests/test_setting_check.py` (3 yeni test) ve ilgili medya/motion/altyazı testleri geçti. Tam paket çalıştırılmadı; gerçek render ile doğrulama sizde.
+
 ## 2026-10-13 (6) — Dönem ve yer uyumu (tüm videolar)
 
 - **Plan, metinden dönemi ve yeri çıkarır** (yapay zekâ gerekmez): örn. “antik Mezopotamya”, “1960'lar ABD”, “günümüz okyanus”. Yıllar (“im Jahr 605 v. Chr.”, “1453 yılında”, “1960'lar”), dönem kelimeleri (antik, Orta Çağ, firavun, şövalye…) ve yer adları (Babil, Fırat, Mısır, New York…) 5 dilde okunur. “1200 Kilometer” gibi sayılar yıl sayılmaz. Plan ekranında ve Medya ekranında “Dönem ve yer: …” görünür. Bir sahne kendi yılını söylüyorsa (geriye dönüş) o sahne kendi dönemine göre denetlenir.

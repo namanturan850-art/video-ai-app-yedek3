@@ -83,7 +83,7 @@ def _validate(spec, narration, entities=(), *, trusted=False):
         value, label = clean(d.get('value'), 24), clean(d.get('label'), 70)
         if not number(value):
             raise MotionError('stat value must be a number from the narration')
-        data = {'value': value, 'label': label}
+        data = {'value': value, 'label': focus(label.rstrip(' …'))}  # at most 5 words under the number
     elif t == 'map':
         place, label = clean(d.get('place'), 60), clean(d.get('label'), 60)
         try:
@@ -97,7 +97,7 @@ def _validate(spec, narration, entities=(), *, trusted=False):
         quote = clean(d.get('text'), 160).strip(' "“”„«»')
         if len(quote.split()) < 2 or not spoken(quote):
             raise MotionError('quote must be an exact narration phrase')
-        data = {'text': quote}
+        data = {'text': focus(quote)}  # every text card: a 2-5 word accent, never the whole sentence
     elif t == 'timeline':
         events = d.get('events')
         if not isinstance(events, list) or not 2 <= len(events) <= 5:
@@ -136,10 +136,23 @@ def _validate(spec, narration, entities=(), *, trusted=False):
 PERCENT = re.compile(r'(?i)\b(prozent|percent|per cent|por ciento|pour cent|pourcent)\b')
 
 
+def focus(text, most=5):
+    """2-5 word accent of a narration phrase (around a number/date, else its opening words)."""
+    from app.rendering.smart_edit import highlight
+    words = ' '.join(str(text or '').split()).rstrip('.!?…').split()
+    return highlight(' '.join(words)) if len(words) > most else ' '.join(words).strip(',;:')
+
+
 def short(sentence, limit=70):
     """At most `limit` characters, cut at a word."""
     if len(sentence) <= limit: return sentence
     return sentence[:limit].rsplit(' ', 1)[0].rstrip(' ,;:') + ' …'
+
+
+def label_words(sentence, value=''):
+    """The stat card's label: at most 5 words of the sentence, the number itself left out."""
+    words = [w for w in ' '.join(sentence.split()).rstrip('.!?…').split() if w.strip(',.;:') != str(value).strip() and not re.fullmatch(r'[\d.,%]+', w)]
+    return focus(' '.join(words))
 
 
 def from_narration(sentence, entities=()):
@@ -165,21 +178,21 @@ def from_narration(sentence, entities=()):
     match = NUMBER.search(sentence)
     if match:
         value = (match.group(1) + match.group(2) + match.group(3)).strip()
-        return {'template': 'stat', 'data': {'value': value, 'label': short(sentence)}, 'emphasis': match.group(2)}
+        return {'template': 'stat', 'data': {'value': value, 'label': label_words(sentence, value)}, 'emphasis': match.group(2)}
     for word in sentence.split():
         found = [n for n in spoken_numbers(word.strip(',.;:')) if n >= 2]
         if found:
             n = max(found)
             percent = PERCENT.search(sentence[sentence.find(word):sentence.find(word) + len(word) + 14]) or 'yüzde ' + word.casefold() in sentence.casefold()
             value = (f'%{n}' if 'yüzde' in sentence.casefold() else f'{n} %') if percent else str(n)
-            return {'template': 'stat', 'data': {'value': value, 'label': short(sentence)}, 'emphasis': word.strip(',.;:')}
+            return {'template': 'stat', 'data': {'value': value, 'label': label_words(sentence, word)}, 'emphasis': word.strip(',.;:')}
     places = spoken_places(sentence) or [p for e in entities for p in spoken_places(str(e)) if in_narration(p[0], sentence)]
     if places:
         name, lat, lon = places[0]
         return {'template': 'map', 'data': {'place': name, 'label': '', 'lat': lat, 'lon': lon}, 'emphasis': name.split()[0]}
-    tokens = sentence.split()
-    text = ' '.join(tokens[:16])
-    emphasis = max(tokens[:16], key=len) if tokens else ''
+    tokens = focus(sentence).split()
+    text = ' '.join(tokens)
+    emphasis = max(tokens, key=len) if tokens else ''
     return {'template': 'quote', 'data': {'text': text}, 'emphasis': emphasis.strip(',.;:')}
 
 
@@ -329,7 +342,7 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         label = d['place'] + (' · ' + d['label'] if d['label'] else '')
         fs = 64 if len(label) < 26 else 52
         width = measure(label, s.head, fs) + 80
-        s.add('rect', s.appear(at + .1, 30, .92), x=cx - width / 2, y=cy + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
+        s.add('rect', s.appear(at + .1, 30), x=cx - width / 2, y=cy + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
         s.text(label, cx, cy + 90 + fs * .8, fs, start=at + .1, dy=30)
         s.sound('rise', at - .9); s.sound('hit', at)
     elif t == 'quote':
@@ -340,7 +353,7 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         hit = next((i for i, w in enumerate(flat) if target and w.casefold().strip(',.;:!?') == target.strip(',.;:!?')), len(flat) - 1)
         step = max(.06, min(.35, (E - .3) / max(1, hit)))
         top = H / 2 - (len(rows) - 1) * fs * .65
-        s.add('text', s.appear(.0, 20, .9), text='“', x=150, y=top - fs * .5, size=fs * 2.4, font=s.head, fill=s.accent, anchor='mm', bold=True, opacity=0)
+        s.add('text', s.appear(.0, 20), text='“', x=150, y=top - fs * .5, size=fs * 2.4, font=s.head, fill=s.accent, anchor='mm', bold=True, opacity=0)
         index = 0
         for r, row in enumerate(rows):
             x = W / 2 - measure(row, s.head, fs) / 2

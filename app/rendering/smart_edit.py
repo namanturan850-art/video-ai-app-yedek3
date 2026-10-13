@@ -44,6 +44,7 @@ def lower_thirds(t):
         text=' '.join(str(slot.get('lower_third') or '').split())[:80]
         if not text or any(ord(c)<32 for c in text):continue
         start=slot['start']+min(.2,slot['duration']/4);end=slot['end']
+        if slot.get('lower_third_seconds'):end=min(end,start+float(slot['lower_third_seconds']))
         if end-start<1.2:continue
         result.append({'scene_id':slot['scene_id'],'slot_id':slot['slot_id'],'text':text,'start':start,'end':end,'style':'lower_third',
                        'source':'lower_third','cue_index':None,'punch_in':False})

@@ -142,7 +142,8 @@ def render_card(path, kind, text):
         from PIL import Image
         image = Image.new('RGB', (W, H))
         draw = _background(image)
-        {'map': _map, 'number': _number, 'quote': _quote}.get(kind, _title)(draw, ' '.join(str(text).split())[:150])
+        from app.motion.templates import focus
+        {'map': _map, 'number': _number, 'quote': _quote}.get(kind, _title)(draw, focus(' '.join(str(text).split())[:150]))  # 2-5 words, never the whole sentence
         image.save(path, 'PNG', optimize=True)
         return 'drawn'
     except Exception:  # Pillow/fonts missing or broken: still produce a valid card

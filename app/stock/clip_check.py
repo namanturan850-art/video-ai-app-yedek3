@@ -55,7 +55,7 @@ class ClipCheck:
                         path.write_bytes(jpeg(data)); paths.append(str(path.resolve()))
                     if paths: candidates.append({'key': key, 'frames': paths})
                 if not candidates: continue
-                result = self.bridge.call('frames', {'descriptor': descriptor[:300], 'candidates': candidates, 'penalties': list(penalties)[:30]}, work)
+                result = self.bridge.call('frames', {'descriptor': descriptor[:300], 'candidates': candidates, 'penalties': list(penalties)[:40]}, work)
                 for item in result.get('results', []):
                     if item.get('verdict') in ('match', 'mismatch', 'uncertain') and isinstance(item.get('score'), int):
                         out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin', 'conflict') if k in item}

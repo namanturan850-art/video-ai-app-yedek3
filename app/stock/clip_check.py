@@ -58,7 +58,7 @@ class ClipCheck:
                 result = self.bridge.call('frames', {'descriptor': descriptor[:300], 'candidates': candidates, 'penalties': list(penalties)[:40]}, work)
                 for item in result.get('results', []):
                     if item.get('verdict') in ('match', 'mismatch', 'uncertain') and isinstance(item.get('score'), int):
-                        out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin', 'conflict') if k in item}
+                        out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin', 'conflict', 'setting_margin', 'setting_closest') if k in item}
             except Exception as error:  # the model failed: this job goes on without it
                 LOG.warning('stock operation=clip_frames category=failed exception_class=%s', type(error).__name__)
                 self.broken = True

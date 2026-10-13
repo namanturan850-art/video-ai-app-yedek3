@@ -1,5 +1,11 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (9) — Medya ekranı: Türkçe cümleler ve kontrol listesi
+
+- **Her yuvada:** o yuvada söylenen cümle, Türkçesi ve [GÖRSEL] notunun Türkçesi. Çeviri video başına **tek** yapay zekâ isteğiyle yapılır ve proje klasörüne kaydedilir (`translations_tr.json`); sonraki işler istek göndermez. Yapay zekâ yoksa / cevap vermezse (en çok 60 sn) çeviri boş kalır, iş sürer. Türkçe videoda istek gönderilmez.
+- **En üstte “Kontrol edilmesi gerekenler”:** CLIP puanı 7'nin altında, yalnız etiket/kelime eşleşmesiyle seçilmiş veya dönem/yer kontrolünde sınıra yakın (CLIP'e göre en yakın uygunsuz öğe, açıklamadan en çok 0,01 geride) yuvalar. Her birinde önizleme, Türkçe cümle ve tek tıkla “Yeniden seç”. Liste boşsa “Kontrol gerekmiyor”. Liste Medyayı Tamamla bitince güncellenir.
+- **Testler:** `tests/test_media_review_help.py` (3 test) ve ilgili medya testleri geçti; `test_fast_media` testi çeviri isteğine göre güncellendi (resim isteği yok, en çok 1 çeviri isteği). Tam paket çalıştırılmadı. “Sınıra yakın” eşiği gerçek CLIP ile doğrulanmadı.
+
 ## 2026-10-13 (8) — Düzeltme: #59 sonrası video değişmiyordu
 
 - **Neden:** (1) kurgu planı her yeni render'da zaten yeniden kuruluyor, ama “akıllı kurgu” kartları (büyük sayı, bilgi kartı, alıntı) metni altyazıdan tam cümle olarak alıyordu ve alıntı kutusu %85 opaktı; (2) önceki işte dönem/yer kontrolünden geçmiş yuvalar “kontrol edildi” işaretiyle atlanıyordu, Terracotta kuralı sonradan eklenince yeniden bakılmadı; (3) ilk sahnedeki eski motion kartları korunuyordu; (4) kayıtlı motion kartları eski tam cümle verisiyle yeniden çiziliyordu.

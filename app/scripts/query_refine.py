@@ -85,7 +85,6 @@ def refine(blocks, language='de', topic=''):
     from app.scripts.query_clean import clean_block
     for block in blocks:  # stock sites are tagged in English: no German/Turkish word, number or “v. Chr.” in a search
         clean_block(block, language, topic=topic)
-    suggest_infographics(blocks, language)
     return blocks
 
 

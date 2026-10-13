@@ -674,6 +674,8 @@ class ProductionService:
         if markers:  # the owner's [GÖRSEL]/[HARİTA]/[SAYI] notes win over the AI's queries
             from app.scripts.paste import apply_markers
             blocks=apply_markers(blocks,markers(project_id,current['id']),language)
+        from app.scripts.query_refine import suggest_infographics
+        blocks=suggest_infographics(blocks,language)  # after the markers: they count toward the 25% share
         image_config = self.scripts.settings.image_config()
         plan = {'version_id': current['id'], 'source_script_version':current['version'], 'language': language,
                 'provider':provider,'model':model,'status':'ready','width': image_config['width'], 'height': image_config['height'], 'blocks': deepcopy(blocks),

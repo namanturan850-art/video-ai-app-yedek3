@@ -484,7 +484,7 @@ def test_claude_outage_continues_locally_and_next_press_rechecks(tmp_path, monke
         job = view['job']
         assert job['status'] == 'completed' and view['media_summary']['missing'] == 0, job  # never stops
         assert 'Claude şu anda yanıt vermiyor' in job['progress']['message'] and 'Medya seçimi durmadı' in job['progress']['message']
-        assert client.app.state.stock.slept  # temporary error: waited and retried before going local
+        assert not client.app.state.stock.__dict__.get('slept')  # a connection failure is not waited out: the job goes on locally at once
         assert ai_never_blamed(view)
         assert local_slots(view) and all(s['needs_ai_review'] for s in local_slots(view))  # “yapay zekâ onayı yok”
         fake.responder = healthy
@@ -533,7 +533,7 @@ def test_gemini_minute_limit_that_does_not_clear_goes_local_after_short_waits(tm
         view = complete(client, pid)
         assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
         assert 'kota/hız sınırına takıldı' in view['job']['progress']['message']
-        assert len(client.app.state.stock.slept) == 3 and ai_never_blamed(view)
+        assert len(client.app.state.stock.slept) == 2 and ai_never_blamed(view)  # two short waits (60 s budget), then local
     finally:
         client.__exit__(None, None, None)
 

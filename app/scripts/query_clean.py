@@ -204,7 +204,7 @@ def english_query(query, language='de', *, strict=False, limit=5):
             value = translate(word, language) or place_english(word)
             if value: out.append(value)
             continue
-        if not foreign(word) and len(low) >= 2: out.append(low)
+        if not foreign(word) and len(low) >= 2: out.append(word.strip("’'-.,;:!?()\"“”„«»"))  # English words stay as written
     seen, result = set(), []
     for part in ' '.join(out).split():
         key = part.casefold()

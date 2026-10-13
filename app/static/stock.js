@@ -19,6 +19,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   controls.append(download);
   const summaryLine=node('p','','provider-status');summaryLine.id='stock-summary';section.insertBefore(summaryLine,controls);
   const clipNote=node('p','','note stock-clip-warning');clipNote.id='stock-clip-warning';clipNote.hidden=true;section.insertBefore(clipNote,controls);
+  const settingNote=node('p','','note stock-setting');settingNote.id='stock-setting';settingNote.hidden=true;section.insertBefore(settingNote,controls);
   const stamp=()=>({plan_id:state.plan_id,revision:state.revision});
   async function request(url,method='GET',body){
     let response;
@@ -150,6 +151,8 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     }
     summaryLine.textContent=state?.media_summary?.text||'';
     const clipWarning=state?.job?.progress?.clip_warning;clipNote.hidden=!clipWarning;clipNote.textContent=clipWarning?'ℹ '+clipWarning:'';
+    const where=state?.job?.progress?.setting,dropped=state?.job?.progress?.setting_rejected||{},redo=state?.job?.progress?.setting_reselected||0;settingNote.hidden=!where?.label;
+    settingNote.textContent=where?.label?`Dönem ve yer: ${where.label} · bu döneme/yere uymayan görüntüler elenir${dropped.anachronism?` · dönemle çelişen ${dropped.anachronism}`:''}${dropped.place?` · yanlış coğrafya ${dropped.place}`:''}${dropped.style?` · karikatür/3D ${dropped.style}`:''}${redo?` · önceki ${redo} seçim yenilendi`:''}`:'';
     recovery.replaceChildren();const diag=state?.missing_media_diagnostics;if(diag?.unresolved_raw_slots){for(const d of diag.reasons||[])recovery.append(node('p',`${d.count} eksik yuva: ${d.message}`));}
     const counts=state?.media_mix;mix.replaceChildren();if(counts){mix.append(node('summary','Ayrıntılı sayılar'),node('p',`Yapay zekâ isteği: son işte ${state.ai_requests?.last_job??0}, bu projede toplam ${state.ai_requests?.total??0}${state.ai_requests?.cached?` (önbellekten ${state.ai_requests.cached} karar)`:''} · Stok video oranı %${counts.video_ratio_percent} · Motion grafik oranı %${counts.motion_ratio_percent??0} · Ortalama çekim ${counts.average_used_duration} sn · En uzun ${counts.maximum_used_duration} sn · Farklı medya ${counts.unique_media_count}${state.selection_version?' · Seçim sürümü '+state.selection_version:''}`,'note'));}mix.hidden=!counts;
     while(recent.children.length>1)recent.lastChild.remove();for(const d of state?.job?.progress?.search_diagnostics||[])recent.append(node('p',`${d.query} · ${d.summary}`));recent.hidden=recent.children.length===1;

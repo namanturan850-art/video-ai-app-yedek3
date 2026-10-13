@@ -5,10 +5,14 @@ start/middle/end preview frames with an English description of the
 sentence (+ the owner's [GÖRSEL] note). No internet, no AI quota.
 
 score() returns per candidate key {'verdict': match|mismatch|uncertain,
-'score': 0-10, 'similarity', 'contrast_margin'}; {} when the model is not
-installed or fails (the job then goes on with the other checks)."""
+'score': 0-10, 'similarity', 'contrast_margin'[, 'conflict']}; {} when the
+model is not installed or fails (the job then goes on with the other checks).
+`penalties` (app/stock/setting.py) are things that contradict the video's
+period/place; a candidate that resembles one more than its own description
+comes back as a mismatch with 'conflict': {'kind', 'label', …}."""
 from io import BytesIO
 import logging
+import inspect
 import shutil
 from uuid import uuid4
 
@@ -31,10 +35,12 @@ class ClipCheck:
         except Exception:
             return False
 
-    def score(self, descriptor, items, folder):
+    def score(self, descriptor, items, folder, penalties=()):
         if not items or not self.ready(): return {}
         if self.fake is not None:
-            try: return dict(self.fake(descriptor, items))
+            try:
+                takes = 'penalties' in inspect.signature(self.fake).parameters
+                return dict(self.fake(descriptor, items, penalties=list(penalties)) if takes else self.fake(descriptor, items))
             except Exception: self.broken = True; return {}
         out = {}
         for start in range(0, len(items), BATCH):
@@ -49,10 +55,10 @@ class ClipCheck:
                         path.write_bytes(jpeg(data)); paths.append(str(path.resolve()))
                     if paths: candidates.append({'key': key, 'frames': paths})
                 if not candidates: continue
-                result = self.bridge.call('frames', {'descriptor': descriptor[:300], 'candidates': candidates}, work)
+                result = self.bridge.call('frames', {'descriptor': descriptor[:300], 'candidates': candidates, 'penalties': list(penalties)[:30]}, work)
                 for item in result.get('results', []):
                     if item.get('verdict') in ('match', 'mismatch', 'uncertain') and isinstance(item.get('score'), int):
-                        out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin') if k in item}
+                        out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin', 'conflict') if k in item}
             except Exception as error:  # the model failed: this job goes on without it
                 LOG.warning('stock operation=clip_frames category=failed exception_class=%s', type(error).__name__)
                 self.broken = True

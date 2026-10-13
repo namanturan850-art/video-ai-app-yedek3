@@ -124,7 +124,7 @@ class Bridge:
                 checked=subprocess.run(args,cwd=folder,shell=False,env=env,stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180 if operation=='visual' else 120)
                 if checked.returncode:raise ValueError()
-            else:(runner or ProcessRunner()).run(args,folder,progress,phase='openmontage',env=env)
+            else:(runner or ProcessRunner()).run(args,folder,callback=progress,phase='openmontage',env=env)
             if linked(response) or response.stat().st_size>2_000_000:raise ValueError()
             result=json.loads(response.read_text(encoding='utf-8'));self.settings_guard(result)
             if result.get('success') is not True:raise ValueError()

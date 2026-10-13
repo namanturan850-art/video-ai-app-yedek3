@@ -167,3 +167,30 @@ def test_earlier_picks_are_checked_once_and_conflicts_chosen_again(tmp_path, mon
         assert third['job']['status'] == 'completed' and 'setting_reselected' not in third['job']['progress']  # checked once, remembered
     finally:
         client.__exit__(None, None, None)
+
+
+def test_other_civilisations_works_are_wrong_places_even_for_an_army_sentence():
+    assyria = S.infer(['Die Assyrer zogen von Ninive aus mit ihrem Heer, 700 v. Chr.'])
+    texts = {p['text'] for p in S.penalties(assyria, 'a photo of assyrian army soldiers, ancient Mesopotamia')}
+    for wanted in ('the Terracotta Army clay soldier statues in China', 'moai stone head statues on Easter Island', 'the pyramids of Giza in Egypt'):
+        assert wanted in texts
+    for tags in (' terracotta warriors army ', ' moai easter island ', ' pyramid desert egypt '):
+        assert S.tag_conflict(assyria, tags, 'pixabay')[0] == 'place'
+    assert S.tag_conflict(assyria, ' ziggurat pyramid ruins ', 'pixabay') is None  # a ziggurat tagged “pyramid” stays
+
+
+def test_text_cards_show_two_to_five_words():
+    from app.motion.templates import from_narration, validate
+    sentence = 'Die Mauern der Stadt waren so gewaltig, dass die Feinde jahrelang vor ihnen lagerten'
+    quote = validate({'template': 'quote', 'data': {'text': sentence}, 'emphasis': ''}, sentence)
+    assert 2 <= len(quote['data']['text'].split()) <= 5
+    stat = from_narration('Im Jahr 701 belagerten 185000 Soldaten die Stadt Jerusalem mit großer Macht')
+    assert stat['template'] in ('stat', 'timeline', 'map') and len(stat['data'].get('label', '').split()) <= 5
+    assert len(from_narration('Die Händler brachten Stoffe Gewürze und Wein aus fernen Ländern')['data']['text'].split()) <= 5
+
+
+def test_opening_band_lasts_at_most_four_seconds():
+    from app.rendering.smart_edit import lower_thirds
+    t = {'slots': [{'scene_id': 's1', 'slot_id': 'a', 'start': 0., 'end': 8., 'duration': 8., 'lower_third': '185000 Soldaten', 'lower_third_seconds': 4}]}
+    band = lower_thirds(t)[0]
+    assert band['end'] - band['start'] <= 4.0001

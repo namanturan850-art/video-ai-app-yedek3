@@ -106,7 +106,7 @@ def setting_penalties(raw,descriptor):
     against “a photo of <subject>” leaves only the look to decide."""
     subject=re.sub(r'^(a|an)\s+(documentary\s+)?photo\s+of\s+','',descriptor,flags=re.I).strip() or 'a scene'
     out=[]
-    for item in (raw or [])[:30]:
+    for item in (raw or [])[:40]:
         if not isinstance(item,dict) or not isinstance(item.get('text'),str) or item.get('kind') not in ('anachronism','style','place'):continue
         text=item['text'].replace('{subject}',subject)[:200]
         out.append({'kind':item['kind'],'text':text,'label':str(item.get('label',''))[:60]})

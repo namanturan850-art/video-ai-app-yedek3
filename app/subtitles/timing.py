@@ -180,6 +180,8 @@ def project_slots(scenes, slots):
                            **({'continuation_of':slot['continuation_of']} if slot.get('continuation_of') else {}),
                            **({'segment_start':slot['segment_start']} if slot.get('segment_start') is not None else {}),
                            # Text shown as a band over the continuing video instead of a full-screen card.
-                           **({'lower_third':slot['lower_third']} if slot.get('continuation_of') and isinstance(slot.get('lower_third'),str) and slot['lower_third'].strip() else {})})
+                           # Opening scene: the card's 2-5 words over moving footage, at most 4 s.
+                           **({'lower_third':slot['lower_third']} if (slot.get('continuation_of') or slot.get('lower_third_seconds')) and isinstance(slot.get('lower_third'),str) and slot['lower_third'].strip() else {}),
+                           **({'lower_third_seconds':float(slot['lower_third_seconds'])} if isinstance(slot.get('lower_third_seconds'),(int,float)) and slot['lower_third_seconds']>0 else {})})
             cursor=end
     return result

@@ -350,7 +350,7 @@ def build_extra(s, spec, language='de'):
         s.add('pin', {'dy': [[at - .4, -160], [at, 0]], 'opacity': [[at - .4, 0], [at - .25, 1]]}, x=W / 2, y=H / 2, size=46, fill=s.accent, hole=s.bg, opacity=0, dy=-160)
         fs = 60 if len(d['place']) < 24 else 48
         width = measure(d['place'], s.head, fs) + 80
-        s.add('rect', s.appear(at + .1, 30, .92), x=W / 2 - width / 2, y=H / 2 + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
+        s.add('rect', s.appear(at + .1, 30), x=W / 2 - width / 2, y=H / 2 + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
         s.text(d['place'], W / 2, H / 2 + 90 + fs * .8, fs, start=at + .1, dy=30)
         s.sound('whoosh', .3); s.sound('hit', at)
     elif t == 'mark':
@@ -367,7 +367,7 @@ def build_extra(s, spec, language='de'):
         lx = min(max(cx, width / 2 + 40), W - width / 2 - 40)
         s.add('arrow', {'progress': [[E + .3, 0], [E + .7, 1]], 'opacity': [[E + .3, 0], [E + .35, 1]]}, x1=lx, y1=ly + (-fs if below else fs),
               x2=cx, y2=cy + (r * .8 + 14 if below else -r * .8 - 14), stroke=s.accent, width=8, opacity=0)
-        s.add('rect', s.appear(E + .2, 20, .92), x=lx - width / 2, y=ly - fs * .8, w=width, h=fs * 1.6, fill=mix(s.bg, '#000000', .3), radius=16, opacity=0)
+        s.add('rect', s.appear(E + .2, 20), x=lx - width / 2, y=ly - fs * .8, w=width, h=fs * 1.6, fill=mix(s.bg, '#000000', .3), radius=16, opacity=0)
         s.text(rows[0], lx, ly, fs, start=E + .2, dy=20)
         s.sound('click', E)
     elif t == 'beforeafter':

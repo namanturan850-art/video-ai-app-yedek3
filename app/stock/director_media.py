@@ -68,6 +68,7 @@ SIMILAR_FRAMING = 6     # dHash bits: closer than this to the previous shot of t
 # Never-wanted signs in provider metadata (checked before the AI look).
 RED_FLAGS = {'watermark', 'watermarked', 'logo', 'logos', 'subscribe', 'intro', 'outro', 'template', 'lower third', 'green screen', 'chroma key'}
 MERGE_SECONDS = 1.5
+OPENING_CARD = 4        # first scene: a card's words show at most this long, over moving footage
 WAIT_BUDGET = 60        # seconds of rate-limit pauses per job; then the job continues with local scoring
 FIRST_ANSWER_SECONDS = 60  # no AI answer at all within this time → the whole job continues locally
 REQUEST_SECONDS = 60    # later: one request may take this long, then that look is skipped
@@ -1125,6 +1126,8 @@ class MediaDirector:
         from app.motion.clips import render_clip, media_record
         from app.motion.layouts import pick
         spec = spec or self.motion_spec(slot, scene)
+        if stage in ('motion', 'motion_planned') and self.opening_overlay(slot, scene, log, spec):
+            return True
         marker = json.dumps({k: v for k, v in spec.items() if k != 'layout'}, sort_keys=True)
         if stage == 'motion' and marker in self.card_texts and self.continue_card(slot, marker, log):
             return True
@@ -1155,6 +1158,28 @@ class MediaDirector:
                              'because': 'no_approved_stock' if stage == 'motion' else stage})
         return True
 
+    def opening_overlay(self, slot, scene, log, spec):
+        """Opening scene: no full-screen card longer than OPENING_CARD seconds.
+        The slot gets moving footage (stock, the neighbouring take or neutral
+        footage of the setting) and the card's 2-5 words as a band over it for
+        at most OPENING_CARD seconds. False: nothing moving found (normal card)."""
+        if not self.scene_order or scene.get('scene_id') != self.scene_order[0] or used_seconds(slot) <= OPENING_CARD:
+            return False
+        from app.motion.templates import focus
+        data = spec.get('data') or {}
+        text = focus(' '.join(x for x in (str(data.get('value') or ''), str(data.get('label') or data.get('text') or data.get('place') or '')) if x))
+        if not text: return False
+        planned = list(dict.fromkeys(q for q in [slot.get('search_query'), *slot.get('fallback_queries', []), scene.get('primary_stock_query'),
+                                                 *scene.get('alternative_stock_queries', [])] if q))[:4]
+        slot.setdefault('relevance_profile', relevance.profile(scene, slot))
+        tried = any(step.get('stage') == 'stock_video' for step in log['steps'])  # a planned graphic: stock was not searched yet
+        chosen = bool(planned) and not tried and self.try_step(slot, scene, 'stock_video', ['video'], planned, log, set())
+        chosen = chosen or self.merge(slot, log, limit=60.0) or self.neutral(slot, scene, log, set())
+        if not chosen: return False
+        slot['lower_third'], slot['lower_third_seconds'] = text, OPENING_CARD
+        slot['message'] = f'Açılış: hareketli görüntü üstünde “{text}” ({OPENING_CARD:g} sn; tam ekran kart yerine).'
+        return True
+
     def card(self, slot, scene, log):
         kind, text = card_spec(slot, scene, self.card_texts)
         if text in self.card_texts and self.continue_card(slot, text, log):
@@ -1183,6 +1208,7 @@ class MediaDirector:
     # ---- per slot ----------------------------------------------------------
     def fill(self, slot, scene, exclude=frozenset(), *, keep_if_only_card=False):
         slot.pop('lower_third', None)  # belongs to the media chosen below
+        slot.pop('lower_third_seconds', None)
         slot['relevance_profile'] = relevance.profile(scene, slot)
         # Slots of one scene share the AI's verdicts and rewritten queries.
         memo = self.memo.setdefault(slot['scene_id'], {'judged': {}})
@@ -1380,7 +1406,8 @@ class MediaDirector:
                 targets.append((slot, 'motion_owner'))
                 continue
             planned = scenes[slot['scene_id']].get('motion_spec') if not any(h.get('type') in INFOGRAPHIC for h in scenes[slot['scene_id']].get('owner_hints') or []) else None
-            if not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and (
+            if not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and not (
+                    slot.get('lower_third_seconds') and self.valid(slot)) and (
                     not self.valid(slot) or not is_generated(media) and not (slot.get('ai_review') or {}).get('approved')
                     or is_generated(media) and ((media.get('source_metadata') or {}).get('planned') or (media.get('source_metadata') or {}).get('motion')) != planned
                     and not slot.get('motion_edited')):

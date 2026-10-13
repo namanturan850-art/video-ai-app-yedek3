@@ -64,7 +64,7 @@ REGIONS = {
     'anatolia': (r'anatoli\w*|anadolu\w*|troja|troy|truva|hattusa|istanbul|konstantinopel|constantinople|kleinasien|asia minor',
                  'Anatolia', 'Anadolu', 'near_east', ('the Hagia Sophia in Istanbul',), ('hagia', 'sophia', 'istanbul'), ('steppe hills landscape', 'old stone wall texture')),
     'egypt': (r'ägypt\w*|egypt\w*|mısır\w*|égypt\w*|egipt\w*|pharao\w*|pharaoh\w*|firavun\w*|nil|nile|giza|gize|kairo|cairo|kahire|luxor|karnak|sphinx|sfenks',
-              'Egypt', 'Mısır', 'egypt', ('the pyramids of Giza in Egypt', 'the Great Sphinx of Giza'), ('giza', 'sphinx', 'egypt', 'egyptian', 'pharaoh', 'cairo'),
+              'Egypt', 'Mısır', 'egypt', ('the pyramids of Giza in Egypt', 'the Great Sphinx of Giza', 'an Egyptian pharaoh statue with hieroglyphs'), ('giza', 'sphinx', 'egypt', 'egyptian', 'pharaoh', 'cairo', 'pyramid', 'hieroglyph', 'tutankhamun'),
               ('desert sand dunes', 'nile river sunset', 'sandstone texture')),
     'greece': (r'griech\w*|greece|greek|yunan\w*|grec\w*|athen\w*|athens|atina|sparta\w*|parthenon|akropolis|acropolis|mykene|mycenae|kreta|crete|girit',
                'Greece', 'Yunanistan', 'mediterranean', ('the Parthenon temple in Athens',), ('parthenon', 'acropolis', 'athens', 'santorini'),
@@ -72,16 +72,16 @@ REGIONS = {
     'rome': (r'rom|rome|roma|römer\w*|römisch\w*|roman\w*|romain\w*|romano\w*|kolosseum|colosseum|kolezyum|caesar|cäsar|sezar|pompeji|pompeii',
              'Rome', 'Roma', 'mediterranean', ('the Colosseum in Rome',), ('colosseum', 'coliseum', 'vatican'), ('italian countryside hills', 'old stone texture')),
     'mesoamerica': (r'maya\w*|azte[kc]\w*|tenochtitlan|teotihuacan|mexik\w*|mexico|meksika\w*|olme[kc]\w*',
-                    'Mesoamerica', 'Orta Amerika', 'americas', ('a Mayan step pyramid in the jungle',), ('mayan', 'maya', 'aztec', 'chichen', 'teotihuacan', 'tikal'),
+                    'Mesoamerica', 'Orta Amerika', 'americas', ('a Mayan step pyramid in the jungle', 'an Aztec stone calendar carving'), ('mayan', 'maya', 'aztec', 'chichen', 'teotihuacan', 'tikal'),
                     ('tropical jungle canopy', 'misty rainforest')),
     'andes': (r'inka\w*|inca\w*|peru\w*|machu picchu|anden|andes|and dağları',
-              'the Andes', 'And Dağları', 'americas', ('Machu Picchu in the Andes mountains',), ('machu', 'picchu', 'inca', 'inka', 'peru'),
+              'the Andes', 'And Dağları', 'americas', ('Machu Picchu in the Andes mountains',), ('machu', 'picchu', 'inca', 'inka', 'peru', 'llama'),
               ('andes mountains clouds', 'mountain valley mist')),
     'china': (r'china|chines\w*|chinois\w*|çin|çinli\w*|peking|beijing|pekin|han-dynastie|han dynasty|ming|qin|große mauer|great wall',
-              'China', 'Çin', 'east_asia', ('the Great Wall of China', 'a Chinese pagoda'), ('china', 'chinese', 'pagoda', 'beijing', 'shanghai'),
+              'China', 'Çin', 'east_asia', ('the Great Wall of China', 'the Terracotta Army clay soldier statues in China', 'a Chinese pagoda'), ('china', 'chinese', 'pagoda', 'beijing', 'shanghai', 'terracotta', 'xian'),
               ('misty mountains', 'bamboo forest')),
     'japan': (r'japan\w*|japon\w*|samurai\w*|tokio|tokyo|kyoto|shogun\w*|şogun\w*',
-              'Japan', 'Japonya', 'east_asia', ('a Japanese shrine with a red torii gate',), ('japan', 'japanese', 'torii', 'tokyo', 'kyoto', 'fuji'),
+              'Japan', 'Japonya', 'east_asia', ('a Japanese shrine with a red torii gate', 'a Japanese samurai in armor'), ('japan', 'japanese', 'torii', 'tokyo', 'kyoto', 'fuji', 'samurai'),
               ('cherry blossom trees', 'misty mountains')),
     'india': (r'indien|india\w*|hindistan\w*|inde|hindu\w*|ganges|ganj|mogul\w*|mughal\w*|babür\w*|indus',
               'India', 'Hindistan', 'south_asia', ('the Taj Mahal in India', 'a Hindu temple in India'), ('taj', 'mahal', 'india', 'indian', 'hindu', 'varanasi'),
@@ -89,7 +89,7 @@ REGIONS = {
     'cambodia': (r'angkor|khmer|kambodscha|cambodia|kamboçya',
                  'Cambodia', 'Kamboçya', 'south_asia', ('the Angkor Wat temple in Cambodia',), ('angkor', 'cambodia'), ('tropical jungle canopy',)),
     'easter_island': (r'osterinsel|easter island|paskalya adası|rapa nui|île de pâques|isla de pascua|moai',
-                      'Easter Island', 'Paskalya Adası', 'pacific', ('moai stone head statues on Easter Island',), ('moai', 'easter', 'rapa', 'nui'),
+                      'Easter Island', 'Paskalya Adası', 'pacific', ('moai stone head statues on Easter Island',), ('moai', 'easter', 'rapa', 'nui', 'polynesian'),
                       ('volcanic coast grass', 'pacific ocean waves')),
     'britain': (r'stonehenge|britann\w*|britain|british|england|englisch\w*|english|ingiltere|ingiliz\w*|london|londra|schottland|scotland|iskoçya',
                 'Britain', 'Britanya', 'europe_north', ('Stonehenge stone circle',), ('stonehenge',), ('green hills fog', 'rainy moor landscape')),
@@ -243,13 +243,13 @@ def penalties(setting, descriptor=''):
         families = {REGIONS[r][3] for r in allowed}
         for region, (_, name, name_tr, family, prompts, _, _) in REGIONS.items():
             if region in allowed or family in families: continue
-            for text in prompts[:1]:
-                if not (_words(text) & own - {'temple', 'stone', 'statues', 'statue', 'ruins'}):
-                    out.append({'kind': 'place', 'text': text, 'label': name_tr})
+            if own & set(REGIONS[region][5]): continue  # the shot itself names this place (“terracotta” in the description)
+            for text in prompts:  # every distinctive work of another civilisation (Terracotta Army, moai, Giza pyramids …)
+                out.append({'kind': 'place', 'text': text, 'label': name_tr})
     seen, unique = set(), []
     for item in out:
         if item['text'] not in seen: seen.add(item['text']); unique.append(item)
-    return unique[:30]
+    return unique[:40]
 
 
 def tag_conflict(setting, tags, provider=''):
@@ -271,6 +271,7 @@ def tag_conflict(setting, tags, provider=''):
         families = {REGIONS[r][3] for r in allowed}
         for region, (_, _, name_tr, family, _, words, _) in REGIONS.items():
             if region in allowed or family in families: continue
+            if region == 'egypt' and (has('ziggurat') or has('zikkurat')) and not has('giza') and not has('egypt'): continue  # a ziggurat is often tagged “pyramid”
             if any(has(w) for w in words): return 'place', name_tr
     return None
 

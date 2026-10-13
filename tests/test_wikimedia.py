@@ -143,7 +143,7 @@ def test_commons_in_medyayi_tamamla_same_relevance_check_and_youtube_sources(tmp
             assert m['media_type'] == 'image' and m['creator_name'] == 'Ann Example'
         # YouTube description: “Görsel kaynakları” (Bildquellen) with title, author, licence and link.
         credits = client.app.state.youtube.credits(pid)
-        sources = [c for c in credits if c.get('license')]
+        sources = [c for c in credits if c.get('license') and c['provider'] == 'Wikimedia Commons']  # (a map infographic adds a GeoNames line)
         assert sources and all(c['url'].startswith('https://commons.wikimedia.org/wiki/File:') for c in sources)
         text = YouTubeService.description({'hook': 'Hook', 'summary': 'Summary', 'credits': credits}, 'de')
         assert 'Bildquellen:' in text and 'Ann Example, CC BY-SA 4.0 (Wikimedia Commons) https://commons.wikimedia.org/wiki/File:' in text

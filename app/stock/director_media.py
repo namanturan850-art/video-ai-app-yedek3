@@ -901,7 +901,9 @@ class MediaDirector:
             slot['warnings'].append('Aynı uzun klibin başka bir bölümü kullanılıyor (çakışma yok).')
         log['steps'][-1]['result'] = 'chosen'
         where = self.where(self.scene_by_id.get(slot['scene_id'], {}) if hasattr(self, 'scene_by_id') else {})
-        if where.get('label'): slot['setting_check'] = {'label': where['label'], 'clip': bool(verdict.get('clip'))}
+        if where.get('label'):
+            from app.stock.setting import rules_version
+            slot['setting_check'] = {'label': where['label'], 'clip': bool(verdict.get('clip')), 'rules': rules_version()}
         self.scene_last[slot['scene_id']] = media  # next shot of this scene: same mood, different framing
         return saved
 
@@ -1157,6 +1159,15 @@ class MediaDirector:
         log['steps'].append({'stage': stage, 'label': STAGES[stage], 'result': 'chosen', 'template': spec['template'], 'engine': engine,
                              'because': 'no_approved_stock' if stage == 'motion' else stage})
         return True
+
+    def opening_card(self, slot, media):
+        """A drawn card (not the owner's marker, intro/outro or own edit) filling
+        more than OPENING_CARD seconds of the first scene."""
+        meta = (media or {}).get('source_metadata') or {}
+        spec = meta.get('motion') or {}
+        return (bool(self.scene_order) and slot['scene_id'] == self.scene_order[0] and used_seconds(slot) > OPENING_CARD
+                and not slot.get('locked') and not slot.get('motion_edited') and not meta.get('owner_hint') and slot['slot_id'] not in self.owner
+                and spec.get('template') not in ('intro', 'outro') and (spec.get('template') in ('stat', 'quote', 'timeline', 'map') or meta.get('card_kind')))
 
     def opening_overlay(self, slot, scene, log, spec):
         """Opening scene: no full-screen card longer than OPENING_CARD seconds.
@@ -1426,6 +1437,7 @@ class MediaDirector:
             if single or slot['locked']: continue
             if is_generated(media):
                 if UNREACHABLE in slot.get('message', ''): targets.append((slot, 'retry_card'))
+                elif self.opening_card(slot, media): targets.append((slot, 'opening'))  # an older long full-screen card in the first scene
             elif (slot.get('local_review') or {}).get('method') == 'clip' and self.local:
                 pass  # the local picture model approved it and Gemini's look is off: nothing to re-check
             elif not (slot.get('ai_review') or {}).get('approved') or (slot['ai_review'].get('score') or 0) < APPROVE_SCORE:
@@ -1540,6 +1552,15 @@ class MediaDirector:
             log2 = self.fill(slot, scene, exclude={key(media)})
             log2['previous_rejected'] = verdict
             return log2
+        if why == 'opening':
+            backup, old = deepcopy(slot), slot.get('selected_media')
+            log = {'steps': [], 'searches': [], 'judged': {}, 'rejected': {}}
+            self._release(slot)
+            slot['relevance_profile'] = relevance.profile(scene, slot)
+            if not self.opening_overlay(slot, scene, log, (old.get('source_metadata') or {}).get('motion') or {}):
+                slot.clear(); slot.update(backup)  # nothing moving found: the card stays
+                self.register(slot['slot_id'], old, 0., used_seconds(slot))
+            return log
         if why in ('reselect', 'setting'):
             old = slot.get('selected_media')
             exclude = {key(old)} if old and not is_generated(old) else set()
@@ -1554,8 +1575,8 @@ class MediaDirector:
         video's period/place (tags, and CLIP when installed); a clear conflict
         (modern shop in an ancient topic, Easter Island in a Babylon video,
         cartoon/3D in a history documentary) is chosen again."""
-        from app.stock.setting import penalties, tag_conflict
-        out, groups = [], {}
+        from app.stock.setting import penalties, rules_version, tag_conflict
+        out, groups, rules = [], {}, rules_version()
         clip = bool(self.clip and self.clip.ready())
         for slot in self.slots:
             media = slot.get('selected_media')
@@ -1564,7 +1585,8 @@ class MediaDirector:
                 continue
             where = self.where(self.scene_by_id.get(slot['scene_id'], {}))
             done = slot.get('setting_check') or {}
-            if not where.get('label') or (isinstance(done, dict) and done.get('label') == where['label'] and (done.get('clip') or not clip)): continue
+            if not where.get('label') or (isinstance(done, dict) and done.get('label') == where['label'] and done.get('rules') == rules
+                                          and (done.get('clip') or not clip)): continue
             tags = ' ' + relevance.normalized(f'{media.get("description", "")} {media.get("query_used", "")}') + ' '
             conflict = tag_conflict(where, tags, media.get('provider', ''))
             if conflict:
@@ -1596,10 +1618,10 @@ class MediaDirector:
                             self.setting_rejected(slot['selected_media'], result['conflict'])
                             out.append((slot, 'setting'))
                         else:
-                            slot['setting_check'] = {'label': label, 'clip': True}
+                            slot['setting_check'] = {'label': label, 'clip': True, 'rules': rules}
         else:
             for where, slots in groups.values():
-                for slot in slots: slot['setting_check'] = {'label': where['label'], 'clip': False}
+                for slot in slots: slot['setting_check'] = {'label': where['label'], 'clip': False, 'rules': rules}
         if out: self.progress['setting_reselected'] = len(out)
         return out
 

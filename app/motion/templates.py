@@ -308,6 +308,9 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
     E, D, md = s.E, s.D, s.md
     s.add('rect', x=0, y=0, w=W, h=H, fill=s.bg, opacity=1)
     t, d = spec['template'], spec['data']
+    # Saved older specs may still carry a whole sentence: drawn as a 2-5 word accent.
+    if t == 'quote' and d.get('text'): d = {**d, 'text': focus(d['text'])}
+    if t == 'stat' and d.get('label'): d = {**d, 'label': focus(str(d['label']).rstrip(' …'))}
     if t in TEMPLATES_EXTRA:
         from app.motion.templates_extra import build_extra
         return build_extra(s, spec, language).result()

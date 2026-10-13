@@ -1,5 +1,12 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (8) — Düzeltme: #59 sonrası video değişmiyordu
+
+- **Neden:** (1) kurgu planı her yeni render'da zaten yeniden kuruluyor, ama “akıllı kurgu” kartları (büyük sayı, bilgi kartı, alıntı) metni altyazıdan tam cümle olarak alıyordu ve alıntı kutusu %85 opaktı; (2) önceki işte dönem/yer kontrolünden geçmiş yuvalar “kontrol edildi” işaretiyle atlanıyordu, Terracotta kuralı sonradan eklenince yeniden bakılmadı; (3) ilk sahnedeki eski motion kartları korunuyordu; (4) kayıtlı motion kartları eski tam cümle verisiyle yeniden çiziliyordu.
+- **Düzeltme:** kurgu kartlarının tümü (sayı kartı alt yazısı dahil) 2–5 kelime, kutular tam opak. Dönem/yer kurallarının bir sürüm parmak izi var; kurallar değişince Medyayı Tamamla eski seçimleri (stok, kart arkasındaki görüntüler) yeniden denetler. İlk sahnede 4 sn'den uzun eski kartlar hareketli görüntü + en çok 4 sn alt banda çevrilir. Motion motoru `motion-v3`: tüm kartlar render başında kısa metinle yeniden çizilir.
+- **Ne yapmalısınız:** aynı projede önce **Medyayı Tamamla**, sonra **Video oluştur**. Eski videolar “Eski kaynaklara ait” görünür.
+- **Testler:** `test_setting_check.py` (2 yeni), medya testleri geçti; render testleri bu makinede FFmpeg nedeniyle önceden de başarısız. Tam paket çalıştırılmadı.
+
 ## 2026-10-13 (7) — Başka medeniyet eserleri, kısa yazı kartları, açılış kartı
 
 - **Yer kontrolü genişledi:** videoda geçmeyen medeniyetlerin belirgin eserleri (Çin Terracotta askerleri, Paskalya moai, Giza piramitleri/Sfenks/firavun heykeli, Maya/Aztek, samuray…) hem CLIP'te hem etiketlerde elenir. Cümlede “ordu/asker” geçmesi Terracotta kontrolünü artık kapatmaz; yalnız sahnenin kendisi o yeri adlandırırsa kontrol atlanır. “pyramid” etiketli zikkurat elenmez.

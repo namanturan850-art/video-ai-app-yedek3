@@ -1,7 +1,7 @@
 """Deterministic, exact-source render projection; no provider calls or source writes."""
 import hashlib
 import re
-from app.rendering.smart_edit import clean, digest
+from app.rendering.smart_edit import clean, digest, highlight
 from app.rendering import ass
 
 LAYOUTS={'full_broll':'Tam B-roll','split_media_text':'Medya ve metin','fact_card':'Bilgi kartı','big_number':'Büyük sayı',
@@ -74,7 +74,12 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
         if layout in ('split_media_text','dual_media'):
             item['orientation']='left' if (split_index+choice(seed,'side',2))%2==0 else 'right';split_index+=1
         item.update(layout=layout,layout_label=LAYOUTS[layout],texts=texts,layout_window={'start':start,'end':end},secondary_slot_id=secondary['slot_id'] if secondary and layout=='dual_media' else None)
-        if layout=='big_number':item['number']=NUMBER.search(text).group()
+        # Every card shows a 2-5 word accent, never the whole sentence (number cards: the words around the number).
+        texts=[highlight(x) for x in texts if x.strip()]
+        if layout=='big_number':
+            item['number']=NUMBER.search(text).group()
+            rest=' '.join(w for w in text.split() if item['number'] not in w)
+            texts=[highlight(rest)] if rest.strip() else texts
         item['text_provenance']={'source':provenance,'cue_index':cue.get('index'),'start':cue['start'],'end':cue['end']}
         # The card stays fixed while the media behind it keeps one slow, gentle
         # move (no punch-in cut, no stacked zoom). Static cards read as slides.
@@ -172,7 +177,7 @@ def graph(item,theme,caption_name,g=None,fontsdir=''):
             graph+=f"[card]drawgrid=w=120:h=120:t=1:c=white@0.04:enable='{enable}'[grid];";source='grid'
     else:
         top,height=(180,200) if layout=='minimal_title' else (350,300)
-        graph+=f"[treated]drawbox=x=180:y={top}:w=1560:h={height}:color={bg}@0.85:t=fill:enable='{enable}'[title];";source='title'
+        graph+=f"[treated]drawbox=x=180:y={top}:w=1560:h={height}:color={bg}:t=fill:enable='{enable}'[title];";source='title'
     if layout=='timeline_card':
         graph+=f"[{source}]drawbox=x=300:y=300:w=5:h=480:color={accent}:t=fill:enable='{enable}'[timeline];";source='timeline'
     return graph+f'[{source}]ass=filename={caption_name}{fontsdir},format=yuv420p[layouttreated];'

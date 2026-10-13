@@ -243,7 +243,7 @@ class Scene:
         from app.channels import FONTS
         self.kit, self.D = kit, round(float(duration), 3)
         # The emphasis leaves room for entry (<= .6 s) and a label that stays readable >= 2 s.
-        self.E = round(min(max(emphasis, .6), max(.6, self.D - 2.8)), 3)
+        self.E = round(min(max(emphasis, .6), max(.6, self.D - (2.8 if self.D >= 5 else .35))), 3)  # (clips under 5 s are too short for it)
         self.md = min(.6, float(kit.get('motion_duration', .6)))
         p = kit['palette']
         self.bg, self.primary, self.accent, self.fg = p['background'], p['primary'], p['accent'], p['text']

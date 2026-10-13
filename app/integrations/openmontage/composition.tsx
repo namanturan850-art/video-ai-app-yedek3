@@ -86,7 +86,7 @@ const Graphic:React.FC<any>=({item,g,frame,opacity})=>{
  const p=(a:number,b:number)=>smooth(clamp((frame-a)/Math.max(1,b-a)));
  const text=String(item.text||''),size=text.length<=34?64:text.length<=52?54:46,family=g.font_asset?"'KitHeading',Arial,sans-serif":'Arial,sans-serif';
  const box={background:g.background+'CC',boxSizing:'border-box' as const};
- if(item.style==='upper_left')return <div style={{position:'absolute',left:120-60*(1-p(0,8)),top:110,opacity,display:'flex',alignItems:'stretch',maxWidth:1640}}>
+ if(item.style==='upper_left'||item.style==='lower_third')return <div style={{position:'absolute',left:120-60*(1-p(0,8)),top:item.style==='lower_third'?760:110,opacity,display:'flex',alignItems:'stretch',maxWidth:1640}}>
   <div style={{width:12,background:g.accent,transform:`scaleY(${p(2,11)})`,transformOrigin:'top'}}/>
   <div style={{...box,padding:`${size*.22}px 40px ${size*.22}px 28px`,color:g.primary,fontFamily:family,fontWeight:700,fontSize:size,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',transform:`translateX(${-30*(1-p(2,10))}px)`,textShadow:'0 2px 4px rgba(0,0,0,.6)'}}>{text}</div></div>;
  return <div style={{position:'absolute',left:0,right:0,top:150,display:'flex',flexDirection:'column',alignItems:'center',opacity}}>
@@ -108,7 +108,7 @@ const Film:React.FC<any>=props=>{
  const emphasisOpacity=emphasis?Math.min(1,(frame-emphasis.start*30)/6,(emphasis.end*30-frame)/6):0;
  return <AbsoluteFill style={{background:'black'}}>
   {props.clips.map((c:any,i:number)=><Sequence key={c.slot_id} from={c.start_frame} durationInFrames={c.end_frame-c.start_frame+(c.transition_out==='crossfade'?(c.handle||0):0)}><Slot clip={c} previous={props.clips[i-1]} theme={props.theme} g={props.graphic_style}/></Sequence>)}
-  {emphasis&&(props.graphic_style?<Graphic item={emphasis} g={props.graphic_style} frame={frame-Math.round(emphasis.start*30)} opacity={emphasisOpacity}/>:<div style={{position:'absolute',left:emphasis.style==='upper_left'?120:200,right:emphasis.style==='upper_left'?'auto':200,top:110,textAlign:emphasis.style==='upper_left'?'left':'center',color:'white',font:'bold 60px Arial,sans-serif',textShadow:'0 0 12px rgba(0,0,0,.85),2px 2px 2px black',opacity:emphasisOpacity}}>{emphasis.text}</div>)}
+  {emphasis&&(props.graphic_style?<Graphic item={emphasis} g={props.graphic_style} frame={frame-Math.round(emphasis.start*30)} opacity={emphasisOpacity}/>:<div style={{position:'absolute',left:['upper_left','lower_third'].includes(emphasis.style)?120:200,right:['upper_left','lower_third'].includes(emphasis.style)?'auto':200,top:emphasis.style==='lower_third'?760:110,textAlign:['upper_left','lower_third'].includes(emphasis.style)?'left':'center',color:'white',font:'bold 60px Arial,sans-serif',textShadow:'0 0 12px rgba(0,0,0,.85),2px 2px 2px black',opacity:emphasisOpacity}}>{emphasis.text}</div>)}
   <AvatarLayer avatar={props.avatar}/>
   {cue&&<div style={{position:'absolute',left:100,right:100,...subPlace,textAlign:'center',color:subColor,fontFamily:subFont,fontWeight:700,fontSize:subSize,textShadow:`-2px -2px 1px ${subOutline},2px 2px 1px ${subOutline}`}}>{cue.text}</div>}
  </AbsoluteFill>;

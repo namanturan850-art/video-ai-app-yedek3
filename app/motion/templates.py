@@ -7,6 +7,7 @@ app/motion/motion.tsx (OpenMontage/Remotion) draw the same scene, so both
 engines show the same animation. Timing is anchored to the emphasis moment
 (the narration word), where the kit's sound effect plays.
 """
+import gzip
 import json
 import math
 import re
@@ -53,6 +54,15 @@ BASIC = ('stat', 'map', 'quote', 'timeline', 'compare', 'list')  # also drawn by
 
 
 def validate(spec, narration, entities=(), *, trusted=False):
+    """Clean spec (see _validate); the chosen layout (0-2, app/motion/layouts.py) is kept."""
+    from app.motion.layouts import layout_of
+    result = _validate(spec, narration, entities, trusted=trusted)
+    if layout_of(spec):
+        result = {**result, 'layout': layout_of(spec)}
+    return result
+
+
+def _validate(spec, narration, entities=(), *, trusted=False):
     """Return a clean spec or raise MotionError. Numbers, dates, places and
     quotes must be spoken in the narration (digits or words, e.g.
     “neunzehnhundertfünfundvierzig” = 1945) — a template never invents facts.
@@ -276,6 +286,11 @@ class Scene:
 
 
 def build(spec, kit, duration, emphasis_offset, language='de'):
+    from app.motion.layouts import arrange
+    return arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit)
+
+
+def _build(spec, kit, duration, emphasis_offset, language='de'):
     s = Scene(kit, duration, emphasis_offset)
     E, D, md = s.E, s.D, s.md
     s.add('rect', x=0, y=0, w=W, h=H, fill=s.bg, opacity=1)
@@ -300,20 +315,23 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
         s.sound('rise', E - .9); s.sound('hit', E)
     elif t == 'map':
         span_from, span_to = 140., 46.
-        s.add('map', {'zoom': [[0, 0], [E, 1]]}, lon=d['lon'], lat=d['lat'], span_from=span_from, span_to=span_to,
+        # The pin lands early enough that the place label is readable >= 2 s
+        # (it used to drop at the emphasis word and short clips ended first).
+        at = min(E, max(.6, D - 2.6))
+        s.add('map', {'zoom': [[0, 0], [at, 1]]}, lon=d['lon'], lat=d['lat'], span_from=span_from, span_to=span_to,
               land=mix(s.bg, s.primary, .28), coast=mix(s.bg, s.primary, .5), ocean=mix(s.bg, s.primary, .06))
         # The pin sits on the place itself (near the poles the view stops at ±85°, so it is not always the centre).
         left, top, span, height = map_view({'lon': d['lon'], 'lat': d['lat'], 'span_from': span_from, 'span_to': span_to}, 1)
         cx, cy = W / 2, (top - d['lat']) / height * H
         cy = min(max(cy, 120), H - 260)
-        s.add('circle', {'r': [[E, 0], [E + 1.2, 140]], 'opacity': [[E, .55], [E + 1.2, 0]]}, cx=cx, cy=cy, r=0, fill='', stroke=s.accent, width=6, opacity=0)
-        s.add('pin', {'dy': [[E - .45, -160], [E, 0]], 'opacity': [[E - .45, 0], [E - .3, 1]]}, x=cx, y=cy, size=46, fill=s.accent, hole=s.bg, opacity=0, dy=-160)
+        s.add('circle', {'r': [[at, 0], [at + 1.2, 140]], 'opacity': [[at, .55], [at + 1.2, 0]]}, cx=cx, cy=cy, r=0, fill='', stroke=s.accent, width=6, opacity=0)
+        s.add('pin', {'dy': [[at - .45, -160], [at, 0]], 'opacity': [[at - .45, 0], [at - .3, 1]]}, x=cx, y=cy, size=46, fill=s.accent, hole=s.bg, opacity=0, dy=-160)
         label = d['place'] + (' · ' + d['label'] if d['label'] else '')
         fs = 64 if len(label) < 26 else 52
         width = measure(label, s.head, fs) + 80
-        s.add('rect', s.appear(E + .1, 30, .92), x=cx - width / 2, y=cy + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
-        s.text(label, cx, cy + 90 + fs * .8, fs, start=E + .1, dy=30)
-        s.sound('rise', E - .9); s.sound('hit', E)
+        s.add('rect', s.appear(at + .1, 30, .92), x=cx - width / 2, y=cy + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
+        s.text(label, cx, cy + 90 + fs * .8, fs, start=at + .1, dy=30)
+        s.sound('rise', at - .9); s.sound('hit', at)
     elif t == 'quote':
         tokens = d['text'].split()
         fs, rows = fit(d['text'], s.head, 96, 1500, 4, 52)
@@ -454,8 +472,25 @@ def counter_text(target, progress, language, from_year=False):
 
 
 @lru_cache(maxsize=1)
-def land():
-    return json.loads((Path(__file__).with_name('world_land.json')).read_text(encoding='utf-8'))['polygons']
+@lru_cache(maxsize=1)
+def _land():
+    with gzip.open(Path(__file__).with_name('world_land_50m.json.gz'), 'rt', encoding='utf-8') as f:
+        return json.load(f)['polygons']
+
+
+def land(box=None):
+    """Natural Earth 1:50m coastlines (~2 km). box=(west, south, east, north) keeps the polygons near the view."""
+    polygons = _land()
+    if not box:
+        return [list(p) for p in polygons]
+    west, south, east, north = box
+    result = []
+    for p in polygons:
+        xs, ys = [x for x, _ in p], [y for _, y in p]
+        if max(ys) < south or min(ys) > north: continue
+        if any(max(xs) + shift >= west and min(xs) + shift <= east for shift in (-360, 0, 360)):
+            result.append(p)
+    return result
 
 
 def map_view(props, zoom):
@@ -464,3 +499,9 @@ def map_view(props, zoom):
     height = span * H / W
     lat = max(-85 + height / 2, min(85 - height / 2, props['lat']))
     return props['lon'] - span / 2, lat + height / 2, span, height  # left lon, top lat, width, height
+
+
+def map_box(props):
+    """(west, south, east, north) covering every view the map element can show (zoom 0..1)."""
+    boxes = [map_view(props, z) for z in (0, 1)]
+    return (min(b[0] for b in boxes), min(b[1] - b[3] for b in boxes), max(b[0] + b[2] for b in boxes), max(b[1] for b in boxes))

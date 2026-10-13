@@ -322,6 +322,9 @@ class StockService:
                     else:
                         try: progress['motion']=motion_validate(motion,scene['narration_text'],scene.get('entities',[]))
                         except MotionError: raise StockError('invalid_input','Motion bilgisini kontrol edin: sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmeli; liste 2–4, zaman çizelgesi 2–5 öğe.',422) from None
+                    if motion.get('layout') is not None:  # the owner's own layout choice; none = chosen automatically
+                        from app.motion.layouts import layout_of
+                        progress['motion']={**progress['motion'],'layout':layout_of(motion)}
                 if action=='reselect' and slot.get('selected_media') and slot['selected_media'].get('provider') in ('pexels','pixabay'):
                     # The owner rejected this pick: never offer it again in this project; the reason guides the next choice.
                     reason=' '.join(str(payload.get('reason') or '').split())[:200]

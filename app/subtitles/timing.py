@@ -178,6 +178,8 @@ def project_slots(scenes, slots):
                            # Director media: a very short slot continuing its neighbour's
                            # take, or a different part of the same long clip.
                            **({'continuation_of':slot['continuation_of']} if slot.get('continuation_of') else {}),
-                           **({'segment_start':slot['segment_start']} if slot.get('segment_start') is not None else {})})
+                           **({'segment_start':slot['segment_start']} if slot.get('segment_start') is not None else {}),
+                           # Text shown as a band over the continuing video instead of a full-screen card.
+                           **({'lower_third':slot['lower_third']} if slot.get('continuation_of') and isinstance(slot.get('lower_third'),str) and slot['lower_third'].strip() else {})})
             cursor=end
     return result

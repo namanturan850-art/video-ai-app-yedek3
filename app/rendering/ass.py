@@ -33,6 +33,9 @@ def styled(header,style):
     return '\n'.join(lines)
 
 
+H_LOWER=760  # top of the lower-third band (subtitles stay below it)
+
+
 def graphic(item,start,end,g):
     """Emphasis text as a broadcast-style graphic (kit colours and heading
     font): a translucent box slides in, an accent bar grows, the text follows.
@@ -43,8 +46,8 @@ def graphic(item,start,end,g):
     height=int(size*1.55);bg=ass_colour(g['background'])[4:];accent=ass_colour(g['accent'])[4:];fg=ass_colour(g['primary'])[4:]
     a,b=timecode(start),timecode(end);out=max(0,int((end-start)*1000)-220)
     font=g['font'];shape=lambda w,h:f'm 0 0 l {w} 0 {w} {h} 0 {h}'
-    if item.get('style')=='upper_left':  # lower-third / kicker on the left
-        x,y=120,110
+    if item.get('style') in ('upper_left','lower_third'):  # kicker on the left; lower_third: band over the video, above subtitles
+        x,y=(120,110) if item.get('style')=='upper_left' else (120,H_LOWER)
         return [f'Dialogue: 2,{a},{b},Graphic,,0,0,0,,{{\\an7\\move({x-60},{y},{x},{y},0,260)\\p1\\bord0\\shad0\\1c&H{bg}&\\1a&H20&\\fad(160,200)}}{shape(width,height)}{{\\p0}}',
                 f'Dialogue: 3,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos({x},{y})\\p1\\bord0\\shad0\\1c&H{accent}&\\fscy0\\t(80,360,\\fscy100)\\fad(0,200)}}{shape(12,height)}{{\\p0}}',
                 f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an4\\move({x+10},{y+height//2},{x+40},{y+height//2},60,340)\\fn{font}\\fs{size}\\fscx{squeeze}\\b1\\bord0\\shad2\\4c&H000000&\\1c&H{fg}&\\fad(220,200)}}{escape(text)}']
@@ -97,8 +100,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 warnings.append('Geçersiz bir vurgu yazısı atlandı.');continue
             if graphic_style:
                 lines+=graphic(item,start,end,graphic_style);continue
-            style='EmphasisLeft' if item.get('style')=='upper_left' else 'EmphasisCenter'
+            style='EmphasisLeft' if item.get('style') in ('upper_left','lower_third') else 'EmphasisCenter'
             animation=r'{\fad(180,100)\fscx98\fscy98\t(0,180,\fscx100\fscy100)}'
+            if item.get('style')=='lower_third':animation=r'{\an7\pos(120,'+str(H_LOWER)+r')\fad(180,100)}'
             lines.append(f'Dialogue: 1,{timecode(start)},{timecode(end)},{style},,0,0,0,,{animation}{escape(text)}')
     elif overlays:
         for scene in scenes:

@@ -50,6 +50,13 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const row=(label,el)=>{const g=node('div','','setting-field');const l=node('label',label);g.append(l,el);form.append(g);return el;};
     const sel=row('Şablon',node('select'));for(const [k,v] of Object.entries(TEMPLATE_LABELS)){const o=node('option',v);o.value=k;sel.append(o);}sel.value=spec.template;
     const fields=node('div');form.append(fields);const emphasis=row('Vurgu kelimesi (seslendirmede söylendiği an)',node('input'));emphasis.value=spec.emphasis||'';
+    // Same names as app/motion/layouts.py NAMES; “Otomatik” lets the app vary it (never the same twice in a row).
+    const layoutSel=row('Yerleşim',node('select'));
+    function layouts(){const t=sel.value,kind=['map','route','empire','zoom'].includes(t)?'map':['mark','beforeafter'].includes(t)?'picture':'card';
+      const names={card:['Orta','Panel','Yan şerit'],map:['Konu ortada','Konu solda','Konu sağda'],picture:['Etiket üstte','Etiket altta','Etiket yanda']}[kind];
+      layoutSel.replaceChildren();const auto=node('option','Otomatik');auto.value='';layoutSel.append(auto);
+      names.forEach((n,i)=>{const o=node('option',n);o.value=String(i);layoutSel.append(o);});
+      layoutSel.value=t===spec.template&&slot.motion_layout_owner?String(spec.layout||0):'';}
     const d=spec.data||{};let inputs={};
     const lines=list=>list.map(e=>typeof e==='string'?e:[e.date??e.label,e.label??e.value].filter(x=>x!==undefined).join(' | ')).join('\n');
     function draw(){fields.replaceChildren();inputs={};const t=sel.value;
@@ -62,16 +69,17 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
       if(t==='list'){add('title','Başlık',d.title);add('items','Her satıra bir madde (2–4)',d.items?d.items.join('\n'):'',true);}
       if(MARKER_HELP[t]){add('source',`İşaret metni — ${MARKER_HELP[t]}`,spec.template===t?(d.source||''):'',true);
         if(t==='mark'){add('fx','Odak noktası yatay (0 = sol, 1 = sağ)',spec.template===t?d.fx??.5:.5);add('fy','Odak noktası dikey (0 = üst, 1 = alt)',spec.template===t?d.fy??.5:.5);}}}
-    sel.addEventListener('change',draw);draw();
+    sel.addEventListener('change',()=>{draw();layouts();});draw();layouts();
     const save=node('button','Motion metnini kaydet ve yeniden çiz');save.type='submit';form.append(save,node('p','Sayı, tarih, yer ve alıntılar bu sahnenin anlatımında geçmelidir; uydurma bilgi kabul edilmez. İşaret şablonlarında yerler uygulamanın çevrimdışı yer listesinden bulunur; bulunamayan yer için uyarı gösterilir.','note'));
     form.addEventListener('submit',event=>{event.preventDefault();const t=sel.value,v=k=>inputs[k]?.value.trim()||'';const rows=k=>v(k).split('\n').map(x=>x.split('|').map(y=>y.trim())).filter(x=>x[0]);
-      if(MARKER_HELP[t]){slotJob(slot,'motion_edit',{motion:{template:t,data:{source:v('source'),...(t==='mark'?{fx:Number(v('fx')||.5),fy:Number(v('fy')||.5)}:{})},emphasis:emphasis.value.trim()}});return;}
+      const layout=layoutSel.value===''?{}:{layout:Number(layoutSel.value)};
+      if(MARKER_HELP[t]){slotJob(slot,'motion_edit',{motion:{template:t,data:{source:v('source'),...(t==='mark'?{fx:Number(v('fx')||.5),fy:Number(v('fy')||.5)}:{})},emphasis:emphasis.value.trim(),...layout}});return;}
       const data=t==='stat'?{value:v('value'),label:v('label')}:t==='map'?{place:v('place'),lat:Number(v('lat')),lon:Number(v('lon')),label:v('label')}:t==='quote'?{text:v('text')}
         :t==='timeline'?{events:rows('events').map(x=>({date:x[0],label:x[1]||''}))}:t==='compare'?{title:v('title'),items:rows('items').map(x=>({label:x[0],value:x[1]||''}))}:{title:v('title'),items:rows('items').map(x=>x[0])};
-      slotJob(slot,'motion_edit',{motion:{template:t,data,emphasis:emphasis.value.trim()}});});
+      slotJob(slot,'motion_edit',{motion:{template:t,data,emphasis:emphasis.value.trim(),...layout}});});
     return form;
   }
-  function mediaInfo(media){if(media.provider==='generated'&&media.media_type==='video')return `Motion grafik · ${TEMPLATE_LABELS[media.source_metadata?.motion?.template]||''} · 1920×1080 · ${media.source_metadata?.engine==='openmontage'?'OpenMontage':'yerel çizim'}`;if(media.provider==='generated')return `Üretilmiş kart · ${{map:'Konum',number:'Sayı',quote:'Alıntı',title:'Başlık'}[media.source_metadata?.card_kind]||'Başlık'} · 1920×1080`;return `${{pexels:'Pexels',openmontage:'OpenMontage',wikimedia:'Wikimedia Commons'}[media.provider]||'Pixabay'} · ${media.media_type==='video'?'Video':'Görsel'} · ${media.width}×${media.height}${media.width>media.height?' · Yatay'+(Math.abs(media.width/media.height-16/9)<.06?' · 16:9':''):' · Dikey/kare'}`;}
+  function mediaInfo(media){if(media.provider==='generated'&&media.media_type==='video')return `Motion grafik · ${TEMPLATE_LABELS[media.source_metadata?.motion?.template]||''}${media.source_metadata?.layout_label?' · '+media.source_metadata.layout_label:''} · 1920×1080 · ${media.source_metadata?.engine==='openmontage'?'OpenMontage':'yerel çizim'}`;if(media.provider==='generated')return `Üretilmiş kart · ${{map:'Konum',number:'Sayı',quote:'Alıntı',title:'Başlık'}[media.source_metadata?.card_kind]||'Başlık'} · 1920×1080`;return `${{pexels:'Pexels',openmontage:'OpenMontage',wikimedia:'Wikimedia Commons'}[media.provider]||'Pixabay'} · ${media.media_type==='video'?'Video':'Görsel'} · ${media.width}×${media.height}${media.width>media.height?' · Yatay'+(Math.abs(media.width/media.height-16/9)<.06?' · 16:9':''):' · Dikey/kare'}`;}
   function sourceInfo(media){
     if(media.provider==='generated'){const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`Uygulama tarafından üretildi. Yazı anlatımdan alındı: “${media.source_metadata?.card_text||''}”`));return info;}
     const info=node('details');info.append(node('summary','Kaynak Bilgisi'),node('p',`${media.provider} · Medya ID: ${media.media_id} · Oluşturan: ${media.creator_name||'Belirtilmedi'}`));if(media.source_metadata?.license)info.append(node('p',`Lisans: ${media.source_metadata.license} · Yazar: ${media.source_metadata.author||media.creator_name||'Belirtilmedi'} · YouTube açıklamasına kaynak olarak eklenir.`));

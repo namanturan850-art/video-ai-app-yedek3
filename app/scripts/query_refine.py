@@ -150,6 +150,9 @@ def suggest_infographics(blocks, language='de', share=SHARE):
     for _, index, spec in sorted(ranked):
         if used >= limit: break
         if any(abs(index - other) < 2 for other in taken): continue  # never two infographic scenes in a row
+        before = next((b['motion_spec'] for b in reversed(blocks[:index]) if b.get('motion_spec')), None)
+        after = next((b['motion_spec'] for b in blocks[index + 1:] if b.get('motion_spec')), None)
+        if any(n and n.get('template') == spec['template'] for n in (before, after)): continue  # the next infographic is a different type
         blocks[index].update(media_type='motion_graphic', motion_spec=spec, motion_suggested=True)
         taken.append(index); used += 1
     return blocks

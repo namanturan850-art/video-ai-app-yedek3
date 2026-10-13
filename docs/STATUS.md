@@ -1,5 +1,19 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (3) — Harita, yerleşimler, alt bant
+
+- **Harita:**
+  - Kıyılar artık Natural Earth 1:50m verisinden (kamu malı, ~2 km'ye sadeleştirildi) çiziliyor ve kenar yumuşatmalı. Ege adaları, Kıbrıs gibi ayrıntılar görünüyor.
+  - İğne sahnenin sonuna bırakılmıyor: en geç sahne bitmeden 2,6 sn önce iner, “Babylon” gibi etiket en az 2 sn okunur.
+- **Arkadan stok video sızması:** bu ortamda yeniden üretilemedi. İnfografiğe giriş/çıkış geçişleri 0,4 sn'den 0,3 sn'ye indirildi (kayarak geçişte yandaki video artık daha kısa görünür). Gerçek render'da hâlâ görürseniz hangi saniyede olduğunu yazın.
+- **Her şablonda 3 yerleşim** (Medya ekranı → motion düzenleyici → “Yerleşim”, varsayılan Otomatik):
+  - Kart şablonları (sayı, alıntı, liste, zaman çizelgesi, karşılaştırma, ikon, oran, hanedan, bilgi): Orta · Panel · Yan şerit.
+  - Harita şablonları (harita, rota, imparatorluk, yakınlaşma): konu ortada · solda · sağda.
+  - Resimli şablonlar (işaretle, önce/sonra): etiket üstte · altta · yanda.
+- **Çeşitlilik:** art arda iki infografik aynı şablon + aynı yerleşimi kullanmaz. Uygulamanın kendi seçtiği/önerdiği infografiklerde art arda aynı tip seçilmez; sizin işaretleriniz ([SAYI] vb.) tipini korur, yalnız yerleşimi değişir.
+- **Alt bant:** yazı kartı (alıntı) gerekecek yerde, aynı sahnede komşu bir video varsa o video sürer ve yazı videonun üstünde alt bant olarak gösterilir (her iki motorda; altyazının üstünde durur).
+- **Testler:** `tests/test_motion_timing.py` — 15 şablon × 3 yerleşim için zamanlama, kadraj içinde kalma, yerleşimlerin gerçekten farklı olması, art arda seçim kuralı, alt bant.
+
 ## 2026-10-13 (2) — Render ilerlemesi, kart süresi, şablon zamanlaması
 
 - **OpenMontage render artık takılmaz görünmez.**
@@ -8,8 +22,7 @@
   - Sabit 30 dk sınırı kalktı: 5 dk boyunca yeni kare gelmezse render durdurulur ve Türkçe hata verilir (en çok 2 saat).
 - **Yazı kartları:** kart cümle bitişi +0,4 sn sürer (3 sn'de kesilmez) ve tüm cümle yerine 2–5 kelimelik vurgu gösterir (sayı/tarih varsa onun çevresi).
 - **Animasyon şablonları:** giriş en çok 0,6 sn; yazılar sahne sonuna kadar tam görünür, ≥2 sn okunur (vurgu zamanı buna göre geriye çekilir). Otomatik test: `tests/test_motion_timing.py` (6 klasik + 9 işaret şablonu).
-- **Henüz yapılmadı:** harita iğnesi/“Babylon” etiketinin gerçek render'da yeniden doğrulanması, daha ince kıyı verisi, şablon başına ≥3 yerleşim, ardışık infografikte farklı tip, video üstü alt bant. Bunlar sonraki küçük adımdır.
-- **Not:** Bu mesajın 5. maddesi “%40–%95 gerçek ilerleme + kalan…” cümlesinde yarım kalmıştı; devamı gelirse ayrıca yapılır.
+- **Not:** 5. maddenin metni “%40–%95 gerçek ilerleme + kalan…” cümlesinde yarım kalmıştı; devamı gelirse ayrıca yapılır.
 - **Gerçek Windows render'ı denenmedi** (ortamda Remotion yok); ilerleme okuma sahte bir render çıktısıyla test edildi.
 
 ## 2026-10-13 — Gemini takılmaz, medya Gemini'siz seçilir, 9 yeni infografik

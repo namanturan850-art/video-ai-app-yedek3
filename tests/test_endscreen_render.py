@@ -26,7 +26,7 @@ def test_closing_moment_adds_a_twenty_second_end_screen_and_nothing_else(with_ou
     from app.stock.download import directory
     from app.stock.models import make_slots
     from test_production import scene
-    from test_rendering import NativeRenderClient, await_job, synthetic, url
+    from test_rendering import NativeRenderClient, synthetic, url
     from test_subtitles import seed, HEADERS, no_network
     text = 'Ein kurzer Anfang über das Meer. Eine genaue Erklärung folgt. Abonniert den Kanal und bis zum nächsten Mal.'
     with NativeRenderClient(create_app(tmp_path / 'data'), headers=HEADERS) as client:
@@ -56,7 +56,10 @@ def test_closing_moment_adds_a_twenty_second_end_screen_and_nothing_else(with_ou
         for owner, attribute in [(app.state.narration, 'factory'), (app.state.stock, 'factory'), (app.state.scripts, 'provider_factory')]: setattr(owner, attribute, no_network)
         st.update(client=client)
         r = client.post(url(st) + '/jobs', json={'encoder': 'cpu', 'editing_style': 'adaptive', 'subtitle_burned': False}); assert r.status_code == 202, r.text
-        state = await_job(st); assert state['job']['status'] == 'completed', state['job']
+        import time
+        deadline = time.monotonic() + 300  # drawing the 20 s end screen + 29 s film encode
+        while client.get(url(st)).json()['job']['status'] in ('queued', 'preparing', 'rendering', 'validating') and time.monotonic() < deadline: time.sleep(.2)
+        state = client.get(url(st)).json(); assert state['job']['status'] == 'completed', state['job']
         meta = state['active']['metadata']; out = root / meta['output_local_path']
         extra = END_SCREEN_SECONDS if with_outro else 0
         assert meta['duration'] == pytest.approx(9 + extra, abs=.1)

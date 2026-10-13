@@ -8,6 +8,15 @@ square-bracket markers. Markers never reach narration or subtitles:
     [ÇİZELGE: 1945, 1962, 1991]          → timeline infographic
     [KARŞILAŞTIR: Rom | Karthago]        → comparison infographic
     [LİSTE: Stürme; Strömungen; Fehler]  → list infographic
+    [ROTA: Ninive > Babil > Kudüs]       → route drawn on the map
+    [İMPARATORLUK: Assyrien 911-612 v. Chr.] → border growing over time
+    [YAKINLAŞ: Babil]                    → zoom world → region → place
+    [İŞARETLE: Tapınağın sütunları]      → zoom on the scene's picture + circle/arrow + label
+    [ÖNCESONRA: Antik liman | Bugünkü kıyı] → sliding curtain between two pictures
+    [İKON: 10000 asker]                  → multiplying icons + counter
+    [ORAN: %40 nüfus kıyıda]             → animated pie
+    [HANEDAN: Davud > Süleyman > Rehavam] → dynasty tree
+    [BİLGİ: kısa metin]                  → “Biliyor muydunuz?” card
 A marker written right after a sentence belongs to that sentence; a marker at
 the start of a paragraph (or inside a sentence) belongs to the sentence that
 follows (or contains) it.
@@ -16,10 +25,16 @@ Any other [...] is removed from the narration with a warning.
 import re
 
 # Marker names are compared without Turkish letters, so [çizelge: …] and [CIZELGE: …] work too.
-KINDS = {'GORSEL': 'visual', 'HARITA': 'map', 'SAYI': 'number', 'CIZELGE': 'timeline', 'KARSILASTIR': 'compare', 'LISTE': 'list'}
-LABELS = {'visual': 'GÖRSEL', 'map': 'HARİTA', 'number': 'SAYI', 'timeline': 'ÇİZELGE', 'compare': 'KARŞILAŞTIR', 'list': 'LİSTE'}
+KINDS = {'GORSEL': 'visual', 'HARITA': 'map', 'SAYI': 'number', 'CIZELGE': 'timeline', 'KARSILASTIR': 'compare', 'LISTE': 'list',
+         'ROTA': 'route', 'IMPARATORLUK': 'empire', 'YAKINLAS': 'zoom', 'ISARETLE': 'mark', 'ONCESONRA': 'beforeafter', 'IKON': 'icons',
+         'ORAN': 'ratio', 'HANEDAN': 'dynasty', 'BILGI': 'fact'}
+LABELS = {'visual': 'GÖRSEL', 'map': 'HARİTA', 'number': 'SAYI', 'timeline': 'ÇİZELGE', 'compare': 'KARŞILAŞTIR', 'list': 'LİSTE',
+          'route': 'ROTA', 'empire': 'İMPARATORLUK', 'zoom': 'YAKINLAŞ', 'mark': 'İŞARETLE', 'beforeafter': 'ÖNCESONRA', 'icons': 'İKON',
+          'ratio': 'ORAN', 'dynasty': 'HANEDAN', 'fact': 'BİLGİ'}
 ASCII = str.maketrans({'İ': 'I', 'Ş': 'S', 'Ç': 'C', 'Ö': 'O', 'Ü': 'U', 'Ğ': 'G', '\u0307': None})
-AVAILABLE = '[GÖRSEL: …], [HARİTA: …], [SAYI: …], [ÇİZELGE: 1945, 1962], [KARŞILAŞTIR: A | B], [LİSTE: bir; iki; üç]'
+AVAILABLE = ('[GÖRSEL: …], [HARİTA: …], [SAYI: …], [ÇİZELGE: 1945, 1962], [KARŞILAŞTIR: A | B], [LİSTE: bir; iki; üç], [ROTA: A > B], '
+             '[İMPARATORLUK: ad yıl-yıl], [YAKINLAŞ: yer], [İŞARETLE: açıklama], [ÖNCESONRA: A | B], [İKON: sayı nesne], [ORAN: %değer etiket], '
+             '[HANEDAN: A > B > C], [BİLGİ: kısa metin]')
 MARKER = re.compile(r'\[([^\[\]\n]{0,300})\]')
 HEADING_WORDS = r'(?:bölüm|kısım|sahne|kapitel|teil|abschnitt|szene|chapter|section|part|scene|capítulo|sección|parte|escena|chapitre|partie|scène)'
 SENTENCE_END = re.compile(r'(?<=[.!?…])["“”»’)]*\s+')
@@ -82,7 +97,7 @@ def clean(raw):
             position = match.end()
             inner = match.group(1).strip()
             kind_raw, _, value = inner.partition(':')
-            kind = KINDS.get(kind_raw.strip().upper().translate(ASCII))
+            kind = KINDS.get(re.sub(r'[^A-Z]', '', kind_raw.strip().upper().translate(ASCII)))  # [ÖNCE/SONRA: …] and [ÖNCESONRA: …] alike
             if kind and value.strip():
                 before = ' '.join(text.split())
                 found.append((len(before), bool(re.search(r'[.!?…]["“”»’)]*$', before)), kind, ' '.join(value.split())[:200]))
@@ -106,7 +121,7 @@ def clean(raw):
     return {'text': '\n\n'.join(paragraphs), 'markers': markers, 'warnings': list(dict.fromkeys(warnings))}
 
 
-def apply_markers(blocks, markers):
+def apply_markers(blocks, markers, language='de'):
     """Owner hints on the scene plan: [GÖRSEL] becomes the first search query
     and what must be shown; the infographic markers ([HARİTA], [SAYI],
     [ÇİZELGE], [KARŞILAŞTIR], [LİSTE]) are kept with their sentence and become a
@@ -122,12 +137,15 @@ def apply_markers(blocks, markers):
         hints.append({'type': marker['type'], 'value': marker['value'], 'sentence': sentence[:600]})
         old = [q for q in [block.get('stock_query', ''), *block.get('alternative_stock_queries', [])] if q]
         if marker['type'] == 'visual':
-            block['stock_query'] = marker['value'][:300]
-            block['alternative_stock_queries'] = [q for q in old if q.casefold() != marker['value'].casefold()][:5] or [marker['value']]
+            from app.scripts.query_clean import english_query
+            query = english_query(marker['value'], language, limit=6) or marker['value']  # the note in English search words
+            block['stock_query'] = query[:300]
+            block['alternative_stock_queries'] = [q for q in old if q.casefold() != query.casefold()][:5] or [query]
             block['must_show'] = marker['value'][:300]
             block['visual_intent'] = (marker['value'] + ' — ' + block.get('visual_intent', ''))[:1500]
         elif marker['type'] == 'map':
-            extra = f'{marker["value"]} map'
+            from app.scripts.query_clean import english_query
+            extra = f'{english_query(marker["value"], language, strict=True, limit=3) or "old"} map'
             if extra.casefold() not in (q.casefold() for q in old):
                 block['alternative_stock_queries'] = (block.get('alternative_stock_queries', []) + [extra[:300]])[-5:]
     return blocks

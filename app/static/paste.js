@@ -5,7 +5,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname) && document.bod
   const root = document.querySelector('#script-content'); root.hidden = false;
   const node = (tag, text, cls) => { const n = document.createElement(tag); if (text) n.textContent = text; if (cls) n.className = cls; return n; };
   const LANG = {de: 'Almanca', en: 'İngilizce', es: 'İspanyolca', fr: 'Fransızca', tr: 'Türkçe'};
-  const KNOWN = /^(G[ÖO]RSEL|HAR[İI]TA|SAYI|[ÇC][İI]ZELGE|KAR[ŞS]ILA[ŞS]TIR|L[İI]STE)\s*:\s*\S/i;
+  const KNOWN = /^(G[ÖO]RSEL|HAR[İI]TA|SAYI|[ÇC][İI]ZELGE|KAR[ŞS]ILA[ŞS]TIR|L[İI]STE|ROTA|[İI]MPARATORLUK|YAKINLA[ŞS]|[İI][ŞS]ARETLE|[ÖO]NCE\W?SONRA|[İI]KON|ORAN|HANEDAN|B[İI]LG[İI])\s*:\s*\S/i;
   const plainUpper = text => text.toLocaleUpperCase('tr-TR');
   async function request(url, method = 'GET', body) {
     let response;
@@ -18,7 +18,7 @@ if (/^\/projects\/[^/]+\/script$/.test(window.location.pathname) && document.bod
   const back = node('a', '← Projeye dön', 'back'); back.href = `/projects/${id}`;
   const status = node('p', 'Metin yükleniyor…', 'provider-status'); status.id = 'paste-status'; status.setAttribute('role', 'status'); status.setAttribute('aria-live', 'polite');
   const panel = node('section', '', 'settings-panel'); panel.id = 'paste-panel';
-  panel.append(node('h2', 'Metni yapıştır'), node('p', 'Senaryonuzu buraya yapıştırın. Fazla boşluklar, Markdown işaretleri (#, **, -, 1.) ve başlık/numara satırları otomatik temizlenir; seslendirme ve altyazı bu metni kelimesi kelimesine kullanır. İsterseniz köşeli parantezle not ekleyin — bunlar okunmaz, altyazıya da girmez: [GÖRSEL: airplane cockpit at night] o cümlede aranacak görüntü; [HARİTA: Bermuda Triangle] harita; [SAYI: %40] büyüyen sayı; [ÇİZELGE: 1945, 1962, 1991] zaman çizelgesi; [KARŞILAŞTIR: Rom | Karthago] karşılaştırma; [LİSTE: Stürme; Strömungen; Fehler] madde listesi. İşaret, hemen önündeki cümleye (paragraf başındaysa sonraki cümleye) bağlanır.', 'note'));
+  panel.append(node('h2', 'Metni yapıştır'), node('p', 'Senaryonuzu buraya yapıştırın. Fazla boşluklar, Markdown işaretleri (#, **, -, 1.) ve başlık/numara satırları otomatik temizlenir; seslendirme ve altyazı bu metni kelimesi kelimesine kullanır. İsterseniz köşeli parantezle not ekleyin — bunlar okunmaz, altyazıya da girmez: [GÖRSEL: airplane cockpit at night] o cümlede aranacak görüntü; [HARİTA: Bermuda Triangle] harita; [SAYI: %40] büyüyen sayı; [ÇİZELGE: 1945, 1962, 1991] zaman çizelgesi; [KARŞILAŞTIR: Rom | Karthago] karşılaştırma; [LİSTE: Stürme; Strömungen; Fehler] madde listesi; [ROTA: Ninive > Babil > Kudüs] haritada rota; [İMPARATORLUK: Assyrien 911-612 v. Chr.] zamanla büyüyen sınır; [YAKINLAŞ: Babil] dünyadan yere yakınlaşma; [İŞARETLE: Tapınağın sütunları] sahnenin görselinde daire/ok; [ÖNCESONRA: Antik liman | Bugünkü kıyı] iki görsel arasında perde; [İKON: 10000 asker] çoğalan ikonlar; [ORAN: %40 kıyıda yaşıyor] pasta grafik; [HANEDAN: Davud > Süleyman > Rehavam] hanedan ağacı; [BİLGİ: kısa metin] “Biliyor muydunuz?” kartı. İşaret, hemen önündeki cümleye (paragraf başındaysa sonraki cümleye) bağlanır.', 'note'));
   // Highlight editor: a coloured backdrop behind a transparent textarea.
   const editor = node('div', '', 'paste-editor');
   const backdrop = node('div', '', 'paste-backdrop'); backdrop.setAttribute('aria-hidden', 'true');

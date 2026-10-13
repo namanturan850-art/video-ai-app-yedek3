@@ -22,6 +22,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const ask=node('div','','settings-actions production-fallback');ask.hidden=true;root.append(ask);
   const askText=node('p','Gemini şu anda plan hazırlayamadı. Nasıl devam edilsin?','note');
   ask.append(askText);
+  const fallbackNote=node('p','','note');fallbackNote.id='production-local-fallback';fallbackNote.hidden=true;root.append(fallbackNote);
   button(ask,'Yapay zekâsız yerel planla devam et',()=>{provider.value='local';providerChosen=true;generate();}).id='production-fallback-local';
   button(ask,'Ollama ile planla (yerel model kurulu olmalı)',()=>{provider.value='ollama';providerChosen=true;generate();}).id='production-fallback-ollama';
   const versions=node('select');versions.id='production-versions';const vl=node('label','Plan sürümleri');vl.htmlFor=versions.id;root.append(vl,versions);
@@ -88,6 +89,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   async function load(){
     try{[view,job]=await Promise.all([request(base),request(`/api/projects/${id}/script`).then(x=>{if(!providerChosen&&x.default_provider)provider.value=x.default_provider;return x.job;})]);
       status.textContent=job&&['visual','visual_scene'].includes(job.action)&&['queued','analyzing','planning','generating','checking','error'].includes(job.status)?`${job.status_label} · ${job.progress.percent}% ${job.error_message||''}`:view.state;ask.hidden=!(job&&['visual','visual_scene'].includes(job.action)&&job.status==='error'&&job.provider==='gemini'&&['free_quota_exhausted','quota_limit','rate_limit','upstream_error','gemini_timeout','generation_timeout','no_internet','network_error','key_rejected','missing_key','model_unavailable'].includes(job.progress?.error_category));
+      fallbackNote.hidden=!(job&&['visual','visual_scene'].includes(job.action)&&job.progress?.local_fallback);fallbackNote.textContent=job?.progress?.local_fallback?.message||'';
       warnings.replaceChildren();for(const text of view.scene_warnings)warnings.append(node('li',text));if(!view.approved_script)warnings.prepend(node('li','Önce metni kaydedin (Metin ekranı).'));
       versions.replaceChildren();for(const v of view.versions){const option=node('option',`Plan Sürümü ${v.plan_version}${v.active?' · Aktif plan':''} · ${v.scene_count} sahne · ${v.status==='outdated'?'Eski plan':v.status==='approval_required'?'Onay gerekli':'Hazır'} · ${v.provider} · ${new Date(v.created_at).toLocaleString('tr-TR')}`);option.value=v.plan_id;versions.append(option);}
       if(view.plan){versions.value=view.plan.plan_id;summary.textContent=`Plan Sürümü ${view.plan.plan_version} · Aktif plan · Senaryo Sürümü ${view.plan.source_script_version||'eski'} · ${view.plan.blocks.length} sahne · ${view.coverage_complete?'Onaylı anlatım tam ve aynı sırayla kapsanıyor.':'Güncel senaryo kapsamı doğrulanamadı.'}${view.plan.status==='outdated'?' Bu plan eski senaryoya/dile ait.':''}`;for(const input of music.elements){if(!input.name)continue;if(input.type==='checkbox')input.checked=view.plan.music[input.name];else input.value=view.plan.music[input.name];}}

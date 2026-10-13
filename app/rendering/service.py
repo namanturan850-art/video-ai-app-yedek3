@@ -74,6 +74,11 @@ class RenderService:
         cues=h.get('subtitles',[])
         for owner,parts in chains.items():
             m=selected[owner]['selected_media'];spec=m['source_metadata']['motion']
+            from app.motion.clips import with_pictures
+            try:spec=with_pictures(spec,directory(self.projects,pid))  # İŞARETLE / ÖNCESONRA: picture paths for drawing
+            except RuntimeError:
+                for slot in parts:media[slot['slot_id']].update(segment_start=0.,motion=True)
+                continue  # its pictures are gone: the prepared clip is used as it is
             start=parts[0]['start'];duration=round(parts[-1]['end']-start,3)
             target=(spec.get('emphasis') or '').casefold();spoken=None
             for cue in cues:

@@ -21,8 +21,20 @@ Yeni proje (başlık, dil) → **Metni yapıştır** → Seslendirme → Altyaz�
 | `[ÇİZELGE: 1945, 1962, 1991]` | **Zaman çizelgesi** (2–5 tarih). `1945 Flug 19; 1962 Tanker` gibi açıklama da eklenebilir. |
 | `[KARŞILAŞTIR: Rom \| Karthago]` | **Karşılaştırma** (A ile B). Sayı da verilebilir: `Rom: 1000000 \| Karthago: 400000` → çubuk grafik. |
 | `[LİSTE: Stürme; Strömungen; Fehler]` | **Madde listesi** (2–4 madde). |
+| `[ROTA: Ninive > Babil > Kudüs]` | Haritada **rota**: çizgi yerden yere çizilir, durakların adı çıkar (2–6 yer). |
+| `[İMPARATORLUK: Assyrien 911-612 v. Chr.]` | **Zamanla büyüyen sınır** ve akan yıl. Bilinen imparatorluklarda (Roma, Osmanlı, Asur, Babil, Pers, Bizans, Moğol, Hitit, Mısır, Makedonya) sınır yerleri hazırdır; diğerlerinde yerleri siz yazın: `[İMPARATORLUK: Urartu 860-590 | Tuşpa, Erzurum, Urmiye]`. Sınır yaklaşıktır ve ekranda öyle yazar. |
+| `[YAKINLAŞ: Babil]` | **Dünyadan yere yakınlaşma**: dünya → ülke → yer; çevredeki bilinen yerler de görünür. |
+| `[İŞARETLE: Tapınağın sütunları]` | Sahnenin **görselinde yavaş yakınlaşma + daire + ok + etiket**. Görsel, nota uygun stok fotoğraf olarak bulunur; daire konumunu Medya ekranında “Odak noktası” ile düzeltebilirsiniz. |
+| `[ÖNCESONRA: Antik liman \| Bugünkü kıyı]` | İki görsel arasında **kayan perde** (“Önce / Sonra”). |
+| `[İKON: 10000 asker]` | **Çoğalan ikonlar + sayaç** (asker, insan, gemi, ev, bina, para, ağaç, hayvan, kitap, gezegen). Büyük sayılarda “1 ikon = 500” gibi açıklama çıkar. |
+| `[ORAN: %40 nüfus kıyıda]` | **Pasta grafik** ve yüzde. |
+| `[HANEDAN: Davud > Süleyman > Rehavam, Yeroboam]` | **Hanedan ağacı**: “>” yeni kuşak, “,” kardeşler. |
+| `[BİLGİ: Babil surları iki araba genişliğindeydi.]` | **“Biliyor muydunuz?” kartı.** |
 
-- İnfografik işaretleri Medyayı Tamamla'da **önce** çizilir; yapay zekâ kotası dolsa bile işaretli sahneler infografik olur.
+- İnfografik işaretleri Medyayı Tamamla'da **önce** çizilir; yapay zekâ gerekmez.
+- **Yerler** uygulamayla gelen çevrimdışı listeden bulunur (ülkeler, 15 000+ nüfuslu şehirler, bölgeler, denizler, önemli antik yerler; antik ↔ bugünkü adlar: Kudüs/Jerusalem/Hierosolyma, Byzanz/İstanbul, Ninova/Ninive). Bulunamayan yer **uyarıyla** bildirilir, tahmin edilmez.
+- **Öneri:** işaret yoksa sahne planı sayı, tarih, yer veya rota geçen cümleler için uygun infografiği kendisi önerir (en fazla sahnelerin %25'i). Medya ekranında “Öneriyi onayla” deyin, metnini düzenleyin veya “Stok videoyla değiştir” ile vazgeçin.
+- Her infografik Medya ekranında **önizlenir**; “Motion metnini düzenle” ile işaret metni değiştirilip yeniden çizilir.
 - İşaret adı büyük/küçük harf ve Türkçe harf fark etmez (`[cizelge: …]`, `[Liste: …]`).
 - Bir sahnede görüntü yeri kalmazsa işaret en yakın yuvaya gider; hiç yer yoksa ekranda yazılır.
 
@@ -43,6 +55,10 @@ Yeni proje (başlık, dil) → **Metni yapıştır** → Seslendirme → Altyaz�
 - **Bağlam:** Önceki ve sonraki cümle ile videonun konusu da değerlendirilir.
 
 ## Medya seçimi
+- **Arama dili:** stok sitelerine yalnız **İngilizce** sorgu gider. Almanca/Türkçe kelimeler çevrilir veya atılır, yer adları İngilizce adıyla yazılır, sayılar ve “v. Chr.” gibi ifadeler silinir (“Christus Handvoll Stadttor” → “jesus christ city gate”). Çeviri bulunamazsa konuya uygun genel İngilizce sorgular kullanılır.
+- **Yerel görüntü modeli (CLIP):** `INSTALL_OPENMONTAGE_SEMANTIC.bat` ile kurulursa, her adayın başlangıç/orta/son kareleri cümleyle ve [GÖRSEL] notunuzla karşılaştırılır. Puan (0–10) Medya ekranında görünür; düşük puanlılar (köpek, ofis, modern şehir…) elenir. İnternet ve kota gerekmez. Kurulu değilse ekranda kurulum önerisi çıkar, iş yine durmaz (etiket/kelime eşleşmesi kullanılır).
+- **Gemini görsel kontrolü varsayılan olarak KAPALI.** Ayarlar → Genel'den açılırsa Gemini yalnızca CLIP'in kararsız kaldığı adaylara bakar; 60 sn içinde yanıt gelmezse o bakış atlanır. Gemini artık esas olarak yalnızca sahne planı için kullanılır (video başına birkaç istek).
+- **Gemini hiç yanıt vermezse:** işin başında 60 sn içinde cevap yoksa bütün iş yerel modda sürer; görsel isteklerde HTTP zaman aşımı 45 sn; yedek zincirde en fazla 3 model, her biri 1 kez denenir. Ekran hangi modelin denendiğini ve kalan saniyeyi gösterir. Görsel toplu istek “503 sunucu meşgul” verirse küçük bir metin isteğiyle neden kontrol edilir; metin çalışıyorsa adaylar tek tek gönderilir (her istekte en fazla 4 görsel, en fazla 512 px JPEG).
 - **Ön eleme:** Pexels/Pixabay sonuçları önce metadata ile elenir:
   - sizin reddettikleriniz,
   - filigran veya logo izi,

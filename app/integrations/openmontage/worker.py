@@ -65,11 +65,12 @@ def command(args,*,timeout=None,cwd=None):
 def work(operation,inputs):
     spec=importlib.util.spec_from_file_location('avs_visual_engine',Path(__file__).with_name('visual_engine.py'))
     visual=importlib.util.module_from_spec(spec);spec.loader.exec_module(visual)
-    if operation in ('visual','semantic'):
+    if operation in ('visual','semantic','frames'):
         status=visual.model_status(ROOT)
         if not status:raise ValueError('semantic_model_missing')
         os.environ.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
         if operation=='visual':return visual.analyse(ROOT,inputs,command)
+        if operation=='frames':return visual.score_frames(ROOT,inputs)
         from lib import clip_embedder
         clip_embedder._MODEL_ID=str(status['folder'])
     if operation=='doctor':

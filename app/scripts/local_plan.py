@@ -2,11 +2,12 @@
 call, for when Gemini is not reachable and the owner does not want Ollama.
 
 It groups the narration units into short scenes (2–3 sentences, ~25 words),
-and builds stock queries from the scene's own words: filmable nouns are
-turned into English stock words with a small built-in word list
-(app/scripts/local_words.py; “Schiffe” → “ship”), the original nouns and
-names are kept as extra queries (Wikimedia Commons searches many languages),
-and the owner's [GÖRSEL: …] notes still replace them with exact queries. Places, numbers and dates still
+and builds ENGLISH stock queries from the scene's own words: filmable nouns
+are turned into English stock words with a small built-in word list
+(app/scripts/local_words.py; “Schiffe” → “ship”), place names become their
+English name, and when nothing is found the topic gives generic English
+queries (app/scripts/query_clean.py). The narration's own German/Turkish
+words never reach a search; the owner's [GÖRSEL: …] notes still win. Places, numbers and dates still
 become infographics in Medyayı Tamamla. It plugs into the normal plan job as
 a provider whose answer is the JSON the AI would have returned."""
 import json
@@ -51,31 +52,31 @@ def plan_scenes(units, topic='', language='de'):
     if current:
         if groups and len(current) == 1 and len(current[0]['text'].split()) < 8: groups[-1].extend(current)
         else: groups.append(current)
-    topic_words = keywords(topic, 2)
+    from app.scripts.query_clean import clean_block, english_query, generic_queries
     topic_english = english_words(topic, language, 2)
+    fallback = generic_queries(topic, language)
     scenes = []
     for index, group in enumerate(groups):
         text = ' '.join(u['text'] for u in group)
-        found = keywords(text, 4) or topic_words or ['documentary', 'landscape']
+        found = keywords(text, 4)
         english = english_words(text, language, 3)
-        native = ' '.join(found[:3]) if len(found) >= 2 else ' '.join(found + topic_words)[:80] or 'documentary landscape'
-        if len(native.split()) < 2: native = f'{native} {topic_words[0] if topic_words else "landscape"}'
-        if english:  # stock sites are tagged in English
-            main = ' '.join(english[:2])
-            if len(main.split()) < 2: main = f'{main} {(topic_english or ["closeup"])[0]}' if (topic_english or ['closeup'])[0] != main else f'{main} closeup'
-        else:
-            main = native
-        alternatives = []
-        for candidate in (' '.join(english[1:3]) if len(english) > 2 else '', native, ' '.join(english[:1] + topic_english[:1]),
-                          ' '.join(found[1:3]), ' '.join(topic_english) or ' '.join(topic_words) or 'historic landscape', 'documentary landscape'):
+        places = [p for p in (english_query(w, language, strict=True, limit=2) for w in found if w[:1].isupper()) if p][:2]
+        # Stock sites are tagged in English: queries are ONLY English words (translations,
+        # English place names, the topic's English fallback) — never the narration's own words.
+        candidates = [' '.join(english[:2]), ' '.join(english[1:3]), ' '.join((places[:1] + english[:1])),
+                      ' '.join(english[:1] + topic_english[:1]), *fallback[:2], ' '.join(english[:1] + english[2:3]), *fallback[2:]]
+        queries = []
+        for candidate in candidates:
             candidate = ' '.join(candidate.split())
-            if len(candidate.split()) >= 2 and candidate.casefold() != main.casefold() and candidate.casefold() not in (a.casefold() for a in alternatives):
-                alternatives.append(candidate)
+            if len(candidate.split()) >= 2 and frozenset(candidate.casefold().split()) not in {frozenset(q.casefold().split()) for q in queries}:
+                queries.append(candidate)  # “empire city” and “city empire” are the same search
+        main = queries[0] if queries else fallback[0]
         names = [w for w in found if w[:1].isupper()][:5]
-        scenes.append({'unit_ids': [u['unit_id'] for u in group], 'purpose': 'Anlatılanı görsel olarak destekle',
-                       'mood': MOODS[index % len(MOODS)], 'visual_intent': f'{main} (anlatımdaki kelimelerden; yerel plan)',
-                       'stock_query': main, 'alternative_stock_queries': alternatives[:3] or ['documentary landscape'],
-                       'media_type': 'stock_video', 'entities': names})
+        block = {'unit_ids': [u['unit_id'] for u in group], 'purpose': 'Anlatılanı görsel olarak destekle',
+                 'mood': MOODS[index % len(MOODS)], 'visual_intent': f'{main} (anlatımdaki kelimelerden; yerel plan)',
+                 'stock_query': main, 'alternative_stock_queries': queries[1:5] or fallback[:2],
+                 'media_type': 'stock_video', 'entities': names}
+        scenes.append(clean_block(block, language, strict=True, topic=topic))
     return scenes
 
 

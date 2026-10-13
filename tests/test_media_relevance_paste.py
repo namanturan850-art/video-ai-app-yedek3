@@ -65,6 +65,7 @@ def build(tmp_path, monkeypatch, key):
     for name, value in (('pexels', 'synthetic-pexels-key-1111'), ('pixabay', 'synthetic-pixabay-key-2222')):
         assert client.put(f'/api/settings/{name}', json={'api_key': value}, headers=SETTINGS).status_code == 200
     s.save('gemini', {'api_key': 'synthetic-gemini-key-3333'}); s.record_gemini_models(s.gemini_config(), ['gemini-test-model']); s.save('gemini', {'model': 'gemini-test-model'})
+    s.save('general', {'ai_visual_check': True})  # Gemini looks at the candidates (off by default)
     stock = client.app.state.stock
     stock.ai_sleep = lambda seconds, service: None
     pid = client.post('/api/projects', json={'name': data['topic'], 'language': 'de'}).json()['id']

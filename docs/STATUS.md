@@ -1,5 +1,22 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 — Gemini takılmaz, medya Gemini'siz seçilir, 9 yeni infografik
+
+- **Gemini artık işi bekletmez.**
+  - İşin başında 60 sn içinde hiçbir Gemini cevabı yoksa bütün Medyayı Tamamla yerel modda sürer.
+  - Görsel isteklerde HTTP zaman aşımı 45 sn. Yedek zincir en fazla 3 model dener, model başına 1 deneme.
+  - Ekranda denenen model ve kalan saniye görünür (“Gemini 2.5-flash deneniyor (1/3) · en fazla 42 sn kaldı”); “%0 hazırlanıyor” 1 dakikadan uzun kalmaz.
+  - Görsel toplu istek 503 verirse küçük bir metin isteğiyle neden teşhis edilir; metin çalışıyorsa adaylar tek tek gönderilir. Her istekte en fazla 4 görsel, en fazla 512 px JPEG.
+  - Sahne planında Gemini cevap vermezse (90 sn, kota, sunucu meşgul) plan soru sormadan uygulamanın kendi kurallarıyla yapılır; işaretleriniz yine önceliklidir.
+- **Medya seçimi Gemini'ye bağlı değil.**
+  - Stok sorguları yalnız İngilizce: Almanca/Türkçe kelimeler çevrilir ya da atılır; sayılar ve “v. Chr.” sorguya girmez.
+  - Yerel CLIP modeli (INSTALL_OPENMONTAGE_SEMANTIC.bat) adayların 3 karesini cümle + [GÖRSEL] notuyla karşılaştırır; puan ekranda görünür, düşük puanlılar elenir. Kurulu değilse ekranda kurulum önerisi çıkar, iş durmaz.
+  - Gemini görsel kontrolü varsayılan KAPALI; açılırsa yalnız CLIP'in kararsız kaldığı adaylara bakar.
+- **9 yeni infografik işareti:** [ROTA], [İMPARATORLUK], [YAKINLAŞ], [İŞARETLE], [ÖNCESONRA], [İKON], [ORAN], [HANEDAN], [BİLGİ].
+  - Çevrimdışı yer listesi (GeoNames CC BY 4.0 + antik yerler, antik ↔ bugünkü adlar). Bulunamayan yer uyarıyla bildirilir.
+  - İşaret yoksa sayı/tarih/yer/rota geçen cümlelere infografik önerilir (en fazla %25); Medya ekranında onaylanır veya değiştirilir.
+- **Henüz taklit (mock) olanlar:** CLIP modeli bu geliştirme ortamında kurulamadı (model indirme kapalı); testlerde ve uçtan uca denemede yerine sahte bir puanlayıcı kullanıldı. Gerçek CLIP yolu (`frames` işlemi) Windows'ta kurulumdan sonra çalışır.
+
 ## 2026-10-12 — Gemini olmadan da çalışır
 
 - **Medyayı Tamamla Gemini'ye bağlı değil.**

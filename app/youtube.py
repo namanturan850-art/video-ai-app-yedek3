@@ -153,6 +153,11 @@ class YouTubeService:
                 seen.add(key); out.append({'provider': 'Wikimedia Commons', 'creator': meta.get('author') or m.get('creator_name', ''),
                                            'title': meta.get('title', ''), 'license': meta.get('license', ''), 'url': m.get('page_url', '')})
                 continue
+            template = ((m.get('source_metadata') or {}).get('motion') or {}).get('template')
+            if m.get('provider') == 'generated' and template in ('map', 'route', 'empire', 'zoom') and ('geonames',) not in seen:
+                seen.add(('geonames',))  # place data of the map infographics: CC BY 4.0 asks for this credit
+                out.append({'provider': 'GeoNames', 'creator': 'GeoNames', 'title': 'Place data / Yer verisi', 'license': 'CC BY 4.0', 'url': 'https://www.geonames.org'})
+                continue
             if m.get('provider') not in ('pexels', 'pixabay'): continue
             key = (m['provider'], m.get('creator_name', ''))
             if key in seen: continue

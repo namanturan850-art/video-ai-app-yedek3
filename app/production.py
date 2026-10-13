@@ -92,6 +92,8 @@ class VisualBlock(BaseModel):
     card_text: str = Field(default='',max_length=150)
     # Motion-graphic template (app/motion/templates.py) for motion_graphic scenes.
     motion_spec: dict | None = None
+    # The app suggested this infographic itself (numbers, dates, places, lists); the owner approves or changes it on the media screen.
+    motion_suggested: bool = False
     # Owner's own markers from the pasted text ([GÖRSEL]/[HARİTA]/[SAYI]).
     owner_hints: list[dict] = Field(default_factory=list, max_length=10)
 
@@ -666,11 +668,14 @@ class ProductionService:
         if existing and not confirmed: raise ScriptError('Mevcut görsel plan korunuyor. Yenisiyle değiştirmek için açık onay verin.', 409)
         if not coverage(blocks,current['text']): raise ScriptError('Sahne anlatımı onaylı senaryoyu tam ve aynı sırayla kapsamıyor.',422)
         from app.scripts.query_refine import refine
-        blocks=refine(deepcopy(blocks))  # map → infographic, symbolic → concrete, no copied neighbour queries
+        topic=self.projects.get(project_id).get('topic','')
+        blocks=refine(deepcopy(blocks),language,topic)  # map → infographic, symbolic → concrete, no copied neighbour queries, English only
         markers=getattr(self.scripts,'markers',None)
         if markers:  # the owner's [GÖRSEL]/[HARİTA]/[SAYI] notes win over the AI's queries
             from app.scripts.paste import apply_markers
-            blocks=apply_markers(blocks,markers(project_id,current['id']))
+            blocks=apply_markers(blocks,markers(project_id,current['id']),language)
+        from app.scripts.query_refine import suggest_infographics
+        blocks=suggest_infographics(blocks,language)  # after the markers: they count toward the 25% share
         image_config = self.scripts.settings.image_config()
         plan = {'version_id': current['id'], 'source_script_version':current['version'], 'language': language,
                 'provider':provider,'model':model,'status':'ready','width': image_config['width'], 'height': image_config['height'], 'blocks': deepcopy(blocks),
@@ -826,7 +831,7 @@ class ProductionService:
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
                 'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
                 'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query','semantic_descriptor',
-                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec','owner_hints') if b.get(key)}} for b in plan['blocks']]}
+                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec','motion_suggested','owner_hints') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

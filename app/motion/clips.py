@@ -84,6 +84,19 @@ def openmontage(scene, output, bridge, ffmpeg, folder):
         shutil.rmtree(public, ignore_errors=True)
 
 
+def with_pictures(spec, folder):
+    """İŞARETLE / ÖNCESONRA: the spec keeps picture file names (project stock
+    folder); drawing needs their full paths. Other templates are unchanged."""
+    if spec['template'] not in ('mark', 'beforeafter'): return spec
+    spec = {**spec, 'data': {**spec['data']}}
+    names = [spec['data'].get('image')] if spec['template'] == 'mark' else list(spec['data'].get('images') or [])
+    paths = [Path(folder) / Path(str(n)).name for n in names if n]
+    if not paths or not all(p.is_file() and not linked(p) for p in paths): raise RuntimeError('picture_missing')
+    if spec['template'] == 'mark': spec['data']['image_path'] = str(paths[0])
+    else: spec['data']['image_paths'] = [str(p) for p in paths]
+    return spec
+
+
 def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
@@ -91,6 +104,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     ffmpeg = ffmpeg or discover().get('ffmpeg')
     if not ffmpeg:
         raise RuntimeError('ffmpeg_missing')
+    spec = with_pictures(spec, folder)
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
     target = folder / (scene_key(scene) + '.mp4')
     if target.is_file() and not linked(target) and target.stat().st_size > 0:
@@ -98,7 +112,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     temporary = folder / ('.motion-' + uuid4().hex + '.mp4')
     engine = 'local'
     try:
-        if prefer_openmontage and bridge is not None:
+        if prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC:  # the nine marker templates: local renderer only
             try:
                 openmontage(scene, temporary, bridge, ffmpeg, folder)
                 engine = 'openmontage'
@@ -115,9 +129,11 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
 
 def media_record(path, spec, scene, engine):
     data = path.read_bytes()
-    summary = {'stat': lambda d: d['value'] + ' ' + d['label'], 'map': lambda d: d['place'], 'quote': lambda d: d['text'],
-               'timeline': lambda d: ' · '.join(e['date'] for e in d['events']), 'compare': lambda d: ' vs '.join(i['label'] for i in d['items']),
-               'list': lambda d: ', '.join(d['items'])}[spec['template']](spec['data'])
+    from app.motion.templates_extra import TEMPLATES_EXTRA, summary as extra_summary
+    summary = extra_summary(spec) if spec['template'] in TEMPLATES_EXTRA else {
+        'stat': lambda d: d['value'] + ' ' + d['label'], 'map': lambda d: d['place'], 'quote': lambda d: d['text'],
+        'timeline': lambda d: ' · '.join(e['date'] for e in d['events']), 'compare': lambda d: ' vs '.join(i['label'] for i in d['items']),
+        'list': lambda d: ', '.join(d['items'])}[spec['template']](spec['data'])
     return {'provider': 'generated', 'media_id': 'motion-' + path.stem[:16], 'media_type': 'video', 'source_url': '', 'page_url': '',
             'creator_name': 'AI Video Studio', 'creator_url': '', 'width': 1920, 'height': 1080, 'duration': scene['duration'],
             'preview_url': '', 'download_url': '', 'query_used': '', 'provider_query': None, 'description': summary[:300],

@@ -23,9 +23,11 @@ class GeneralSettings(StrictModel):
     # AI script writing (Senaryo oluştur, AI Yönetmen purpose/script, source
     # analysis) is kept in the code but OFF: the owner pastes their own text.
     script_generation: bool = False
-    # The AI (Gemini) looks at stock candidates before they are used. Off: no
-    # Gemini request at all from Medyayı Tamamla; local tag/word scoring only.
-    ai_visual_check: bool = True
+    # The AI (Gemini) looks at stock candidates the local image model (CLIP)
+    # is unsure about. OFF by default: Medyayı Tamamla then sends no Gemini
+    # request at all. Stored as 'gemini_visual_check' (an older stored
+    # 'ai_visual_check' value — default on — is ignored).
+    ai_visual_check: bool = False
     _language = field_validator('content_language')(validate_language)
 
 
@@ -238,7 +240,7 @@ class SettingsService:
             secrets = stored_secrets(values)
             guard = SecretGuard(secrets)
             result = {"general": {"content_language": values["general"]["content_language"],
-                                  "ai_visual_check": bool(values["general"].get("ai_visual_check", True))}}
+                                  "ai_visual_check": bool(values["general"].get("gemini_visual_check", False))}}
             for name in PROVIDERS:
                 config = values[name]
                 public_fields = MODELS[name]().model_dump(exclude={"api_key"})
@@ -344,6 +346,8 @@ class SettingsService:
                     if unknown:
                         raise SettingsInputError('Yedek model sırasında listede olmayan model var. Modelleri Getir deyip yeniden düzenleyin.')
             updated = model.model_dump(exclude_unset=True, exclude={"api_key"})
+            if section == 'general' and 'ai_visual_check' in updated:
+                updated['gemini_visual_check'] = updated.pop('ai_visual_check')
             if section=='ai33':
                 config=values[section]
                 if 'voice_id' in updated and updated['voice_id']:
@@ -427,7 +431,7 @@ class SettingsService:
 
     def ai_visual_check(self):
         with self.store.lock:
-            return bool(self._values()['general'].get('ai_visual_check', True))
+            return bool(self._values()['general'].get('gemini_visual_check', False))
 
     def script_generation(self):
         """Owner flag (default off). AVS_SCRIPT_GENERATION=1 also turns it on."""

@@ -119,10 +119,10 @@ class Bridge:
         python=root/'.venv'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
         try:
             args=[str(python),str(WORKER),str(root),str(request)]
-            if operation=='visual':
+            if operation in ('visual','frames'):
                 # Bounded model inference; raw output never reaches diagnostics.
                 checked=subprocess.run(args,cwd=folder,shell=False,env=env,stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180)
+                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180 if operation=='visual' else 120)
                 if checked.returncode:raise ValueError()
             else:(runner or ProcessRunner()).run(args,folder,phase='openmontage',env=env)
             if linked(response) or response.stat().st_size>2_000_000:raise ValueError()

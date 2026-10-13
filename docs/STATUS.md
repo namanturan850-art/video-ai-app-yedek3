@@ -1,5 +1,17 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (2) — Render ilerlemesi, kart süresi, şablon zamanlaması
+
+- **OpenMontage render artık takılmaz görünmez.**
+  - Remotion'ın “Rendered N/M” kare çıktısı okunur; %40–%90 arası gerçek kare ilerlemesi gösterilir, %90–%100 teslim (FFmpeg) aşamasıdır.
+  - Render ekranında yaklaşık kalan süre görünür.
+  - Sabit 30 dk sınırı kalktı: 5 dk boyunca yeni kare gelmezse render durdurulur ve Türkçe hata verilir (en çok 2 saat).
+- **Yazı kartları:** kart cümle bitişi +0,4 sn sürer (3 sn'de kesilmez) ve tüm cümle yerine 2–5 kelimelik vurgu gösterir (sayı/tarih varsa onun çevresi).
+- **Animasyon şablonları:** giriş en çok 0,6 sn; yazılar sahne sonuna kadar tam görünür, ≥2 sn okunur (vurgu zamanı buna göre geriye çekilir). Otomatik test: `tests/test_motion_timing.py` (6 klasik + 9 işaret şablonu).
+- **Henüz yapılmadı:** harita iğnesi/“Babylon” etiketinin gerçek render'da yeniden doğrulanması, daha ince kıyı verisi, şablon başına ≥3 yerleşim, ardışık infografikte farklı tip, video üstü alt bant. Bunlar sonraki küçük adımdır.
+- **Not:** Bu mesajın 5. maddesi “%40–%95 gerçek ilerleme + kalan…” cümlesinde yarım kalmıştı; devamı gelirse ayrıca yapılır.
+- **Gerçek Windows render'ı denenmedi** (ortamda Remotion yok); ilerleme okuma sahte bir render çıktısıyla test edildi.
+
 ## 2026-10-13 — Gemini takılmaz, medya Gemini'siz seçilir, 9 yeni infografik
 
 - **Gemini artık işi bekletmez.**

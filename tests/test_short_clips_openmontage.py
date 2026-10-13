@@ -314,7 +314,7 @@ def test_mock_trim_compose_projection_preserves_timing_without_cycles(tmp_path,m
         def status(self,*a):return {'ready':True,'commit':PIN[:7]}
         def root(self):return external
         def settings_guard(self,v):pass
-        def call(self,op,inputs,folder,runner):
+        def call(self,op,inputs,folder,runner,progress=None):
             calls.append((op,deepcopy(inputs)))
             if op=='trim':Path(inputs['output_path']).write_bytes(b'trim')
             else:

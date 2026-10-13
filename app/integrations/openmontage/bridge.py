@@ -101,7 +101,7 @@ class Bridge:
         except (OSError,ValueError,KeyError,subprocess.SubprocessError,RenderError):pass
         self.cache,self.cache_time=dict(r),time.monotonic();return r
 
-    def call(self,operation,inputs,folder,runner=None):
+    def call(self,operation,inputs,folder,runner=None,progress=lambda fraction:None):
         status=self.status()
         if not status['ready']:raise RenderError('openmontage_unavailable',status['message'])
         root=self.root();folder=Path(folder).resolve();request=folder/('om-input-'+uuid4().hex+'.json');response=folder/('om-result-'+uuid4().hex+'.json')
@@ -124,7 +124,7 @@ class Bridge:
                 checked=subprocess.run(args,cwd=folder,shell=False,env=env,stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180 if operation=='visual' else 120)
                 if checked.returncode:raise ValueError()
-            else:(runner or ProcessRunner()).run(args,folder,phase='openmontage',env=env)
+            else:(runner or ProcessRunner()).run(args,folder,progress,phase='openmontage',env=env)
             if linked(response) or response.stat().st_size>2_000_000:raise ValueError()
             result=json.loads(response.read_text(encoding='utf-8'));self.settings_guard(result)
             if result.get('success') is not True:raise ValueError()

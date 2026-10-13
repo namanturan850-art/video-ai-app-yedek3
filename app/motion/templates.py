@@ -242,8 +242,9 @@ class Scene:
     def __init__(self, kit, duration, emphasis):
         from app.channels import FONTS
         self.kit, self.D = kit, round(float(duration), 3)
-        self.E = round(min(max(emphasis, .6), max(.6, self.D - .35)), 3)
-        self.md = float(kit.get('motion_duration', .6))
+        # The emphasis leaves room for entry (<= .6 s) and a label that stays readable >= 2 s.
+        self.E = round(min(max(emphasis, .6), max(.6, self.D - 2.8)), 3)
+        self.md = min(.6, float(kit.get('motion_duration', .6)))
         p = kit['palette']
         self.bg, self.primary, self.accent, self.fg = p['background'], p['primary'], p['accent'], p['text']
         self.head = FONTS[kit.get('heading_font', 'montserrat')][1]
@@ -327,6 +328,7 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
             x = W / 2 - measure(row, s.head, fs) / 2
             for word in row.split():
                 at = E if index == hit else .3 + index * step if index < hit else E + (index - hit) * min(step, .15)
+                at = min(at, max(.3, D - 2.6))  # every word stays readable >= 2 s
                 s.text(word, x, top + r * fs * 1.3, fs, anchor='lm', start=at, dy=24,
                        fill=s.accent if index == hit else s.fg)
                 x += measure(word + ' ', s.head, fs); index += 1

@@ -28,6 +28,15 @@ def phrase(text):
     return None
 
 
+def highlight(text):
+    """2-5 word accent for the card: the window around a number/date, else the opening words."""
+    words=text.split()
+    if len(words)<=5:return text
+    digit=next((i for i,w in enumerate(words) if re.search(r'\d',w)),None)
+    first=0 if digit is None else min(max(0,digit-1),len(words)-5)
+    return ' '.join(words[first:first+5]).strip(',;:')
+
+
 def emphasis(t,h,style):
     result=[];last=-100.;spacing=28 if style=='balanced' else 18
     meta={s['scene_id']:s for s in t['editing_scenes']}
@@ -45,8 +54,10 @@ def emphasis(t,h,style):
                 if cue['start']-last<(spacing-4 if importance>=75 else spacing):continue
                 text=phrase(cue['text'])
                 if not text or text not in source_text:continue
-                start=max(cue['start'],scene['start']);end=min(cue['end'],scene['end'],start+3)
+                # The card stays until the sentence is over (+0.4 s), never cut mid-sentence.
+                start=max(cue['start'],scene['start']);end=min(cue['end']+.4,scene['end'])
                 if end-start<1.5:continue
+                text=highlight(text)
                 # Prefer an exact number/date phrase; otherwise a scene-opening cue.
                 candidates.append((int(bool(re.search(r'\d',text))),-cue['start'],text,start,end,cue.get('index')))
             if not candidates:continue

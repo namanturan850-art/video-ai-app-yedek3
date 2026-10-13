@@ -8,7 +8,7 @@ class LocalRemotionBridge:
     def __init__(self): self.calls = []
     def status(self, refresh=False): return {'ready': True}
     def root(self): return ROOT
-    def call(self, operation, inputs, folder, runner=None):
+    def call(self, operation, inputs, folder, runner=None, progress=None):
         b = inputs['edit_decisions']['bespoke']; self.calls.append(inputs)
         cli = ROOT / 'node_modules/@remotion/cli/remotion-cli.js'
         r = subprocess.run(['node', str(cli), 'render', b['entry'], b['composition_id'], inputs['output_path'], f'--props={b["props_path"]}',

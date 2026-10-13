@@ -52,6 +52,10 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   const activeJob=()=>!!(state?.job&&['queued','preparing','rendering','validating'].includes(state.job.status));
   function updateButtons(){create.disabled=pending||!state?.ready||activeJob();upload.disabled=pending||activeJob();encoder.disabled=activeJob();montageEngine.disabled=pending||activeJob();editingStyle.disabled=pending||activeJob();subtitles.disabled=pending||activeJob();variation.disabled=pending||activeJob();music.disabled=activeJob();create.textContent=state?.job&&['error','cancelled'].includes(state.job.status)?'Yeniden Render Et':'Videoyu Oluştur';}
   function clock(s){return `${Math.floor(s/60)}:${String(Math.floor(s%60)).padStart(2,'0')}`;}
+  function remaining(p){ // rough estimate from real progress (Remotion frames fill 40-90 %)
+    if(!(p.percent>=45&&p.percent<95&&p.elapsed_seconds>20))return '';
+    return ` · Kalan: yaklaşık ${clock(Math.round(p.elapsed_seconds*(100-p.percent)/p.percent))}`;
+  }
   const motionLabels={none:'Yok',push_in:'Yakınlaşma',push_out:'Uzaklaşma',pan_left:'Sola kayma',pan_right:'Sağa kayma',pan_up:'Yukarı kayma',pan_down:'Aşağı kayma',subtle_reframe:'Hafif kadraj değişimi'};
   const transitionLabels={hard_cut:'Temiz kesme',none:'Yok',crossfade:'Yumuşak geçiş',fade:'Koyu geçiş',fade_dark:'Koyu geçiş',dip_black:'Kısa kararma'};
   const styleLabels={adaptive:'Uyarlanabilir YouTube',basic:'Temel',balanced:'Dengeli YouTube',dynamic:'Dinamik YouTube'};
@@ -80,7 +84,7 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
     if(state.music&&!musicTouched)music.checked=true;  // an added track is used unless the owner turns it off
     musicStatus.textContent=state.music?(music.checked?'✓ Müzik eklendi ve bu videoda kullanılacak (konuşmada otomatik kısılır).':'Müzik eklendi ama şu an kapalı. Kullanmak için “Bu videoda arka plan müziği kullan” kutusunu işaretleyin.'):'Henüz müzik yok. Video yalnız seslendirme ile oluşturulur; isterseniz yukarıdan müzik ekleyin.';
     jobs.replaceChildren();const j=state.job;
-    if(j){jobs.append(el('h2',j.status_label));const p=el('progress');p.max=100;p.value=j.progress.percent;jobs.append(p,el('p',`%${j.progress.percent} · Geçen süre: ${clock(j.progress.elapsed_seconds)} · Kullanılan encoder: ${j.encoder_label}`));
+    if(j){jobs.append(el('h2',j.status_label));const p=el('progress');p.max=100;p.value=j.progress.percent;jobs.append(p,el('p',`%${j.progress.percent} · Geçen süre: ${clock(j.progress.elapsed_seconds)}${remaining(j.progress)} · Kullanılan encoder: ${j.encoder_label}`));
       if(j.error_message)jobs.append(el('p',j.error_message));for(const w of j.progress.warnings||[])jobs.append(el('p',w));
       const d=j.progress.diagnostic;if(j.status==='error'&&d){const panel=el('section');panel.id='render-safe-diagnostic';panel.setAttribute('aria-live','polite');
         panel.append(el('h3','Güvenli render tanısı'),el('p',`Render aşaması: ${d.phase_label}`),el('p',`Hata türü: ${d.safe_error_summary}`),el('p',`Tanı kodu: ${d.safe_error_code}`));

@@ -73,7 +73,8 @@ class OpenMontageProvider:
                 'edit_decisions':{'render_runtime':'remotion','composition_mode':'atelier','renderer_family':'bespoke',
                    'bespoke':{'entry':str(entry),'composition_id':'AIVideoStudio','props_path':str(props),'public_dir':str(public),'crf':20,'concurrency':1}}}
             self.progress('rendering',40,'',[]);self.log('openmontage_composition_started')
-            self.bridge.call('compose',request,plan['temporary'],self.runner)
+            # Real Remotion frame progress fills 40-90 %; the FFmpeg delivery pass 90-100 %.
+            self.bridge.call('compose',request,plan['temporary'],self.runner,lambda fraction:self.progress('rendering',40+round(min(1,fraction)*50,1),'',[]))
             output=Path(neutral['output_path'])
             if linked(output) or not output.is_file():raise RenderError('output_invalid','OpenMontage çıktısı doğrulanamadı; önceki video korundu.')
             # Native FFmpeg remains authoritative for delivery codecs, original
@@ -84,7 +85,7 @@ class OpenMontageProvider:
             delivery={**plan,'timeline':t,'smart_edit_plan':None,
                 'options':{**plan['options'],'editing_style':'basic','subtitle_display':'none','subtitle_burned':False},
                 'media':{slot['slot_id']:{'path':output,'type':'video','duration':t['duration']}}}
-            result=FFmpegRenderProvider(self.tools,self.runner,lambda phase,percent,encoder,warnings:self.progress(phase,70+round(percent*.3),encoder,warnings),self.log).render(delivery)
+            result=FFmpegRenderProvider(self.tools,self.runner,lambda phase,percent,encoder,warnings:self.progress(phase,90+round(percent*.1),encoder,warnings),self.log).render(delivery)
             # The composition renders the planned camera moves, punch-in splits,
             # transitions and emphasis texts itself (see composition.tsx).
             applied=deepcopy(edit['summary'])

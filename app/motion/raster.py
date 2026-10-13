@@ -6,7 +6,7 @@ import subprocess
 
 from PIL import Image, ImageDraw
 
-from app.motion.templates import (FPS, H, W, _font, counter_text, land, map_view, props_at)
+from app.motion.templates import (FPS, H, W, _font, counter_text, land, map_box, map_view, props_at)
 
 
 def rgba(hexcolor, opacity=1.):
@@ -15,23 +15,37 @@ def rgba(hexcolor, opacity=1.):
 
 class MapLayer:
     """Land polygons projected per frame (equirectangular, same view boxes
-    as the Remotion SVG), so zooming stays sharp."""
+    as the Remotion SVG), so zooming stays sharp. Drawn at 2× and reduced:
+    smooth (anti-aliased) coastlines instead of jagged pixel steps."""
+    SS = 2
+
     def __init__(self, props):
         self.props = props
-        self.polys = [(min(x for x, _ in p), max(x for x, _ in p), min(y for _, y in p), max(y for _, y in p), p) for p in land()]
+        self.polys = [(min(x for x, _ in p), max(x for x, _ in p), min(y for _, y in p), max(y for _, y in p), p) for p in land(map_box(props))]
 
     def frame(self, zoom):
-        p = self.props
+        key = round(zoom, 4)  # once the zoom has settled every frame is the same picture
+        if getattr(self, 'last', (None,))[0] != key:
+            self.last = (key, self._draw(zoom))
+        return self.last[1]
+
+    def _draw(self, zoom):
+        p, k = self.props, self.SS
         left, top, span, height = map_view(p, zoom)
-        image = Image.new('RGB', (W, H), p['ocean'])
+        image = Image.new('RGB', (W * k, H * k), p['ocean'])
         draw = ImageDraw.Draw(image)
-        sx, sy = W / span, H / height
+        sx, sy = W * k / span, H * k / height
+        tiny = span / W / 2  # polygons smaller than half a pixel are skipped
         for x0, x1, y0, y1, poly in self.polys:
-            if y0 > top or y1 < top - height: continue
+            if y0 > top or y1 < top - height or (x1 - x0 < tiny and y1 - y0 < tiny): continue
             for shift in (-360, 0, 360):
                 if x1 + shift < left or x0 + shift > left + span: continue
-                draw.polygon([((x + shift - left) * sx, (top - y) * sy) for x, y in poly], fill=p['land'], outline=p['coast'])
+                points = [((x + shift - left) * sx, (top - y) * sy) for x, y in poly]
+                draw.polygon(points, fill=p['land'])
+                draw.line(points + points[:1], fill=p['coast'], width=k)
+        image = image.reduce(k)
         if span < 120:  # zoomed in: a faint degree grid, so open land or sea never looks like an empty frame
+            sx, sy = W / span, H / height
             step = next(v for v in (1, 2, 5, 10, 20) if span / v <= 9)
             grid = ImageDraw.Draw(image, 'RGBA')
             colour = rgba(p['coast'], .35)

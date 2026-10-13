@@ -28,7 +28,30 @@ def phrase(text):
     return None
 
 
+def highlight(text):
+    """2-5 word accent for the card: the window around a number/date, else the opening words."""
+    words=text.split()
+    if len(words)<=5:return text
+    digit=next((i for i,w in enumerate(words) if re.search(r'\d',w)),None)
+    first=0 if digit is None else min(max(0,digit-1),len(words)-5)
+    return ' '.join(words[first:first+5]).strip(',;:')
+
+
+def lower_thirds(t):
+    """Director media: a band over the continuing video instead of a full-screen text card."""
+    result=[]
+    for slot in t['slots']:
+        text=' '.join(str(slot.get('lower_third') or '').split())[:80]
+        if not text or any(ord(c)<32 for c in text):continue
+        start=slot['start']+min(.2,slot['duration']/4);end=slot['end']
+        if end-start<1.2:continue
+        result.append({'scene_id':slot['scene_id'],'slot_id':slot['slot_id'],'text':text,'start':start,'end':end,'style':'lower_third',
+                       'source':'lower_third','cue_index':None,'punch_in':False})
+    return result
+
+
 def emphasis(t,h,style):
+    bands=lower_thirds(t)
     result=[];last=-100.;spacing=28 if style=='balanced' else 18
     meta={s['scene_id']:s for s in t['editing_scenes']}
     for order,scene in enumerate(t['scenes']):
@@ -45,8 +68,10 @@ def emphasis(t,h,style):
                 if cue['start']-last<(spacing-4 if importance>=75 else spacing):continue
                 text=phrase(cue['text'])
                 if not text or text not in source_text:continue
-                start=max(cue['start'],scene['start']);end=min(cue['end'],scene['end'],start+3)
+                # The card stays until the sentence is over (+0.4 s), never cut mid-sentence.
+                start=max(cue['start'],scene['start']);end=min(cue['end']+.4,scene['end'])
                 if end-start<1.5:continue
+                text=highlight(text)
                 # Prefer an exact number/date phrase; otherwise a scene-opening cue.
                 candidates.append((int(bool(re.search(r'\d',text))),-cue['start'],text,start,end,cue.get('index')))
             if not candidates:continue
@@ -59,7 +84,8 @@ def emphasis(t,h,style):
                        'style':'upper_left' if original.get('composition') in ('person','close','detail') else 'upper_center',
                        'source':source,'cue_index':cue_index,'punch_in':style!='basic' and (importance>=75 or start<15)})
         last=start
-    return result
+    result=[e for e in result if not any(e['start']<b['end'] and b['start']<e['end'] for b in bands)]
+    return sorted(result+bands,key=lambda e:e['start'])
 
 
 def motion(scene,index,style,opening):
@@ -199,14 +225,14 @@ def build(t,h,style,source_fingerprint,*,seed=None,subtitle_mode=None,media_deta
             motion_out=bool((media_details or {}).get(previous['slot_id'],{}).get('motion'))
             motion_in=bool((media_details or {}).get(current['slot_id'],{}).get('motion'))
             if motion_out!=motion_in:  # a motion graphic enters or leaves, even inside a scene
-                seconds=min(.4,t['slots'][idx]['frames']/120,t['slots'][idx+1]['frames']/120)
+                seconds=min(.3,t['slots'][idx]['frames']/120,t['slots'][idx+1]['frames']/120)  # graphic in/out <= 0.3 s
                 if seconds>=2/30:
                     previous.update(transition_out='crossfade',transition_duration=round(seconds,6),transition_style='smoothleft' if motion_in else 'smoothright')
                     current['transition_in']='crossfade'
                 continue
             if previous['scene_id']==current['scene_id'] or continuing.get(previous['slot_id']):continue
             if motion_out and motion_in:
-                seconds=min(.4,t['slots'][idx]['frames']/120,t['slots'][idx+1]['frames']/120)
+                seconds=min(.3,t['slots'][idx]['frames']/120,t['slots'][idx+1]['frames']/120)  # graphic in/out <= 0.3 s
                 if seconds>=2/30:
                     previous.update(transition_out='crossfade',transition_duration=round(seconds,6),transition_style='smoothleft' if motion_in else 'smoothright')
                     current['transition_in']='crossfade'

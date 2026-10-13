@@ -1062,8 +1062,10 @@ class MediaDirector:
             try: options.append(validate(from_narration(sentence, scene.get('entities', [])), narration, scene.get('entities', [])))
             except MotionError: continue
         fresh = [o for o in options if json.dumps(o, sort_keys=True) not in self.card_texts]
+        previous = self.neighbour_motion(slot)[0]
+        same = lambda o: bool(previous) and o['template'] == previous[0]  # two infographics in a row: a different type where possible
         # A plain text card is the last choice; repeat=True: a graphic already shown beats a text card.
-        ranked = sorted(options, key=lambda o: (o['template'] == 'quote', o not in fresh)) if repeat else sorted(fresh or options, key=lambda o: o['template'] == 'quote')
+        ranked = sorted(options, key=lambda o: (o['template'] == 'quote', o not in fresh, same(o))) if repeat else sorted(fresh or options, key=lambda o: (o['template'] == 'quote', same(o)))
         return (ranked or [{'template': 'quote', 'data': {'text': narration.split('.')[0][:120] or scene.get('visual_intent', '')}, 'emphasis': ''}])[0]
 
     def quote_full(self):
@@ -1072,13 +1074,34 @@ class MediaDirector:
         quotes = sum(((s['selected_media'].get('source_metadata') or {}).get('motion') or {}).get('template') == 'quote' for s in motion)
         return quotes + 1 > max(1, QUOTE_SHARE * (len(motion) + 1))
 
+    def neighbour_motion(self, slot):
+        """(template, layout) of the infographics just before and after this slot (any distance), or None."""
+        from app.motion.layouts import layout_of
+        ordered = sorted(self.slots, key=lambda s: s.get('estimated_start', 0))
+        index = next((i for i, s in enumerate(ordered) if 'slot_id' in slot and s.get('slot_id') == slot['slot_id']), None)
+        if index is None: return None, None
+
+        def first(candidates):
+            for other in candidates:
+                media = other.get('selected_media')
+                spec = is_generated(media) and (media.get('source_metadata') or {}).get('motion')
+                if spec and not other.get('continuation_of'):
+                    return spec['template'], layout_of(spec)
+            return None
+        return first(reversed(ordered[:index])), first(ordered[index + 1:])
+
     def motion(self, slot, scene, log, spec=None, stage='motion'):
         from app.motion.clips import render_clip, media_record
+        from app.motion.layouts import pick
         spec = spec or self.motion_spec(slot, scene)
-        marker = json.dumps(spec, sort_keys=True)
+        marker = json.dumps({k: v for k, v in spec.items() if k != 'layout'}, sort_keys=True)
         if stage == 'motion' and marker in self.card_texts and self.continue_card(slot, marker, log):
             return True
         self.card_texts.add(marker)
+        # Two infographics in a row never share template and layout.
+        keep = stage == 'motion_edit' and 'layout' in spec  # the owner chose it on the media screen
+        spec = {**spec, 'layout': spec['layout'] if keep else pick(*self.neighbour_motion(slot), spec['template'])}
+        slot['motion_layout_owner'] = keep
         need = used_seconds(slot)
         self.progress['message'] = f'Yuva {slot["order"]} · motion grafik çiziliyor'
         self.service._checkpoint(self.job, self.progress, light=True)
@@ -1128,6 +1151,7 @@ class MediaDirector:
 
     # ---- per slot ----------------------------------------------------------
     def fill(self, slot, scene, exclude=frozenset(), *, keep_if_only_card=False):
+        slot.pop('lower_third', None)  # belongs to the media chosen below
         slot['relevance_profile'] = relevance.profile(scene, slot)
         # Slots of one scene share the AI's verdicts and rewritten queries.
         memo = self.memo.setdefault(slot['scene_id'], {'judged': {}})
@@ -1156,11 +1180,16 @@ class MediaDirector:
             chosen = True
         if not chosen:
             spec = self.motion_spec(slot, scene)
-            if spec['template'] == 'quote' and self.quote_full():
-                # Enough text cards already: a longer neighbouring shot, another
-                # nearby infographic or this scene's graphic again instead.
-                if self.merge(slot, log, limit=6.0): return log
-                spec = self.nearby_infographic(slot, scene) or self.motion_spec(slot, scene, repeat=True)
+            if spec['template'] == 'quote':
+                # A band over the neighbouring shot beats a full-screen text card.
+                if self.merge(slot, log, limit=6.0):
+                    from app.rendering.smart_edit import highlight
+                    slot['lower_third'] = highlight(' '.join(spec['data']['text'].split()))
+                    slot['message'] = 'Komşu çekim devam ediyor; yazı video üstünde alt bant olarak gösterilir.'
+                    return log
+                if self.quote_full():
+                    # Enough text cards already: another nearby infographic or this scene's graphic again instead.
+                    spec = self.nearby_infographic(slot, scene) or self.motion_spec(slot, scene, repeat=True)
             self.motion(slot, scene, log, spec)
         return log
 
@@ -1195,7 +1224,7 @@ class MediaDirector:
         previous = ordered[index - 1] if index else None
         media = previous and previous.get('selected_media')
         same = (is_card(media) and media['source_metadata'].get('card_text') == text) or (
-            is_generated(media) and json.dumps((media.get('source_metadata') or {}).get('motion'), sort_keys=True) == text)
+            is_generated(media) and json.dumps({k: v for k, v in ((media.get('source_metadata') or {}).get('motion') or {}).items() if k != 'layout'}, sort_keys=True) == text)
         if not same: return False
         root = previous.get('continuation_of') or previous['slot_id']
         chain = sum(used_seconds(s) for s in ordered if s['slot_id'] == root or s.get('continuation_of') == root)

@@ -11,8 +11,11 @@ import logging
 import os
 from pathlib import Path
 import shutil
+import re
 import subprocess
 import sys
+import threading
+import time
 
 ROOT=Path(sys.argv[1]).resolve()
 FREE=('archive_org','nasa','wikimedia')
@@ -47,6 +50,54 @@ def browser():
     raise ValueError('browser_missing')
 
 
+STALL_SECONDS=300  # no new frame for this long = the renderer is stuck
+TOTAL_SECONDS=7200
+FRAMES=re.compile(r'(Rendered|Encoded)\s+(\d+)/(\d+)')
+
+
+def report(fraction):
+    # Our parent reads `out_time_us` lines from this process's real stdout.
+    real=sys.__stdout__
+    if real:
+        real.write(f'out_time_us={int(max(0,min(1,fraction))*1_000_000)}\n');real.flush()
+
+
+def render_with_progress(args,cwd,timeout):
+    """Remotion render: real frame progress to the parent, stall watchdog instead of a flat cap."""
+    process=subprocess.Popen(args,cwd=cwd,shell=False,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,encoding='utf-8',errors='replace')
+    state={'fraction':0.,'seen':time.monotonic(),'tail':''}
+
+    def read():
+        buffer=''
+        while True:
+            char=process.stdout.read(1)
+            if not char:break
+            if char not in '\r\n':
+                buffer+=char
+                if len(buffer)>400:buffer=buffer[-200:]
+                continue
+            match=FRAMES.search(buffer);buffer=''
+            if match and int(match.group(3)):
+                part=int(match.group(2))/int(match.group(3))
+                fraction=part*.9 if match.group(1)=='Rendered' else .9+part*.1
+                if fraction>state['fraction']:
+                    state['fraction']=fraction;state['seen']=time.monotonic();report(fraction)
+    reader=threading.Thread(target=read,daemon=True);reader.start()
+    started=time.monotonic();limit=min(timeout or TOTAL_SECONDS,TOTAL_SECONDS)
+    try:
+        while process.poll() is None:
+            time.sleep(1)
+            now=time.monotonic()
+            if now-state['seen']>STALL_SECONDS or now-started>limit:
+                process.kill();raise RuntimeError('external_command_stalled')
+    finally:
+        if process.poll() is None:process.kill()
+        reader.join(5)
+    if process.returncode:raise RuntimeError('external_command_failed')
+    report(1.)
+    return subprocess.CompletedProcess(args,0,'','')
+
+
 def command(args,*,timeout=None,cwd=None):
     if not isinstance(args,list) or not args:raise ValueError('command_invalid')
     if args[0]=='npx':
@@ -57,6 +108,7 @@ def command(args,*,timeout=None,cwd=None):
     else:raise ValueError('command_invalid')
     if not args[0]:raise ValueError('dependency_missing')
     args=['-/filter_complex' if a=='-filter_complex_script' else a for a in args]
+    if args[0]==shutil.which('node') and 'render' in args[:4]:return render_with_progress(args,cwd,timeout)
     result=subprocess.run(args,cwd=cwd,shell=False,stdin=subprocess.DEVNULL,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=min(timeout or 1800,1800))
     if result.returncode:raise RuntimeError('external_command_failed')
     return result

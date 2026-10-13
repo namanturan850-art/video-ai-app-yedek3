@@ -18,12 +18,15 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
     seed=seed or plan['source_fingerprint'][:16];details=media_details or {}
     meta={s['scene_id']:s for s in t['editing_scenes']};last_end=-100;special_seconds=0;split_index=0
     plan.update(algorithm_version='adaptive_edit_v1',edit_variation_seed=seed,subtitle_display=subtitle_mode,theme=THEMES[choice(seed,'theme',len(THEMES))])
-    plan['emphasis']=[]
+    from app.rendering.smart_edit import lower_thirds
+    plan['emphasis']=lower_thirds(t) if subtitle_mode!='none' else []  # band over the video instead of a full-screen card
+    banded={e['slot_id'] for e in plan['emphasis']}
     for index,item in enumerate(plan['slots']):
         item.update(layout='full_broll',layout_label=LAYOUTS['full_broll'],texts=[],layout_window=None,secondary_slot_id=None,orientation='left' if (index+choice(seed,'side',2))%2==0 else 'right')
         # A motion graphic is already a graphic; it and its neighbours keep the
         # clean frame so the slide-in/out is never cut by a card.
         if any(details.get(s['slot_id'],{}).get('motion') for s in plan['slots'][max(0,index-1):index+2]):continue
+        if item['slot_id'] in banded:continue  # never a card on top of the band
         original=meta[item['scene_id']];source=clean(original.get('narration_text',''))
         cues=[]
         for c in h['subtitles']:

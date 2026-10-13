@@ -114,7 +114,7 @@ def test_openmontage_props_carry_camera_segments_transitions_and_emphasis(tmp_pa
         def status(self, *a): return {'ready': True, 'commit': PIN[:7]}
         def root(self): return external
         def settings_guard(self, v): pass
-        def call(self, op, inputs, folder, runner):
+        def call(self, op, inputs, folder, runner, progress=None):
             if op == 'trim': Path(inputs['output_path']).write_bytes(b'trim'); return
             seen['props'] = json.loads(Path(inputs['edit_decisions']['bespoke']['props_path']).read_text())
             seen['entry'] = Path(inputs['edit_decisions']['bespoke']['entry']).read_text()

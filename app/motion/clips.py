@@ -14,12 +14,12 @@ import wave
 from pathlib import Path
 from uuid import uuid4
 
-from app.motion import templates
+from app.motion import layouts, templates
 from app.motion.raster import render as raster_render
 from app.projects import linked, now
 
 LOG = logging.getLogger('uvicorn.error.motion')
-ENGINE_VERSION = 'motion-v1'
+ENGINE_VERSION = 'motion-v2'  # v2: 1:50m coastlines, timing limits, layouts
 
 
 def scene_key(scene):
@@ -42,8 +42,9 @@ def for_remotion(scene, public):
             element['texts'] = [templates.counter_text(p['target'], templates.value_at(element['tracks']['value'], i / scene['fps'], scene['ease']),
                                                        p.get('language', 'de'), p.get('from_year', False)) for i in range(frames)]
     scene['font_families'] = families
-    if any(e['type'] == 'map' for e in scene['elements']):
-        scene['land'] = templates.land()
+    boxes = [templates.map_box(e['props']) for e in scene['elements'] if e['type'] == 'map']
+    if boxes:  # only the coastlines near the views: small props, fast SVG
+        scene['land'] = templates.land((min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)))
     return scene
 
 
@@ -138,6 +139,7 @@ def media_record(path, spec, scene, engine):
             'creator_name': 'AI Video Studio', 'creator_url': '', 'width': 1920, 'height': 1080, 'duration': scene['duration'],
             'preview_url': '', 'download_url': '', 'query_used': '', 'provider_query': None, 'description': summary[:300],
             'source_metadata': {'generated': True, 'kind': 'motion', 'motion': spec, 'template_label': templates.TEMPLATES[spec['template']],
+                                'layout_label': layouts.label(spec),
                                 'emphasis_time': scene['emphasis_time'], 'sfx': scene['sfx'], 'engine': engine},
             'search_tier': None, 'relevance_score': None, 'relevance_label': None, 'relevance_basis': None,
             'local_path': 'stock/' + path.name, 'file_size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),

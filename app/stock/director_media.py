@@ -630,7 +630,23 @@ class MediaDirector:
                    'no names of people unless famous public places/things, no abstract words.')
         answer = self._ask('media_queries', self.brief(slot, scene) + f'\nAlready tried: {", ".join(tried)[:600]}\n' + ask, QUERY_SCHEMA, max_tokens=600)
         queries = [' '.join(str(q).split())[:80] for q in (answer or {}).get('queries', []) if isinstance(q, str) and q.strip()]
-        return [q for q in dict.fromkeys(queries) if q.casefold() not in {t.casefold() for t in tried}][:3]
+        if not queries:  # no AI (off, down or no answer): English queries made locally, never an empty step
+            queries = self.local_queries(scene, broader)
+        seen = {frozenset(t.casefold().split()) for t in tried}
+        return [q for q in dict.fromkeys(queries) if frozenset(q.casefold().split()) not in seen][:3]
+
+    def local_queries(self, scene, broader=False):
+        """Without the AI: the filmable English words of each sentence of the
+        scene (other angles), or — broader — the topic's English fallback queries."""
+        from app.scripts.query_clean import english_query, generic_queries
+        if broader: return generic_queries(self.topic, self.language)
+        out = []
+        for sentence in re.split(r'(?<=[.!?…])\s+', scene.get('narration_text', '')):
+            words = english_query(sentence, self.language, strict=True, limit=6).split()
+            for start in range(0, max(1, len(words) - 1), 2):
+                part = ' '.join(words[start:start + 2])
+                if len(part.split()) == 2: out.append(part)
+        return out
 
     # ---- searching -----------------------------------------------------------
     def providers(self, scene=None):

@@ -222,6 +222,8 @@ def test_clip_drops_irrelevant_candidates_and_shows_the_score(tmp_path, monkeypa
         assert all(s['local_review']['method'] == 'clip' and s['local_review']['clip']['score'] >= 7 and not s['needs_ai_review'] for s in chosen)
         assert calls and max(n for _, n in calls) <= 24 and 'clip_warning' not in job['progress']
         assert job['progress']['clip_ready'] is True
+        motion = sum(s['selected_media']['provider'] == 'generated' and not s.get('continuation_of') for s in view['slots'])
+        assert motion <= .3 * len(view['slots']), view['media_summary']['text']  # without Gemini, still mostly stock footage
     finally:
         client.__exit__(None, None, None)
 

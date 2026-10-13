@@ -64,16 +64,17 @@ def plan_scenes(units, topic='', language='de'):
         # Stock sites are tagged in English: queries are ONLY English words (translations,
         # English place names, the topic's English fallback) — never the narration's own words.
         candidates = [' '.join(english[:2]), ' '.join(english[1:3]), ' '.join((places[:1] + english[:1])),
-                      ' '.join(english[:1] + topic_english[:1]), *fallback]
+                      ' '.join(english[:1] + topic_english[:1]), *fallback[:2], ' '.join(english[:1] + english[2:3]), *fallback[2:]]
         queries = []
         for candidate in candidates:
             candidate = ' '.join(candidate.split())
-            if len(candidate.split()) >= 2 and candidate.casefold() not in (q.casefold() for q in queries): queries.append(candidate)
+            if len(candidate.split()) >= 2 and frozenset(candidate.casefold().split()) not in {frozenset(q.casefold().split()) for q in queries}:
+                queries.append(candidate)  # “empire city” and “city empire” are the same search
         main = queries[0] if queries else fallback[0]
         names = [w for w in found if w[:1].isupper()][:5]
         block = {'unit_ids': [u['unit_id'] for u in group], 'purpose': 'Anlatılanı görsel olarak destekle',
                  'mood': MOODS[index % len(MOODS)], 'visual_intent': f'{main} (anlatımdaki kelimelerden; yerel plan)',
-                 'stock_query': main, 'alternative_stock_queries': queries[1:4] or fallback[:2],
+                 'stock_query': main, 'alternative_stock_queries': queries[1:5] or fallback[:2],
                  'media_type': 'stock_video', 'entities': names}
         scenes.append(clean_block(block, language, strict=True, topic=topic))
     return scenes

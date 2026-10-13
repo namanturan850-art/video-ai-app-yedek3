@@ -236,6 +236,8 @@ def test_without_clip_a_plain_warning_and_the_job_still_finishes(tmp_path, monke
         assert job['status'] == 'completed' and view['media_summary']['missing'] == 0
         assert 'INSTALL_OPENMONTAGE_SEMANTIC.bat' in job['progress']['clip_warning']
         assert not any(s['selected_media']['media_id'] in noise_ids(world) for s in stock_slots(view))
+        motion = sum(s['selected_media']['provider'] == 'generated' and not s.get('continuation_of') for s in view['slots'])
+        assert motion <= .3 * len(view['slots']), view['media_summary']['text']  # no CLIP, no Gemini: still mostly stock footage
         page = client.get('/static/stock.js').text
         assert 'stock-clip-warning' in page and 'Yerel görüntü modeli (CLIP)' in page
     finally:

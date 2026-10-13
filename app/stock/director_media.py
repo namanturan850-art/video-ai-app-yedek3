@@ -609,8 +609,9 @@ class MediaDirector:
         for media in pool:
             scored = {**media, **relevance.evaluate(media, profile)}
             value = scored.get('relevance_score') or 0
-            shared = wanted & local_words(media.get('description', ''))
-            strong = {w for w in shared if len(w) >= 5}
+            # The English query that found it was made from this scene (plan, rewrite or topic): its words count too.
+            shared = (wanted | local_words(media.get('query_used', ''))) & local_words(media.get('description', ''))
+            strong = {w for w in shared if len(w) >= 4}
             ok = relevance.acceptable(scored, profile) or len(shared) >= 2 or bool(strong)
             verdicts[key(media)] = {'score': min(9, APPROVE_SCORE + max(0, len(shared) - 1) + (value >= 40)) if ok else min(4, len(shared) * 2),
                                     'approved': ok, 'local': True, 'relevance_label': scored.get('relevance_label'),

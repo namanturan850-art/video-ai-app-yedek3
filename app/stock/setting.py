@@ -290,3 +290,10 @@ def neutral_queries(setting):
 def reason(conflict):
     """Plain Turkish sentence for a rejected candidate."""
     return f'{KIND_TR.get(conflict.get("kind"), "uygunsuz")} ({conflict.get("label", "")})'
+
+
+def rules_version():
+    """Changes whenever the period/place rules change: earlier checks are then redone."""
+    import hashlib, json
+    data = [ANACHRONISMS, STYLE, {k: v[3:6] for k, v in REGIONS.items()}]
+    return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]

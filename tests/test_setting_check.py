@@ -194,3 +194,18 @@ def test_opening_band_lasts_at_most_four_seconds():
     t = {'slots': [{'scene_id': 's1', 'slot_id': 'a', 'start': 0., 'end': 8., 'duration': 8., 'lower_third': '185000 Soldaten', 'lower_third_seconds': 4}]}
     band = lower_thirds(t)[0]
     assert band['end'] - band['start'] <= 4.0001
+
+
+def test_rules_version_changes_with_the_rules(monkeypatch):
+    before = S.rules_version()
+    monkeypatch.setitem(S.REGIONS, 'china', S.REGIONS['china'][:4] + (S.REGIONS['china'][4] + ('a new landmark',),) + S.REGIONS['china'][5:])
+    assert S.rules_version() != before  # a rule change makes earlier period/place checks run again
+
+
+def test_saved_motion_specs_are_drawn_with_short_text():
+    from app.channels import DEFAULT_STYLE
+    from app.motion.templates import build
+    sentence = 'Die Mauern der Stadt waren so gewaltig, dass die Feinde jahrelang vor ihnen lagerten'
+    scene = build({'template': 'quote', 'data': {'text': sentence}, 'emphasis': ''}, DEFAULT_STYLE, 4., 2.)
+    shown = ' '.join(e['props'].get('text', '') for e in scene['elements'] if e['type'] == 'text' and e['props'].get('text') != '“')
+    assert 2 <= len(shown.split()) <= 5, shown

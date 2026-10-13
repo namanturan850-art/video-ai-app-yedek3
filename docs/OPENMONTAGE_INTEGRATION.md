@@ -78,3 +78,15 @@ Semantik corpus yolu aynı önceden kurulu yerel modeli kullanır: `CorpusBuilde
 Gerçek bulut testi 10 sn kompozisyonda kesintisiz uzatılan iki B-roll segmenti, kısa aynen kaynak sayı kartı, narrator audio ve önemli vurgu modu içerir; final 1080p/30fps H.264/AAC/master süre ve ara piksel kontrolü yapılır. Önceki çıktı ve kaynak hash'leri korunur. Bu gerçek harici CPU render kanıtıdır; CLIP ağırlıkları açık sahibi onayı olmadan indirilmedi. Frame-verdict/GPU fallback testleri sözleşme testidir. **RTX 5070/PyTorch CUDA uyumluluğu ve gerçek görsel doğruluk deneysel, Windows'ta sahibi tarafından denenmeli.** Motorlar birebir aynı efekt görünümünü vaat etmez.
 
 [Part 9.8 için 17 basit Windows adımı](RENDERING.md#part-98-windows-kontrolü).
+
+
+## Hibrit montaj (hızlı render)
+
+OpenMontage motoru artık **tüm videoyu** Remotion'da kare kare çizmez:
+
+1. Yalnız **grafik düzenli sahneler** (panel yazı, bölünmüş ekran, büyük sayı…) Remotion ile çizilir. Bunlar birkaç parçaya bölünüp **aynı anda** çizilir (her parça kendi tarayıcısında).
+2. Geri kalan **B-roll**, geçişler, altyazı, vurgu yazıları, müzik ve teslim **FFmpeg** (NVIDIA kartta **NVENC**) ile yapılır; sahne parçaları da birkaç tane **paralel** kodlanır.
+3. Grafik sahne yoksa Remotion hiç çalışmaz. Bir Remotion parçası çizilemezse o sahneler FFmpeg'in kendi düzeniyle yapılır (uyarı gösterilir).
+
+Render süresi video sürümü kartında görünür: toplam, Remotion/FFmpeg payı ve paralel parça sayısı.
+Eski davranışla (tüm video Remotion'da) karşılaştırmak için ortam değişkeni: `AVS_REMOTION_SCOPE=all`. Paralel parça sayısı otomatiktir; elle: `AVS_RENDER_WORKERS` (FFmpeg, 1–8), `AVS_REMOTION_WORKERS` (Remotion, 1–4).

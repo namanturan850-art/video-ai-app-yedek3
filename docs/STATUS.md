@@ -1,5 +1,20 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (5) — Hibrit render + kanal anları (giriş / kapanış / bitiş ekranı)
+
+**1. Render hızı**
+- OpenMontage artık tüm videoyu Remotion'da çizmez: yalnız grafik düzenli sahneler Remotion'da (birkaç parça, paralel), B-roll/geçiş/altyazı/müzik/teslim FFmpeg (+NVENC) ile; slot kodlamaları da paralel. Grafik sahne yoksa Remotion hiç çalışmaz; Remotion parçası başarısız olursa o sahneler FFmpeg düzeniyle yapılır.
+- Süre video sürümü kartında görünür (toplam / Remotion / FFmpeg / paralel parça). Eski yol karşılaştırma için: `AVS_REMOTION_SCOPE=all`.
+- **Ölçüm (bu bulut makinesi: 4 CPU, GPU yok, libx264, 60 sn sentetik video, 3/24 grafik sahne): hibrit 255 sn** (Remotion 60 sn, FFmpeg 195 sn). **Eski yol (tamamı Remotion) bu makinede ölçülemedi** — benchmark tamamlanmadan durduruldu. Gerçek önce/sonra (RTX 5070, NVENC) sizin bilgisayarınızda gerekir: aynı projeyi `AVS_REMOTION_SCOPE=all` ile ve onsuz render edip sürüm kartındaki süreleri karşılaştırın.
+
+**2. Kanal anları** (Tarzım renk/font; yazılar videonun dilinde: de/es/fr/en/tr; yeni dil tek dosyada eklenir)
+- `[GİRİŞ]` (veya `[GİRİŞ: başlık]`): başlık + kanal adı açılışı. `[KAPANIŞ]`: Abone ol düğmesi + zil, ardından videoya +20 sn sade YouTube bitiş ekranı (ortası boş). Orta kısımda abone animasyonu olmaz. İşaretler seslendirme/altyazıya gitmez.
+- İşaret yoksa dil kalıpları otomatik tanınır; o cümlelerde stok aranmaz. Kalıplar: `app/moments/phrases.py`.
+- Bitiş ekranında anlatım sessizdir, müzik sürer. Açılış başlığı = proje adı.
+
+**Testler:** `test_channel_moments.py`, `test_hybrid_render.py`, `test_endscreen_render.py` geçti; render paketi 236 geçti, 2 başarısız test düzeltilip geçti. Tam paket çalıştırılmadı. Gerçek Remotion/NVENC/Windows doğrulaması sizde.
+Eksik: ölçülmüş "önce" süresi; giriş/kapanış cümlesi birden çok slota yayılırsa yalnız ilk slot şablon alır.
+
 ## 2026-10-13 (4) — Düzeltme: proje sayfası “Uygulamaya ulaşılamadı”
 
 - **Neden:** motion motoru sürümü değişince (motion-v2) kayıtlı tüm motion grafikler “eski” sayıldı. Render ekranı açılırken bunları sayfa isteğinin içinde, proje kilidi tutulurken yeniden çiziyordu; bu sürede proje isteği 15 sn'de cevap alamadı.

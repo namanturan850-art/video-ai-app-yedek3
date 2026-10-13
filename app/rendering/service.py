@@ -114,6 +114,54 @@ class RenderService:
                     events.append({'t':round(start+item['t'],3),'sound':item['sound'],'path':str(path)})
         return {'events':sorted(events,key=lambda e:e['t'])[:80],'volume':volume}
 
+    def _endscreen(self,pid,t,h,selected,kit,force,draw,pending,originals):
+        """Closing moment ([KAPANIŞ] / abone ol cümlesi) varsa videonun sonuna 20 sn YouTube
+        bitiş ekranı eklenir. Klip içeriğe göre önbelleklenir; çizimi yalnız render işi yapar."""
+        if not kit:return None
+        from app.motion.clips import is_motion,render_clip,scene_key
+        from app.motion import templates
+        from app.moments.draw import END_SCREEN_SECONDS
+        from app.moments.spec import endscreen_spec
+        from app.stock.download import directory
+        owners={slot.get('continuation_of') or slot['slot_id'] for slot in t['slots']}
+        if not any(is_motion(m) and m['source_metadata']['motion']['template']=='outro' for m in (selected.get(o,{}).get('selected_media') for o in owners)):return None
+        channels=getattr(self,'channels',None);language=h.get('target_language','de')
+        spec=endscreen_spec(channels.for_project(pid)['name'] if channels else '')
+        scene=templates.build(spec,kit,END_SCREEN_SECONDS,END_SCREEN_SECONDS*.6,language);key=scene_key(scene)
+        folder=directory(self.projects,pid);target=folder/(key+'.mp4')
+        if not (target.is_file() and not linked(target)) and draw:
+            target,_,_=render_clip(folder,spec,kit,END_SCREEN_SECONDS,END_SCREEN_SECONDS*.6,language=language)
+        if target.is_file() and not linked(target):
+            digest=self._hash(target,force);originals[str(target)]=digest
+        else:
+            digest='pending-'+key;pending.append('endscreen')  # the render job draws it
+        return {'path':target,'sha256':digest,'key':key,'seconds':END_SCREEN_SECONDS}
+
+    def _append_endscreen(self,inputs,end):
+        """Narration stays exactly as it is; the timeline, edit plan and media get one more
+        slot at the end (music/ducking run through it, subtitles/emphasis never touch it)."""
+        t=inputs['timeline'];last=t['slots'][-1];start=t['duration'];duration=round(start+end['seconds'],6)
+        frames=round(duration*30);first=round(start*30);sid=scene_id='moment-endscreen'
+        t['scenes'].append({'scene_id':scene_id,'start':start,'end':duration})
+        t['editing_scenes'].append({'scene_id':scene_id,'transition':'none','motion':'none','overlay_text':'','composition':'graphic','importance':0})
+        t['slots'].append({**{k:v for k,v in last.items() if k in ('order','status')},'slot_id':sid,'scene_id':scene_id,'order':1,'start':start,'end':duration,
+            'duration':duration-start,'start_frame':first,'end_frame':frames,'frames':frames-first,'status':'complete',
+            'selected_media_local_identity':{'media_type':'video','provider':'generated','media_id':end['key']},
+            'editing':{'transition':'none','motion':'none','overlay_text':'','composition':'graphic'}})
+        t.update(duration=duration,frames=frames)
+        inputs['media'][sid]={'path':end['path'],'type':'video','duration':end['seconds'],'width':1920,'height':1080,'description':'YouTube bitiş ekranı','sha256':end['sha256'],'motion':True,'segment_start':0.}
+        plan=inputs.get('smart_edit_plan')
+        if plan:
+            previous=plan['slots'][-1]
+            previous.update(transition_out='crossfade',transition_duration=.5,transition_style='fade')
+            plan['slots'].append({'slot_id':sid,'scene_id':scene_id,'start':start,'end':duration,'media_type':'video','motion_effect':'none','motion_strength':0.,
+                'segments':[{'start_frame':0,'end_frame':frames-first,'frames':frames-first,'start':start,'end':duration,'motion_effect':'none','motion_strength':0.,'camera_curve':'neutral_cycle'}],
+                'transition_out':'hard_cut','transition_in':'crossfade','transition_duration':0.,'visual_variant':'medium','reason':'YouTube bitiş ekranı',
+                'layout':'full_broll','texts':[]})
+            plan['summary'].update(slots=len(plan['slots']),scenes=len(t['scenes']))
+            plan['summary']['end_screen_seconds']=end['seconds']
+            plan['fingerprint']=smart_edit.digest({k:v for k,v in plan.items() if k!='fingerprint'})
+
     def _transition_sfx(self,plan,sfx,kit,h):
         """A soft whoosh under the narration at every styled scene change
         (slide/zoom/circle). Part of the edit plan, so it is fingerprinted."""
@@ -171,8 +219,10 @@ class RenderService:
             channels=getattr(self,'channels',None)
             kit=channels.for_project(pid)['style'] if channels else None
             pending=[];sfx=self._motion(pid,t,h,selected,media,originals,kit,force,draw,pending)
+            endscreen=self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals)
             fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
             from app.channels import DEFAULT_STYLE
+            if endscreen:fingerprint_data['endscreen']={'key':endscreen['key'],'seconds':endscreen['seconds']}  # absent without a closing moment: old fingerprints kept
             if sfx['events']:  # absent for videos without motion: old fingerprints kept
                 fingerprint_data['motion_sfx']={'events':[{k:e[k] for k in ('t','sound')} for e in sfx['events']],'volume':sfx['volume'],'sources':kit['sfx']}
             if kit and kit['subtitle']!=DEFAULT_STYLE['subtitle']:
@@ -206,6 +256,7 @@ class RenderService:
             inputs['motion_pending']=len(pending)  # motion clips the render job still has to draw (not part of the fingerprint)
             reflow.apply_graphics(inputs)
             if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})
+            if endscreen:self._append_endscreen(inputs,endscreen)
             return inputs
         except RenderError:raise
         except ScriptError:raise RenderError('source_stale',SOURCE_MESSAGE) from None

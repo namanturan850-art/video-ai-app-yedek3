@@ -30,6 +30,8 @@ Yeni proje (başlık, dil) → **Metni yapıştır** → Seslendirme → Altyaz�
 | `[ORAN: %40 nüfus kıyıda]` | **Pasta grafik** ve yüzde. |
 | `[HANEDAN: Davud > Süleyman > Rehavam, Yeroboam]` | **Hanedan ağacı**: “>” yeni kuşak, “,” kardeşler. |
 | `[BİLGİ: Babil surları iki araba genişliğindeydi.]` | **“Biliyor muydunuz?” kartı.** |
+| `[GİRİŞ]` veya `[GİRİŞ: Özel başlık]` | **Açılış animasyonu** (3–5 sn): video başlığı + kanal adı, kanalın Tarzım renk/fontuyla. Yazılmazsa başlık proje adıdır. |
+| `[KAPANIŞ]` | **Kapanış:** “Abone ol” düğmesi basılır → “Abone olundu” → zil çalar. Ardından videonun sonuna **20 sn YouTube bitiş ekranı** eklenir (sade arka plan, ortası boş). Yalnız videonun **sonunda** çalışır; ortaya yazarsanız yok sayılır. |
 
 - İnfografik işaretleri Medyayı Tamamla'da **önce** çizilir; yapay zekâ gerekmez.
 - **Yerler** uygulamayla gelen çevrimdışı listeden bulunur (ülkeler, 15 000+ nüfuslu şehirler, bölgeler, denizler, önemli antik yerler; antik ↔ bugünkü adlar: Kudüs/Jerusalem/Hierosolyma, Byzanz/İstanbul, Ninova/Ninive). Bulunamayan yer **uyarıyla** bildirilir, tahmin edilmez.
@@ -87,3 +89,15 @@ Yeni proje (başlık, dil) → **Metni yapıştır** → Seslendirme → Altyaz�
   - Her yuvada alaka puanı ve gerekçe görünür.
   - 7–8 puanlı yuvalar sarı kenarlıkla işaretlenir.
   - Özette ortalama alaka puanı yazar.
+
+
+## Giriş / kapanış anları (işaretsiz de çalışır)
+
+- Tüm yazılar **videonun dilindedir** (Almanca, İspanyolca, Fransızca, İngilizce, Türkçe).
+- İşaret yazmazsanız videonun dilindeki kalıplar otomatik tanınır:
+  - Giriş (ilk cümleler): *willkommen / bienvenidos / bienvenue / welcome / hoş geldiniz*
+  - Abone ol (son cümleler): *abonniert / suscríbete / abonnez-vous / subscribe / abone ol*
+  - Veda (son cümleler): *bis zum nächsten Mal / hasta la próxima / à bientôt / see you next time / görüşmek üzere*
+- Tanınan cümle için **stok video aranmaz**; o cümlede ilgili şablon (açılış, abone ol + zil, teşekkür) gösterilir. Cümle yine seslendirilir ve altyazıda görünür; `[GİRİŞ]`/`[KAPANIŞ]` işaretleri ise okunmaz.
+- Videonun ortasındaki bir “abone olun” cümlesi animasyon almaz.
+- **Yeni dil / yeni kalıp eklemek:** yalnız `app/moments/phrases.py` dosyasındaki `LANGUAGE_DATA` listesine yazın (dosyanın başındaki açıklamaya bakın).

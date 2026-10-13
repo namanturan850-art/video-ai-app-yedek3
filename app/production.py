@@ -674,6 +674,8 @@ class ProductionService:
         if markers:  # the owner's [GÖRSEL]/[HARİTA]/[SAYI] notes win over the AI's queries
             from app.scripts.paste import apply_markers
             blocks=apply_markers(blocks,markers(project_id,current['id']),language)
+        from app.moments.plan import apply_moments
+        blocks=apply_moments(blocks,language)  # [GİRİŞ]/[KAPANIŞ] veya videonun dilindeki karşılama/abone ol/veda cümleleri: stok aranmaz
         from app.scripts.query_refine import suggest_infographics
         blocks=suggest_infographics(blocks,language)  # after the markers: they count toward the 25% share
         image_config = self.scripts.settings.image_config()

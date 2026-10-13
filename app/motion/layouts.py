@@ -17,6 +17,7 @@ W, H = 1920, 1080
 COUNT = 3
 MAP_TEMPLATES = ('map', 'route', 'empire', 'zoom')
 PICTURE_TEMPLATES = ('mark', 'beforeafter')
+MOMENTS = ('intro', 'outro', 'endscreen')  # fixed designs: no alternative arrangements
 NAMES = {'card': ('Orta', 'Panel', 'Yan şerit'), 'map': ('Konu ortada', 'Konu solda', 'Konu sağda'),
          'picture': ('Etiket üstte', 'Etiket altta', 'Etiket yanda')}
 GLYPH = {'stat': '#', 'ratio': '%', 'icons': '#', 'quote': '“', 'fact': '?'}
@@ -157,7 +158,7 @@ def _pictures(scene, spec, layout):
 
 def arrange(scene, spec, kit):
     layout = layout_of(spec)
-    if not layout:
+    if not layout or spec['template'] in MOMENTS:
         return scene
     scene = deepcopy(scene)
     kind = family(spec['template'])

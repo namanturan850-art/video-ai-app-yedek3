@@ -18,7 +18,8 @@ import math
 import re
 
 TEMPLATES_EXTRA = {'route': 'Rota', 'empire': 'İmparatorluk sınırı', 'zoom': 'Yakınlaşma (dünya → yer)', 'mark': 'Görselde işaretle',
-                   'beforeafter': 'Önce / sonra', 'icons': 'İkonlarla sayı', 'ratio': 'Oran (pasta)', 'dynasty': 'Hanedan ağacı', 'fact': 'Biliyor muydunuz?'}
+                   'beforeafter': 'Önce / sonra', 'icons': 'İkonlarla sayı', 'ratio': 'Oran (pasta)', 'dynasty': 'Hanedan ağacı', 'fact': 'Biliyor muydunuz?',
+                   'intro': 'Açılış (başlık + kanal)', 'outro': 'Kapanış (abone ol + zil)', 'endscreen': 'YouTube bitiş ekranı'}
 MARKER_TEMPLATE = {'route': 'route', 'empire': 'empire', 'zoom': 'zoom', 'mark': 'mark', 'beforeafter': 'beforeafter', 'icons': 'icons',
                    'ratio': 'ratio', 'dynasty': 'dynasty', 'fact': 'fact'}
 FACT_TITLE = {'de': 'Wussten Sie schon?', 'tr': 'Biliyor muydunuz?', 'en': 'Did you know?', 'es': '¿Sabías que…?', 'fr': 'Le saviez-vous ?'}
@@ -231,6 +232,7 @@ def validate_extra(spec):
     """Shape check for a stored/edited spec (values come from the owner's marker)."""
     t, d = spec.get('template'), spec.get('data')
     if t not in TEMPLATES_EXTRA or not isinstance(d, dict): raise ValueError('template')
+    if t == 'intro' and not d.get('title'): raise ValueError('title')
     if t == 'route' and len(d.get('stops') or []) < 2: raise ValueError('route stops')
     if t == 'empire' and (len(d.get('area') or []) < 3 or not d.get('capital')): raise ValueError('empire area')
     if t == 'zoom' and not (-85 <= float(d.get('lat', 99)) <= 85 and -180 <= float(d.get('lon', 999)) <= 180): raise ValueError('zoom place')
@@ -245,7 +247,8 @@ def validate_extra(spec):
 
 def summary(spec):
     d = spec['data']
-    return {'route': lambda: ' → '.join(s['name'] for s in d['stops']), 'empire': lambda: d['name'], 'zoom': lambda: d['place'],
+    return {'intro': lambda: d['title'], 'outro': lambda: d.get('mode', 'subscribe'), 'endscreen': lambda: d.get('channel', ''),
+            'route': lambda: ' → '.join(s['name'] for s in d['stops']), 'empire': lambda: d['name'], 'zoom': lambda: d['place'],
             'mark': lambda: d['label'], 'beforeafter': lambda: f'{d["before"]} / {d["after"]}', 'icons': lambda: f'{d["value"]} {d["object"]}',
             'ratio': lambda: f'{d["value"]} {d["label"]}', 'dynasty': lambda: ' > '.join(', '.join(g) for g in d['generations']),
             'fact': lambda: d['text']}[spec['template']]()
@@ -280,6 +283,9 @@ def build_extra(s, spec, language='de'):
     E, D, md = s.E, s.D, s.md
     t, d = spec['template'], spec['data']
     lang = language if language in FACT_TITLE else 'en'
+    if t in ('intro', 'outro', 'endscreen'):
+        from app.moments import draw
+        return {'intro': lambda: draw.draw_intro(s, d), 'outro': lambda: draw.draw_outro(s, d, language), 'endscreen': lambda: draw.draw_endscreen(s, d)}[t]()
     if t == 'route':
         stops = d['stops']
         clat, clon, span = fit_view([(p['lat'], p['lon']) for p in stops])

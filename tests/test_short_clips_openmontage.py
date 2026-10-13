@@ -303,6 +303,7 @@ def test_trusted_pinned_status_and_shell_false(studio,monkeypatch,tmp_path):
 def test_mock_trim_compose_projection_preserves_timing_without_cycles(tmp_path,monkeypatch):
     from app.integrations.openmontage import provider
     from test_rendering import contract
+    monkeypatch.setenv('AVS_REMOTION_SCOPE','all')  # the whole-film Remotion path (hybrid: tests/test_hybrid_render.py)
     h,p=contract(6);h['project_id']='local';h['subtitles']=[]
     for s in p['scenes']:s.update(narration_text='Genehmigter Text.',importance=50)
     t=timeline.build(h,p);source=tmp_path/'source.mp4';source.write_bytes(b'unchanged');voice=tmp_path/'voice.wav';voice.write_bytes(b'voice')

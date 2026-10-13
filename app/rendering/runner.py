@@ -13,6 +13,18 @@ class ProcessRunner:
     def __init__(self,event=None,*,diagnostic_callback=lambda value:None):
         self.event=event or Event();self.lock=RLock();self.process=None;self.commands=[]
         self.diagnostic_callback=diagnostic_callback;self.process_tree=False
+        self.parent=None;self.children=[]
+
+    def spawn(self):
+        """Independent runner for one parallel piece: own process, shared command log,
+        cancelled together with this runner (its own cancel never touches the parent)."""
+        child=ProcessRunner(diagnostic_callback=lambda value:self.diagnostic_callback(value))
+        child.parent=self;child.commands=self.commands
+        with self.lock:self.children.append(child)
+        return child
+
+    def cancelled(self):
+        return self.event.is_set() or (self.parent is not None and self.parent.cancelled())
 
     def _stop(self,child,force=False):
         # An external renderer owns Python -> Node -> browser/FFmpeg children.
@@ -31,6 +43,7 @@ class ProcessRunner:
 
     def cancel(self):
         self.event.set()
+        for piece in list(self.children):piece.cancel()
         with self.lock:
             child=self.process
             if child and child.poll() is None:
@@ -42,14 +55,14 @@ class ProcessRunner:
                 except (OSError,subprocess.TimeoutExpired):pass
 
     def run(self,arguments,cwd,callback=lambda seconds:None,*,encoder='',phase='ffmpeg',slot_index=None,slot_id=None,media_type=None,slot_count=None,env=None):
-        if self.event.is_set():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
+        if self.cancelled():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
         # Stderr stays in a job-owned temp file and is NEVER copied to safe logs/API.
-        error_path=Path(cwd)/'stderr.tmp'
+        error_path=Path(cwd)/('stderr.tmp' if self.parent is None else f'stderr-{id(self)}.tmp')  # parallel pieces share one folder
         self.commands.append(list(arguments))
         try:
             with error_path.open('w+b') as errors:
                 with self.lock:
-                    if self.event.is_set():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
+                    if self.cancelled():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
                     self.process_tree=phase=='openmontage'
                     self.process=subprocess.Popen(arguments,cwd=cwd,shell=False,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=errors,env=env,
                         start_new_session=self.process_tree and os.name!='nt',
@@ -58,7 +71,7 @@ class ProcessRunner:
                 seconds=0.0
                 try:
                     for line in child.stdout:
-                        if self.event.is_set():self.cancel()
+                        if self.cancelled():self.cancel()
                         key,_,value=line.strip().partition('=')
                         if key in ('out_time_us','out_time_ms'):
                             try:seconds=max(seconds,int(value)/1_000_000);callback(seconds)
@@ -71,7 +84,7 @@ class ProcessRunner:
                         try:child.wait(timeout=3)
                         except subprocess.TimeoutExpired:self._stop(child,True);child.wait()
                     with self.lock:self.process=None;self.process_tree=False
-                if self.event.is_set():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
+                if self.cancelled():raise RenderError('render_cancelled','Render iptal edildi; kaynak dosyalar korunuyor.')
                 if child.returncode:
                     errors.seek(0);details=errors.read(65536).decode('utf-8','replace')
                     code=classify(details,encoder=encoder,phase=phase)

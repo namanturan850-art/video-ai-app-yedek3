@@ -4,19 +4,32 @@ Crossfade handles occupy the start of the next slot; they add no time and never
 subtract master-clock frames. All temporary inputs use internally fixed names.
 """
 from pathlib import Path
+import os
+from threading import Lock,RLock
+import time
 from app.rendering.models import RenderError
 from app.rendering.diagnostics import diagnostic
 from app.rendering.tools import select_encoder
 from app.rendering.files import write
 from app.rendering import ass,probe,smart_graph
+from app.rendering.parallel import run_parallel
 # Scene-change looks (FFmpeg xfade names); anything else falls back to fade.
 XFADE_STYLES=('fade','zoomin','smoothleft','smoothright','circleopen','wipeleft')
 
 
+def default_workers(encoder):
+    """NVENC does the heavy lifting on the GPU (a few sessions in parallel); libx264 shares the CPU.
+    AVS_RENDER_WORKERS (1-8) overrides this."""
+    chosen=os.environ.get('AVS_RENDER_WORKERS','')
+    if chosen.isdigit() and 1<=int(chosen)<=8:return int(chosen)
+    cpus=os.cpu_count() or 2
+    return max(1,min(3,cpus//2)) if encoder=='h264_nvenc' else max(1,min(3,cpus//4))
+
+
 class FFmpegRenderProvider:
-    def __init__(self,tools,runner,progress=lambda *a:None,log=lambda *a:None):
+    def __init__(self,tools,runner,progress=lambda *a:None,log=lambda *a:None,workers=None):
         self.tools,self.runner,self.progress,self.log=tools,runner,progress,log
-        self.warnings=[];self.counter=0
+        self.warnings=[];self.counter=0;self.lock=RLock();self.workers=workers;self.timing={}
 
     def command(self):return [self.tools['ffmpeg'],'-hide_banner','-loglevel','error','-nostdin','-y','-filter_threads','1','-filter_complex_threads','1','-progress','pipe:1','-nostats']
 
@@ -25,7 +38,8 @@ class FFmpegRenderProvider:
         return ['-c:v','libx264','-preset','medium','-crf','20','-threads','4','-pix_fmt','yuv420p','-color_range','tv','-colorspace','bt709','-color_primaries','bt709','-color_trc','bt709','-r','30']
 
     def graph(self,folder,text):
-        self.counter+=1;name=f'filter-{self.counter}.txt';write(folder/name,text);return ['-/filter_complex',name]
+        with self.lock:self.counter+=1;name=f'filter-{self.counter}.txt'
+        write(folder/name,text);return ['-/filter_complex',name]
 
     def render(self,plan):
         requested=plan['options']['encoder'];encoder=select_encoder(requested,self.tools)
@@ -36,6 +50,11 @@ class FFmpegRenderProvider:
             self.log('nvenc_initialization_failed_cpu_retry')
             # Same job/version, no recursive fallback and no retry for other failures.
             return self.attempt(plan,'libx264')
+
+    def pieces_in_parallel(self,encoder,count):
+        """How many slot encodes run at once (1 = one after another, e.g. test runners without spawn())."""
+        if not hasattr(self.runner,'spawn'):return 1
+        return max(1,min(self.workers or default_workers(encoder),count))
 
     def decorative(self,code,**context):
         phase={'adaptive_layout_failed':'adaptive_layout','smart_motion_failed':'smart_motion','smart_transition_failed':'smart_transition','emphasis_render_failed':'emphasis_render'}[code]
@@ -105,15 +124,22 @@ class FFmpegRenderProvider:
                 if 'fade' in self.tools['filters'] and min(slot['frames'],slots[i+1]['frames'])>=4:
                     fades[i]=edits[slot['slot_id']]['transition_duration']/2 if smart else .15;transitions.add(i)
                 else:self.warnings.append('Desteklenmeyen kısa fade geçişi temiz kesmeye dönüştürüldü.')
-        completed=0
-        for i,slot in enumerate(slots):
+        done=[0.]*len(slots);gate=Lock()
+        def report(i,frames):
+            with gate:
+                done[i]=max(done[i],frames);total=sum(done)
+            self.progress('rendering',min(70,8+62*total/timeline['frames']),encoder,self.warnings)
+        def bump(key,amount=1):
+            with self.lock:applied[key]+=amount
+
+        def slot_job(i,slot,runner):
             count=slot['frames'];total=count+outgoing[i];length=total/30
             media=plan['media'][slot['slot_id']];args=self.command()
             context={'slot_index':i,'slot_id':slot['slot_id'],'slot_count':len(slots),'media_type':media['type'],'encoder':encoder}
             actual=probe.stock(self.tools['ffprobe'],media['path'],media['type'],**{k:v for k,v in context.items() if k!='media_type'})
             if actual is None:
                 # ffprobe remains optional: verify actual decoding when unavailable.
-                self.runner.run(self.command()+['-i',str(media['path']),'-map','0:v:0','-frames:v','1','-an','-f','null','-'],folder,phase='input_preflight',**context)
+                runner.run(self.command()+['-i',str(media['path']),'-map','0:v:0','-frames:v','1','-an','-f','null','-'],folder,phase='input_preflight',**context)
                 self.warnings.append('ffprobe bulunamadı; stok medya dekodu kontrol edildi ancak kaynak boyutu ve süresi ön kontrolde ölçülemedi.')
             if media['type']=='video':
                 source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
@@ -158,7 +184,7 @@ class FFmpegRenderProvider:
             layout_graph=None
             if style=='adaptive' and smart_slot and smart_slot.get('layout')!='full_broll' and decorate:
                 if 'ass' not in self.tools['filters']:
-                    applied['layout_failures']+=1;self.warnings.append('Görsel düzen desteklenmiyor; B-roll korunuyor.')
+                    bump('layout_failures');self.warnings.append('Görsel düzen desteklenmiyor; B-roll korunuyor.')
                 else:
                     secondary=smart_slot.get('secondary_slot_id')
                     if secondary:
@@ -171,34 +197,39 @@ class FFmpegRenderProvider:
             graph_index=len(args)
             args+=self.graph(folder,graph.rstrip(';\n'))
             for name,start,end in parts:args+=['-map',f'[{name}]','-an',*self.codec(encoder),'-frames:v',str(end-start),f'{name}-{i}.mp4']
-            self.progress('rendering',8+62*completed/timeline['frames'],encoder,self.warnings)
-            callback=lambda seconds:self.progress('rendering',min(70,8+62*(completed+min(count,seconds*30))/timeline['frames']),encoder,self.warnings)
-            try:self.runner.run(args,folder,callback,phase='slot_render',**context)
+            report(i,0)
+            callback=lambda seconds:report(i,min(count,seconds*30))
+            try:runner.run(args,folder,callback,phase='slot_render',**context)
             except RenderError as error:
                 has_motion=smart_slot and any(x['motion_effect']!='none' for x in smart_slot['segments'])
                 if media.get('was_graphic'):raise
                 if not smart or not decorate or error.category!='render_failed' or not (has_motion or layout_graph or fades[i] or (i and fades[i-1])):raise
                 self.decorative('adaptive_layout_failed' if layout_graph else 'smart_motion_failed' if has_motion else 'smart_transition_failed',**context)
                 self.warnings.append('Bir dekoratif klip efekti uygulanamadı; aynı medya ve süre normal kadrajla korundu.')
-                if layout_graph:applied['layout_failures']+=1
+                if layout_graph:bump('layout_failures')
                 decorate=False
                 graph=smart_graph.slot_graph(normalize,parts,i,incoming,outgoing,fades,decorate=False)
                 retry=args[:graph_index]+self.graph(folder,graph)+args[graph_index+2:]
-                self.runner.run(retry,folder,callback,phase='slot_render',**context)
+                runner.run(retry,folder,callback,phase='slot_render',**context)
             if smart_slot and decorate:
-                applied['motion_effects']+=int(any(x['motion_effect']!='none' for x in smart_slot['segments']))
-                applied['internal_edits']+=len(smart_slot['segments'])-1
-            elif not smart and media['type']=='image' and motion in ('slow_zoom','ken_burns','pan') and 'zoompan' in self.tools['filters']:applied['motion_effects']+=1
+                bump('motion_effects',int(any(x['motion_effect']!='none' for x in smart_slot['segments'])))
+                bump('internal_edits',len(smart_slot['segments'])-1)
+            elif not smart and media['type']=='image' and motion in ('slow_zoom','ken_burns','pan') and 'zoompan' in self.tools['filters']:bump('motion_effects')
             if not decorate:
                 for boundary in (i-1,i):
-                    if boundary>=0:transitions.discard(boundary);fades[boundary]=0.
+                    if boundary>=0:
+                        with self.lock:transitions.discard(boundary);fades[boundary]=0.
             if style=='adaptive':
                 actual_layout=smart_slot['layout'] if layout_graph and decorate else 'full_broll'
-                applied['layouts'][actual_layout]+=1
+                with self.lock:applied['layouts'][actual_layout]+=1
                 if actual_layout!='full_broll':
-                    applied['adaptive_texts']+=len(smart_slot['texts'])
-                    applied['graphic_seconds']+=smart_slot['layout_window']['end']-smart_slot['layout_window']['start']
-            completed+=count
+                    bump('adaptive_texts',len(smart_slot['texts']))
+                    bump('graphic_seconds',smart_slot['layout_window']['end']-smart_slot['layout_window']['start'])
+            report(i,count)
+        slot_started=time.monotonic()
+        workers=self.pieces_in_parallel(encoder,len(slots))
+        run_parallel(len(slots),lambda i,runner:slot_job(i,slots[i],runner),workers,self.runner)
+        self.timing={'slot_seconds':round(time.monotonic()-slot_started,1),'parallel_pieces':workers}
         assembly=[]
         for i,slot in enumerate(slots):
             if incoming[i]:
@@ -255,7 +286,7 @@ class FFmpegRenderProvider:
             applied['sound_effects']=len(events)
         args+=self.graph(folder,graph)+['-map','[v]','-map','[a]',*self.codec(encoder),'-frames:v',str(timeline['frames']),
             '-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-t',f'{duration:.6f}','-movflags','+faststart','output.mp4']
-        self.progress('rendering',75,encoder,self.warnings)
+        final_started=time.monotonic();self.progress('rendering',75,encoder,self.warnings)
         callback=lambda seconds:self.progress('rendering',min(95,75+20*seconds/duration),encoder,self.warnings)
         try:self.runner.run(args,folder,callback,encoder=encoder,phase='final_assembly')
         except RenderError as error:
@@ -273,6 +304,7 @@ class FFmpegRenderProvider:
                 graph=graph.replace(','+assf(caption_name),'')
             graph_index=args.index('-/filter_complex');args[graph_index:graph_index+2]=self.graph(folder,graph)
             self.runner.run(args,folder,callback,encoder=encoder,phase='final_assembly')
+        self.timing['final_seconds']=round(time.monotonic()-final_started,1)
         self.progress('validating',96,encoder,self.warnings)
         output=folder/'output.mp4'
         try:validated=probe.validate(self.tools['ffprobe'],output,duration)
@@ -290,5 +322,5 @@ class FFmpegRenderProvider:
         if style=='adaptive':
             applied['emphasis_texts']=applied['adaptive_texts'];applied['graphic_seconds']=round(applied['graphic_seconds'],3)
             applied['broll_seconds']=round(duration-applied['graphic_seconds'],3)
-        validated.update(subtitle_display=mode,edit_variation_seed=edit.get('edit_variation_seed') if edit else None,editing_style=style,smart_edit_applied_summary=applied,encoder_used=encoder,subtitle_burned=opts['subtitle_burned'],music_enabled=opts['music_enabled'],warnings=list(dict.fromkeys(self.warnings)))
+        validated.update(subtitle_display=mode,edit_variation_seed=edit.get('edit_variation_seed') if edit else None,editing_style=style,smart_edit_applied_summary=applied,encoder_used=encoder,render_timing={**self.timing,'engine':'ffmpeg','slots':len(slots)},subtitle_burned=opts['subtitle_burned'],music_enabled=opts['music_enabled'],warnings=list(dict.fromkeys(self.warnings)))
         return {'path':output,'metadata':validated}

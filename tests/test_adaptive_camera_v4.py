@@ -105,6 +105,7 @@ def test_openmontage_props_carry_camera_segments_transitions_and_emphasis(tmp_pa
     from app.integrations.openmontage import provider
     from app.integrations.openmontage.bridge import PIN
     from app.rendering.models import options
+    monkeypatch.setenv('AVS_REMOTION_SCOPE', 'all')  # the whole-film Remotion path (hybrid: tests/test_hybrid_render.py)
     h, p = owner_shape(); h['project_id'] = 'local'
     t = timeline.build(h, p); source = tmp_path / 'source.mp4'; source.write_bytes(b'unchanged'); voice = tmp_path / 'voice.wav'; voice.write_bytes(b'v')
     details = {s['slot_id']: {'path': source, 'type': 'video', 'duration': 60, 'sha256': 'fixture'} for s in t['slots']}

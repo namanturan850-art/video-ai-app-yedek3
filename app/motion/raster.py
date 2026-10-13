@@ -259,8 +259,13 @@ def render(scene, output, ffmpeg):
                '-movflags', '+faststart', str(output)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
     try:
+        # Nothing changes after the last keyframe: the settled picture is written again, not redrawn.
+        settled = max((key[0] for e in scene['elements'] for track in (e.get('tracks') or {}).values() for key in track), default=0)
+        data = None
         for i in range(frames):
-            process.stdin.write(draw_frame(scene, i / FPS, base, maps, pictures).tobytes())
+            if data is None or i / FPS <= settled + 1e-6:
+                data = draw_frame(scene, i / FPS, base, maps, pictures).tobytes()
+            process.stdin.write(data)
         process.stdin.close()
         error = process.stderr.read()
         if process.wait(timeout=600):

@@ -89,7 +89,7 @@ JUDGE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['v
 PROBE_SCHEMA = {'type': 'object', 'required': ['ok'], 'properties': {'ok': {'type': 'boolean'}}}
 PLACE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['found', 'lat', 'lon'],
                 'properties': {'found': {'type': 'boolean'}, 'lat': {'type': 'number'}, 'lon': {'type': 'number'}}}
-INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact')
+INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'intro', 'outro')
 NEW_MARKERS = ('route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact')
 QUERY_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['queries'],
                 'properties': {'queries': {'type': 'array', 'items': {'type': 'string'}}}}
@@ -969,6 +969,10 @@ class MediaDirector:
         split = lambda text, signs: [x.strip() for x in re.split(signs, text) if x.strip()]
         spec = None
         self.marker_error = ''
+        if kind in ('intro', 'outro'):  # kanal anları: stok aranmaz, başlık ve kanal adı projeden gelir
+            from app.moments.spec import moment_spec
+            channels = getattr(self.service, 'channels', None)
+            return moment_spec(kind, value, self.service.projects.get(self.pid).get('name', ''), channels.for_project(self.pid)['name'] if channels else '')
         if kind in NEW_MARKERS:
             from app.motion.templates_extra import MarkerError, parse
             try:

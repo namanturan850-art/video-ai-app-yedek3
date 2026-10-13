@@ -199,6 +199,7 @@ def test_non_nvenc_diagnostic_never_triggers_cpu_retry(monkeypatch,code):
 
 
 def test_output_validation_failure_has_phase(tmp_path,monkeypatch):
+    monkeypatch.setenv('AVS_RENDER_WORKERS','1')  # the stub replaces this runner's run(); parallel pieces use their own runners
     h,p=contract();runner=ProcessRunner();monkeypatch.setattr(runner,'run',lambda *a,**kw:0)
     monkeypatch.setattr(probe,'stock',lambda *a,**kw:{'stock_duration':2})
     def invalid(*a):raise RenderError('output_invalid','Oluşan video doğrulanamadı.')

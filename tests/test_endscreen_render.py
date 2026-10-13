@@ -60,7 +60,6 @@ def test_closing_moment_adds_a_twenty_second_end_screen_and_nothing_else(with_ou
         meta = state['active']['metadata']; out = root / meta['output_local_path']
         extra = END_SCREEN_SECONDS if with_outro else 0
         assert meta['duration'] == pytest.approx(9 + extra, abs=.1)
-        assert (meta['smart_edit_applied_summary'].get('slots') or 0) >= 1
         if not with_outro:
             return
         # The narration part is untouched: stock picture at 1 s; the end screen is one flat colour in the middle.

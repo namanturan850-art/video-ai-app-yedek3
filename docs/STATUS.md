@@ -1,5 +1,11 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (4) — Düzeltme: proje sayfası “Uygulamaya ulaşılamadı”
+
+- **Neden:** motion motoru sürümü değişince (motion-v2) kayıtlı tüm motion grafikler “eski” sayıldı. Render ekranı açılırken bunları sayfa isteğinin içinde, proje kilidi tutulurken yeniden çiziyordu; bu sürede proje isteği 15 sn'de cevap alamadı.
+- **Düzeltme:** sayfa açma, aktif video seçme ve “Video oluştur” isteği artık hiç çizim yapmaz. Eskiyen motion grafikler arka plandaki render işinin başında çizilir (ilerleme “hazırlanıyor”). Çizilene kadar eski videolar “Eski kaynaklara ait” görünür.
+- **Test:** `tests/test_render_view_never_draws.py` (düzeltmeden önceki kodda başarısız, şimdi geçiyor).
+
 ## 2026-10-13 (3) — Harita, yerleşimler, alt bant
 
 - **Harita:**

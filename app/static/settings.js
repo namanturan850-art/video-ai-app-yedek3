@@ -351,7 +351,7 @@ if (window.location.pathname === '/settings') {
       const result = await request(`/api/settings/${definition.id}${method === 'POST' ? '/test' : ''}`, method, body);
       if(definition.id==='ai33'&&(method==='DELETE'||body?.api_key))ttsBrowser.reset((result.settings||result).ai33.voice_provider);
       showSettings(result.settings || result, method === 'POST' ? null : definition.id);
-      if (method === 'POST') {status.textContent = `${result.result.status} · ${result.result.message}`;if(definition.id==='ai33')form.querySelector('[data-role=tts-credits]').textContent=result.result.credits_message||'';}
+      if (method === 'POST') {status.textContent = `${result.result.status} · ${result.result.message}` + (result.result.request ? ` · İstek (anahtar gizli): ${result.result.request}` : '');if(definition.id==='ai33')form.querySelector('[data-role=tts-credits]').textContent=result.result.credits_message||'';}
       pageStatus.textContent = method === 'POST' ? 'Bağlantı kontrolü tamamlandı.' : method === 'DELETE' ? 'Bu bölümdeki kayıtlı bilgiler temizlendi.' : 'Ayarlar kaydedildi. Anahtarlar yalnızca bu bilgisayarda saklanır.';
     } catch (error) { status.textContent = `Hata · ${error.message}`; }
     finally { setBusy(form, false, definition); }

@@ -109,7 +109,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
     target = folder / (scene_key(scene) + '.mp4')
     from app.motion import relief
-    relief.LAST_WARNING = ''  # only this clip's satellite problem is reported
+    relief.LAST_WARNING = relief.LAST_INFO = ''  # only this clip's satellite problem / view is reported
     if target.is_file() and not linked(target) and target.stat().st_size > 0:
         return target, scene, 'cache'
     temporary = folder / ('.motion-' + uuid4().hex + '.mp4')

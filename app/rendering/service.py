@@ -103,6 +103,7 @@ class RenderService:
                         path,_,_=render_clip(directory(self.projects,pid),spec,kit,duration,offset,language=h.get('target_language','de'),bridge=getattr(self,'openmontage',None))
                         from app.motion import relief
                         if relief.LAST_WARNING:notes.append(relief.LAST_WARNING);relief.LAST_WARNING=''  # satellite failed: the drawn map, and why
+                        if relief.LAST_INFO:notes.append(relief.LAST_INFO);relief.LAST_INFO=''  # tanılama: which satellite view + the Mapbox request (key hidden)
                         digest=self._hash(path,force);originals[str(path)]=digest
                         for slot in parts:media[slot['slot_id']].update(path=path,duration=duration,sha256=digest,segment_start=0.)
                     except Exception:

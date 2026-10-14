@@ -1,5 +1,12 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (9) — Eğik görünüm tanılaması
+
+- Uygulamanın gerçek bağlantılarıyla (yalnız HTTP sahte) iz sürüldü: “Eğik görünüm” açıkken medya işi Static Images API adresini kullanıyor; eğim 40°, açı rota yönünde (Paris → Rennes ≈ 256°) gidiyor. Düz karo adresine düşme yalnız istek hata verirse oluyor.
+- Render uyarılarına her harita için tanılama satırı eklendi: hangi görünüm kullanıldı, eğim/açı ve tam istek adresi (anahtar gizli: `pk.***abcd`). Kutu kapalıyken “Eğik görünüm … kapalıydı”, istek başarısızsa nedeni yazar. Aynı satır uygulama günlüğüne de yazılır.
+- Ayarlar → Mapbox → “Bağlantıyı Test Et” artık eğik görünüm isteğini de dener (küçük, pitch 45). Sonuçta isteğin adresi anahtar gizlenerek görünür; 401/403 ise anahtarın “styles:tiles” izni olmayabilir.
+- Gerçek anahtarla denenemedi: bu ortamdan api.mapbox.com engelli (vekil 403) ve anahtar yok.
+
 ## 2026-10-14 (8) — Uydu haritasında eğik görünüm (3B his)
 
 - Ayarlar → Mapbox → **“Eğik görünüm”** kutusu (varsayılan açık). Açıkken uydu stilindeki [OK] / [ROTA] / [HARİTA] / [BÖLGE] / [YAKINLAŞ] sahneleri Mapbox Static Images API'den **tek istekle** eğik (pitch 35–40) ve rota yönüne dönük (bearing) tek resim alır; sahne başında geniş, sonunda varış noktasına yakın görünür. Kapalıyken eski düz karo görünümü.

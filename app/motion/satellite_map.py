@@ -229,7 +229,10 @@ def oblique(points, width, height, *, route=False, target=None):
     target (lon, lat): where a closer view ends; it may make the zoom a little closer."""
     lon, lat, zoom, bearing, pitch = oblique_view(points, route=route)
     source = provider()
-    data = source.static(lon, lat, zoom, bearing, pitch, *SIZE)
+    try: data = source.static(lon, lat, zoom, bearing, pitch, *SIZE)
+    except SatelliteError as error:
+        error.request = getattr(source, 'last_request', '')  # for the render diagnostics (key hidden)
+        raise
     try: picture = Image.open(BytesIO(data)).convert('RGB')
     except Exception: raise SatelliteError('invalid_response', 'Mapbox eğik görünüm resmi okunamadı; düz görünüm kullanıldı.') from None
     project = camera(lon, lat, zoom, bearing, pitch, *SIZE)
@@ -240,4 +243,4 @@ def oblique(points, width, height, *, route=False, target=None):
         if spot is None: return (width / 2, -height)  # behind the horizon: off the top
         return spot[0] * sx, spot[1] * sy
     picture = picture.resize((width, height), Image.LANCZOS).filter(ImageFilter.UnsharpMask(2, 50, 3))
-    return picture, xy, getattr(source, 'attribution', ''), {'zoom': zoom, 'bearing': bearing, 'pitch': pitch}
+    return picture, xy, getattr(source, 'attribution', ''), {'zoom': zoom, 'bearing': bearing, 'pitch': pitch, 'request': getattr(source, 'last_request', '')}

@@ -70,7 +70,12 @@ class MapboxSatelliteProvider(SatelliteProvider):
                                      width=int(max(1, min(1280, width))), height=int(max(1, min(1280, height))))
         return self._get(url)
 
+    def masked(self, url):
+        """The request URL for logs and the render diagnostics: the key hidden (pk.***abcd)."""
+        return f'{url}?access_token={self.api_key[:3]}***{self.api_key[-4:]}'
+
     def _get(self, url):
+        self.last_request = self.masked(url)
         path = None
         if self.cache:  # tiles are reused between clips (the key is never part of the file name)
             path = self.cache / (hashlib.sha256(url.encode()).hexdigest()[:32] + '.img')
@@ -138,10 +143,43 @@ def mapbox_check(config, transport=None):
     if thread.is_alive():
         return {'status': 'Hata', 'category': 'timeout', 'message': f'Mapbox {TEST_SECONDS} sn içinde yanıt vermedi. İnternet bağlantısını kontrol edip yeniden deneyin.'}
     if box.get('ok'):
-        return {'status': 'Hazır', 'category': 'none', 'message': 'Mapbox bağlantısı başarılı: uydu karosu indirildi. Harita stili → Uydu görüntüsü kullanılabilir.'}
+        if not config.get('oblique', True):
+            return {'status': 'Hazır', 'category': 'none', 'message': 'Mapbox bağlantısı başarılı: uydu karosu indirildi. Eğik görünüm kapalı (düz görünüm kullanılacak).'}
+        tilted = static_check(config, transport)
+        return {'status': 'Hazır' if tilted['ok'] else 'Hata', 'category': 'none' if tilted['ok'] else tilted['category'], 'request': tilted['request'],
+                'message': 'Mapbox bağlantısı başarılı: uydu karosu indirildi. ' + tilted['message']}
     error = box['error']
     text = {'key_rejected': 'Mapbox anahtarı geçersiz veya yetkisiz (401/403). Anahtarı kontrol edip yeniden kaydedin.',
             'network_error': 'Mapbox’a bağlanılamadı. İnternet bağlantısını kontrol edip yeniden deneyin.',
             'not_found': 'Mapbox karo adresi bulunamadı (404). “Uydu karo adresi” alanını kontrol edin.',
             'rate_limit': 'Mapbox istek sınırına takıldı (429). Biraz sonra yeniden deneyin.'}.get(error.category, str(error).split(';')[0] + '.')
     return {'status': 'Hata', 'category': error.category, 'message': text}
+
+
+def static_check(config, transport=None):
+    """One small tilted picture (pitch 45) from the Eğik görünüm address; the answer must be an image.
+    {'ok', 'category', 'message' (Turkish), 'request' (URL, key hidden)}."""
+    import threading
+    box = {}
+
+    def work():
+        p = None
+        try:
+            p = MapboxSatelliteProvider(config['api_key'], config['tile_url'], static_url=config.get('static_url'), transport=transport, timeout=TEST_SECONDS)
+            box['data'] = p.static(2.35, 48.86, 5, 0, 45, 300, 200)
+        except SatelliteError as error:
+            box['error'] = error
+        except Exception:
+            box['error'] = SatelliteError('network_error', MESSAGES['network_error'])
+        box['request'] = getattr(p, 'last_request', '')
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start(); thread.join(TEST_SECONDS + 1)
+    if thread.is_alive():
+        return {'ok': False, 'category': 'timeout', 'request': '', 'message': f'Eğik görünüm isteği {TEST_SECONDS} sn içinde yanıt vermedi; videoda düz görünüm kullanılır.'}
+    if 'data' in box:
+        return {'ok': True, 'category': 'none', 'request': box['request'], 'message': 'Eğik görünüm (Static Images API) de çalışıyor.'}
+    error = box['error']
+    reason = {'key_rejected': 'anahtar bu istek için yetkisiz (401/403; anahtarın “styles:tiles” izni olmalı)', 'not_found': 'adres bulunamadı (404)',
+              'invalid_request': 'Mapbox isteği kabul etmedi (422)', 'rate_limit': 'istek sınırı (429)'}.get(error.category, str(error).split(';')[0].split('. ')[0].rstrip('.'))
+    return {'ok': False, 'category': error.category, 'request': box['request'],
+            'message': f'AMA eğik görünüm çalışmıyor: {reason}. Videoda düz görünüm kullanılır. Ayarlar → Mapbox → “Eğik görünüm adresi” alanını ve anahtar izinlerini kontrol edin.'}

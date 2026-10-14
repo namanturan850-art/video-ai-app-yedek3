@@ -84,8 +84,8 @@ def fold(word):
 
 
 def _table(language):
-    from app.scripts.local_words import DE, TR
-    base = TR if language == 'tr' else DE
+    from app.scripts.local_words import DE, ES, FR, TR
+    base = {'tr': TR, 'fr': FR, 'es': ES}.get(language, DE)
     return {**base, **ADJECTIVES.get(language, {}), **EXTRA_NOUNS.get(language, {})}
 
 
@@ -158,9 +158,9 @@ def foreign(word):
 @lru_cache(maxsize=1)
 def english_vocabulary():
     """English words the app itself uses (translations, topic queries): safe in a strict query."""
-    from app.scripts.local_words import DE, TR
+    from app.scripts.local_words import DE, ES, FR, TR
     words = set(ENGLISH_KEEP)
-    for table in (DE, TR, *ADJECTIVES.values(), *EXTRA_NOUNS.values()):
+    for table in (DE, TR, FR, ES, *ADJECTIVES.values(), *EXTRA_NOUNS.values()):
         for value in table.values(): words.update(value.split())
     for _, queries in TOPICS:
         for query in queries: words.update(query.split())
@@ -229,9 +229,9 @@ def clean_block(block, language='de', *, strict=False, topic=''):
     cleaned = []
     for query in queries:
         english = english_query(query, language, strict=strict)
-        if len(english.split()) == 1:  # one word is too vague: add the topic's first English word
-            extra = generic_queries(topic, language)[0].split()[0]
-            english = english if extra in english.split() else f'{english} {extra}'
+        if len(english.split()) == 1:  # one word is too vague (and fails the plan check): add a different English word of the topic
+            extra = next((w for q in generic_queries(topic, language) + GENERIC for w in q.split() if w.casefold() != english.casefold()), 'landscape')
+            english = f'{english} {extra}'
         if english and english.casefold() not in (c.casefold() for c in cleaned): cleaned.append(english)
     if not cleaned: cleaned = generic_queries(topic, language)[:3]
     block['stock_query'] = cleaned[0][:300]

@@ -1025,6 +1025,8 @@ class MediaDirector:
             events = []
             for item in split(value, r';' if ';' in value else r','):
                 match = re.match(r'\s*(\S*\d\S*(?:\s+(?:v\.|n\.)\s*Chr\.|\s+(?:BC|AD|BCE|CE|MÖ|MS)\b)?)\s*[:\-–]?\s*(.*)', item)
+                if not match and 1 <= len(item.split()) <= 2:  # “aujourd'hui” / “heute” / “bugün”: a point without a year
+                    events.append({'date': item.strip()[:20], 'label': ''}); continue
                 if not match: continue
                 date, label = match.group(1)[:20], match.group(2)
                 if not label:
@@ -1463,6 +1465,11 @@ class MediaDirector:
                 if error.category in ('stale_plan', 'interrupted', 'locked', 'ai_paused') or (single and error.category == 'invalid_input'): raise
                 log = {'steps': [], 'searches': [], 'judged': {}, 'error': error.category}
                 self.motion(slot, scene, log)
+            except Exception as error:  # one slot's unexpected problem never stops the whole job
+                LOG.warning('stock operation=slot category=unexpected exception_class=%s slot=%s', type(error).__name__, slot.get('order'))
+                log = {'steps': [], 'searches': [], 'judged': {}, 'error': 'unexpected'}
+                self.progress.setdefault('slot_errors', []).append(f'Yuva {slot.get("order")}: beklenmeyen hata ({type(error).__name__}); yazı kartı kullanıldı.')
+                self.card(slot, scene, log)
             self.finish_slot(slot, log)
         if targets and not single and not self.local:  # nothing new chosen: nothing to re-review
             try:

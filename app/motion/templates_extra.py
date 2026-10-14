@@ -160,7 +160,12 @@ def parse(kind, value, sentence='', language='de'):
     value = ' '.join(str(value or '').split())
     template = MARKER_TEMPLATE[kind]
     if template == 'relief' or kind == 'zoom':
-        relief_spec = relief_marker(kind, value)
+        try:
+            relief_spec = relief_marker(kind, value)
+        except MarkerError:
+            raise
+        except Exception:  # e.g. a missing component (numpy) or unreadable map data: a plain reason, never a crash
+            raise MarkerError('Kabartma harita çizilemedi: harita bileşenleri eksik veya okunamadı. START_AI_VIDEO_STUDIO.bat ile uygulamayı yeniden başlatın (eksik bileşen otomatik kurulur).') from None
         if relief_spec: return relief_spec
         if template == 'relief':
             raise MarkerError(f'“{value}” kabartma haritada bulunamadı. Ülke, bölge/il ya da “Vallée du Rhône” gibi bir nehir vadisi yazın; ok için: [OK: Lyon > Marseille].')

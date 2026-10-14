@@ -66,6 +66,31 @@ def find(name):
     return None
 
 
+def search_name(name):
+    """English stock-search words for a marker's area (“Brittany”, “Rhone valley”, “French Guiana”, “Marseille”), '' when unknown."""
+    found = _search_name(name)
+    try:
+        from app.scripts.query_clean import place_english
+        english = place_english(name)  # the place list knows exonyms the area list lacks (Bretagne → Brittany)
+    except Exception:
+        english = ''
+    return english if english and (not found or fold(found) == fold(name)) else found
+
+
+def _search_name(name):
+    """English stock-search words for a marker's area (“Brittany”, “Rhone valley”, “French Guiana”), '' when unknown."""
+    wanted = fold(name)
+    river = fold(re.sub(SUFFIXES, '', re.sub(PREFIXES, '', wanted)))
+    for unit in areas():
+        names = [fold(n) for n in unit['n']]
+        if (river if unit['k'] == 'river' else wanted) in names and (unit['k'] != 'river' or river != wanted):
+            english = unit['n'][1] if len(unit['n']) > 1 else unit['n'][0]
+            plain = ''.join(c for c in unicodedata.normalize('NFKD', english) if not unicodedata.combining(c))
+            return f'{plain} valley' if unit['k'] == 'river' else plain
+    unit = find(name)
+    return '' if not unit else ''.join(c for c in unicodedata.normalize('NFKD', unit['name']) if not unicodedata.combining(c))
+
+
 def place(name):
     """(lon, lat, label) of an area's centre or a place from the offline place list."""
     unit = find(name)

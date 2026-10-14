@@ -43,7 +43,7 @@ def clip_fake(world, calls):
     return score
 
 
-def make(tmp_path, monkeypatch, text=None, *, key='rome', visual_check=False, plan='local', fast=True):
+def make(tmp_path, monkeypatch, text=None, *, key='rome', visual_check=False, plan='local', fast=True, language='de'):
     if fast: monkeypatch.setattr('app.motion.clips.raster_render', T.fast_motion)
     monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))
     monkeypatch.setattr('app.providers.gemini_chain.PAUSE', lambda seconds: None)
@@ -64,7 +64,7 @@ def make(tmp_path, monkeypatch, text=None, *, key='rome', visual_check=False, pl
     if visual_check: s.save('general', {'ai_visual_check': True})
     stock = client.app.state.stock
     stock.ai_sleep = lambda seconds, service: None
-    pid = client.post('/api/projects', json={'name': data['topic'], 'topic': data['topic'], 'language': 'de'}).json()['id']
+    pid = client.post('/api/projects', json={'name': data['topic'], 'topic': data['topic'], 'language': language}).json()['id']
     r = client.post(f'/api/projects/{pid}/script/paste', json={'text': text or R.pasted_text(data)})
     assert r.status_code == 201, r.text
     r = client.post(f'/api/projects/{pid}/production/plan', json={'provider': plan, 'cost_confirmed': plan != 'local', 'confirm_replace_plan': False})

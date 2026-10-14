@@ -125,7 +125,9 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         if engine == 'local':
             raster_render(scene, temporary, ffmpeg)
         if relief.LAST_WARNING and any(e['type'] == 'relief' for e in scene['elements']):  # satellite fell back to the drawn map: not cached
-            target = folder / (scene_key(scene) + '-fallback-' + uuid4().hex[:8] + '.mp4')  # under the satellite key: retried next time
+            # Not under the satellite key (retried next time). The name must stay 32 hex characters: the media
+            # screen and the render only accept stock/<32 hex>.mp4 (a “-fallback-” name read as “Yerel dosya eksik”).
+            target = folder / (uuid4().hex + '.mp4')
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)

@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (11) — Mont-Saint-Michel: küçük yerler, tüm haritalar uyduda, kaybolan harita dosyası
+
+- Yer listesi genişledi: anıtlar (Mont-Saint-Michel, Eyfel Kulesi, Kolezyum …), 137 bin kasaba/köy (GeoNames 1 000+ nüfus + Natural Earth yerleşimleri; Avranches, Pontorson …). Listede olmayan yer Mapbox Geocoding ile aranır (Genêts); yanıt önbelleğe alınır.
+- İşaretli bir harita yuvasında ([HARİTA], [YAKINLAŞ], [BÖLGE], [OK], [ROTA], [İMPARATORLUK], [KARŞILAŞTIR]) yer hiç bulunamazsa artık stok video konmaz: en yakın bilinen yerle harita çizilir, Türkçe uyarı verilir.
+- Harita stili “Uydu görüntüsü” iken [YAKINLAŞ] ve [İMPARATORLUK] da uydu + eğik görünümle çizilir; [KARŞILAŞTIR] iki bölgeyi uydu üzerinde yarı saydam mavi/turuncu dolguyla gösterir. Mapbox hata verirse koyu neon harita değil, renkli kabartma kullanılır. Büyük alanlarda (imparatorluk) eğik görünüm yakınlığı düzeltildi.
+- “Yerel dosya eksik veya değişmiş” hatasının nedeni: uydu/eğik görünüm uyarısı olan klip `…-fallback-xxxx.mp4` adıyla kaydediliyordu; medya ekranı yalnız 32 haneli adları kabul ettiği için dosyayı “eksik” sayıyordu. Artık geçerli adla kaydedilir. Eski hatalı yuvalar “Eksik Medyaları Tamamla” ile yeniden çizilir.
+- Test: Fransızca Mont-Saint-Michel metni (6 işaret) sahte Mapbox ile uçtan uca: 6 yuvanın hepsi uydu haritası, stok video yok, dosyalar geçerli. Gerçek Mapbox ile denenmedi (bu ortamdan erişim yok).
+
 ## 2026-10-14 (10) — Eğik görünüm: kuzey yukarıda, daha belirgin eğim
 
 - Yön hatasının nedeni: koordinatlar doğruydu (Marseille 5,38°D, Nice 7,27°D). Eğik görünüm kamerayı rota yönüne çeviriyordu (açı 73°), bu yüzden Nice üstte görünüyordu. Artık açı 0 (kuzey yukarıda): Marseille → Nice soldan sağa çizilir.

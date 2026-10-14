@@ -99,6 +99,13 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         return satellite_tiles.MapboxSatelliteProvider(config['api_key'], config['tile_url'], static_url=config['static_url'], cache=storage / 'tile_cache')
     satellite_tiles.FACTORY = mapbox_provider
     satellite_tiles.OBLIQUE = lambda: settings.mapbox_config()['oblique']
+    from app.providers import geocoding
+    # Map markers whose place the offline lists lack: Mapbox Geocoding with the same key (answers cached).
+    def mapbox_geocoder():
+        config = settings.mapbox_config()
+        return geocoding.MapboxGeocodingProvider(config['api_key'], config['geocode_url']) if config['api_key'] else None
+    geocoding.FACTORY = mapbox_geocoder
+    geocoding.CACHE = storage / 'geocode_cache.json'
     application.state.settings = settings
     ai_diagnostics = ProviderDiagnostics(settings)
     application.state.ai_diagnostics = ai_diagnostics

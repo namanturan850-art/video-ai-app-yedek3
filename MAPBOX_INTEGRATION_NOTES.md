@@ -18,9 +18,19 @@ Kullanım: Video ekranı → **Harita stili → Uydu görüntüsü**. Anahtar Ay
 - Kullanılan değerler: 1280×720 (@2x = 2560×1440), eğim (pitch) 60 (rota/ok) veya 55 (bölge/yer), açı (bearing) 0 — kuzey yukarıda, yönler haritadaki gibi, yakınlık tüm noktalar resmin ~%60'ına sığacak şekilde. Kodda sınırlar: pitch 0–60, zoom 0–22, en/boy ≤ 1280 (doğrulanmadı; API de denetler).
 - Çizgi ve isimler, Mapbox GL kamerasının yaklaşık modeliyle (36,87° görüş açısı, 512 px dünya karoları) resmin üstüne çizilir; gerçek görüntüde birkaç piksel kayma olabilir.
 - Kamera: sahne tüm eğik resimle başlar, sonunda varış noktasına %45 yakınlaşır; uzak (üst) kenarda hafif sis.
-- İstek başarısızsa (401/403, 404, 422, 429, ağ hatası, okunamayan resim): Türkçe uyarı “Eğik görünüm alınamadı (…); düz uydu görünümü kullanıldı.” ve eski düz karo görünümü; o da olmazsa koyu harita.
+- İstek başarısızsa (401/403, 404, 422, 429, ağ hatası, okunamayan resim): Türkçe uyarı “Eğik görünüm alınamadı (…); düz uydu görünümü kullanıldı.” ve eski düz karo görünümü; o da olmazsa renkli kabartma harita (uydu stilinde koyu neon harita hiç kullanılmaz).
 - Kutu kapalıyken yalnız düz karo görünümü (eski davranış) kullanılır.
 - Tanılama: render uyarılarında her harita için “Harita (…): eğik görünüm (eğim …°, açı …°) — istek: <adres>?access_token=pk.***abcd” satırı; “Bağlantıyı Test Et” eğik isteği de dener ve adresi (anahtar gizli) gösterir.
+
+## Yer arama (Geocoding) — yalnız harita işaretleri için
+
+- Bir harita işaretindeki yer (örn. “Genêts”) çevrimdışı listelerde (elle derlenen liste + anıtlar, GeoNames 15 000+ şehirler, GeoNames 1 000+ kasabalar ve Natural Earth yerleşimleri) yoksa **tek istek**:
+  `GET https://api.mapbox.com/search/geocode/v6/forward?q=<yer adı>&access_token=<anahtar>`
+  (adres Ayarlar dosyasında `geocode_url`; kod değiştirmeden düzeltilebilir).
+- Yanıttan **yalnız** standart GeoJSON alanı okunur: `features[0].geometry.coordinates` = `[boylam, enlem]` (RFC 7946). Başka alan kullanılmaz/varsayılmaz.
+- Yanıtlar (bulunamadı dahil) `data/geocode_cache.json` dosyasında saklanır; aynı ad bir daha sorulmaz. Ağ/anahtar hatası saklanmaz.
+- Hiçbir yerde bulunamazsa video stok videoya düşmez: aynı işaretteki başka yer, sahnede/komşu sahnelerde/metinde geçen en yakın bilinen yer ile harita çizilir ve Türkçe uyarı gösterilir.
+- Bu istek de bu ortamdan gerçek anahtarla **denenmedi** (api.mapbox.com engelli); testler sahte HTTP yanıtıyla yapıldı.
 
 ## Doğrulama durumu
 

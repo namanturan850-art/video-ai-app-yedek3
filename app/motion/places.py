@@ -6,6 +6,10 @@
 3. every country and every city with 15 000+ inhabitants, with their other
    names (GeoNames CC BY 4.0 + Unicode CLDR names; app/motion/places_world.json.gz,
    built by tools/build_places.py).
+Map markers only (locate()), when the lists above do not know the name:
+4. towns and villages with 1 000+ inhabitants (GeoNames) and Natural Earth
+   populated places (app/motion/places_local.json.gz, tools/build_places_local.py);
+5. Mapbox Geocoding (app/providers/geocoding.py), when a Mapbox key is set.
 A place found nowhere is reported to the owner (never guessed)."""
 import math
 import gzip
@@ -16,6 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DATA = Path(__file__).resolve().parent / 'places_world.json.gz'
+LOCAL = Path(__file__).resolve().parent / 'places_local.json.gz'
 
 PLACES = [
     # (lat, lon, names)
@@ -124,6 +129,31 @@ PLACES = [
     (-84.0, 0.0, 'Südpol|South Pole|Güney Kutbu|Polo Sur|Pôle Sud'),
     (54.0, 15.0, 'Europa|Europe|Avrupa'),
     (34.0, 100.0, 'Asien|Asia|Asya|Asie'),
+    # Landmarks and monuments (approximate centre point).
+    (48.636, -1.5115, 'Mont-Saint-Michel|Mont Saint-Michel|Le Mont-Saint-Michel|Mont Saint Michel'),
+    (48.66, -1.58, 'Bucht des Mont-Saint-Michel|Bay of Mont-Saint-Michel|Mont-Saint-Michel Körfezi|Bahía del Monte Saint-Michel|Baie du Mont-Saint-Michel'),
+    (48.8584, 2.2945, 'Eiffelturm|Eiffel Tower|Eyfel Kulesi|Torre Eiffel|Tour Eiffel'),
+    (48.853, 2.3499, 'Notre-Dame de Paris|Notre Dame de Paris|Kathedrale Notre-Dame'),
+    (48.8049, 2.1204, 'Schloss Versailles|Palace of Versailles|Versay Sarayı|Palacio de Versalles|Château de Versailles'),
+    (47.6162, 1.517, 'Schloss Chambord|Château de Chambord|Chambord'),
+    (43.9475, 4.5353, 'Pont du Gard'),
+    (45.0537, 1.1679, 'Höhle von Lascaux|Lascaux Cave|Lascaux Mağarası|Cueva de Lascaux|Grotte de Lascaux|Lascaux'),
+    (45.8326, 6.8652, 'Mont Blanc|Montblanc|Monte Bianco'),
+    (45.9763, 7.6586, 'Matterhorn|Cervin|Monte Cervino'),
+    (41.8902, 12.4922, 'Kolosseum|Colosseum|Kolezyum|Coliseo|Colisée'),
+    (37.9715, 23.7257, 'Akropolis|Acropolis|Akropol|Acrópolis|Acropole'),
+    (41.0086, 28.9802, 'Hagia Sophia|Ayasofya|Santa Sofía|Sainte-Sophie'),
+    (47.5576, 10.7498, 'Schloss Neuschwanstein|Neuschwanstein Castle|Neuschwanstein Şatosu|Castillo de Neuschwanstein|Château de Neuschwanstein|Neuschwanstein'),
+    (52.5163, 13.3777, 'Brandenburger Tor|Brandenburg Gate|Brandenburg Kapısı|Puerta de Brandeburgo|Porte de Brandebourg'),
+    (41.4036, 2.1744, 'Sagrada Família|Sagrada Familia'),
+    (37.1761, -3.5881, 'Alhambra'),
+    (51.5007, -0.1246, 'Big Ben'),
+    (51.5081, -0.0759, 'Tower of London|Londoner Tower|Londra Kulesi|Torre de Londres|Tour de Londres'),
+    (40.6892, -74.0445, 'Freiheitsstatue|Statue of Liberty|Özgürlük Heykeli|Estatua de la Libertad|Statue de la Liberté'),
+    (37.8199, -122.4783, 'Golden Gate Bridge|Golden Gate Köprüsü|Puente Golden Gate|Pont du Golden Gate|Golden Gate'),
+    (40.4319, 116.5704, 'Chinesische Mauer|Große Mauer|Great Wall of China|Great Wall|Çin Seddi|Gran Muralla China|Grande Muraille de Chine|Grande Muraille'),
+    (27.1751, 78.0421, 'Taj Mahal|Tac Mahal'),
+    (20.6843, -88.5678, 'Chichén Itzá|Chichen Itza'),
 ]
 
 
@@ -147,7 +177,8 @@ EN_FIRST = {'Babylon', 'Nimrud', 'Uruk', 'Nippur', 'Mari', 'Ebla', 'Persepolis',
             'Cusco', 'Tenochtitlan', 'Mohenjo-Daro', 'Ur', 'Susa', 'Florida', 'Miami', 'Puerto Rico', 'Bahamas', 'Bermuda', 'Titanic', 'Sparta',
             'Istanbul', 'Jerusalem', 'China', 'Japan', 'Mount Everest', 'North Sentinel', 'Hawaii', 'Tahiti', 'Machu Picchu', 'Peru', 'Chile',
             'USA', 'New York', 'Washington', 'Texas', 'Alaska', 'Berlin', 'Paris', 'Madrid', 'Portugal', 'Gibraltar', 'England', 'London', 'Sahara',
-            'Sri Lanka'}
+            'Sri Lanka', 'Mont-Saint-Michel', 'Pont du Gard', 'Notre-Dame de Paris', 'Mont Blanc', 'Matterhorn', 'Hagia Sophia', 'Sagrada Família',
+            'Alhambra', 'Big Ben', 'Tower of London', 'Golden Gate Bridge', 'Taj Mahal', 'Chichén Itzá'}
 
 
 def ascii_name(name):
@@ -228,7 +259,7 @@ def namesakes():
 def nearest(name, lat, lon):
     """Of the places sharing exactly this name, the one closest to (lat, lon):
     “Paris > Rennes > Brest” is Brest in France, not Brest in Belarus. None when unknown."""
-    options = namesakes().get(plain(name), [])  # the owner typed this name: every namesake counts
+    options = namesakes().get(plain(name), []) or local_index().get(plain(name), [])  # the owner typed this name: every namesake counts
     if not options: return None
     return min(options, key=lambda p: math.hypot(p['lat'] - lat, (p['lon'] - lon) * math.cos(math.radians(lat))))
 
@@ -284,3 +315,40 @@ def spoken_places(text):
             break
         i += 1
     return found
+
+
+@lru_cache(maxsize=1)
+def local_index():
+    """{plain name: [place, …]} of the towns and villages (places_local.json.gz), most inhabitants first."""
+    try:
+        with gzip.open(LOCAL, 'rt', encoding='utf-8') as source:
+            rows = json.load(source).get('places', [])
+    except (OSError, ValueError, KeyError):
+        return {}
+    out = {}
+    for name, lat, lon, code, population, others in rows:
+        place = {'name': name, 'lat': lat, 'lon': lon, 'kind': 'town', 'country': code, 'population': population, 'extent_km': 4, 'modern': ''}
+        for alias in dict.fromkeys(plain(a) for a in [name, *others]):
+            if len(alias) >= 3: out.setdefault(alias, []).append(place)
+    return out
+
+
+def distance(a, lat, lon):
+    return math.hypot(a['lat'] - lat, (a['lon'] - lon) * math.cos(math.radians(lat)))
+
+
+def locate(name, near=None):
+    """The place for a map marker: the lists above, then the town list, then
+    Mapbox Geocoding (cached). near=(lat, lon) picks the closest namesake.
+    A dict like find() (+ 'source': 'list' | 'town' | 'mapbox'), or None."""
+    place = find(name)
+    if place: return {**place, 'source': 'list'}
+    towns = local_index().get(plain(name)) or []
+    if towns:
+        best = min(towns, key=lambda p: distance(p, *near)) if near else towns[0]
+        return {**best, 'source': 'town'}
+    from app.providers.geocoding import geocode
+    found = geocode(name)
+    if found:
+        return {'name': str(name).strip()[:60], 'lat': found[0], 'lon': found[1], 'kind': 'geocoded', 'modern': '', 'extent_km': 4, 'rank': 4, 'source': 'mapbox'}
+    return None

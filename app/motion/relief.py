@@ -20,14 +20,17 @@ import math
 from pathlib import Path
 import re
 import subprocess
+import logging
 import unicodedata
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
+LOG = logging.getLogger('uvicorn.error.motion')
 W, H, FPS = 1920, 1080, 30
 LAST_WARNING = ''  # the last satellite problem (Turkish), read once by the media job
+LAST_INFO = ''  # which satellite view the last clip used + the Mapbox request (key hidden): render diagnostics
 MARGIN = 1.22  # the drawn canvas is larger than the frame: room for the camera
 SEA = (38, 92, 140)
 RAMP = [(0, (74, 132, 72)), (150, (110, 156, 84)), (400, (176, 186, 104)), (800, (214, 196, 122)),
@@ -396,7 +399,10 @@ def render(scene, output, ffmpeg):
         base = side_by_side(info, cw, ch)
     else:
         base = None
-        global LAST_WARNING
+        global LAST_WARNING, LAST_INFO
+        name = info['title'] or ' → '.join(p[2] for p in info['arrow'] or []) or (info['unit'] or {}).get('name', '')
+        if sat and element['props'].get('view') != 'oblique':
+            LAST_INFO = f'Harita ({name}): düz uydu görünümü — Ayarlar → Mapbox → “Eğik görünüm” bu sahne hazırlanırken kapalıydı.'
         if sat and element['props'].get('view') == 'oblique':  # Eğik görünüm: one Static Images picture; any problem: the flat view
             from app.motion import satellite_map
             from app.providers.satellite import SatelliteError
@@ -406,11 +412,14 @@ def render(scene, output, ffmpeg):
             try:
                 base, oblique_xy, info['credit'], info['camera'] = satellite_map.oblique(points, cw, ch, route=bool(info['arrow']))
                 info.update(satellite=True, oblique=True)
+                c = info['camera']
+                LAST_INFO = f'Harita ({name}): eğik görünüm (eğim {c["pitch"]:g}°, açı {c["bearing"]:g}°) — istek: {c["request"]}'
                 end = info['arrow'][-1][:2] if info['arrow'] else ((points[0][0] + points[1][0]) / 2, (points[0][1] + points[1][1]) / 2)
                 info['target_px'] = oblique_xy(*end)
             except Exception as error:  # SatelliteError (Turkish) or anything unexpected: never stops the clip
                 reason = str(error).split(';')[0].split('. ')[0].rstrip('.') if isinstance(error, SatelliteError) else 'beklenmeyen hata'
                 LAST_WARNING = f'Eğik görünüm alınamadı ({reason}); düz uydu görünümü kullanıldı.'
+                LAST_INFO = f'Harita ({name}): eğik görünüm alınamadı ({reason}) — istek: {getattr(error, "request", "") or "gönderilemedi"}'
                 base = None
         if sat and base is None:  # satellite tiles (SatelliteProvider); any problem: the dark map, with a Turkish warning
             from app.motion import satellite_map
@@ -482,6 +491,7 @@ def render(scene, output, ffmpeg):
     base = Image.alpha_composite(base.convert('RGBA'), overlay)
     command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
+    if LAST_INFO: LOG.info('motion relief %s', LAST_INFO)
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
     try:
         for i in range(frames):

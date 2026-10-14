@@ -153,3 +153,48 @@ def test_settings_checkbox(tmp_path, monkeypatch):
         assert 'Eğik görünüm' in client.get('/static/settings.js').text
     finally:
         client.__exit__(None, None, None)
+
+
+def mapbox_like(seen=None, static_status=200):
+    """A MapboxSatelliteProvider whose HTTP answers come from landscape() / a flat tile."""
+    def handler(request):
+        if seen is not None: seen.append(request)
+        if '/static/' in request.url.path:
+            if static_status != 200: return httpx.Response(static_status)
+            a = request.url.path.split('/static/')[1].split('/')
+            lon, lat, z, b, p = map(float, a[0].split(',')); w, h = a[1].split('@')[0].split('x')
+            return httpx.Response(200, content=landscape(lon, lat, z, b, p, int(w) // 4, int(h) // 4, 1))
+        out = io.BytesIO(); Image.new('RGB', (512, 512), (40, 90, 60)).save(out, 'JPEG'); return httpx.Response(200, content=out.getvalue())
+    return httpx.MockTransport(handler)
+
+
+def test_render_diagnostics_name_the_view_and_the_request_without_the_key(tmp_path, monkeypatch):
+    seen = []
+    provider = MapboxSatelliteProvider('pk.secret-key-98765', 'https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90', static_url=URL, transport=mapbox_like(seen))
+    render('arrow', 'Paris > Rennes | 350 km', tmp_path, monkeypatch, provider=provider)
+    static = [r for r in seen if '/static/' in r.url.path]
+    assert len(static) == 1 and static[0].url.path.endswith(',40.0/1280x720@2x')  # pitch 40 really sent
+    bearing = float(static[0].url.path.split('/static/')[1].split(',')[3])
+    assert 240 < bearing < 280  # the route's direction (Paris → Rennes: west)
+    assert relief.LAST_INFO.startswith('Harita (Paris → Rennes): eğik görünüm (eğim 40°')
+    assert '/styles/v1/mapbox/satellite-v9/static/' in relief.LAST_INFO and 'access_token=pk.***8765' in relief.LAST_INFO
+    assert 'secret-key' not in relief.LAST_INFO
+    render('arrow', 'Paris > Rennes', tmp_path, monkeypatch, provider=provider, oblique=False)
+    assert 'düz uydu görünümü' in relief.LAST_INFO and '“Eğik görünüm”' in relief.LAST_INFO and 'kapalı' in relief.LAST_INFO
+    failing = MapboxSatelliteProvider('pk.secret-key-98765', 'https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90', static_url=URL, transport=mapbox_like(static_status=403))
+    render('arrow', 'Paris > Rennes', tmp_path, monkeypatch, provider=failing)
+    assert 'eğik görünüm alınamadı' in relief.LAST_INFO and '/static/' in relief.LAST_INFO and 'secret-key' not in relief.LAST_INFO
+    relief.LAST_WARNING = relief.LAST_INFO = ''
+
+
+def test_connection_button_also_checks_the_oblique_request():
+    from app.providers.satellite import mapbox_check
+    tiles = 'https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90'
+    config = {'api_key': 'pk.secret-key-98765', 'tile_url': tiles, 'static_url': URL, 'oblique': True}
+    ok = mapbox_check(config, transport=mapbox_like())
+    assert ok['status'] == 'Hazır' and 'Eğik görünüm' in ok['message'] and ',45.0/300x200@2x?access_token=pk.***8765' in ok['request']
+    bad = mapbox_check(config, transport=mapbox_like(static_status=403))
+    assert bad['status'] == 'Hata' and 'eğik görünüm çalışmıyor' in bad['message'] and 'styles:tiles' in bad['message']
+    assert 'secret-key' not in str(bad)
+    off = mapbox_check({**config, 'oblique': False}, transport=mapbox_like(static_status=403))
+    assert off['status'] == 'Hazır' and 'Eğik görünüm kapalı' in off['message']

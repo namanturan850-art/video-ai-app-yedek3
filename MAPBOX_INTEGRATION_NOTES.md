@@ -20,6 +20,7 @@ Kullanım: Video ekranı → **Harita stili → Uydu görüntüsü**. Anahtar Ay
 - Kamera: sahne başında geniş görünüm, sonunda varış noktasına %40 yakınlaşma.
 - İstek başarısızsa (401/403, 404, 422, 429, ağ hatası, okunamayan resim): Türkçe uyarı “Eğik görünüm alınamadı (…); düz uydu görünümü kullanıldı.” ve eski düz karo görünümü; o da olmazsa koyu harita.
 - Kutu kapalıyken yalnız düz karo görünümü (eski davranış) kullanılır.
+- Tanılama: render uyarılarında her harita için “Harita (…): eğik görünüm (eğim …°, açı …°) — istek: <adres>?access_token=pk.***abcd” satırı; “Bağlantıyı Test Et” eğik isteği de dener ve adresi (anahtar gizli) gösterir.
 
 ## Doğrulama durumu
 

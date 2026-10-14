@@ -182,6 +182,8 @@ def project_slots(scenes, slots):
                            # Text shown as a band over the continuing video instead of a full-screen card.
                            # Opening scene: the card's 2-5 words over moving footage, at most 4 s.
                            **({'lower_third':slot['lower_third']} if (slot.get('continuation_of') or slot.get('lower_third_seconds')) and isinstance(slot.get('lower_third'),str) and slot['lower_third'].strip() else {}),
-                           **({'lower_third_seconds':float(slot['lower_third_seconds'])} if isinstance(slot.get('lower_third_seconds'),(int,float)) and slot['lower_third_seconds']>0 else {})})
+                           **({'lower_third_seconds':float(slot['lower_third_seconds'])} if isinstance(slot.get('lower_third_seconds'),(int,float)) and slot['lower_third_seconds']>0 else {}),
+                           # [ŞERİT]: two-line band (top / bottom) over this slot's footage.
+                           **({'band':{'top':str(slot['band'].get('top') or '')[:60],'bottom':str(slot['band'].get('bottom') or '')[:60]}} if isinstance(slot.get('band'),dict) and slot['band'].get('bottom') else {})})
             cursor=end
     return result

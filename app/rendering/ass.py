@@ -57,6 +57,48 @@ def graphic(item,start,end,g):
             f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an5\\move({x},{y+height//2+30},{x},{y+height//2+9},40,320)\\fn{font}\\fs{size}\\fscx{squeeze}\\b1\\bord0\\shad2\\4c&H000000&\\1c&H{fg}&\\fad(220,200)}}{escape(text)}']
 
 
+def badge(item,start,end,g):
+    """[SIRA]: “23/30 · TITLE” in a dark box at the top left + a thin progress line under it."""
+    g=g or {};accent=ass_colour(g.get('accent') or '#3D9BFF')[4:];bg=ass_colour(g.get('background') or '#0B1426')[4:];font=g.get('font') or 'Arial'
+    text=' '.join(item['text'].split());width=int(min(900,len(text)*21+60));a,b=timecode(start),timecode(end)
+    filled=max(4,int((width-0)*min(1,max(0,float(item.get('fraction') or 0)))))
+    shape=lambda w,h:f'm 0 0 l {w} 0 {w} {h} 0 {h}'
+    return [f'Dialogue: 5,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(60,48)\\p1\\bord0\\shad0\\1c&H{bg}&\\1a&H30&\\fad(250,250)}}{shape(width,64)}{{\\p0}}',
+            f'Dialogue: 6,{a},{b},Graphic,,0,0,0,,{{\\an4\\pos(84,80)\\fn{font}\\fs36\\b1\\bord0\\shad0\\1c&HFFFFFF&\\fad(250,250)}}{escape(text)}',
+            f'Dialogue: 6,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(60,116)\\p1\\bord0\\shad0\\1c&HFFFFFF&\\1a&HB0&\\fad(250,250)}}{shape(width,6)}{{\\p0}}',
+            f'Dialogue: 7,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(60,116)\\p1\\bord0\\shad0\\1c&H{accent}&\\fscx0\\t(200,900,\\fscx100)\\fad(250,250)}}{shape(filled,6)}{{\\p0}}']
+
+
+def band2(item,start,end,g):
+    """[ŞERİT]: two-line band over real footage — a small top line, then a big
+    bottom line typed in letter by letter (typewriter)."""
+    g=g or {};accent=ass_colour(g.get('accent') or '#3D9BFF')[4:];bg=ass_colour(g.get('background') or '#0B1426')[4:];font=g.get('font') or 'Arial'
+    top=' '.join(str(item.get('top') or '').split());bottom=' '.join(item['text'].split());a,b=timecode(start),timecode(end)
+    width=int(min(1680,max(len(bottom)*36,len(top)*20)+120));y=H_LOWER-10
+    shape=lambda w,h:f'm 0 0 l {w} 0 {w} {h} 0 {h}'
+    lines=[f'Dialogue: 2,{a},{b},Graphic,,0,0,0,,{{\\an7\\move(40,{y},90,{y},0,300)\\p1\\bord0\\shad0\\1c&H{bg}&\\1a&H38&\\fad(200,250)}}{shape(width,160)}{{\\p0}}',
+           f'Dialogue: 3,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(90,{y})\\p1\\bord0\\shad0\\1c&H{accent}&\\fscy0\\t(100,400,\\fscy100)\\fad(0,250)}}{shape(10,160)}{{\\p0}}']
+    if top:lines.append(f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(130,{y+18})\\fn{font}\\fs34\\b1\\bord0\\shad0\\1c&H{accent}&\\fad(250,250)}}{escape(top.upper())}')
+    step=max(25,min(70,int(1400/max(1,len(bottom)))));typed=''
+    for i,char in enumerate(bottom):  # each letter appears at its own moment
+        at=400+i*step;typed+=f'{{\\alpha&HFF&\\t({at},{at+1},\\alpha&H00&)}}'+escape(char)
+    lines.append(f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(130,{y+66})\\fn{font}\\fs62\\b1\\bord0\\shad2\\4c&H000000&\\1c&HFFFFFF&\\fad(0,250)}}{typed}')
+    return lines
+
+
+def word_boxes(cue,colour):
+    """The word being read gets a coloured box (thick outline in the accent colour);
+    word times are spread over the cue by word length (cue timing stays exact)."""
+    words=cue['text'].split()
+    if len(words)<2:return [f'Dialogue: 0,{timecode(cue["start"])},{timecode(cue["end"])},Subtitle,,0,0,0,,{escape(cue["text"])}']
+    weights=[len(w)+1 for w in words];total=sum(weights);span=cue['end']-cue['start'];at=cue['start'];out=[];box=ass_colour(colour)[4:]
+    for i,w in enumerate(weights):
+        end=cue['end'] if i==len(words)-1 else at+span*w/total
+        text=' '.join(f'{{\\3c&H{box}&\\bord10\\shad0}}{escape(word)}{{\\r}}' if j==i else escape(word) for j,word in enumerate(words))
+        out.append(f'Dialogue: 0,{timecode(at)},{timecode(end)},Subtitle,,0,0,0,,{text}');at=end
+    return out
+
+
 def create(cues,scenes,duration,*,subtitles=True,overlays=True,editing_style='basic',emphasis=None,subtitle_style=None,graphic_style=None):
     warnings=[]
     header='''[Script Info]
@@ -84,20 +126,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             '&H80000000,-1,0,0,0,100,100,0,0,1,3.5,1,2,100,100,72,1')
         emphasis_size=68 if editing_style in ('balanced','adaptive') else 74
         styles=f'Style: EmphasisLeft,Arial,{emphasis_size},&H00FFFFFF,&H00FFFFFF,&H00101010,&H90000000,-1,0,0,0,100,100,0,0,1,4,1,7,110,110,120,1\nStyle: EmphasisCenter,Arial,{emphasis_size},&H00FFFFFF,&H00FFFFFF,&H00101010,&H90000000,-1,0,0,0,100,100,0,0,1,4,1,8,110,110,120,1\n\n'
-        if graphic_style:styles=styles.replace('\n\n','\nStyle: Graphic,Arial,60,&H00FFFFFF,&H00FFFFFF,&H00101010,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n',1)
+        styles=styles.replace('\n\n','\nStyle: Graphic,Arial,60,&H00FFFFFF,&H00FFFFFF,&H00101010,&H00000000,-1,0,0,0,100,100,0,0,1,0,0,7,0,0,0,1\n\n',1)  # graphics, [SIRA] badge, [ŞERİT] band
         header=header.replace('[Events]',styles+'[Events]')
     header=styled(header,subtitle_style)
     lines=[]
     if subtitles:
         try:valid=validate_cues([{k:c[k] for k in ('start','end','text')} for c in cues],duration)
         except SubtitleError:raise RenderError('subtitle_invalid','Aktif altyazı metni veya zamanları geçersiz. Altyazı ve Zamanlama ekranını kontrol edin.') from None
+        highlight=(graphic_style or {}).get('accent') or '#3D9BFF' if (subtitle_style or {}).get('word_highlight') else None
         for cue in valid:
+            if highlight:lines+=word_boxes(cue,highlight);continue
             lines.append(f'Dialogue: 0,{timecode(cue["start"])},{timecode(cue["end"])},Subtitle,,0,0,0,,{escape(cue["text"])}')
     if smart and emphasis is not None and overlays:
         for item in emphasis:
             start,end=item['start'],item['end'];text=item['text']
             if not 0<=start<end<=duration or not isinstance(text,str) or len(text)>500 or any(ord(c)<32 and c not in '\n\r\t' for c in text):
                 warnings.append('Geçersiz bir vurgu yazısı atlandı.');continue
+            if item.get('style')=='badge':lines+=badge(item,start,end,graphic_style);continue
+            if item.get('style')=='band2':lines+=band2(item,start,end,graphic_style);continue
             if graphic_style:
                 lines+=graphic(item,start,end,graphic_style);continue
             style='EmphasisLeft' if item.get('style') in ('upper_left','lower_third') else 'EmphasisCenter'

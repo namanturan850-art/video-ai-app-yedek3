@@ -253,6 +253,9 @@ def render(scene, output, ffmpeg):
     if any(e['type'] == 'relief' for e in scene['elements']):
         from app.motion.relief import render as relief_render
         return relief_render(scene, output, ffmpeg)
+    if any(e['type'] == 'archive' for e in scene['elements']):
+        from app.motion.archive import render as archive_render
+        return archive_render(scene, output, ffmpeg)
     frames = max(1, round(scene['duration'] * FPS))
     base = Image.new('RGB', (W, H), scene['background'])
     maps = {i: MapLayer(e['props']) for i, e in enumerate(scene['elements']) if e['type'] == 'map'}

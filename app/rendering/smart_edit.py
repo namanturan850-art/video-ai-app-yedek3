@@ -37,12 +37,39 @@ def highlight(text):
     return ' '.join(words[first:first+5]).strip(',;:')
 
 
+def badges(t):
+    """[SIRA: 23/30 | Başlık]: corner badge “23/30 · BAŞLIK” + progress line, for the whole scene."""
+    meta={s['scene_id']:s for s in t['editing_scenes']};result=[]
+    for scene in t['scenes']:
+        hint=next((h for h in meta.get(scene['scene_id'],{}).get('owner_hints') or [] if h.get('type')=='sequence' and h.get('value')),None)
+        if not hint:continue
+        count,_,title=str(hint['value']).partition('|')
+        match=re.match(r'\s*(\d{1,4})\s*/\s*(\d{1,4})\s*$',count)
+        if not match or not 0<int(match.group(1))<=int(match.group(2)):continue
+        slot=next((s for s in t['slots'] if s['scene_id']==scene['scene_id']),None)
+        if not slot or scene['end']-scene['start']<1:continue
+        text=f'{match.group(1)}/{match.group(2)}'+(' · '+' '.join(title.split()).upper()[:40] if title.strip() else '')
+        result.append({'scene_id':scene['scene_id'],'slot_id':slot['slot_id'],'text':text,'start':scene['start'],'end':scene['end'],'style':'badge',
+                       'fraction':round(int(match.group(1))/int(match.group(2)),4),'source':'sequence','cue_index':None,'punch_in':False})
+    return result
+
+
 def lower_thirds(t):
-    """Director media: a band over the continuing video instead of a full-screen text card."""
+    """Director media: a band over the continuing video instead of a full-screen text card;
+    [ŞERİT: üst | alt]: a two-line band (small top line, big bottom line typed in)."""
     result=[]
     for slot in t['slots']:
+        band=slot.get('band')
+        if not isinstance(band,dict) or not str(band.get('bottom') or '').strip():continue
+        start=slot['start']+min(.3,slot['duration']/4);end=min(slot['end'],start+6)
+        if end-start<1.5:continue
+        result.append({'scene_id':slot['scene_id'],'slot_id':slot['slot_id'],'text':' '.join(str(band['bottom']).split())[:60],
+                       'top':' '.join(str(band.get('top') or '').split())[:60],'start':start,'end':end,'style':'band2',
+                       'source':'band','cue_index':None,'punch_in':False})
+    taken={r['slot_id'] for r in result}
+    for slot in t['slots']:
         text=' '.join(str(slot.get('lower_third') or '').split())[:80]
-        if not text or any(ord(c)<32 for c in text):continue
+        if not text or any(ord(c)<32 for c in text) or slot['slot_id'] in taken:continue
         start=slot['start']+min(.2,slot['duration']/4);end=slot['end']
         if slot.get('lower_third_seconds'):end=min(end,start+float(slot['lower_third_seconds']))
         if end-start<1.2:continue
@@ -86,7 +113,7 @@ def emphasis(t,h,style):
                        'source':source,'cue_index':cue_index,'punch_in':style!='basic' and (importance>=75 or start<15)})
         last=start
     result=[e for e in result if not any(e['start']<b['end'] and b['start']<e['end'] for b in bands)]
-    return sorted(result+bands,key=lambda e:e['start'])
+    return sorted(result+bands+badges(t),key=lambda e:e['start'])
 
 
 def motion(scene,index,style,opening):

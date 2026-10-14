@@ -178,8 +178,53 @@ def terrain(view, width, height):
     return picture
 
 
-def highlight(picture, unit, view):
-    """Red fill + bright glowing edge (a river valley: a corridor along the river)."""
+RED = {'fill': (222, 30, 36), 'alpha': .42, 'glow': (255, 120, 90), 'edge': (255, 236, 220)}
+BLUE = {'fill': (52, 146, 255), 'alpha': .55, 'glow': (90, 175, 255), 'edge': (205, 232, 255)}       # dark theme: the selected area
+ORANGE = {'fill': (255, 138, 42), 'alpha': .42, 'glow': (255, 170, 90), 'edge': (255, 222, 186)}    # dark theme: the compared area
+DARK = {'sea': (10, 18, 34), 'land': (26, 40, 64), 'border': (74, 96, 134), 'adm1': (44, 61, 90)}
+
+
+def dark_map(view, width, height):
+    """Flat vector map in dark navy (Natural Earth): land, country and admin-1 lines; no relief."""
+    picture = Image.new('RGB', (width, height), DARK['sea'])
+    draw, xy = ImageDraw.Draw(picture), projector(view, width, height)
+    for unit in areas():
+        if unit['k'] == 'country' and visible(unit['b'], view):
+            for ring in unit['p']: draw.polygon([xy(x, y) for x, y in ring], fill=DARK['land'])
+    for unit in areas():
+        if unit['k'] in ('adm1', 'country') and visible(unit['b'], view, 0.):
+            colour, size = (DARK['adm1'], 1) if unit['k'] == 'adm1' else (DARK['border'], 2)
+            for ring in unit['p']: draw.line([xy(x, y) for x, y in ring], fill=colour, width=size, joint='curve')
+    return picture
+
+
+def area_km2(unit):
+    """Area of an area's polygons (km², local equal-area approximation)."""
+    total = 0.
+    for ring in unit['polygons']:
+        lat0 = sum(y for _, y in ring) / len(ring); k = math.cos(math.radians(lat0)) * 111.32
+        pts = [(x * k, y * 110.57) for x, y in ring]
+        total += abs(sum(a[0] * b[1] - b[0] * a[1] for a, b in zip(pts, pts[1:] + pts[:1]))) / 2
+    return total
+
+
+def centre(unit):
+    w, s, e, n = unit['bbox']
+    return (w + e) / 2, (s + n) / 2
+
+
+def moved_onto(unit, target):
+    """The unit's shape at the same scale, centred on the target (for the size comparison overlay)."""
+    (bx, by), (ax, ay) = centre(unit), centre(target)
+    kb, ka = math.cos(math.radians(by)), math.cos(math.radians(ay))
+    move = lambda x, y: (ax + (x - bx) * kb / ka, ay + (y - by))
+    polygons = [[move(x, y) for x, y in ring] for ring in unit['polygons']]
+    xs = [x for r in polygons for x, _ in r]; ys = [y for r in polygons for _, y in r]
+    return {**unit, 'polygons': polygons, 'lines': [], 'bbox': (min(xs), min(ys), max(xs), max(ys))}
+
+
+def highlight(picture, unit, view, colours=RED):
+    """Coloured fill + bright glowing edge (a river valley: a corridor along the river)."""
     width, height = picture.size
     xy = projector(view, width, height)
     shape = Image.new('L', picture.size, 0)
@@ -192,10 +237,10 @@ def highlight(picture, unit, view):
     edge = shape.filter(ImageFilter.MaxFilter(9)).point(lambda v: v)
     edge = Image.fromarray(np.clip(np.asarray(edge, np.int16) - np.asarray(shape.filter(ImageFilter.MinFilter(5)), np.int16), 0, 255).astype(np.uint8))
     glow = edge.filter(ImageFilter.GaussianBlur(10))
-    red = Image.new('RGB', picture.size, (222, 30, 36))
-    picture = Image.composite(red, picture, shape.point(lambda v: int(v * .42)))  # the relief stays visible under the red
-    picture = Image.composite(Image.new('RGB', picture.size, (255, 120, 90)), picture, glow.point(lambda v: min(255, v * 2)))
-    return Image.composite(Image.new('RGB', picture.size, (255, 236, 220)), picture, edge.point(lambda v: 255 if v > 100 else 0))
+    fill = Image.new('RGB', picture.size, colours['fill'])
+    picture = Image.composite(fill, picture, shape.point(lambda v: int(v * colours['alpha'])))  # what is underneath stays visible
+    picture = Image.composite(Image.new('RGB', picture.size, colours['glow']), picture, glow.point(lambda v: min(255, v * 2)))
+    return Image.composite(Image.new('RGB', picture.size, colours['edge']), picture, edge.point(lambda v: 255 if v > 100 else 0))
 
 
 def bezier(a, b, bend=.22, steps=60):
@@ -211,6 +256,32 @@ def font(size):
     return _font('Montserrat.ttf', size, True)
 
 
+def label_box(draw, text, x, y, size=48, anchor='mm'):
+    """Dark theme: dark text in a white box."""
+    f = font(size)
+    l, t, r, b = draw.textbbox((x, y), text, font=f, anchor=anchor)
+    draw.rounded_rectangle((l - 22, t - 14, r + 22, b + 14), radius=10, fill=(250, 251, 253))
+    draw.text((x, y), text, font=f, fill=(12, 22, 40), anchor=anchor)
+
+
+def pin(draw, x, y, colour=(255, 255, 255)):
+    draw.ellipse((x - 16, y - 58, x + 16, y - 26), fill=colour, outline=(10, 18, 34), width=3)
+    draw.polygon([(x - 12, y - 36), (x + 12, y - 36), (x, y)], fill=colour)
+    draw.ellipse((x - 6, y - 48, x + 6, y - 36), fill=(10, 18, 34))
+
+
+def figure_box(image, text, sub=''):
+    """Top-right number box (“6.640 MİL”, “2,5×”), fixed on screen."""
+    draw = ImageDraw.Draw(image)
+    f, g = font(64), font(28)
+    width = max(draw.textlength(text, font=f), draw.textlength(sub, font=g) if sub else 0) + 64
+    x1, y0 = W - 70, 64
+    x0, y1 = x1 - width, y0 + (150 if sub else 112)
+    draw.rounded_rectangle((x0, y0, x1, y1), radius=12, fill=(10, 18, 34), outline=(61, 155, 255), width=4)
+    draw.text(((x0 + x1) / 2, y0 + 58), text, font=f, fill=(255, 255, 255), anchor='mm')
+    if sub: draw.text(((x0 + x1) / 2, y0 + 118), sub, font=g, fill=(170, 200, 240), anchor='mm')
+
+
 def label(draw, text, x, y, size=58, anchor='mm'):
     f = font(size)
     draw.text((x, y), text, font=f, fill=(255, 255, 255), anchor=anchor, stroke_width=max(4, size // 9), stroke_fill=(20, 24, 30))
@@ -220,11 +291,22 @@ def plan(spec):
     """Everything the clip needs, resolved from the offline data."""
     d = spec['data']
     mode = d.get('mode', 'region')
+    figure = str(d.get('figure') or '')[:24]
+    if mode == 'compare':
+        a, b = find(d['target']), find(d['other'])
+        if not a or not b or not a['polygons'] or not b['polygons']: raise ValueError('compare areas')
+        over = moved_onto(b, a)
+        box = (min(a['bbox'][0], over['bbox'][0]), min(a['bbox'][1], over['bbox'][1]), max(a['bbox'][2], over['bbox'][2]), max(a['bbox'][3], over['bbox'][3]))
+        ratio = area_km2(a) / max(1e-6, area_km2(b))
+        big = ratio if ratio >= 1 else 1 / ratio
+        shown = f'{big:.1f}×'.replace('.', ',') if d.get('language', 'tr') != 'en' else f'{big:.1f}×'
+        return {'mode': mode, 'view': view_around(box, pad=1.5, minimum=1.5), 'unit': a, 'other': over, 'arrow': None,
+                'title': d.get('title') or a['name'], 'other_title': b['name'], 'figure': figure or shown}
     if mode == 'arrow':
         a, b = place(d['from']), place(d['to'])
         if not a or not b: raise ValueError('arrow places')
         bbox = (min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
-        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=2.5), 'arrow': [a, b], 'unit': None, 'title': d.get('title') or ''}
+        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=2.5), 'arrow': [a, b], 'unit': None, 'title': d.get('title') or '', 'figure': figure}
     unit = find(d['target'])
     if unit is None:
         p = place(d['target'])
@@ -232,7 +314,7 @@ def plan(spec):
         unit = {'kind': 'point', 'name': p[2], 'polygons': [], 'lines': [], 'bbox': (p[0] - .3, p[1] - .3, p[0] + .3, p[1] + .3)}
     view = view_around(unit['bbox'], pad=1.7 if mode == 'region' else 1.4, minimum=1.5)
     title = d.get('title') or (d['target'] if unit['kind'] == 'river' else unit['name'])  # “Vallée du Rhône”, not “Rhône”
-    return {'mode': mode, 'view': view, 'unit': unit, 'arrow': None, 'title': title}
+    return {'mode': mode, 'view': view, 'unit': unit, 'arrow': None, 'title': title, 'figure': figure}
 
 
 def render(scene, output, ffmpeg):
@@ -240,14 +322,17 @@ def render(scene, output, ffmpeg):
     slow zoom-in (zoom), all within the pre-drawn canvas."""
     element = next(e for e in scene['elements'] if e['type'] == 'relief')
     info = plan(element['props']['spec'])
+    dark = element['props'].get('theme') == 'dark'
+    info['dark'] = dark
     duration = scene['duration']; frames = max(1, round(duration * FPS))
     view = info['view']
     cx, cy = (view[0] + view[2]) / 2, (view[1] + view[3]) / 2
     hw, hh = (view[2] - view[0]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1), (view[3] - view[1]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)
     canvas_view = (cx - hw, cy - hh, cx + hw, cy + hh)
     cw, ch = int(W * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)), int(H * MARGIN * (1.6 if info['mode'] == 'zoom' else 1))
-    base = terrain(canvas_view, cw, ch)
-    if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view)
+    base = dark_map(canvas_view, cw, ch) if dark else terrain(canvas_view, cw, ch)
+    if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
+    if info.get('other'): base = highlight(base, info['other'], canvas_view, ORANGE)  # [KARŞILAŞTIR]: the other area laid over, same scale
     xy = projector(canvas_view, cw, ch)
     # Labels and the arrow are drawn on the canvas: they move with the map, readable from frame 0.
     overlay = Image.new('RGBA', base.size, (0, 0, 0, 0))
@@ -260,9 +345,13 @@ def render(scene, output, ffmpeg):
         down = end[1] >= xy(ax, ay)[1]
         for (x, y, n), first in (((ax, ay, an), True), ((bx, by, bn), False)):
             px, py = xy(x, y)
-            draw.ellipse((px - 12, py - 12, px + 12, py + 12), fill=(255, 255, 255), outline=(20, 24, 30), width=4)
             above = down == first  # each name sits on the side the arrow does not use
-            label(draw, n, px, py - 50 if above else py + 54, 54)
+            if dark:
+                pin(draw, px, py)
+                label_box(draw, n, px, py - 100 if above else py + 50, 44)
+            else:
+                draw.ellipse((px - 12, py - 12, px + 12, py + 12), fill=(255, 255, 255), outline=(20, 24, 30), width=4)
+                label(draw, n, px, py - 50 if above else py + 54, 54)
     elif info['unit']:
         w, s, e, n = info['unit']['bbox']
         px, py = xy((w + e) / 2, (s + n) / 2)
@@ -270,8 +359,14 @@ def render(scene, output, ffmpeg):
             line = max(info['unit']['lines'], key=len); mx, my = line[len(line) // 2]
             px, py = xy(mx, my); px += 40
             label(draw, info['title'], px, py, 66, anchor='lm')
+        elif dark:
+            label_box(draw, info['title'], px, py, 50)
+            if info['mode'] == 'zoom': pin(draw, px, py - 60)
         else:
             label(draw, info['title'], px, py, 66)
+        if info.get('other'):  # legend: blue = the area, orange = the compared one laid over it
+            ow, os_, oe, on = info['other']['bbox']
+            label_box(draw, info['other_title'], xy((ow + oe) / 2, on)[0], xy((ow + oe) / 2, on)[1] - 40, 40)
     base = Image.alpha_composite(base.convert('RGBA'), overlay)
     command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
@@ -307,11 +402,17 @@ def frame(base, info, t, duration, path):
         k = max(2, int(len(path) * min(1., t / max(.6, duration * .45))))
         image = base.copy(); draw = ImageDraw.Draw(image)
         part = path[:k]
-        draw.line([(x + 4, y + 5) for x, y in part], fill=(0, 0, 0, 120), width=14, joint='curve')
-        draw.line(part, fill=(255, 255, 255, 255), width=12, joint='curve')
+        if info.get('dark'):  # dashed line
+            for i in range(0, len(part) - 1, 2):
+                draw.line(part[i:i + 2], fill=(255, 255, 255, 255), width=8)
+        else:
+            draw.line([(x + 4, y + 5) for x, y in part], fill=(0, 0, 0, 120), width=14, joint='curve')
+            draw.line(part, fill=(255, 255, 255, 255), width=12, joint='curve')
         (x1, y1), (x2, y2) = part[-2], part[-1]
         angle = math.atan2(y2 - y1, x2 - x1)
         tip = [(x2 + 30 * math.cos(angle), y2 + 30 * math.sin(angle)), (x2 + 26 * math.cos(angle + 2.4), y2 + 26 * math.sin(angle + 2.4)),
                (x2 + 26 * math.cos(angle - 2.4), y2 + 26 * math.sin(angle - 2.4))]
         draw.polygon(tip, fill=(255, 255, 255, 255))
-    return image.convert('RGB').resize((W, H), Image.BICUBIC, box=(left, top, left + w, top + h))
+    out = image.convert('RGB').resize((W, H), Image.BICUBIC, box=(left, top, left + w, top + h))
+    if info.get('figure'): figure_box(out, info['figure'].upper(), f'{info["title"]} / {info["other_title"]}' if info.get('other') else '')
+    return out

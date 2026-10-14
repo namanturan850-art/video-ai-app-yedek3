@@ -96,8 +96,8 @@ JUDGE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['v
 PROBE_SCHEMA = {'type': 'object', 'required': ['ok'], 'properties': {'ok': {'type': 'boolean'}}}
 PLACE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['found', 'lat', 'lon'],
                 'properties': {'found': {'type': 'boolean'}, 'lat': {'type': 'number'}, 'lon': {'type': 'number'}}}
-INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'intro', 'outro', 'region', 'arrow')
-NEW_MARKERS = ('route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'region', 'arrow')
+INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'intro', 'outro', 'region', 'arrow', 'archive')
+NEW_MARKERS = ('route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'region', 'arrow', 'archive')
 QUERY_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['queries'],
                 'properties': {'queries': {'type': 'array', 'items': {'type': 'string'}}}}
 REVIEW_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['replace'],
@@ -1036,6 +1036,13 @@ class MediaDirector:
             if len(events) >= 2: spec = {'template': 'timeline', 'data': {'events': events[:5]}, 'emphasis': ''}
             elif events: spec = {'template': 'stat', 'data': {'value': events[0]['date'], 'label': short(sentence)}, 'emphasis': events[0]['date']}
         elif kind == 'compare':
+            from app.motion.templates_extra import relief_marker
+            try:
+                compared = relief_marker('compare', value)  # two areas, no numbers: blue/orange overlay on the map, area ratio
+            except Exception:
+                compared = None
+            if compared:
+                return compared
             items = []
             for item in split(value, r'\||\bvs\.?\b|\bgegen\b|\bkarşı\b'):
                 label, _, number = item.rpartition(':') if ':' in item else item.rpartition('=') if '=' in item else (item, '', '')
@@ -1058,7 +1065,7 @@ class MediaDirector:
         search, checked like any candidate) are downloaded into the project."""
         from app.scripts.query_clean import english_query
         data = spec['data']
-        if spec['template'] == 'mark':
+        if spec['template'] in ('mark', 'archive'):
             if data.get('image'): return True
             wanted = [english_query(data['label'], self.language, limit=5) or scene.get('primary_stock_query') or self.topic]
         else:
@@ -1078,7 +1085,7 @@ class MediaDirector:
                 except StockError: continue
             if not saved: return False
             names.append(saved['local_path'].rsplit('/', 1)[-1])
-        if spec['template'] == 'mark': data['image'] = names[0]
+        if spec['template'] in ('mark', 'archive'): data['image'] = names[0]
         else: data['images'] = names
         return True
 
@@ -1485,7 +1492,7 @@ class MediaDirector:
             hint = self.owner[slot['slot_id']]
             spec = self.owner_spec(hint, scene)
             self._release(slot); log = empty()
-            if spec is not None and spec['template'] in ('mark', 'beforeafter') and not self.pictures(spec, slot, scene):
+            if spec is not None and spec['template'] in ('mark', 'beforeafter', 'archive') and not self.pictures(spec, slot, scene):
                 self.marker_error = 'bu sahne için uygun görsel bulunamadı'
                 spec = None
             if spec is None:  # e.g. a place nobody could locate: the narration decides
@@ -1517,7 +1524,7 @@ class MediaDirector:
             self.motion(slot, scene, log, scene.get('motion_spec') or None, 'motion_planned' if scene.get('motion_spec') else 'motion'); return log
         if why == 'motion_edit':
             spec = self.progress['motion']
-            if spec['template'] in ('mark', 'beforeafter') and not self.pictures(spec, slot, scene):
+            if spec['template'] in ('mark', 'beforeafter', 'archive') and not self.pictures(spec, slot, scene):
                 raise StockError('invalid_input', 'Bu işaret için uygun görsel bulunamadı; metni değiştirip yeniden deneyin. Mevcut medya korundu.')
             self._release(slot); log = empty(); self.motion(slot, scene, log, spec, 'motion_edit'); slot['motion_edited'] = True; return log
         if why == 'to_stock':
@@ -1716,13 +1723,34 @@ class MediaDirector:
         return {sid: {'sentence': spoken[sid], 'sentence_tr': tr.get(clean(spoken[sid]), ''),
                       'visual_note': notes.get(sid, ''), 'visual_note_tr': tr.get(clean(notes.get(sid, '')), '')} for sid in spoken}
 
+    def bands(self, slots):
+        """[ŞERİT: üst satır | alt satır] → {slot_id: {'top', 'bottom'}}: the slot (real footage first)
+        playing while that sentence is spoken."""
+        out = {}
+        for scene in getattr(self, 'scene_by_id', {}).values():
+            words = ' '.join(scene.get('narration_text', '').split())
+            span = max(.001, scene['end_estimate'] - scene['start_estimate'])
+            for hint in scene.get('owner_hints') or []:
+                if hint.get('type') != 'band' or not hint.get('value'): continue
+                top, _, bottom = str(hint['value']).partition('|')
+                top, bottom = (top.strip(), bottom.strip()) if bottom.strip() else ('', top.strip())
+                where = words.find(' '.join(str(hint.get('sentence', '')).split())) if hint.get('sentence') else -1
+                at = scene['start_estimate'] + span * (len(words[:where].split()) / max(1, len(words.split())) if where >= 0 else 0)
+                own = sorted((s for s in slots if s['scene_id'] == scene['scene_id'] and s.get('selected_media')), key=lambda s: abs((s['estimated_start'] + s['estimated_end']) / 2 - at))
+                real = [s for s in own if not is_generated(s['selected_media'])] or own
+                if real: out[real[0]['slot_id']] = {'top': top[:60], 'bottom': bottom[:60]}
+        return out
+
     def finalize(self):
         service, job = self.service, self.job
         help_text = self.owner_help(self.slots) if getattr(self, 'slots', None) else {}
         with service.projects.lock, closing(service.projects._connection()) as c, c:
             state = service._load(c, self.pid, job['plan_id'])
+            bands = self.bands(state['slots'])
             for slot in state['slots']:
                 if slot['slot_id'] in help_text: slot.update(help_text[slot['slot_id']])
+                if slot['slot_id'] in bands: slot['band'] = bands[slot['slot_id']]
+                elif 'band' in slot and not bands.get(slot['slot_id']): slot.pop('band')
                 slot['review_flags'] = review_flags(slot)
             # Every raw slot is now filled: the old render-only reflow plan
             # (built for gaps) is obsolete and must not hide new selections.

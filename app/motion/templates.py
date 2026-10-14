@@ -105,7 +105,8 @@ def _validate(spec, narration, entities=(), *, trusted=False):
         data = {'events': []}
         for e in events:
             date, label = clean((e or {}).get('date'), 20), clean((e or {}).get('label'), 50)
-            if not re.search(r'\d', date) or not (spoken(date) or all(is_spoken(n, text) for n in re.findall(r'\d+', date))):
+            now = not re.search(r'\d', date) and len(date.split()) <= 2 and spoken(date)  # “aujourd'hui”, “heute”, “bugün” as the last point
+            if not now and (not re.search(r'\d', date) or not (spoken(date) or all(is_spoken(n, text) for n in re.findall(r'\d+', date)))):
                 raise MotionError('timeline dates must be spoken')
             data['events'].append({'date': date, 'label': label})
     elif t == 'compare':

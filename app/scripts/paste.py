@@ -148,6 +148,17 @@ def apply_markers(blocks, markers, language='de'):
             block['alternative_stock_queries'] = [q for q in old if q.casefold() != query.casefold()][:5] or [query]
             block['must_show'] = marker['value'][:300]
             block['visual_intent'] = (marker['value'] + ' — ' + block.get('visual_intent', ''))[:1500]
+        elif marker['type'] in ('region', 'zoom', 'arrow'):  # relief map markers: real footage of that place around the graphic
+            try:
+                from app.motion.relief import search_name
+                where = marker['value'].split('>')[-1].strip() if marker['type'] == 'arrow' else marker['value']
+                name = search_name(where)
+            except Exception:  # the relief data could not be read: the plan's own queries stay
+                name = ''
+            if name:
+                query = f'{name} {"aerial" if marker["type"] == "zoom" else "landscape"}'[:300]
+                block['stock_query'] = query
+                block['alternative_stock_queries'] = [q for q in old if q.casefold() != query.casefold()][:5] or [f'{name} aerial view']
         elif marker['type'] == 'map':
             from app.scripts.query_clean import english_query
             extra = f'{english_query(marker["value"], language, strict=True, limit=3) or "old"} map'

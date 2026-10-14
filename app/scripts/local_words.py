@@ -57,7 +57,29 @@ TR = {
     'peygamber': 'prophet', 'kabile': 'tribe', 'çocuk': 'children', 'aile': 'family', 'kalabalık': 'crowd', 'kuş': 'bird',
     'kafes': 'cage', 'kutu': 'wooden box', 'mum': 'candle', 'meşale': 'torch', 'galaksi': 'galaxy', 'gezegen': 'planet', 'yıldız': 'stars',
 }
-ENDINGS = {'de': ('en', 'n', 'e', 'er', 's', 'es'), 'tr': ('lar', 'ler', 'ları', 'leri', 'ı', 'i', 'u', 'ü', 'da', 'de', 'ta', 'te', 'dan', 'den')}
+# French: filmable nouns/adjectives of documentary narration (elisions “d'années” are split before lookup).
+FR = {'roche': 'rock formation', 'roches': 'rock formation', 'rocher': 'rocks', 'pierre': 'stone', 'falaise': 'cliffs', 'falaises': 'cliffs',
+      'côte': 'coast', 'côtes': 'coast', 'littoral': 'coastline', 'mer': 'sea', 'océan': 'ocean', 'plage': 'beach', 'île': 'island', 'îles': 'island',
+      'port': 'harbor', 'phare': 'lighthouse', 'vague': 'waves', 'vagues': 'waves', 'canyon': 'canyon', 'gorge': 'gorge', 'gorges': 'gorge',
+      'vallée': 'valley', 'fleuve': 'river', 'rivière': 'river', 'lac': 'lake', 'montagne': 'mountains', 'montagnes': 'mountains', 'colline': 'hills',
+      'collines': 'hills', 'plaine': 'plain', 'désert': 'desert', 'forêt': 'rainforest', 'forêts': 'forest', 'jungle': 'jungle', 'arbre': 'trees',
+      'arbres': 'trees', 'champ': 'field', 'champs': 'fields', 'village': 'village', 'ville': 'city', 'villes': 'city', 'château': 'castle',
+      'église': 'church', 'cathédrale': 'cathedral', 'ruines': 'ruins', 'pont': 'bridge', 'route': 'road', 'carte': 'map', 'ciel': 'sky',
+      'nuage': 'clouds', 'nuages': 'clouds', 'soleil': 'sun', 'étoiles': 'stars', 'lune': 'moon', 'neige': 'snow', 'glace': 'ice', 'glacier': 'glacier',
+      'volcan': 'volcano', 'sédiments': 'sediment layers', 'sédiment': 'sediment layers', 'sel': 'salt flat', 'sable': 'sand', 'boue': 'mud',
+      'eau': 'water', 'pluie': 'rain', 'tempête': 'storm', 'sécheresse': 'drought', 'fossile': 'fossil', 'fossiles': 'fossil', 'grotte': 'cave',
+      'grottes': 'cave', 'sous-sol': 'underground', 'sol': 'ground', 'terre': 'earth', 'paysage': 'landscape', 'territoire': 'aerial landscape',
+      'navire': 'ship', 'bateau': 'boat', 'pêcheur': 'fisherman', 'ferme': 'farm', 'vigne': 'vineyard', 'vignes': 'vineyard', 'vin': 'wine',
+      'soldat': 'soldiers', 'soldats': 'soldiers', 'roi': 'king', 'reine': 'queen', 'armée': 'army', 'guerre': 'war', 'bataille': 'battle',
+      'animaux': 'wild animals', 'oiseaux': 'birds', 'poisson': 'fish', 'singe': 'monkey', 'jaguar': 'jaguar', 'fusée': 'rocket launch',
+      'ancien': 'ancient', 'anciennes': 'ancient', 'anciens': 'ancient', 'ancienne': 'ancient', 'immense': 'vast', 'gigantesque': 'giant',
+      'profond': 'deep', 'profonde': 'deep', 'sec': 'dry', 'sèche': 'dry', 'asséchée': 'dried up', 'tropical': 'tropical', 'tropicale': 'tropical'}
+ES = {'roca': 'rocks', 'costa': 'coast', 'mar': 'sea', 'océano': 'ocean', 'playa': 'beach', 'isla': 'island', 'cañón': 'canyon', 'valle': 'valley',
+      'río': 'river', 'lago': 'lake', 'montaña': 'mountains', 'montañas': 'mountains', 'desierto': 'desert', 'bosque': 'forest', 'selva': 'rainforest',
+      'ciudad': 'city', 'castillo': 'castle', 'iglesia': 'church', 'ruinas': 'ruins', 'puente': 'bridge', 'mapa': 'map', 'cielo': 'sky',
+      'nubes': 'clouds', 'volcán': 'volcano', 'arena': 'sand', 'agua': 'water', 'tormenta': 'storm', 'cueva': 'cave', 'barco': 'ship',
+      'soldados': 'soldiers', 'rey': 'king', 'ejército': 'army', 'guerra': 'war', 'antiguo': 'ancient', 'antigua': 'ancient'}
+ENDINGS = {'de': ('en', 'n', 'e', 'er', 's', 'es'), 'fr': ('s', 'x', 'es'), 'es': ('s', 'es'), 'tr': ('lar', 'ler', 'ları', 'leri', 'ı', 'i', 'u', 'ü', 'da', 'de', 'ta', 'te', 'dan', 'den')}
 
 
 def fold(word):
@@ -66,8 +88,9 @@ def fold(word):
 
 def english(word, language='de'):
     """English stock words for one narration word, or ''."""
-    table = TR if language == 'tr' else DE
+    table = {'tr': TR, 'fr': FR, 'es': ES}.get(language, DE)
     low = fold(word)
+    if language in ('fr', 'es', 'it') and re.match(r"^[a-z]{1,2}['’]", low): low = re.split(r"['’]", low, maxsplit=1)[1]  # d'années → années
     if low in table: return table[low]
     for ending in sorted(ENDINGS.get(language, ()), key=len, reverse=True):
         if low.endswith(ending) and len(low) - len(ending) >= 3 and low[:-len(ending)] in table:

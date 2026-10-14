@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 — Düzeltme: Fransızca metin + kabartma harita işaretleri
+
+- **“unexpected_backend” çökmesi (Yuva 1):** kabartma harita `numpy` kullanıyordu ama `numpy` uygulamanın bileşen listesinde (`requirements.txt`) yoktu; bu bilgisayarda yüklü olduğu için testler geçmişti, sizin bilgisayarınızda `[BÖLGE]` işareti işi çökertiyordu. `numpy` listeye eklendi (START_AI_VIDEO_STUDIO.bat bir sonraki açılışta otomatik kurar). Ayrıca harita bileşeni okunamazsa artık Türkçe uyarı verilir; bir yuvadaki beklenmeyen hata da işi durdurmaz (yuva yazı kartıyla dolar, uyarı ekranda).
+- **Gemini 503 → yerel plan:** yerel plan bir sahneye tek kelimelik sorgu (“ancient”) verince plan işi “birincil stok sorgusu eksik” hatasıyla duruyordu; tek kelimelik sorgu artık ikinci bir kelimeyle tamamlanır. Fransızca (ve İspanyolca) sözcük listesi eklendi: roches → rock formation, canyon, forêt → rainforest, côte → coast…
+- **İşaretler planda:** `[BÖLGE]`/`[OK]`/`[YAKINLAŞ]` sahnenin ilk sorgusunu o yerden yapar (Rhone valley landscape, French Guiana aerial, Marseille landscape); Medyayı Tamamla bunları kabartma harita, `[SAYI]`/`[ÇİZELGE]`/`[ORAN]` işaretlerini infografik yapar. `[ÇİZELGE]` “aujourd'hui / heute / bugün” gibi yılsız bir son noktayı kabul eder.
+- **Seslendirme olmadan:** plan, Medyayı Tamamla ve Medya ekranındaki önizleme seslendirme gerektirmez (uçtan uca test). Video oluşturma (render) hâlâ seslendirme ister.
+- **Testler:** `tests/test_french_relief_e2e.py` (verdiğiniz metin, Gemini 503, seslendirme yok) ve ilgili testler geçti. Tam paket çalıştırılmadı.
+
 ## 2026-10-13 (10) — Renkli kabartma (hipsometrik) harita
 
 - **Yeni işaretler:** `[BÖLGE: Bretagne]` bölgeyi kırmızıya boyar, parlak kenar; `[OK: Lyon > Marseille]` beyaz kavisli ok; `[YAKINLAŞ: yer]` artık bu haritada yavaş yakınlaşma.

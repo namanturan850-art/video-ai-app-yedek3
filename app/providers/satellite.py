@@ -9,6 +9,9 @@ never from .env or source files. Every failure is a SatelliteError with a
 plain Turkish message; the caller then draws the offline map instead.
 """
 import hashlib
+import json
+import threading
+from datetime import datetime
 from pathlib import Path
 
 import httpx
@@ -40,7 +43,8 @@ class SatelliteProvider:
 
 MESSAGES = {
     'missing_key': 'Mapbox API anahtarı girilmeli (Ayarlar). Uydu yerine çizilmiş harita kullanıldı.',
-    'key_rejected': 'Mapbox anahtarı kabul edilmedi (401/403). Ayarlar → Mapbox anahtarını kontrol edin; uydu yerine çizilmiş harita kullanıldı.',
+    'key_rejected': 'Mapbox anahtarı kabul edilmedi (401/403); Mapbox hesabında kullanım sınırı veya ödeme sorunu olabilir. Ayarlar → Mapbox anahtarını ve hesabınızı kontrol edin; uydu yerine çizilmiş harita kullanıldı.',
+    'monthly_limit': 'Bu ayki Mapbox güvenlik sınırına ulaşıldı. Uydu yerine çizilmiş harita kullanıldı; sınırı Ayarlar → Mapbox bölümünden değiştirebilirsiniz.',
     'rate_limit': 'Mapbox istek sınırına takıldı (429). Biraz sonra yeniden deneyin; uydu yerine çizilmiş harita kullanıldı.',
     'not_found': 'Mapbox bu karoyu bulamadı (404). Ayarlar → Mapbox karo adresini kontrol edin; uydu yerine çizilmiş harita kullanıldı.',
     'upstream_error': 'Mapbox sunucusu hata verdi. Biraz sonra yeniden deneyin; uydu yerine çizilmiş harita kullanıldı.',
@@ -60,7 +64,7 @@ class MapboxSatelliteProvider(SatelliteProvider):
         self.client = httpx.Client(transport=transport, timeout=timeout, follow_redirects=False)
 
     def tile(self, z, x, y):
-        return self._get(self.tile_url.format(z=int(z), x=int(x), y=int(y)))
+        return self._get(self.tile_url.format(z=int(z), x=int(x), y=int(y)), 'tiles')
 
     def static(self, lon, lat, zoom, bearing, pitch, width, height):
         """Static Images API: the whole view in one request (pitch 0–60, bearing 0–360,
@@ -68,18 +72,20 @@ class MapboxSatelliteProvider(SatelliteProvider):
         url = self.static_url.format(lon=f'{lon:.5f}', lat=f'{max(-85., min(85., lat)):.5f}', zoom=f'{max(0., min(22., zoom)):.2f}',
                                      bearing=f'{bearing % 360:.1f}', pitch=f'{max(0., min(60., pitch)):.1f}',
                                      width=int(max(1, min(1280, width))), height=int(max(1, min(1280, height))))
-        return self._get(url)
+        return self._get(url, 'static')
 
     def masked(self, url):
         """The request URL for logs and the render diagnostics: the key hidden (pk.***abcd)."""
         return f'{url}?access_token={self.api_key[:3]}***{self.api_key[-4:]}'
 
-    def _get(self, url):
+    def _get(self, url, kind='tiles'):
         self.last_request = self.masked(url)
         path = None
         if self.cache:  # tiles are reused between clips (the key is never part of the file name)
             path = self.cache / (hashlib.sha256(url.encode()).hexdigest()[:32] + '.img')
-            if path.is_file() and path.stat().st_size > 0: return path.read_bytes()
+            if path.is_file() and path.stat().st_size > 0: return path.read_bytes()  # already downloaded: no request, not counted
+        if not allow(kind): raise SatelliteError('monthly_limit', MESSAGES['monthly_limit'])
+        count(kind)  # every request sent counts, whatever the answer
         try:
             response = self.client.get(url, params={'access_token': self.api_key})
         except httpx.HTTPError:
@@ -104,6 +110,51 @@ class MapboxSatelliteProvider(SatelliteProvider):
 
 # Set by the app at start-up: () -> SatelliteProvider (raises SatelliteError when not usable).
 FACTORY = None
+
+# ---- monthly safety limit (Ayarlar → Mapbox) ----
+USAGE_FILE = None  # Path of data/mapbox_usage.json, set at start-up; None: nothing counted (tests)
+LIMITS = None      # () -> {'tiles': int, 'static': int}, set at start-up from Settings
+DEFAULT_LIMITS = {'tiles': 600_000, 'static': 40_000}
+_USAGE_LOCK = threading.Lock()
+
+
+def month():
+    return datetime.now().strftime('%Y-%m')
+
+
+def usage():
+    """{'month', 'tiles', 'static'} of this month (a new month starts at 0)."""
+    data = {}
+    if USAGE_FILE:
+        try: data = json.loads(Path(USAGE_FILE).read_text(encoding='utf-8'))
+        except (OSError, ValueError): data = {}
+    if data.get('month') != month(): data = {}
+    return {'month': month(), 'tiles': int(data.get('tiles') or 0), 'static': int(data.get('static') or 0)}
+
+
+def limits():
+    try: return {**DEFAULT_LIMITS, **(LIMITS() if LIMITS else {})}
+    except Exception: return dict(DEFAULT_LIMITS)
+
+
+def allow(kind):
+    return usage()[kind] < limits()[kind]
+
+
+def count(kind):
+    if not USAGE_FILE: return
+    with _USAGE_LOCK:
+        data = usage(); data[kind] += 1
+        try:
+            Path(USAGE_FILE).parent.mkdir(parents=True, exist_ok=True)
+            Path(USAGE_FILE).write_text(json.dumps(data), encoding='utf-8')
+        except OSError:
+            pass
+
+
+def usage_text():
+    u, l = usage(), limits()
+    return f'Bu ay: {u["tiles"]:,} karo / {u["static"]:,} eğik görüntü (sınır {l["tiles"]:,} / {l["static"]:,}).'.replace(',', '.')
 
 
 def provider():
@@ -150,7 +201,8 @@ def mapbox_check(config, transport=None):
         return {'status': 'Hazır' if tilted['ok'] else 'Hata', 'category': 'none' if tilted['ok'] else tilted['category'], 'request': tilted['request'],
                 'message': 'Mapbox bağlantısı başarılı: uydu karosu indirildi. ' + tilted['message']}
     error = box['error']
-    text = {'key_rejected': 'Mapbox anahtarı geçersiz veya yetkisiz (401/403). Anahtarı kontrol edip yeniden kaydedin.',
+    text = {'key_rejected': 'Mapbox anahtarı geçersiz veya yetkisiz (401/403); Mapbox hesabında kullanım sınırı veya ödeme sorunu olabilir. Anahtarı ve hesabınızı kontrol edip yeniden kaydedin.',
+            'monthly_limit': MESSAGES['monthly_limit'],
             'network_error': 'Mapbox’a bağlanılamadı. İnternet bağlantısını kontrol edip yeniden deneyin.',
             'not_found': 'Mapbox karo adresi bulunamadı (404). “Uydu karo adresi” alanını kontrol edin.',
             'rate_limit': 'Mapbox istek sınırına takıldı (429). Biraz sonra yeniden deneyin.'}.get(error.category, str(error).split(';')[0] + '.')
@@ -180,7 +232,7 @@ def static_check(config, transport=None):
     if 'data' in box:
         return {'ok': True, 'category': 'none', 'request': box['request'], 'message': 'Eğik görünüm (Static Images API) de çalışıyor.'}
     error = box['error']
-    reason = {'key_rejected': 'anahtar bu istek için yetkisiz (401/403; anahtarın “styles:tiles” izni olmalı)', 'not_found': 'adres bulunamadı (404)',
+    reason = {'key_rejected': 'anahtar bu istek için yetkisiz (401/403; anahtarın “styles:tiles” izni olmalı; Mapbox hesabında kullanım sınırı veya ödeme sorunu olabilir)', 'not_found': 'adres bulunamadı (404)',
               'invalid_request': 'Mapbox isteği kabul etmedi (422)', 'rate_limit': 'istek sınırı (429)'}.get(error.category, str(error).split(';')[0].split('. ')[0].rstrip('.'))
     return {'ok': False, 'category': error.category, 'request': box['request'],
             'message': f'AMA eğik görünüm çalışmıyor: {reason}. Videoda düz görünüm kullanılır. Ayarlar → Mapbox → “Eğik görünüm adresi” alanını ve anahtar izinlerini kontrol edin.'}

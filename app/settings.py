@@ -98,6 +98,9 @@ class MapboxSettings(KeySettings):
     # Static Images API (one picture per scene, with bearing/pitch) for “Eğik görünüm”.
     static_url: str = Field(default='https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},{zoom},{bearing},{pitch}/{width}x{height}@2x', max_length=300)
     oblique: bool = True  # Eğik görünüm (3B his); off: the flat (pitch 0) tile map
+    # Monthly safety limits (requests sent; downloaded pictures reused from the cache are not counted).
+    monthly_tile_limit: int = Field(default=600_000, ge=0, le=100_000_000)
+    monthly_static_limit: int = Field(default=40_000, ge=0, le=10_000_000)
     # Forward geocoding for map-marker places the offline lists lack (MAPBOX_INTEGRATION_NOTES.md).
     geocode_url: str = Field(default='https://api.mapbox.com/search/geocode/v6/forward', max_length=300)
 
@@ -336,6 +339,9 @@ class SettingsService:
                         status, message = 'Hata', MODEL_UNAVAILABLE_MESSAGE
                     elif not test:
                         status, message = 'Yapılandırılmadı', 'Model henüz doğrulanmadı. Modelleri Getir düğmesine basıp listeden bir model seçin ve Kaydet deyin.'
+                if name == 'mapbox':
+                    from app.providers.satellite import usage_text
+                    message = f'{message} · {usage_text()}'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
                               message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia')))
@@ -507,6 +513,8 @@ class SettingsService:
             config = dict(self._values()['mapbox'])
         default = MapboxSettings()
         return {'api_key': config.get('api_key') or '', 'tile_url': config.get('tile_url') or default.tile_url,
+                'monthly_tile_limit': int(config.get('monthly_tile_limit', default.monthly_tile_limit)),
+                'monthly_static_limit': int(config.get('monthly_static_limit', default.monthly_static_limit)),
                 'static_url': config.get('static_url') or default.static_url, 'geocode_url': config.get('geocode_url') or default.geocode_url, 'oblique': config.get('oblique', default.oblique) is not False}
 
     def tts_config(self):

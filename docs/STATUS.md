@@ -1,5 +1,12 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (12) — Mapbox aylık güvenlik sınırı
+
+- Mapbox istekleri her ay sayılıyor (karo ve eğik görüntü ayrı, ay başında sıfır). Sayaç Ayarlar → Mapbox durum satırında: “Bu ay: X karo / Y eğik görüntü”.
+- Varsayılan sınır 600.000 karo / 40.000 eğik görüntü, Ayarlar'dan değiştirilebilir. Sınırda istek gönderilmez, çizilmiş harita ve Türkçe uyarı.
+- Daha önce indirilen görüntüler önbellekten kullanılır (yeniden istek yok, sayılmaz). 401/403 uyarısına “Mapbox hesabında kullanım sınırı veya ödeme sorunu olabilir” eklendi.
+- Test: sahte HTTP ile sayaç, sınır, önbellek ve ay değişimi. Gerçek Mapbox ile denenmedi.
+
 ## 2026-10-14 (11) — Mont-Saint-Michel: küçük yerler, tüm haritalar uyduda, kaybolan harita dosyası
 
 - Yer listesi genişledi: anıtlar (Mont-Saint-Michel, Eyfel Kulesi, Kolezyum …), 137 bin kasaba/köy (GeoNames 1 000+ nüfus + Natural Earth yerleşimleri; Avranches, Pontorson …). Listede olmayan yer Mapbox Geocoding ile aranır (Genêts); yanıt önbelleğe alınır.

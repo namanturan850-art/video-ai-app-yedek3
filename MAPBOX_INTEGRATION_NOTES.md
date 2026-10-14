@@ -22,6 +22,13 @@ Kullanım: Video ekranı → **Harita stili → Uydu görüntüsü**. Anahtar Ay
 - Kutu kapalıyken yalnız düz karo görünümü (eski davranış) kullanılır.
 - Tanılama: render uyarılarında her harita için “Harita (…): eğik görünüm (eğim …°, açı …°) — istek: <adres>?access_token=pk.***abcd” satırı; “Bağlantıyı Test Et” eğik isteği de dener ve adresi (anahtar gizli) gösterir.
 
+## Aylık güvenlik sınırı
+
+- Uygulama Mapbox'a gönderilen istekleri her ay sayar: karo ve eğik görüntü ayrı (`data/mapbox_usage.json`). Yeni ayda sayaç sıfırdan başlar. Ayarlar → Mapbox durum satırında “Bu ay: X karo / Y eğik görüntü” yazar.
+- Varsayılan sınırlar: 600.000 karo, 40.000 eğik görüntü (Ayarlar → Mapbox'tan değiştirilebilir). Sınıra gelince istek gönderilmez; çizilmiş harita kullanılır ve “Bu ayki Mapbox güvenlik sınırına ulaşıldı.” uyarısı çıkar.
+- Önceden indirilen karo/eğik görüntü `data/tile_cache/` klasöründen kullanılır; yeniden istek atılmaz ve sayılmaz.
+- 401/403 uyarısı: “Mapbox hesabında kullanım sınırı veya ödeme sorunu olabilir.” Bu sınır yalnız uygulamanın kendi sayacıdır; Mapbox hesabındaki gerçek ücret/kota Mapbox panelinden kontrol edilmelidir.
+
 ## Yer arama (Geocoding) — yalnız harita işaretleri için
 
 - Bir harita işaretindeki yer (örn. “Genêts”) çevrimdışı listelerde (elle derlenen liste + anıtlar, GeoNames 15 000+ şehirler, GeoNames 1 000+ kasabalar ve Natural Earth yerleşimleri) yoksa **tek istek**:

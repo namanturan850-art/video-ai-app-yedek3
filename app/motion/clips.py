@@ -108,6 +108,8 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     spec = with_pictures(spec, folder)
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
     target = folder / (scene_key(scene) + '.mp4')
+    from app.motion import relief
+    relief.LAST_WARNING = ''  # only this clip's satellite problem is reported
     if target.is_file() and not linked(target) and target.stat().st_size > 0:
         return target, scene, 'cache'
     temporary = folder / ('.motion-' + uuid4().hex + '.mp4')
@@ -122,8 +124,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
                 temporary.unlink(missing_ok=True)
         if engine == 'local':
             raster_render(scene, temporary, ffmpeg)
-        from app.motion import relief
-        if relief.LAST_WARNING and spec['template'] == 'relief':  # satellite fell back to the drawn map: not cached
+        if relief.LAST_WARNING and any(e['type'] == 'relief' for e in scene['elements']):  # satellite fell back to the drawn map: not cached
             target = folder / (scene_key(scene) + '-fallback-' + uuid4().hex[:8] + '.mp4')  # under the satellite key: retried next time
         temporary.replace(target)
     finally:

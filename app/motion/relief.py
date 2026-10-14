@@ -413,7 +413,7 @@ def render(scene, output, ffmpeg):
                 base, oblique_xy, info['credit'], info['camera'] = satellite_map.oblique(points, cw, ch, route=bool(info['arrow']))
                 info.update(satellite=True, oblique=True)
                 c = info['camera']
-                LAST_INFO = f'Harita ({name}): eğik görünüm (eğim {c["pitch"]:g}°, açı {c["bearing"]:g}°) — istek: {c["request"]}'
+                LAST_INFO = f'Harita ({name}): eğik görünüm (eğim {c["pitch"]:g}°, açı {c["bearing"]:g}°, kuzey yukarıda) — istek: {c["request"]} — yanıt: {c["response"]}'
                 end = info['arrow'][-1][:2] if info['arrow'] else ((points[0][0] + points[1][0]) / 2, (points[0][1] + points[1][1]) / 2)
                 info['target_px'] = oblique_xy(*end)
             except Exception as error:  # SatelliteError (Turkish) or anything unexpected: never stops the clip
@@ -520,7 +520,7 @@ def frame(base, info, t, duration, path):
     drift = (cw - w) * .5 * (.35 + .3 * p) if info['mode'] not in ('zoom', 'compare') else (cw - w) / 2  # gentle sideways drift (compare: still)
     left, top = drift, (ch - h) / 2 - ((ch - h) * .08 * (p - .5) if info['mode'] != 'compare' else 0)
     if info.get('oblique'):  # wide at the start, close to the target at the end
-        w, h = cw / MARGIN * (1 - .4 * p), ch / MARGIN * (1 - .4 * p)
+        w, h = cw * (1 - .45 * p), ch * (1 - .45 * p)  # the whole tilted picture first (far edge visible)
         tx, ty = info.get('target_px') or (cw / 2, ch / 2)
         x, y = cw / 2 + (tx - cw / 2) * .85 * p, ch / 2 + (ty - ch / 2) * .85 * p
         left, top = min(max(0, x - w / 2), cw - w), min(max(0, y - h / 2), ch - h)

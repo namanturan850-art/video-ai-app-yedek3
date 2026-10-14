@@ -209,8 +209,10 @@ def oblique_view(points, *, route=False):
     ys = [merc_y(p[1]) for p in points]
     mid = (min(ys) + max(ys)) / 2
     lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * mid))))
-    bearing = round(azimuth(points[0], points[-1])) if route else 0  # the route runs “into” the picture
-    pitch = 40 if route else 35
+    # North stays up (bearing 0): Marseille → Nice runs left to right as on any map. Turning the camera
+    # toward the travel direction put Nice “on top” and read as a wrong direction.
+    bearing = 0
+    pitch = 60 if route else 55  # the API's maximum (60): on a flat satellite photo less tilt hardly shows
     w, h = SIZE
     zoom = 12.
     for _ in range(6):
@@ -242,5 +244,15 @@ def oblique(points, width, height, *, route=False, target=None):
         spot = project(plon, plat)
         if spot is None: return (width / 2, -height)  # behind the horizon: off the top
         return spot[0] * sx, spot[1] * sy
-    picture = picture.resize((width, height), Image.LANCZOS).filter(ImageFilter.UnsharpMask(2, 50, 3))
-    return picture, xy, getattr(source, 'attribution', ''), {'zoom': zoom, 'bearing': bearing, 'pitch': pitch, 'request': getattr(source, 'last_request', '')}
+    received = f'{getattr(source, "last_response", "")} {picture.size[0]}×{picture.size[1]}'.strip()
+    picture = haze(picture.resize((width, height), Image.LANCZOS).filter(ImageFilter.UnsharpMask(2, 50, 3)))
+    return picture, xy, getattr(source, 'attribution', ''), {'zoom': zoom, 'bearing': bearing, 'pitch': pitch,
+                                                             'request': getattr(source, 'last_request', ''), 'response': received}
+
+
+def haze(picture):
+    """Light atmospheric haze toward the far (top) edge: depth reads at a glance."""
+    w, h = picture.size
+    alpha = np.clip(1 - np.arange(h) / (h * .42), 0, 1) ** 1.6 * 150
+    mask = Image.fromarray(np.repeat(alpha[:, None], w, axis=1).astype('uint8'), 'L')
+    return Image.composite(Image.new('RGB', (w, h), (196, 212, 228)), picture, mask)

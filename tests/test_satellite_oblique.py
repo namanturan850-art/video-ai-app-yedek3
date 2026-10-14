@@ -92,14 +92,16 @@ def test_static_request_shape_and_errors():
     assert '422' in str(error.value) and 'Eğik görünüm' in str(error.value)
 
 
-def test_camera_puts_the_destination_ahead():
-    points = [(2.35, 48.86), (-1.674, 48.111)]
+def test_camera_keeps_north_up_so_the_route_runs_the_right_way():
+    points = [(5.381, 43.297), (7.266, 43.703)]  # Marseille → Nice: west → east along the coast
     lon, lat, zoom, bearing, pitch = satellite_map.oblique_view(points, route=True)
-    assert 240 < bearing < 280 and pitch == 40  # Paris → Rennes heads west
+    assert bearing == 0 and pitch == 60
     project = satellite_map.camera(lon, lat, zoom, bearing, pitch, 1280, 720)
     (x0, y0), (x1, y1) = project(*points[0]), project(*points[1])
-    assert y1 < y0 and abs(x1 - x0) < 60  # Rennes straight ahead, “into” the picture
+    assert x1 - x0 > 300 and abs(y1 - y0) < (x1 - x0) / 3  # Nice to the right of Marseille, not on top
     assert all(.15 * 1280 < x < .85 * 1280 and .15 * 720 < y < .85 * 720 for x, y in ((x0, y0), (x1, y1)))
+    near, far = project(lon, lat - .3), project(lon, lat + .3)
+    assert (near[1] - 360) > 1.2 * (360 - far[1])  # perspective: the far half is squeezed
     flat = satellite_map.camera(2.35, 48.86, 8, 0, 0, 1280, 720)
     assert flat(2.35, 48.86) == (640, 360) and flat(3, 48.86)[0] > 640 and flat(2.35, 49.2)[1] < 360
 
@@ -173,10 +175,9 @@ def test_render_diagnostics_name_the_view_and_the_request_without_the_key(tmp_pa
     provider = MapboxSatelliteProvider('pk.secret-key-98765', 'https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90', static_url=URL, transport=mapbox_like(seen))
     render('arrow', 'Paris > Rennes | 350 km', tmp_path, monkeypatch, provider=provider)
     static = [r for r in seen if '/static/' in r.url.path]
-    assert len(static) == 1 and static[0].url.path.endswith(',40.0/1280x720@2x')  # pitch 40 really sent
-    bearing = float(static[0].url.path.split('/static/')[1].split(',')[3])
-    assert 240 < bearing < 280  # the route's direction (Paris → Rennes: west)
-    assert relief.LAST_INFO.startswith('Harita (Paris → Rennes): eğik görünüm (eğim 40°')
+    assert len(static) == 1 and static[0].url.path.endswith(',0.0,60.0/1280x720@2x')  # north up, pitch 60 really sent
+    assert relief.LAST_INFO.startswith('Harita (Paris → Rennes): eğik görünüm (eğim 60°, açı 0°, kuzey yukarıda)')
+    assert 'yanıt: 200 ' in relief.LAST_INFO and '×' in relief.LAST_INFO
     assert '/styles/v1/mapbox/satellite-v9/static/' in relief.LAST_INFO and 'access_token=pk.***8765' in relief.LAST_INFO
     assert 'secret-key' not in relief.LAST_INFO
     render('arrow', 'Paris > Rennes', tmp_path, monkeypatch, provider=provider, oblique=False)
@@ -198,3 +199,13 @@ def test_connection_button_also_checks_the_oblique_request():
     assert 'secret-key' not in str(bad)
     off = mapbox_check({**config, 'oblique': False}, transport=mapbox_like(static_status=403))
     assert off['status'] == 'Hazır' and 'Eğik görünüm kapalı' in off['message']
+
+
+def test_marseille_to_nice_runs_east_on_the_tilted_view(tmp_path, monkeypatch):
+    scene, frame, provider = render('arrow', 'Marseille > Nice | 200 km', tmp_path, monkeypatch, at=3.9)
+    assert next(e for e in scene['elements'] if e['type'] == 'relief')['props']['camera'] == 2
+    assert provider.calls[0][3] == 0 and provider.calls[0][4] == 60  # bearing 0 (north up), pitch 60
+    ys, xs = np.nonzero((frame[..., 0] > 200) & (frame[..., 1] > 170) & (frame[..., 2] < 90))
+    assert xs.max() - xs.min() > 2 * (ys.max() - ys.min())  # the yellow line runs left → right, not upward
+    top, bottom = frame[:120, 600:1300].mean(), frame[700:900, 600:1300].mean()
+    assert top > bottom + 25  # haze toward the far edge

@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (10) — Eğik görünüm: kuzey yukarıda, daha belirgin eğim
+
+- Yön hatasının nedeni: koordinatlar doğruydu (Marseille 5,38°D, Nice 7,27°D). Eğik görünüm kamerayı rota yönüne çeviriyordu (açı 73°), bu yüzden Nice üstte görünüyordu. Artık açı 0 (kuzey yukarıda): Marseille → Nice soldan sağa çizilir.
+- Bu dönmüş görüntü, gerçek render'da Static Images isteğinin kullanıldığını da gösteriyor (düz görünüm hiç döndürmez). Eğim (40°) düz uydu fotoğrafında ve kırpılmış karede neredeyse fark edilmiyordu. Artık eğim 60° (API sınırı), sahne tüm eğik resimle başlıyor ve uzak kenara hafif sis ekleniyor.
+- Eski eğik klipler yeniden çizilir (sahne anahtarında `camera: 2`).
+- Render uyarısındaki “Harita (…)” satırı artık yanıtı da yazar: durum kodu, içerik türü, bayt ve resim boyutu.
+- Örnek kareler: `docs/satellite_samples/egik_ok_marseille_nice_basi.jpg` / `_sonu.jpg`. Gerçek Mapbox ile denenmedi (bu ortamdan api.mapbox.com engelli, anahtar yok); kareler sahte, yapay manzara resmidir.
+
 ## 2026-10-14 (9) — Eğik görünüm tanılaması
 
 - Uygulamanın gerçek bağlantılarıyla (yalnız HTTP sahte) iz sürüldü: “Eğik görünüm” açıkken medya işi Static Images API adresini kullanıyor; eğim 40°, açı rota yönünde (Paris → Rennes ≈ 256°) gidiyor. Düz karo adresine düşme yalnız istek hata verirse oluyor.

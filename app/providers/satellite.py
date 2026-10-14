@@ -85,6 +85,7 @@ class MapboxSatelliteProvider(SatelliteProvider):
         except httpx.HTTPError:
             raise SatelliteError('network_error', MESSAGES['network_error']) from None
         status = response.status_code
+        self.last_response = f'{status} {response.headers.get("content-type", "?")} {len(response.content)} bayt'
         if status in (401, 403): raise SatelliteError('key_rejected', MESSAGES['key_rejected'])
         if status == 429: raise SatelliteError('rate_limit', MESSAGES['rate_limit'])
         if status == 404: raise SatelliteError('not_found', MESSAGES['not_found'])

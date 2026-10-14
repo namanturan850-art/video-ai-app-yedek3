@@ -1,5 +1,10 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (6) — Mapbox “Bağlantıyı Test Et”
+
+- Ayarlar → Mapbox bölümünde test tanımlı değildi ve arka uçta Mapbox testi yoktu. Artık düğme tek küçük karo (0/0/0) ister ve sonucu Türkçe gösterir: başarılı / anahtar geçersiz (401/403) / bağlantı hatası / 404 / hız sınırı. En çok 15 sn bekler; cevap gelmezse “Mapbox 15 sn içinde yanıt vermedi” yazar.
+- Testler: `tests/test_satellite_map.py` (sahte bağlantılarla: başarılı, 401, bağlantı yok, 15 sn aşımı, anahtarsız). Gerçek Mapbox anahtarıyla denenmedi.
+
 ## 2026-10-14 (5) — Uydu görüntüsü harita stili (Mapbox)
 
 - **Yeni sağlayıcı `SatelliteProvider`** (`app/providers/satellite.py`), ilk uygulaması `MapboxSatelliteProvider` (Raster Tiles API, `mapbox.satellite`). Anahtar Ayarlar → Mapbox'ta girilir, diğer anahtarlar gibi şifreli saklanır; `.env`/proje dosyalarına yazılmaz. Ayrıntılar: `MAPBOX_INTEGRATION_NOTES.md`.

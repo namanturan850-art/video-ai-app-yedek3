@@ -4,6 +4,7 @@ async function settingsRequest(url, method = 'GET', body) {
   const openai = ['/api/settings/openai/test', '/api/settings/images/openai/test'].includes(url);
   const ai33=['/api/settings/ai33/test','/api/settings/ai33/voices','/api/settings/ai33/tasks/diagnose','/api/settings/ai33/task/diagnose'].includes(url);
   const stock = ['/api/settings/pexels/test','/api/settings/pixabay/test'].includes(url);
+  const mapbox = url === '/api/settings/mapbox/test';
   const diagnostics = url.startsWith('/api/settings/ai-diagnostics');
   const timeoutMessage = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';
   const unexpectedMessage = 'Gemini ayarları işlenirken beklenmeyen bir sunucu hatası oluştu. Tekrar deneyin; sorun sürerse Tanılama ekranını kontrol edin.';
@@ -20,6 +21,7 @@ async function settingsRequest(url, method = 'GET', body) {
       return failure('Uygulamaya ulaşılamadı. Uygulama penceresini kontrol edip yeniden açın.', 'local_unreachable');
     }
     if(ai33&&timedOut(error))return failure('AI33 API zaman aşımına uğradı. İnternet bağlantısını kontrol edip tekrar deneyin.','timeout');
+    if(mapbox&&timedOut(error))return failure('Mapbox zamanında yanıt vermedi. İnternet bağlantısını kontrol edip tekrar deneyin.','timeout');
     if (gemini && timedOut(error)) return failure(timeoutMessage, 'gemini_timeout');
     if (openai && timedOut(error)) return failure('OpenAI API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.', 'generation_timeout');
     if (gemini && globalThis.navigator?.onLine === false) return failure('Gemini API için internet bağlantısı kurulamadı. İnternet bağlantınızı kontrol edip tekrar deneyin.', 'no_internet');

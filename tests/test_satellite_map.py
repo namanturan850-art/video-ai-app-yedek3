@@ -106,3 +106,29 @@ def test_settings_and_look_without_key(tmp_path, monkeypatch):
         assert 'mapbox' in client.get('/static/settings.js').text
     finally:
         client.__exit__(None, None, None)
+
+
+def test_connection_button_answers_in_turkish_and_never_hangs(tmp_path, monkeypatch):
+    import time
+    from app.providers.satellite import mapbox_check
+    url = 'https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90'
+    assert mapbox_check({'api_key': '', 'tile_url': url})['category'] == 'missing_key'
+    ok = mapbox_check({'api_key': 'pk.test-key-123', 'tile_url': url}, transport=fake())
+    assert ok['status'] == 'Hazır' and 'başarılı' in ok['message']
+    bad = mapbox_check({'api_key': 'pk.bad-key-123', 'tile_url': url}, transport=fake(401))
+    assert bad['status'] == 'Hata' and 'geçersiz' in bad['message']
+    def offline(request): raise httpx.ConnectError('down')
+    down = mapbox_check({'api_key': 'pk.test-key-123', 'tile_url': url}, transport=httpx.MockTransport(offline))
+    assert down['status'] == 'Hata' and 'bağlanılamadı' in down['message']
+    monkeypatch.setattr(satellite, 'TEST_SECONDS', 1)
+    def slow(request): time.sleep(5); return httpx.Response(200, content=tile_bytes())
+    started = time.monotonic()
+    hung = mapbox_check({'api_key': 'pk.test-key-123', 'tile_url': url}, transport=httpx.MockTransport(slow))
+    assert hung['category'] == 'timeout' and 'yanıt vermedi' in hung['message'] and time.monotonic() - started < 3
+    client, pid, world, fake_ai = F.make(tmp_path, monkeypatch)
+    try:
+        r = client.post('/api/settings/mapbox/test', headers=F.SETTINGS)
+        assert r.status_code == 200 and r.json()['result']['status'] == 'Hata' and 'anahtarı girilmeli' in r.json()['result']['message']
+        assert "id: 'mapbox'" in client.get('/static/settings.js').text and 'mapbox/test' in client.get('/static/settings-http.js').text
+    finally:
+        client.__exit__(None, None, None)

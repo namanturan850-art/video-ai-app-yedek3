@@ -55,7 +55,7 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
         desc=details.get(item['slot_id'],{}).get('description','').lower()
         if location and location in text and any(w in desc for w in ('map','karte','harita',location.lower())):options.append('location_card')
         secondary=next((other for other in plan['slots'] if other['scene_id']==item['scene_id'] and other['slot_id']!=item['slot_id'] and details.get(other['slot_id'],{}).get('sha256')!=details.get(item['slot_id'],{}).get('sha256') and details.get(other['slot_id'],{}).get('sha256') and not details.get(other['slot_id'],{}).get('motion')),None)
-        if secondary:options.append('dual_media')
+        # (no 'dual_media': two different pictures side by side in one frame read as a mistake)
         if original.get('importance',50)>=75 or item['start']<12:
             if len(text.split())<=10:options.extend(['quote_emphasis','minimal_title'])
             options.append('split_media_text')

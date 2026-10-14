@@ -248,7 +248,7 @@ class RenderService:
                     # encoder/music settings or preview-only option defaults.
                     if not seed and opts['editing_style']=='adaptive':
                         seed=smart_edit.digest({'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash})[:16]
-                    plan=smart_edit.build(t,h,opts['editing_style'],fingerprint,seed=seed,subtitle_mode=opts.get('subtitle_display') or ('emphasis' if opts['editing_style']=='adaptive' else 'full' if opts['subtitle_burned'] else 'none'),media_details=media)
+                    plan=smart_edit.build(t,h,opts['editing_style'],fingerprint,seed=seed,subtitle_mode=opts.get('subtitle_display') or 'full',media_details=media)
                 self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
                 sfx=self._transition_sfx(plan,sfx,kit,h)

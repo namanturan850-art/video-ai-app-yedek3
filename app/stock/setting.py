@@ -132,6 +132,7 @@ ANACHRONISMS = (  # (exists since year, its tag words prove it before year, pict
     (1970, 1930, 'a modern glass skyscraper', 'cam gökdelen', ('skyscraper',)),
     (2005, 2005, 'a modern electric car', 'modern araba', ('tesla',)),
     (1990, 1985, 'wind turbines', 'rüzgâr türbini', ('turbine',)),
+    (1960, 1950, 'a modern cruise ship or container ship at sea', 'modern gemi', ('cruise', 'freighter', 'tanker')),
 )
 STYLE = (  # history documentaries are photographic: same subject, other look
     ('a cartoon drawing of {subject}', 'karikatür/çizgi film', ('cartoon', 'comic', 'clipart', 'clip art', 'anime', 'emoji', 'kawaii'), True),

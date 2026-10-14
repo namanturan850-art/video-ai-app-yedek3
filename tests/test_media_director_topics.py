@@ -542,6 +542,7 @@ def test_gemini_per_minute_limit_waits_and_still_chooses_stock(tmp_path, monkeyp
     client, pid, world, claude, fake = build(tmp_path, monkeypatch, 'rome')
     try:
         fake.fail = lambda n: gemini_429() if n % 3 == 0 else None  # every third request hits the minute limit
+        monkeypatch.setattr('app.stock.director_media.WAIT_BUDGET', 600)  # (a clip is used once: more looks, so more 7 s waits than the 60 s default allows)
         view = complete(client, pid)
         summary = check(client, pid, claude, view)
         assert summary['videos'] > 0 and summary['cards'] == 0

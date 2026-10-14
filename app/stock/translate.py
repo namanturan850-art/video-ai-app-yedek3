@@ -30,8 +30,25 @@ def _cache_path(service, pid):
     return folder / 'translations_tr.json'
 
 
-def turkish(service, pid, language, texts):
-    """{text: Turkish text} for the given texts; missing ones are left out."""
+REASONS = {'no_engine': 'Yapay zekâ ayarlı değil (Ayarlar → Gemini anahtarı yok); çeviri yapılamadı.',
+           'timeout': f'Gemini {TRANSLATE_SECONDS} sn içinde cevap vermedi.',
+           'quota_limit': 'Gemini kotası doldu (günlük ücretsiz sınır); yarın veya başka model ile yeniden deneyin.',
+           'rate_limit': 'Gemini kısa süreli hız sınırına takıldı; birkaç dakika sonra yeniden deneyin.',
+           'key_rejected': 'Gemini anahtarı kabul edilmedi; Ayarlar → Gemini anahtarını kontrol edin.',
+           'missing_key': 'Gemini anahtarı yok; Ayarlar → Gemini bölümünden ekleyin.',
+           'upstream_error': 'Gemini sunucusu meşgul (503); biraz sonra yeniden deneyin.',
+           'no_internet': 'İnternet bağlantısı yok; bağlantıyı kontrol edip yeniden deneyin.',
+           'network_error': 'Gemini’ye bağlanılamadı; internet bağlantısını kontrol edin.',
+           'no_answer': 'Gemini okunabilir bir çeviri döndürmedi.'}
+
+
+def reason_text(category):
+    return REASONS.get(category) or f'Gemini çeviri isteği başarısız oldu ({category}).'
+
+
+def turkish(service, pid, language, texts, report=None):
+    """{text: Turkish text} for the given texts; missing ones are left out.
+    report (a dict) gets 'reason' (Turkish) when a translation could not be made."""
     texts = [t for t in dict.fromkeys(' '.join(str(x or '').split()) for x in texts) if t]
     if not texts: return {}
     if (language or '').casefold() == 'tr': return {t: t for t in texts}
@@ -41,7 +58,7 @@ def turkish(service, pid, language, texts):
     if not isinstance(saved, dict): saved = {}
     missing = [t for t in texts if not isinstance(saved.get(_key(t)), str)]
     if missing:
-        fresh = _ask(service, language, missing[:150])
+        fresh = _ask(service, language, missing[:150], report)
         if fresh:
             saved.update({_key(t): v for t, v in fresh.items()})
             try:
@@ -53,19 +70,21 @@ def turkish(service, pid, language, texts):
     return {t: saved[_key(t)] for t in texts if isinstance(saved.get(_key(t)), str)}
 
 
-def _ask(service, language, texts):
+def _ask(service, language, texts, report=None):
     """One request for all texts; {} when no engine, an error or no answer in time."""
     settings = service.settings
     engine = settings.ai_engine() if hasattr(settings, 'ai_engine') else None
-    if not engine: return {}
+    report = report if report is not None else {}
+    if not engine:
+        report['reason'] = reason_text('no_engine'); return {}
     try:
         factory = getattr(service, 'ai_factory', None)
         if factory is None:
             from app.providers.factory import make_script_provider
             factory = lambda: make_script_provider(engine, settings)
         ai = factory()
-    except Exception:
-        return {}
+    except Exception as error:
+        report['reason'] = reason_text(getattr(error, 'category', '') or 'no_engine'); return {}
     lines = '\n'.join(f'{n}: {t[:400]}' for n, t in enumerate(texts))
     prompt = (f'Translate each numbered line (spoken language: {language}) into natural Turkish for the video owner. '
               'Keep names and numbers. Return one item per line with its number as id.\n\n' + lines)
@@ -73,12 +92,14 @@ def _ask(service, language, texts):
 
     def work():
         try: box['answer'] = ai.complete_json('media_translate', prompt, SCHEMA, images=[], effort='low', max_tokens=min(8000, 200 + 120 * len(texts)))
-        except Exception as error:  # any engine problem: the screen simply shows no translation
-            box['error'] = type(error).__name__
+        except Exception as error:  # any engine problem: the screen shows why, the job goes on
+            box['error'] = getattr(error, 'category', '') or type(error).__name__
     thread = threading.Thread(target=work, daemon=True)
     thread.start(); thread.join(TRANSLATE_SECONDS)
     if thread.is_alive() or not isinstance(box.get('answer'), dict):
-        LOG.warning('stock operation=translate category=%s', 'timeout' if thread.is_alive() else box.get('error', 'no_answer'))
+        category = 'timeout' if thread.is_alive() else box.get('error', 'no_answer')
+        LOG.warning('stock operation=translate category=%s', category)
+        report['reason'] = reason_text(category)
         return {}
     out = {}
     for item in box['answer'].get('items', []):

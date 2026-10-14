@@ -52,6 +52,7 @@ def test_closing_moment_adds_a_twenty_second_end_screen_and_nothing_else(with_ou
         state = {'project_id': pid, 'plan_id': plan['plan_id'], 'source_version_id': st['sid'], 'slots': slots, 'revision': 1}
         with closing(app.state.projects._connection()) as c, c:
             c.execute('INSERT INTO stock_plans VALUES (?,?,?,?,?)', (pid, plan['plan_id'], st['sid'], json.dumps(state), st['project']['created_at']))
+        if with_outro: app.state.settings.save('general', {'end_screen': True})  # the end screen is off unless the owner switches it on
         app.state.subtitles.create(pid, {'regenerate_confirmed': False})
         for owner, attribute in [(app.state.narration, 'factory'), (app.state.stock, 'factory'), (app.state.scripts, 'provider_factory')]: setattr(owner, attribute, no_network)
         st.update(client=client)

@@ -28,6 +28,11 @@ class GeneralSettings(StrictModel):
     # request at all. Stored as 'gemini_visual_check' (an older stored
     # 'ai_visual_check' value — default on — is ignored).
     ai_visual_check: bool = False
+    # Channel moments are OFF by default: the video starts with the first scene and
+    # ends with the last one; [GİRİŞ]/[KAPANIŞ] markers or “abone ol” sentences add nothing.
+    intro_card: bool = False      # opening card (title + channel name)
+    outro_card: bool = False      # “Abone ol” button + bell
+    end_screen: bool = False      # 20 s YouTube end screen after the narration
     _language = field_validator('content_language')(validate_language)
 
 
@@ -240,7 +245,8 @@ class SettingsService:
             secrets = stored_secrets(values)
             guard = SecretGuard(secrets)
             result = {"general": {"content_language": values["general"]["content_language"],
-                                  "ai_visual_check": bool(values["general"].get("gemini_visual_check", False))}}
+                                  "ai_visual_check": bool(values["general"].get("gemini_visual_check", False)),
+                                  **{k: bool(values["general"].get(k, False)) for k in ('intro_card', 'outro_card', 'end_screen')}}}
             for name in PROVIDERS:
                 config = values[name]
                 public_fields = MODELS[name]().model_dump(exclude={"api_key"})
@@ -428,6 +434,12 @@ class SettingsService:
     def secret_values(self) -> tuple[str, ...]:
         with self.store.lock:
             return stored_secrets(self._values())
+
+    def moments(self):
+        """{'intro_card', 'outro_card', 'end_screen'}: the owner's switches (all off by default)."""
+        with self.store.lock:
+            general = self._values()['general']
+            return {k: bool(general.get(k, False)) for k in ('intro_card', 'outro_card', 'end_screen')}
 
     def ai_visual_check(self):
         with self.store.lock:

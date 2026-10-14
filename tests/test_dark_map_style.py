@@ -101,6 +101,8 @@ def run_text(tmp_path, monkeypatch, text, language):
     client, pid, world, fake = F.make(tmp_path, monkeypatch, text, language=language)
     try:
         world.items.insert(0, {'id': 8_500_001, 'tags': 'old harbor photo port', 'kind': 'image', 'portrait': False, 'duration': 8})
+        colour = client.app.state.stock.fetch_thumbnail  # the archive photo is black and white (the topic is ancient: only old-looking photos fit)
+        client.app.state.stock.fetch_thumbnail = lambda url: F.jpeg((120, 120, 120)) if ('8500001' in url or '9400001' in url) else colour(url)
         client.put(f'/api/projects/{pid}/look', json={'look': 'koyu_harita'}, headers=F.HEADERS)
         plan = client.get(f'/api/projects/{pid}/production').json()['plan']
         hints = {h['type'] for b in plan['blocks'] for h in b.get('owner_hints') or []}
@@ -118,8 +120,20 @@ def test_french_text_end_to_end(tmp_path, monkeypatch):
     assert {'sequence', 'compare', 'arrow', 'band', 'archive', 'region'} <= hints
     modes = {m['data'].get('mode') for m in motions if m.get('template') == 'relief'}
     assert {'compare', 'arrow', 'region'} <= modes
-    assert any(m.get('template') == 'archive' and m['data'].get('image') for m in motions)
+    assert any(m.get('template') == 'archive' and m['data'].get('image') for m in motions), [s.get('message') for s in view['slots']] + [view['job']['progress'].get('marker_warnings')]
     assert any(s.get('band', {}).get('top') == 'Bretagne, 1910' for s in view['slots'])
+    assert not {'intro', 'outro'} & {m.get('template') for m in motions}  # no opening / closing card by default
+
+
+def test_channel_moments_are_off_by_default(tmp_path, monkeypatch):
+    client, pid, world, fake = F.make(tmp_path, monkeypatch, FR, language='fr')
+    try:
+        general = client.get('/api/settings', headers=F.SETTINGS).json()['general']
+        assert general['intro_card'] is False and general['outro_card'] is False and general['end_screen'] is False
+        assert client.app.state.settings.moments() == {'intro_card': False, 'outro_card': False, 'end_screen': False}
+        assert client.get(f'/api/projects/{pid}/look', headers=F.HEADERS).json()['map_style'] == 'dark'  # the dark map is the default
+    finally:
+        client.__exit__(None, None, None)
 
 
 def test_turkish_text_end_to_end(tmp_path, monkeypatch):
@@ -127,3 +141,18 @@ def test_turkish_text_end_to_end(tmp_path, monkeypatch):
     assert {'sequence', 'compare', 'band', 'region'} <= hints
     assert {'compare', 'region'} <= {m['data'].get('mode') for m in motions if m.get('template') == 'relief'}
     assert any(s.get('band', {}).get('bottom') == 'Balıkçılar aylarca denizdeydi' for s in view['slots'])
+
+
+def test_archive_period_needs_an_old_looking_photo():
+    from app.stock.director_media import MediaDirector
+    d = MediaDirector.__new__(MediaDirector)
+    d.setting = None
+    assert d.archive_period({'label': 'port de Brest', 'source': 'port de Brest, 1910'}, {'narration_text': ''}) == '1910'
+    assert d.archive_period({'label': 'harbor', 'source': 'harbor'}, {'narration_text': 'Le port aujourd\'hui.'}) == ''
+    d.frame_urls = lambda media: ['u']
+    import base64
+    block = lambda colour: {'source': {'data': base64.b64encode(F.jpeg(colour)).decode()}}
+    d.thumbnail = lambda url, provider: block((128, 128, 128))
+    assert d.looks_old({'provider': 'pixabay', 'description': 'harbor'})
+    d.thumbnail = lambda url, provider: block((30, 140, 220))
+    assert not d.looks_old({'provider': 'pixabay', 'description': 'harbor'})  # a colourful modern photo never passes as archive

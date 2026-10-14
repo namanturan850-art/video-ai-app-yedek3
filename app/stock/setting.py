@@ -92,12 +92,24 @@ REGIONS = {
                       'Easter Island', 'Paskalya Adası', 'pacific', ('moai stone head statues on Easter Island',), ('moai', 'easter', 'rapa', 'nui', 'polynesian'),
                       ('volcanic coast grass', 'pacific ocean waves')),
     'britain': (r'stonehenge|britann\w*|britain|british|england|englisch\w*|english|ingiltere|ingiliz\w*|london|londra|schottland|scotland|iskoçya',
-                'Britain', 'Britanya', 'europe_north', ('Stonehenge stone circle',), ('stonehenge',), ('green hills fog', 'rainy moor landscape')),
+                'Britain', 'Britanya', 'europe_north', ('Stonehenge stone circle', 'Big Ben and the Houses of Parliament in London', 'a red double-decker bus in London'), ('stonehenge', 'london', 'big ben', 'thames', 'westminster'), ('green hills fog', 'rainy moor landscape')),
     'france': (r'frankreich|france|fransa\w*|französisch\w*|french|paris|eiffel',
                'France', 'Fransa', 'europe_west', ('the Eiffel Tower in Paris',), ('eiffel', 'paris'), ('countryside fields', 'old stone texture')),
     'usa': (r'usa|u\.s\.a?\.?|amerika\w*|america\w*|abd|vereinigte staaten|united states|états-unis|estados unidos|new york|washington|kalifornien|california',
-            'the USA', 'ABD', 'americas_north', ('the New York City skyline', 'the Statue of Liberty'), ('manhattan', 'liberty', 'hollywood', 'york'),
+            'the USA', 'ABD', 'americas_north', ('the New York City skyline', 'the Statue of Liberty', 'the Golden Gate Bridge in San Francisco', 'the Hollywood sign'), ('manhattan', 'liberty', 'hollywood', 'york', 'golden gate', 'san francisco', 'las vegas', 'times square'),
             ('prairie landscape', 'highway desert landscape')),
+    'australia': (r'australi\w*|avustralya\w*|sydney|sidney|melbourne|uluru|canberra|kanguru\w*|kangaroo\w*|känguru\w*',
+                  'Australia', 'Avustralya', 'oceania', ('the Sydney Opera House', 'the Sydney Harbour Bridge', 'Uluru red rock in the Australian outback'),
+                  ('sydney', 'opera house', 'harbour bridge', 'australia', 'australian', 'uluru', 'kangaroo', 'melbourne', 'bondi'), ('outback landscape',)),
+    'russia': (r'russland|russia\w*|rusya\w*|russie|moskau|moscow|moskova|moscou|kreml\w*|kremlin|sankt petersburg|st\.? petersburg',
+               'Russia', 'Rusya', 'russia', ("Saint Basil's Cathedral on Red Square in Moscow",), ('kremlin', 'moscow', 'russia', 'russian', 'basil'), ('taiga forest snow',)),
+    'brazil': (r'brasil\w*|brazil\w*|brezilya\w*|brésil|rio de janeiro|são paulo|sao paulo|amazonas|amazon\w*|amazon',
+               'Brazil', 'Brezilya', 'americas', ('the Christ the Redeemer statue above Rio de Janeiro', 'Copacabana beach in Rio de Janeiro'),
+               ('rio', 'janeiro', 'copacabana', 'redeemer', 'brazil', 'brazilian'), ('tropical rainforest river',)),
+    'gulf': (r'dubai|abu dhabi|katar|qatar|emirat\w*|bae|doha', 'the Gulf', 'Körfez', 'near_east', ('the Burj Khalifa skyscraper in Dubai',),
+             ('dubai', 'burj', 'khalifa', 'emirates', 'doha'), ('desert dunes',)),
+    'netherlands': (r'niederland\w*|netherlands|hollanda\w*|holland|pays-bas|amsterdam|rotterdam', 'the Netherlands', 'Hollanda', 'europe_west',
+                    ('Dutch windmills along a canal',), ('windmill', 'windmills', 'amsterdam', 'dutch', 'tulip', 'tulips'), ('canal landscape',)),
     'arctic': (r'arktis|arctic|kuzey kutbu|antarktis|antarctic\w*|antarktika|grönland|greenland|grönland|polar\w*|kutup',
                'the polar regions', 'kutup bölgesi', 'polar', ('a snowy arctic landscape with icebergs',), ('arctic', 'iceberg', 'glacier', 'antarctica', 'igloo'),
                ('ice floes', 'snow landscape')),
@@ -228,13 +240,13 @@ def penalties(setting, descriptor=''):
     """Picture-model prompts for what contradicts the setting:
     [{'kind', 'text', 'label'}]. Prompts that share all their words with
     the shot's own description are left out (it may ask for exactly that)."""
-    if not setting or not setting.get('era'): return []
+    if not setting or not (setting.get('era') or setting.get('regions')): return []  # no period: the wrong-place check still runs
     out, own = [], _words(descriptor) - {'a', 'an', 'the', 'of', 'in', 'on', 'with', 'and', 'or', 'photo'}
     when = year(setting)
     for since, _, text, label, _ in ANACHRONISMS:
         if when is not None and when < since and not (_words(text) - {'a', 'an', 'the', 'in', 'on', 'and', 'or', 'with'}) <= own:
             out.append({'kind': 'anachronism', 'text': text, 'label': label})
-    if setting['era'] in HISTORY:
+    if setting.get('era') in HISTORY:
         for text, label, _, always in STYLE:
             if setting['era'] == 'prehistoric' and not always: continue  # dinosaurs/early humans: reconstructions are normal
             out.append({'kind': 'style', 'text': text, 'label': label})
@@ -249,20 +261,20 @@ def penalties(setting, descriptor=''):
     seen, unique = set(), []
     for item in out:
         if item['text'] not in seen: seen.add(item['text']); unique.append(item)
-    return unique[:40]
+    return unique[:60]
 
 
 def tag_conflict(setting, tags, provider=''):
     """(kind, label) when the provider's tags contradict the setting, else None.
     `tags` is the normalized, space-padded tag text."""
-    if not setting or not setting.get('era'): return None
+    if not setting or not (setting.get('era') or setting.get('regions')): return None
     tags = ' ' + ' '.join(re.findall(r'\w+', str(tags).casefold())) + ' '  # provider tags come comma-separated
     has = lambda word: f' {word} ' in tags or f' {word}s ' in tags
     when = year(setting)
     if provider != 'wikimedia' and when is not None:  # museum/archive photos may mention modern things in their captions
         for _, before, _, label, words in ANACHRONISMS:
             if when < before and any(has(w) for w in words): return 'anachronism', label
-    if setting['era'] in HISTORY:
+    if setting.get('era') in HISTORY:
         for _, label, words, always in STYLE:
             if setting['era'] == 'prehistoric' and not always: continue
             if any(has(w) for w in words): return 'style', label

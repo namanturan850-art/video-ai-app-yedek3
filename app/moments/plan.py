@@ -38,8 +38,16 @@ def _find(flat, sentence):
     return next((i for i, (_, text) in enumerate(flat) if sentence and (sentence in text or text in sentence)), None)
 
 
-def apply_moments(blocks, language):
-    """Adds owner_hints of type 'intro' / 'outro'; drops those in the wrong part of the video."""
+def apply_moments(blocks, language, *, intro=False, outro=False):
+    """Adds owner_hints of type 'intro' / 'outro'; drops those in the wrong part of the video.
+    intro/outro: the owner's switches (Ayarlar → Genel, off by default). Off → no card of that
+    kind at all: markers are dropped and nothing is recognised automatically."""
+    for block in blocks:
+        for hint in list(block.get('owner_hints') or []):
+            if (hint.get('type') == 'intro' and not intro) or (hint.get('type') == 'outro' and not outro):
+                block['owner_hints'].remove(hint)
+    if not intro and not outro:
+        return blocks
     flat = _flat(blocks)
     count = len(flat)
     if not count:
@@ -57,9 +65,9 @@ def apply_moments(blocks, language):
     have = lambda kind: any(h.get('type') == kind for b in blocks for h in b.get('owner_hints') or [])
     # 2) automatic recognition in the video's language
     found_intro = next(((i, flat[i]) for i in range(min(INTRO_WINDOW, count)) if classify(flat[i][1], language) == 'intro'), None)
-    if found_intro and not have('intro'):
+    if intro and found_intro and not have('intro'):
         _add(blocks, found_intro[1], 'intro', AUTO)
-    if not have('outro'):
+    if outro and not have('outro'):
         subscribe = farewell = None
         for i in range(max(first_closing, 0), count):
             kind = classify(flat[i][1], language)

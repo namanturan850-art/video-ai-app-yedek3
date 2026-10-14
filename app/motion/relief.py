@@ -270,11 +270,24 @@ def pin(draw, x, y, colour=(255, 255, 255)):
     draw.ellipse((x - 6, y - 48, x + 6, y - 36), fill=(10, 18, 34))
 
 
+def legend(image, entries):
+    """Bottom-left names with their colours (fixed on screen, always readable)."""
+    draw = ImageDraw.Draw(image)
+    f = font(40)
+    y = H - 80 - 64 * (len(entries) - 1)
+    for colour, text in entries:
+        width = draw.textlength(text, font=f)
+        draw.rounded_rectangle((60, y - 30, 60 + width + 104, y + 30), radius=10, fill=(250, 251, 253))
+        draw.rounded_rectangle((78, y - 14, 106, y + 14), radius=4, fill=colour)
+        draw.text((122, y), text, font=f, fill=(12, 22, 40), anchor='lm')
+        y += 64
+
+
 def figure_box(image, text, sub=''):
     """Top-right number box (“6.640 MİL”, “2,5×”), fixed on screen."""
     draw = ImageDraw.Draw(image)
     f, g = font(64), font(28)
-    width = max(draw.textlength(text, font=f), draw.textlength(sub, font=g) if sub else 0) + 64
+    width = min(W - 140, max(draw.textlength(text, font=f), draw.textlength(sub, font=g) if sub else 0) + 64)
     x1, y0 = W - 70, 64
     x0, y1 = x1 - width, y0 + (150 if sub else 112)
     draw.rounded_rectangle((x0, y0, x1, y1), radius=12, fill=(10, 18, 34), outline=(61, 155, 255), width=4)
@@ -301,7 +314,7 @@ def plan(spec):
         big = ratio if ratio >= 1 else 1 / ratio
         shown = f'{big:.1f}×'.replace('.', ',') if d.get('language', 'tr') != 'en' else f'{big:.1f}×'
         return {'mode': mode, 'view': view_around(box, pad=1.5, minimum=1.5), 'unit': a, 'other': over, 'arrow': None,
-                'title': d.get('title') or a['name'], 'other_title': b['name'], 'figure': figure or shown}
+                'title': d.get('title') or d['target'], 'other_title': d['other'], 'figure': figure or shown}  # the names as the owner wrote them (Belgique)
     if mode == 'arrow':
         a, b = place(d['from']), place(d['to'])
         if not a or not b: raise ValueError('arrow places')
@@ -322,7 +335,7 @@ def render(scene, output, ffmpeg):
     slow zoom-in (zoom), all within the pre-drawn canvas."""
     element = next(e for e in scene['elements'] if e['type'] == 'relief')
     info = plan(element['props']['spec'])
-    dark = element['props'].get('theme') == 'dark'
+    dark = element['props'].get('theme') == 'dark' or info['mode'] == 'compare'  # a size comparison is always on the plain dark map
     info['dark'] = dark
     duration = scene['duration']; frames = max(1, round(duration * FPS))
     view = info['view']
@@ -359,14 +372,13 @@ def render(scene, output, ffmpeg):
             line = max(info['unit']['lines'], key=len); mx, my = line[len(line) // 2]
             px, py = xy(mx, my); px += 40
             label(draw, info['title'], px, py, 66, anchor='lm')
+        elif info['mode'] == 'compare':
+            pass  # names are in the on-screen legend (always inside the frame)
         elif dark:
             label_box(draw, info['title'], px, py, 50)
             if info['mode'] == 'zoom': pin(draw, px, py - 60)
         else:
             label(draw, info['title'], px, py, 66)
-        if info.get('other'):  # legend: blue = the area, orange = the compared one laid over it
-            ow, os_, oe, on = info['other']['bbox']
-            label_box(draw, info['other_title'], xy((ow + oe) / 2, on)[0], xy((ow + oe) / 2, on)[1] - 40, 40)
     base = Image.alpha_composite(base.convert('RGBA'), overlay)
     command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
@@ -395,8 +407,8 @@ def frame(base, info, t, duration, path):
     else:
         scale = 1.0
     w, h = cw / MARGIN / (1.6 if info['mode'] == 'zoom' else 1) * scale, ch / MARGIN / (1.6 if info['mode'] == 'zoom' else 1) * scale
-    drift = (cw - w) * .5 * (.35 + .3 * p) if info['mode'] != 'zoom' else (cw - w) / 2  # gentle sideways drift
-    left, top = drift, (ch - h) / 2 - (ch - h) * .08 * (p - .5)
+    drift = (cw - w) * .5 * (.35 + .3 * p) if info['mode'] not in ('zoom', 'compare') else (cw - w) / 2  # gentle sideways drift (compare: still)
+    left, top = drift, (ch - h) / 2 - ((ch - h) * .08 * (p - .5) if info['mode'] != 'compare' else 0)
     image = base
     if path:
         k = max(2, int(len(path) * min(1., t / max(.6, duration * .45))))
@@ -415,4 +427,5 @@ def frame(base, info, t, duration, path):
         draw.polygon(tip, fill=(255, 255, 255, 255))
     out = image.convert('RGB').resize((W, H), Image.BICUBIC, box=(left, top, left + w, top + h))
     if info.get('figure'): figure_box(out, info['figure'].upper(), f'{info["title"]} / {info["other_title"]}' if info.get('other') else '')
+    if info.get('other'): legend(out, [(BLUE['fill'], info['title']), (ORANGE['fill'], info['other_title'])])
     return out

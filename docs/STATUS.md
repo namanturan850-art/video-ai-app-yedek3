@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (5) — Uydu görüntüsü harita stili (Mapbox)
+
+- **Yeni sağlayıcı `SatelliteProvider`** (`app/providers/satellite.py`), ilk uygulaması `MapboxSatelliteProvider` (Raster Tiles API, `mapbox.satellite`). Anahtar Ayarlar → Mapbox'ta girilir, diğer anahtarlar gibi şifreli saklanır; `.env`/proje dosyalarına yazılmaz. Ayrıntılar: `MAPBOX_INTEGRATION_NOTES.md`.
+- **Video ekranı → Harita stili:** “Uydu görüntüsü (Mapbox)” eklendi (Renkli kabartma ve Koyu harita belgeseli aynen duruyor). Anahtar yoksa seçenek gri/seçilemez ve altında “Mapbox API anahtarı girilmeli (Ayarlar).” yazar.
+- **Çizim:** bölgeyi kapsayan karolar indirilip birleştirilir, 1920×1080 kadraja kırpılıp ölçeklenir. Üstünde: [OK] sarı, beyaz kenarlı kıvrımlı kalın çizgi; [BÖLGE] kırmızı-beyaz çapraz taralı oval; sol üstte bölge rozeti + ilerleme noktaları; sol altta ölçü çizgisi ve büyük rakam (`[BÖLGE: Bretagne | 27.208 km²]`, `[OK: A > B | 6.640 mil]`); sağ altta mavi halkalı küçük yakınlaştırma penceresi (3 seviye daha yakın karo); alt ortada “ŞEMATİK · SIMULATED” (tr/de/en/fr/es); sağ altta “© Mapbox”.
+- **Hata:** anahtar yok / kabul edilmedi / 404 / 429 / sunucu hatası / bağlantı yok → Türkçe uyarı (Medya ekranı uyarıları ve yuva mesajı) ve koyu çizilmiş harita; iş durmaz. Yedek çizim önbelleğe uydu klibi diye yazılmaz, anahtar eklenince yeniden denenir.
+- **Test durumu:** Mapbox hesabı/anahtarı yok ve bu ortamdan Mapbox'a erişilemiyor: **gerçek API ile test edilmedi**. Anahtarsız durum, Türkçe hata mesajları, ayar/arayüz ve çizim sahte karolarla test edildi (`tests/test_satellite_map.py`; örnek kare `docs/dark_style_samples/uydu_sahte_karolar.jpg` — düz renkli sahte karolar). Tam paket çalıştırılmadı.
+
 ## 2026-10-14 (4) — Arşiv, karşılaştırma, bölünmüş kare, tekrar, altyazı
 
 - **[ARŞİV]:** eski/siyah-beyaz fotoğraf yoksa Türkçe uyarı + **çerçeveli** yazı kartı. Arşiv adayları ayrıca etiketten elenir (3D, render, CGI, illüstrasyon, “modern”, yolcu/konteyner gemisi) ve CLIP o yılın dönem kurallarıyla bakar (1910 → modern gemi, 3D/karikatür cezalı). Dönem listesine “modern yolcu/konteyner gemisi” eklendi.

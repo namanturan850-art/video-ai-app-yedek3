@@ -61,7 +61,7 @@ class StyleKit(BaseModel):
     sfx_volume: float = Field(default=.18, ge=0, le=.5)
     subtitle: SubtitleStyle = Field(default_factory=SubtitleStyle)
     feeling: str = Field(default='', max_length=40)
-    map_style: Literal['relief', 'dark'] = 'dark'
+    map_style: Literal['relief', 'dark', 'satellite'] = 'dark'
     map_style_chosen: bool = False  # the owner picked it (older kits stored 'relief' without choosing: they get the dark default)  # “Harita stili”: colour relief or the dark flat documentary map
 
     @field_validator('sfx')
@@ -204,7 +204,7 @@ class ChannelService:
         """A look preset and/or the “Harita stili” and word-highlight switches of the project's channel."""
         if name is not None and name not in LOOKS:
             raise ProjectError('Listeden bir görünüm seçin.')
-        if map_style is not None and map_style not in ('relief', 'dark'):
+        if map_style is not None and map_style not in ('relief', 'dark', 'satellite'):
             raise ProjectError('Harita stili: kabartma veya koyu harita seçin.')
         channel = self.for_project(project_id)
         style = {}

@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 HERE = Path(__file__).resolve().parent
 W, H, FPS = 1920, 1080, 30
+LAST_WARNING = ''  # the last satellite problem (Turkish), read once by the media job
 MARGIN = 1.22  # the drawn canvas is larger than the frame: room for the camera
 SEA = (38, 92, 140)
 RAMP = [(0, (74, 132, 72)), (150, (110, 156, 84)), (400, (176, 186, 104)), (800, (214, 196, 122)),
@@ -372,7 +373,10 @@ def render(scene, output, ffmpeg):
     slow zoom-in (zoom), all within the pre-drawn canvas."""
     element = next(e for e in scene['elements'] if e['type'] == 'relief')
     info = plan(element['props']['spec'])
-    dark = element['props'].get('theme') == 'dark' or info['mode'] == 'compare'  # a size comparison is always on the plain dark map
+    theme = element['props'].get('theme')
+    info['lang'] = element['props'].get('lang', 'en')
+    sat = theme == 'satellite' and info['mode'] != 'compare'
+    dark = theme == 'dark' or info['mode'] == 'compare' or sat  # a size comparison is always on the plain dark map
     info['dark'] = dark
     duration = scene['duration']; frames = max(1, round(duration * FPS))
     view = info['view']
@@ -383,8 +387,30 @@ def render(scene, output, ffmpeg):
     if info['mode'] == 'compare':  # side by side at the same scale on a plain dark ground: neither fill hides the other
         base = side_by_side(info, cw, ch)
     else:
-        base = dark_map(canvas_view, cw, ch) if dark else terrain(canvas_view, cw, ch)
-        if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
+        base = None
+        if sat:  # satellite tiles (SatelliteProvider); any problem: the dark map, with a Turkish warning
+            from app.motion import satellite_map
+            from app.providers.satellite import SatelliteError
+            try:
+                base, source_z, info['credit'] = satellite_map.base(canvas_view, cw, ch)
+                info['satellite'] = True
+                if info['unit']:
+                    w, s_, e, n = info['unit']['bbox']
+                    info['inset'] = satellite_map.closer(source_z, (w + e) / 2, (s_ + n) / 2)
+                elif info['arrow']:
+                    info['inset'] = satellite_map.closer(source_z, info['arrow'][1][0], info['arrow'][1][1])
+            except SatelliteError as error:
+                global LAST_WARNING
+                LAST_WARNING = str(error)
+                base = None
+        if base is None:
+            base = dark_map(canvas_view, cw, ch) if dark else terrain(canvas_view, cw, ch)
+            if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
+        elif info['unit'] and (info['unit']['polygons'] or info['unit']['lines']):  # [BÖLGE] on satellite: red/white hatched oval
+            xy0 = projector(canvas_view, cw, ch)
+            w, s_, e, n = info['unit']['bbox']; (l, t_), (r, b) = xy0(w, n), xy0(e, s_)
+            base = satellite_map.hatched_oval(base, (l, t_, r, b))
+    info['canvas_view'] = canvas_view
     xy = projector(canvas_view, cw, ch)
     # Labels and the arrow are drawn on the canvas: they move with the map, readable from frame 0.
     overlay = Image.new('RGBA', base.size, (0, 0, 0, 0))
@@ -398,7 +424,10 @@ def render(scene, output, ffmpeg):
         for (x, y, n), first in (((ax, ay, an), True), ((bx, by, bn), False)):
             px, py = xy(x, y)
             above = down == first  # each name sits on the side the arrow does not use
-            if dark:
+            if info.get('satellite'):
+                draw.ellipse((px - 14, py - 14, px + 14, py + 14), fill=(255, 214, 10), outline=(255, 255, 255), width=5)
+                label_box(draw, n, px, py - 70 if above else py + 50, 44)
+            elif dark:
                 pin(draw, px, py)
                 label_box(draw, n, px, py - 100 if above else py + 50, 44)
             else:
@@ -453,18 +482,30 @@ def frame(base, info, t, duration, path):
         k = max(2, int(len(path) * min(1., t / max(.6, duration * .45))))
         image = base.copy(); draw = ImageDraw.Draw(image)
         part = path[:k]
-        if info.get('dark'):  # dashed line
+        if info.get('satellite'):  # thick yellow wavy line with a white edge
+            from app.motion.satellite_map import arrow as yellow_arrow, wavy
+            yellow_arrow(draw, wavy(part))
+            part = None
+        elif info.get('dark'):  # dashed line
             for i in range(0, len(part) - 1, 2):
                 draw.line(part[i:i + 2], fill=(255, 255, 255, 255), width=8)
         else:
             draw.line([(x + 4, y + 5) for x, y in part], fill=(0, 0, 0, 120), width=14, joint='curve')
             draw.line(part, fill=(255, 255, 255, 255), width=12, joint='curve')
-        (x1, y1), (x2, y2) = part[-2], part[-1]
-        angle = math.atan2(y2 - y1, x2 - x1)
-        tip = [(x2 + 30 * math.cos(angle), y2 + 30 * math.sin(angle)), (x2 + 26 * math.cos(angle + 2.4), y2 + 26 * math.sin(angle + 2.4)),
-               (x2 + 26 * math.cos(angle - 2.4), y2 + 26 * math.sin(angle - 2.4))]
-        draw.polygon(tip, fill=(255, 255, 255, 255))
+        if part:
+            (x1, y1), (x2, y2) = part[-2], part[-1]
+            angle = math.atan2(y2 - y1, x2 - x1)
+            tip = [(x2 + 30 * math.cos(angle), y2 + 30 * math.sin(angle)), (x2 + 26 * math.cos(angle + 2.4), y2 + 26 * math.sin(angle + 2.4)),
+                   (x2 + 26 * math.cos(angle - 2.4), y2 + 26 * math.sin(angle - 2.4))]
+            draw.polygon(tip, fill=(255, 255, 255, 255))
     out = image.convert('RGB').resize((W, H), Image.BICUBIC, box=(left, top, left + w, top + h))
-    if info.get('figure'): figure_box(out, info['figure'].upper(), f'{info["title"]} / {info["other_title"]}' if info.get('other') else '')
+    if info.get('satellite'):  # badge + dots, scale bar + big number, magnifier, ŞEMATİK note, © Mapbox
+        from app.motion import satellite_map
+        crop_view = (info['canvas_view'][0] + left / cw * (info['canvas_view'][2] - info['canvas_view'][0]), 0,
+                     info['canvas_view'][0] + (left + w) / cw * (info['canvas_view'][2] - info['canvas_view'][0]), 0)
+        crop_view = (crop_view[0], info['view'][1], crop_view[2], info['view'][3])
+        satellite_map.inset(out, info.get('inset'))
+        satellite_map.overlays(out, info, t, duration, crop_view, font)
+    elif info.get('figure'): figure_box(out, info['figure'].upper(), f'{info["title"]} / {info["other_title"]}' if info.get('other') else '')
 
     return out

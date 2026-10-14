@@ -326,8 +326,9 @@ def build_extra(s, spec, language='de'):
     lang = language if language in FACT_TITLE else 'en'
     if t == 'relief':  # drawn whole by app/motion/relief.py (terrain, highlight, arrow, camera)
         from app.channels import map_style
-        dark = map_style(s.kit) == 'dark'
-        s.add('relief', spec=spec, **({'theme': 'dark'} if dark else {}))  # the default keeps its old scene key
+        style = map_style(s.kit)
+        extra = {'theme': 'dark'} if style == 'dark' else {'theme': 'satellite', 'lang': language} if style == 'satellite' else {}
+        s.add('relief', spec=spec, **extra)  # the relief look keeps its old scene key
         return s
     if t == 'archive':  # drawn whole by app/motion/archive.py (white frame, tilt, slow zoom)
         s.add('archive', image_path=d.get('image_path', ''), caption=d.get('caption', ''))

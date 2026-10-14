@@ -1232,12 +1232,18 @@ class MediaDirector:
             LOG.warning('stock operation=motion category=render_failed')
             return self.card(slot, scene, log)  # extreme fallback (e.g. FFmpeg missing): still a picture
         media = media_record(path, spec, scene_data, engine)
+        from app.motion import relief as relief_module
+        if relief_module.LAST_WARNING:  # satellite tiles failed: drawn map used, the reason in Turkish
+            self.progress.setdefault('marker_warnings', []).append(relief_module.LAST_WARNING)
+            slot_note = relief_module.LAST_WARNING; relief_module.LAST_WARNING = ''
+        else:
+            slot_note = ''
         from app.motion.templates import TEMPLATES
         why = {'motion_planned': 'yönetmen bu sahneyi motion grafik olarak planladı', 'motion_edit': 'sizin düzenlediğiniz motion grafik',
                'motion_owner': 'metindeki işaretinize göre'}.get(
             stage, 'onaylanan stok medya bulunamadı')
-        slot.update(selected_media=media, status='complete', continuation_of=None, segment_start=None, missing_reasons=[], warnings=[],
-                    ai_review=None, message=f'{TEMPLATES[spec["template"]]}: “{media["description"][:80]}” ({why}).')
+        slot.update(selected_media=media, status='complete', continuation_of=None, segment_start=None, missing_reasons=[], warnings=[slot_note] if slot_note else [],
+                    ai_review=None, message=(f'⚠ {slot_note} ' if slot_note else '') + f'{TEMPLATES[spec["template"]]}: “{media["description"][:80]}” ({why}).')
         log['steps'].append({'stage': stage, 'label': STAGES[stage], 'result': 'chosen', 'template': spec['template'], 'engine': engine,
                              'because': 'no_approved_stock' if stage == 'motion' else stage})
         return True

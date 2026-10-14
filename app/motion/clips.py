@@ -115,7 +115,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     temporary = folder / ('.motion-' + uuid4().hex + '.mp4')
     engine = 'local'
     try:
-        if prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC:  # the nine marker templates: local renderer only
+        if prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC and not any(e['type'] == 'relief' for e in scene['elements']):  # the nine marker templates: local renderer only
             try:
                 openmontage(scene, temporary, bridge, ffmpeg, folder)
                 engine = 'openmontage'

@@ -17,6 +17,11 @@ from app.providers.satellite import MapboxSatelliteProvider, SatelliteError
 SAT = {**DEFAULT_STYLE, 'map_style': 'satellite', 'map_style_chosen': True}
 
 
+@pytest.fixture(autouse=True)
+def flat_view(monkeypatch):
+    monkeypatch.setattr(satellite, 'OBLIQUE', lambda: False)  # these tests cover the flat tile view (Eğik görünüm: test_satellite_oblique.py)
+
+
 def tile_bytes(colour=(40, 90, 60)):
     out = io.BytesIO(); Image.new('RGB', (512, 512), colour).save(out, 'JPEG'); return out.getvalue()
 

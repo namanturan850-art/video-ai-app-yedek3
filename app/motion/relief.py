@@ -326,7 +326,10 @@ def plan(spec):
         points = [(p['lon'], p['lat'], p['name']) for p in near_each_other([{'name': n, 'lat': y, 'lon': x} for x, y, n in points])]
         bbox = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
         return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=2.5), 'arrow': points, 'unit': None, 'title': d.get('title') or '', 'figure': figure}
-    unit = find(d['target'])
+    unit = None if d.get('lat') is not None else find(d['target'])
+    if unit is None and d.get('lat') is not None:  # [HARİTA] on satellite: the marker's own coordinates
+        lon, lat = float(d['lon']), float(d['lat'])
+        unit = {'kind': 'point', 'name': d['target'], 'polygons': [], 'lines': [], 'bbox': (lon - .3, lat - .3, lon + .3, lat + .3)}
     if unit is None:
         p = place(d['target'])
         if not p: raise ValueError('area not found')
@@ -393,7 +396,23 @@ def render(scene, output, ffmpeg):
         base = side_by_side(info, cw, ch)
     else:
         base = None
-        if sat:  # satellite tiles (SatelliteProvider); any problem: the dark map, with a Turkish warning
+        global LAST_WARNING
+        if sat and element['props'].get('view') == 'oblique':  # Eğik görünüm: one Static Images picture; any problem: the flat view
+            from app.motion import satellite_map
+            from app.providers.satellite import SatelliteError
+            if info['arrow']: points = [p[:2] for p in info['arrow']]
+            else:
+                w, s_, e, n = info['unit']['bbox']; points = [(w, s_), (e, n)]
+            try:
+                base, oblique_xy, info['credit'], info['camera'] = satellite_map.oblique(points, cw, ch, route=bool(info['arrow']))
+                info.update(satellite=True, oblique=True)
+                end = info['arrow'][-1][:2] if info['arrow'] else ((points[0][0] + points[1][0]) / 2, (points[0][1] + points[1][1]) / 2)
+                info['target_px'] = oblique_xy(*end)
+            except Exception as error:  # SatelliteError (Turkish) or anything unexpected: never stops the clip
+                reason = str(error).split(';')[0].split('. ')[0].rstrip('.') if isinstance(error, SatelliteError) else 'beklenmeyen hata'
+                LAST_WARNING = f'Eğik görünüm alınamadı ({reason}); düz uydu görünümü kullanıldı.'
+                base = None
+        if sat and base is None:  # satellite tiles (SatelliteProvider); any problem: the dark map, with a Turkish warning
             from app.motion import satellite_map
             from app.providers.satellite import SatelliteError
             try:
@@ -405,18 +424,17 @@ def render(scene, output, ffmpeg):
                 elif info['arrow']:
                     info['inset'] = satellite_map.closer(source_z, info['arrow'][-1][0], info['arrow'][-1][1])
             except SatelliteError as error:
-                global LAST_WARNING
                 LAST_WARNING = str(error)
                 base = None
         if base is None:
             base = dark_map(canvas_view, cw, ch) if dark else terrain(canvas_view, cw, ch)
             if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
         elif info['unit'] and (info['unit']['polygons'] or info['unit']['lines']):  # [BÖLGE] on satellite: red/white hatched oval
-            xy0 = projector(canvas_view, cw, ch)
-            w, s_, e, n = info['unit']['bbox']; (l, t_), (r, b) = xy0(w, n), xy0(e, s_)
-            base = satellite_map.hatched_oval(base, (l, t_, r, b))
+            xy0 = oblique_xy if info.get('oblique') else projector(canvas_view, cw, ch)
+            w, s_, e, n = info['unit']['bbox']; corners = [xy0(w, n), xy0(e, n), xy0(e, s_), xy0(w, s_)]
+            base = satellite_map.hatched_oval(base, (min(c[0] for c in corners), min(c[1] for c in corners), max(c[0] for c in corners), max(c[1] for c in corners)))
     info['canvas_view'] = canvas_view
-    xy = projector(canvas_view, cw, ch)
+    xy = oblique_xy if info.get('oblique') else projector(canvas_view, cw, ch)
     # Labels and the arrow are drawn on the canvas: they move with the map, readable from frame 0.
     overlay = Image.new('RGBA', base.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
@@ -433,7 +451,12 @@ def render(scene, output, ffmpeg):
             px, py = xy(x, y)
             first = i == 0 if len(stops) == 2 else i % 2 == 0
             above = down == first  # each name sits on the side the arrow does not use
-            if info.get('satellite'):
+            if info.get('oblique'):  # the route runs into the picture: the name sits beside the dot, away from the line
+                draw.ellipse((px - 14, py - 14, px + 14, py + 14), fill=(255, 214, 10), outline=(255, 255, 255), width=5)
+                near = [xy(*stops[j][:2])[0] for j in (i - 1, i + 1) if 0 <= j < len(stops)]
+                left = sum(near) / len(near) >= px
+                label_box(draw, n, px - 46 if left else px + 46, py, 44, anchor='rm' if left else 'lm')
+            elif info.get('satellite'):
                 draw.ellipse((px - 14, py - 14, px + 14, py + 14), fill=(255, 214, 10), outline=(255, 255, 255), width=5)
                 label_box(draw, n, px, py - 70 if above else py + 50, 44)
             elif dark:
@@ -486,6 +509,11 @@ def frame(base, info, t, duration, path):
     w, h = cw / MARGIN / (1.6 if info['mode'] == 'zoom' else 1) * scale, ch / MARGIN / (1.6 if info['mode'] == 'zoom' else 1) * scale
     drift = (cw - w) * .5 * (.35 + .3 * p) if info['mode'] not in ('zoom', 'compare') else (cw - w) / 2  # gentle sideways drift (compare: still)
     left, top = drift, (ch - h) / 2 - ((ch - h) * .08 * (p - .5) if info['mode'] != 'compare' else 0)
+    if info.get('oblique'):  # wide at the start, close to the target at the end
+        w, h = cw / MARGIN * (1 - .4 * p), ch / MARGIN * (1 - .4 * p)
+        tx, ty = info.get('target_px') or (cw / 2, ch / 2)
+        x, y = cw / 2 + (tx - cw / 2) * .85 * p, ch / 2 + (ty - ch / 2) * .85 * p
+        left, top = min(max(0, x - w / 2), cw - w), min(max(0, y - h / 2), ch - h)
     image = base
     if path:
         k = max(2, int(len(path) * min(1., t / max(.6, duration * .45))))

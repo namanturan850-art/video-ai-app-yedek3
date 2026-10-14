@@ -83,6 +83,12 @@ def where(name):
     return None
 
 
+def satellite_props(language):
+    """Scene props of the satellite map style (+ Ayarlar → Mapbox → Eğik görünüm)."""
+    from app.providers.satellite import oblique
+    return {'theme': 'satellite', 'lang': language, **({'view': 'oblique'} if oblique() else {})}
+
+
 def near_each_other(stops):
     """Same-name places: each stop becomes the namesake closest to the other stops (in place)."""
     from app.motion.places import nearest
@@ -340,7 +346,7 @@ def build_extra(s, spec, language='de'):
     if t == 'relief':  # drawn whole by app/motion/relief.py (terrain, highlight, arrow, camera)
         from app.channels import map_style
         style = map_style(s.kit)
-        extra = {'theme': 'dark'} if style == 'dark' else {'theme': 'satellite', 'lang': language} if style == 'satellite' else {}
+        extra = {'theme': 'dark'} if style == 'dark' else satellite_props(language) if style == 'satellite' else {}
         s.add('relief', spec=spec, **extra)  # the relief look keeps its old scene key
         return s
     if t == 'archive':  # drawn whole by app/motion/archive.py (white frame, tilt, slow zoom)
@@ -353,7 +359,7 @@ def build_extra(s, spec, language='de'):
         from app.channels import map_style
         if map_style(s.kit) == 'satellite':  # Harita stili → Uydu görüntüsü: the route on satellite tiles (yellow line, dots, names)
             s.add('relief', spec={'template': 'relief', 'data': {'mode': 'arrow', 'stops': d['stops'], 'source': d.get('source', '')}, 'emphasis': ''},
-                  theme='satellite', lang=language)
+                  **satellite_props(language))
             return s
         stops = d['stops']
         clat, clon, span = fit_view([(p['lat'], p['lon']) for p in stops])

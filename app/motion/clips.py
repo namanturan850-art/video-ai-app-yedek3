@@ -122,6 +122,9 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
                 temporary.unlink(missing_ok=True)
         if engine == 'local':
             raster_render(scene, temporary, ffmpeg)
+        from app.motion import relief
+        if relief.LAST_WARNING and spec['template'] == 'relief':  # satellite fell back to the drawn map: not cached
+            target = folder / (scene_key(scene) + '-fallback-' + uuid4().hex[:8] + '.mp4')  # under the satellite key: retried next time
         temporary.replace(target)
     finally:
         temporary.unlink(missing_ok=True)

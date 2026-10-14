@@ -92,6 +92,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     application = FastAPI(title="AI Video Studio", version=__version__, lifespan=lifespan)
     settings = SettingsService(SettingsStore(storage / "secrets"))
+    from app.providers import satellite as satellite_tiles
+    # Harita stili → Uydu görüntüsü: the key comes from Settings at drawing time (never .env).
+    satellite_tiles.FACTORY = lambda: satellite_tiles.MapboxSatelliteProvider(**settings.mapbox_config(), cache=storage / 'tile_cache')
     application.state.settings = settings
     ai_diagnostics = ProviderDiagnostics(settings)
     application.state.ai_diagnostics = ai_diagnostics
@@ -486,17 +489,27 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     def analyze_source(project_id: str):
         return sources.analyze(project_id)
 
+    def with_satellite(look):
+        """The 'Uydu görüntüsü' map style is greyed out until a Mapbox key is set."""
+        ready = bool(settings.mapbox_config()['api_key'])
+        look['map_styles'] = [s for s in look['map_styles'] if s['id'] != 'satellite'] + [
+            {'id': 'satellite', 'label': 'Uydu görüntüsü (Mapbox)', 'disabled': not ready,
+             **({} if ready else {'note': 'Mapbox API anahtarı girilmeli (Ayarlar).'})}]
+        return look
+
     @application.get('/api/projects/{project_id}/look')
     def get_look(project_id: str):
         projects.get(project_id)
-        return channels.look(project_id)
+        return with_satellite(channels.look(project_id))
 
     @application.put('/api/projects/{project_id}/look')
     def set_look(project_id: str, payload: dict):
         projects.get(project_id)
         payload = payload if isinstance(payload, dict) else {}
-        return channels.set_look(project_id, payload.get('look'), map_style=payload.get('map_style'),
-                                 word_highlight=payload['word_highlight'] if isinstance(payload.get('word_highlight'), bool) else None)
+        if payload.get('map_style') == 'satellite' and not settings.mapbox_config()['api_key']:
+            raise ProjectError('Uydu görüntüsü için Mapbox API anahtarı girilmeli (Ayarlar → Mapbox).')
+        return with_satellite(channels.set_look(project_id, payload.get('look'), map_style=payload.get('map_style'),
+                                 word_highlight=payload['word_highlight'] if isinstance(payload.get('word_highlight'), bool) else None))
 
     @application.get('/api/channels/{channel_id}')
     def get_channel(channel_id: str):

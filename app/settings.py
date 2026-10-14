@@ -89,6 +89,21 @@ class KeySettings(StrictModel):
         return value
 
 
+class MapboxSettings(KeySettings):
+    # Satellite map tiles (Harita stili → Uydu görüntüsü). The key is stored like every other
+    # key (never in .env or source files). The URL template is the documented Raster Tiles API
+    # pattern (MAPBOX_INTEGRATION_NOTES.md); it is a setting so it can be corrected without code.
+    tile_url: str = Field(default='https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90', max_length=300)
+
+    @field_validator('tile_url')
+    @classmethod
+    def template(cls, value):
+        value = value.strip()
+        if not value.startswith('https://api.mapbox.com/') or not all(p in value for p in ('{z}', '{x}', '{y}')) or '?' in value:
+            raise ValueError('Karo adresi https://api.mapbox.com/ ile başlamalı ve {z}, {x}, {y} içermeli (anahtar adrese yazılmaz).')
+        return value
+
+
 class OpenAISettings(KeySettings):
     enabled: bool = False
     model: str = Field(default="", max_length=150)
@@ -177,8 +192,8 @@ class OpenSourceSettings(BaseModel):
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
           "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings,
-          "claude": ClaudeSettings, "youtube": KeySettings, "wikimedia": OpenSourceSettings}
-PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia")
+          "claude": ClaudeSettings, "youtube": KeySettings, "wikimedia": OpenSourceSettings, "mapbox": MapboxSettings}
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia", "mapbox")
 
 
 def stored_secrets(values):
@@ -463,6 +478,12 @@ class SettingsService:
             raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
         with self.store.lock:
             return dict(self._values()[provider])
+
+    def mapbox_config(self):
+        """{'api_key', 'tile_url'} for the satellite map ('' key = not set)."""
+        with self.store.lock:
+            config = dict(self._values()['mapbox'])
+        return {'api_key': config.get('api_key') or '', 'tile_url': config.get('tile_url') or MapboxSettings().tile_url}
 
     def tts_config(self):
         """Private key and legacy values; outbound URL is always the official API."""

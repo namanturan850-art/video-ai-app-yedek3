@@ -7,6 +7,7 @@
    names (GeoNames CC BY 4.0 + Unicode CLDR names; app/motion/places_world.json.gz,
    built by tools/build_places.py).
 A place found nowhere is reported to the owner (never guessed)."""
+import math
 import gzip
 import json
 import re
@@ -213,6 +214,23 @@ def index():
             if len(key) < 2: continue
             if key not in best or place['rank'] < best[key]['rank']: best[key] = place
     return best
+
+
+@lru_cache(maxsize=1)
+def namesakes():
+    every = {}
+    for place in places():
+        for alias in dict.fromkeys(plain(a) for a in place['aliases']):
+            if len(alias) >= 2: every.setdefault(alias, []).append(place)
+    return every
+
+
+def nearest(name, lat, lon):
+    """Of the places sharing exactly this name, the one closest to (lat, lon):
+    “Paris > Rennes > Brest” is Brest in France, not Brest in Belarus. None when unknown."""
+    options = namesakes().get(plain(name), [])  # the owner typed this name: every namesake counts
+    if not options: return None
+    return min(options, key=lambda p: math.hypot(p['lat'] - lat, (p['lon'] - lon) * math.cos(math.radians(lat))))
 
 
 def notable(place, key):

@@ -317,10 +317,15 @@ def plan(spec):
         return {'mode': mode, 'view': view_around(box, pad=1.5, minimum=1.5), 'unit': a, 'other': over, 'arrow': None, 'pair': (a, b),
                 'title': d.get('title') or d['target'], 'other_title': d['other'], 'figure': figure or shown}  # the names as the owner wrote them (Belgique)
     if mode == 'arrow':
-        a, b = place(d['from']), place(d['to'])
-        if not a or not b: raise ValueError('arrow places')
-        bbox = (min(a[0], b[0]), min(a[1], b[1]), max(a[0], b[0]), max(a[1], b[1]))
-        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=2.5), 'arrow': [a, b], 'unit': None, 'title': d.get('title') or '', 'figure': figure}
+        if d.get('stops'):  # [ROTA: A > B > C] on the satellite style: the route's own places, in order
+            points = [(float(p['lon']), float(p['lat']), str(p['name'])[:40]) for p in d['stops']]
+        else:
+            points = [place(d['from'])] + [place(v) for v in d.get('via') or []] + [place(d['to'])]
+        if len(points) < 2 or not all(points): raise ValueError('arrow places')
+        from app.motion.templates_extra import near_each_other  # [OK: Paris > Brest]: Brest in France
+        points = [(p['lon'], p['lat'], p['name']) for p in near_each_other([{'name': n, 'lat': y, 'lon': x} for x, y, n in points])]
+        bbox = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
+        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=2.5), 'arrow': points, 'unit': None, 'title': d.get('title') or '', 'figure': figure}
     unit = find(d['target'])
     if unit is None:
         p = place(d['target'])
@@ -398,7 +403,7 @@ def render(scene, output, ffmpeg):
                     w, s_, e, n = info['unit']['bbox']
                     info['inset'] = satellite_map.closer(source_z, (w + e) / 2, (s_ + n) / 2)
                 elif info['arrow']:
-                    info['inset'] = satellite_map.closer(source_z, info['arrow'][1][0], info['arrow'][1][1])
+                    info['inset'] = satellite_map.closer(source_z, info['arrow'][-1][0], info['arrow'][-1][1])
             except SatelliteError as error:
                 global LAST_WARNING
                 LAST_WARNING = str(error)
@@ -417,12 +422,16 @@ def render(scene, output, ffmpeg):
     draw = ImageDraw.Draw(overlay)
     path = None
     if info['arrow']:
-        (ax, ay, an), (bx, by, bn) = info['arrow']
-        end = xy(bx, by)
-        path = [q for q in bezier(xy(ax, ay), end) if math.dist(q, end) >= 34] or [xy(ax, ay), end]  # the tip stops at the dot
-        down = end[1] >= xy(ax, ay)[1]
-        for (x, y, n), first in (((ax, ay, an), True), ((bx, by, bn), False)):
+        stops = info['arrow']  # two places ([OK]) or a whole route ([ROTA] on satellite)
+        path = []
+        for (ax, ay, _), (bx, by, _) in zip(stops, stops[1:]):
+            path += bezier(xy(ax, ay), xy(bx, by))[(1 if path else 0):]
+        end = xy(stops[-1][0], stops[-1][1])
+        while len(path) > 2 and math.dist(path[-1], end) < 34: path.pop()  # the tip stops at the dot
+        down = end[1] >= xy(stops[0][0], stops[0][1])[1]
+        for i, (x, y, n) in enumerate(stops):
             px, py = xy(x, y)
+            first = i == 0 if len(stops) == 2 else i % 2 == 0
             above = down == first  # each name sits on the side the arrow does not use
             if info.get('satellite'):
                 draw.ellipse((px - 14, py - 14, px + 14, py + 14), fill=(255, 214, 10), outline=(255, 255, 255), width=5)

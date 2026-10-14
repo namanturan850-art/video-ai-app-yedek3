@@ -64,7 +64,7 @@ class RenderService:
         from app.motion.clips import is_motion,render_clip
         from app.motion import templates
         from app.stock.download import directory
-        events=[];volume=float((kit or {}).get('sfx_volume',.18))
+        events=[];notes=[];volume=float((kit or {}).get('sfx_volume',.18))
         if not kit:return {'events':[],'volume':volume}
         chains={}
         for slot in t['slots']:
@@ -101,9 +101,12 @@ class RenderService:
                 else:
                     try:
                         path,_,_=render_clip(directory(self.projects,pid),spec,kit,duration,offset,language=h.get('target_language','de'),bridge=getattr(self,'openmontage',None))
+                        from app.motion import relief
+                        if relief.LAST_WARNING:notes.append(relief.LAST_WARNING);relief.LAST_WARNING=''  # satellite failed: the drawn map, and why
                         digest=self._hash(path,force);originals[str(path)]=digest
                         for slot in parts:media[slot['slot_id']].update(path=path,duration=duration,sha256=digest,segment_start=0.)
                     except Exception:
+                        if spec.get('template') in ('relief','route'):notes.append('Bir harita grafiği yeni harita stiliyle çizilemedi; önceki hali kullanıldı. Medya ekranında bu sahneyi yeniden hazırlayın.')
                         scene=templates.build(spec,kit,float(m.get('duration') or duration),original,h.get('target_language','de'))  # keep the prepared clip
             for slot in parts:media[slot['slot_id']].update(segment_start=0.,motion=True)  # animation always starts at its first frame
             channels=getattr(self,'channels',None)
@@ -112,7 +115,9 @@ class RenderService:
                 path=channels.sfx_path(channel['id'],kit['sfx'].get(item['sound'],'none')) if channel else None
                 if path and 0<=start+item['t']<h.get('audio_duration',1e9):
                     events.append({'t':round(start+item['t'],3),'sound':item['sound'],'path':str(path)})
-        return {'events':sorted(events,key=lambda e:e['t'])[:80],'volume':volume}
+        out={'events':sorted(events,key=lambda e:e['t'])[:80],'volume':volume}
+        if notes:out['notes']=list(dict.fromkeys(notes))
+        return out
 
     def _endscreen(self,pid,t,h,selected,kit,force,draw,pending,originals):
         """Closing moment ([KAPANIŞ] / abone ol cümlesi) varsa videonun sonuna 20 sn YouTube
@@ -353,7 +358,7 @@ class RenderService:
                 with closing(self.projects._connection()) as c,c:
                     item=self._version(c,pid,vid);meta=item['metadata']
                     meta.update(result['metadata'],output_local_path=f'renders/{final.name}',file_size=final.stat().st_size,sha256=files.sha256(final))
-                    meta['warnings']=list(dict.fromkeys(inputs['handoff'].get('warnings',[])+meta['warnings']));self._guard(meta)
+                    meta['warnings']=list(dict.fromkeys(inputs['handoff'].get('warnings',[])+inputs['sfx'].get('notes',[])+meta['warnings']));self._guard(meta)
                     stamp=now();progress={'percent':100,'encoder_used':meta['encoder_used'],'elapsed_seconds':round(time.monotonic()-started,1),'warnings':meta['warnings']}
                     c.execute('UPDATE render_versions SET metadata_json=?,status=?,updated_at=? WHERE id=?',(json.dumps(meta,ensure_ascii=False),'completed',stamp,vid))
                     c.execute('UPDATE render_jobs SET status=?,progress_json=?,updated_at=? WHERE id=?',('completed',json.dumps(progress,ensure_ascii=False),stamp,jid))

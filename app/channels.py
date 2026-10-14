@@ -211,7 +211,7 @@ class ChannelService:
         if name is not None:
             preset = PRESETS[name]
             style.update({k: v for k, v in preset.items() if k not in ('map_style', 'word_highlight')}, palette=preset['palette'], feeling=name)
-            if 'map_style' in preset: style['map_style'] = preset['map_style']
+            if 'map_style' in preset and not channel['style'].get('map_style_chosen'): style['map_style'] = preset['map_style']  # a map style the owner picked stays
             if preset.get('word_highlight'): word_highlight = True if word_highlight is None else word_highlight
         if map_style is not None: style.update(map_style=map_style, map_style_chosen=True)
         if word_highlight is not None: style['subtitle'] = {**channel['style']['subtitle'], 'word_highlight': bool(word_highlight)}

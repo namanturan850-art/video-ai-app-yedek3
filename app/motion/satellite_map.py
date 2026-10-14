@@ -121,7 +121,7 @@ def overlays(image, info, t, duration, crop_view, font):
     """Marks fixed on screen: badge + dots, scale bar + number, inset, note, credit."""
     draw = ImageDraw.Draw(image, 'RGBA')
     # badge + progress dots (top left)
-    title = (info.get('title') or (f'{info["arrow"][0][2]} → {info["arrow"][1][2]}' if info.get('arrow') else '')).upper()[:32]
+    title = (info.get('title') or (f'{info["arrow"][0][2]} → {info["arrow"][-1][2]}' if info.get('arrow') else '')).upper()[:32]
     f = font(34)
     width = draw.textlength(title, font=f) + 60
     draw.rounded_rectangle((50, 46, 50 + width, 106), radius=8, fill=(10, 16, 26, 210))

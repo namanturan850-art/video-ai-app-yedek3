@@ -83,6 +83,18 @@ def where(name):
     return None
 
 
+def near_each_other(stops):
+    """Same-name places: each stop becomes the namesake closest to the other stops (in place)."""
+    from app.motion.places import nearest
+    for i, stop in enumerate(stops):
+        others = [p for j, p in enumerate(stops) if j != i]
+        lat, lon = sum(p['lat'] for p in others) / len(others), sum(p['lon'] for p in others) / len(others)
+        found = nearest(stop['name'], lat, lon)
+        far = lambda p: math.hypot(p['lat'] - lat, (p['lon'] - lon) * math.cos(math.radians(lat)))
+        if found and far(stop) - far(found) > 3: stop.update(lat=found['lat'], lon=found['lon'])  # only a clearly closer namesake
+    return stops
+
+
 def modern_of(name):
     """Today's country/place of an ancient place from the hand-made list ('' when unknown)."""
     from app.motion.places import plain, places
@@ -178,6 +190,7 @@ def parse(kind, value, sentence='', language='de'):
             if found: stops.append({'name': found[0][:40], 'lat': found[1], 'lon': found[2]})
             else: missing.append(name)
         if len(stops) < 2: raise MarkerError(f'Rota çizilemedi: şu yerler yer listesinde bulunamadı: {", ".join(missing)}.')
+        near_each_other(stops)
         return {'template': 'route', 'data': {'stops': stops, 'missing': missing, 'source': value}, 'emphasis': ''}
     if template == 'empire':
         main, _, edge = value.partition('|')
@@ -337,6 +350,11 @@ def build_extra(s, spec, language='de'):
         from app.moments import draw
         return {'intro': lambda: draw.draw_intro(s, d), 'outro': lambda: draw.draw_outro(s, d, language), 'endscreen': lambda: draw.draw_endscreen(s, d)}[t]()
     if t == 'route':
+        from app.channels import map_style
+        if map_style(s.kit) == 'satellite':  # Harita stili → Uydu görüntüsü: the route on satellite tiles (yellow line, dots, names)
+            s.add('relief', spec={'template': 'relief', 'data': {'mode': 'arrow', 'stops': d['stops'], 'source': d.get('source', '')}, 'emphasis': ''},
+                  theme='satellite', lang=language)
+            return s
         stops = d['stops']
         clat, clon, span = fit_view([(p['lat'], p['lon']) for p in stops])
         s.add('map', {'zoom': [[0, 0], [max(.8, E * .4), 1]]}, lon=clon, lat=clat, span_from=min(330, span * 1.8), span_to=span, **map_colours(s))

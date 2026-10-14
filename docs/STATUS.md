@@ -1,5 +1,15 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (7) — Uydu görüntüsü render'a bağlandı ([OK] / [ROTA])
+
+- Seçim yeri: Proje → **Video** ekranı → **“Harita stili (kanal ayarı)”** listesi → “Uydu görüntüsü (Mapbox)”. Kanal ayarıdır (o kanaldaki tüm projelere uygulanır). Ayarlar → Mapbox yalnız anahtarı tutar.
+- [ROTA] uydu stili seçiliyken artık eski koyu vektör harita yerine uydu karoları üzerinde sarı çizgi + duraklarla çizilir ([OK] zaten bağlıydı).
+- “Video görünümü” (ör. Koyu harita belgeseli) seçmek, elle seçilmiş Harita stilini artık sıfırlamaz (uyduyu geri koyu haritaya çeviriyordu).
+- Render sırasında uydu karosu alınamazsa nedeni (Türkçe) videonun uyarılarında görünür; önce sessizce koyu haritaya düşüyordu.
+- Aynı adlı yerler: “Paris > Rennes > Brest” artık Fransa'daki Brest'i alır (Belarus değil).
+- Örnek kareler: `docs/satellite_samples/` — Fransızca [OK: Paris > Rennes | 350 km] ve [ROTA]. Karolar sahte desenli resimdir (Mapbox anahtarı yok); gerçek Mapbox ile denenmedi.
+- Testler: `tests/test_satellite_wiring.py` (Fransızca metinle medya işi uçtan uca, sahte Mapbox).
+
 ## 2026-10-14 (6) — Mapbox “Bağlantıyı Test Et”
 
 - Ayarlar → Mapbox bölümünde test tanımlı değildi ve arka uçta Mapbox testi yoktu. Artık düğme tek küçük karo (0/0/0) ister ve sonucu Türkçe gösterir: başarılı / anahtar geçersiz (401/403) / bağlantı hatası / 404 / hız sınırı. En çok 15 sn bekler; cevap gelmezse “Mapbox 15 sn içinde yanıt vermedi” yazar.

@@ -183,7 +183,7 @@ class RenderService:
                 cut=item['end']+item.get('transition_duration',0)/2
                 t=round(max(0.,cut-peak),3)
                 if 0<=t<h.get('audio_duration',1e9) and not any(abs(e['t']-t)<.3 for e in events):
-                    events.append({'t':t,'sound':'whoosh','path':str(path),'slot_id':item['slot_id'],'peak':round(peak,3)})
+                    events.append({'t':t,'sound':'whoosh','path':str(path),'slot_id':item.get('slot_id'),'peak':round(peak,3)})
         return {**sfx,'events':sorted(events,key=lambda e:e['t'])[:160]}
 
     def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None,draw=False):

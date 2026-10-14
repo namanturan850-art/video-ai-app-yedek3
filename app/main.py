@@ -94,7 +94,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     settings = SettingsService(SettingsStore(storage / "secrets"))
     from app.providers import satellite as satellite_tiles
     # Harita stili → Uydu görüntüsü: the key comes from Settings at drawing time (never .env).
-    satellite_tiles.FACTORY = lambda: satellite_tiles.MapboxSatelliteProvider(**settings.mapbox_config(), cache=storage / 'tile_cache')
+    def mapbox_provider():
+        config = settings.mapbox_config()
+        return satellite_tiles.MapboxSatelliteProvider(config['api_key'], config['tile_url'], static_url=config['static_url'], cache=storage / 'tile_cache')
+    satellite_tiles.FACTORY = mapbox_provider
+    satellite_tiles.OBLIQUE = lambda: settings.mapbox_config()['oblique']
     application.state.settings = settings
     ai_diagnostics = ProviderDiagnostics(settings)
     application.state.ai_diagnostics = ai_diagnostics

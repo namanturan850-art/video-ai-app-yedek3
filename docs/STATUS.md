@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (8) — Uydu haritasında eğik görünüm (3B his)
+
+- Ayarlar → Mapbox → **“Eğik görünüm”** kutusu (varsayılan açık). Açıkken uydu stilindeki [OK] / [ROTA] / [HARİTA] / [BÖLGE] / [YAKINLAŞ] sahneleri Mapbox Static Images API'den **tek istekle** eğik (pitch 35–40) ve rota yönüne dönük (bearing) tek resim alır; sahne başında geniş, sonunda varış noktasına yakın görünür. Kapalıyken eski düz karo görünümü.
+- [HARİTA] artık uydu stili seçiliyse uydu üzerinde çizilir (önce her zaman vektör haritaydı).
+- İstek başarısızsa Türkçe uyarı + düz uydu görünümü; o da olmazsa koyu harita. Video durmaz.
+- Örnek kareler: `docs/satellite_samples/egik_*` (başı/sonu). **Gerçek Mapbox ile denenmedi**: bu ortamdan api.mapbox.com engelli ve anahtar yok; kareler sahte, yapay manzara resmidir.
+- Testler: `tests/test_satellite_oblique.py`.
+
 ## 2026-10-14 (7) — Uydu görüntüsü render'a bağlandı ([OK] / [ROTA])
 
 - Seçim yeri: Proje → **Video** ekranı → **“Harita stili (kanal ayarı)”** listesi → “Uydu görüntüsü (Mapbox)”. Kanal ayarıdır (o kanaldaki tüm projelere uygulanır). Ayarlar → Mapbox yalnız anahtarı tutar.

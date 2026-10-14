@@ -95,6 +95,18 @@ class MapboxSettings(KeySettings):
     # pattern (MAPBOX_INTEGRATION_NOTES.md); it is a setting so it can be corrected without code.
     tile_url: str = Field(default='https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90', max_length=300)
 
+    # Static Images API (one picture per scene, with bearing/pitch) for “Eğik görünüm”.
+    static_url: str = Field(default='https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},{zoom},{bearing},{pitch}/{width}x{height}@2x', max_length=300)
+    oblique: bool = True  # Eğik görünüm (3B his); off: the flat (pitch 0) tile map
+
+    @field_validator('static_url')
+    @classmethod
+    def static_template(cls, value):
+        value = value.strip()
+        if not value.startswith('https://api.mapbox.com/') or not all('{%s}' % p in value for p in ('lon', 'lat', 'zoom', 'bearing', 'pitch', 'width', 'height')) or '?' in value:
+            raise ValueError('Eğik görünüm adresi https://api.mapbox.com/ ile başlamalı ve {lon}, {lat}, {zoom}, {bearing}, {pitch}, {width}, {height} içermeli (anahtar adrese yazılmaz).')
+        return value
+
     @field_validator('tile_url')
     @classmethod
     def template(cls, value):
@@ -483,7 +495,9 @@ class SettingsService:
         """{'api_key', 'tile_url'} for the satellite map ('' key = not set)."""
         with self.store.lock:
             config = dict(self._values()['mapbox'])
-        return {'api_key': config.get('api_key') or '', 'tile_url': config.get('tile_url') or MapboxSettings().tile_url}
+        default = MapboxSettings()
+        return {'api_key': config.get('api_key') or '', 'tile_url': config.get('tile_url') or default.tile_url,
+                'static_url': config.get('static_url') or default.static_url, 'oblique': config.get('oblique', default.oblique) is not False}
 
     def tts_config(self):
         """Private key and legacy values; outbound URL is always the official API."""

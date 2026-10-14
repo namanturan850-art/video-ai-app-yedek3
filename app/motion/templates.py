@@ -312,6 +312,12 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
     # Saved older specs may still carry a whole sentence: drawn as a 2-5 word accent.
     if t == 'quote' and d.get('text'): d = {**d, 'text': focus(d['text'])}
     if t == 'stat' and d.get('label'): d = {**d, 'label': focus(str(d['label']).rstrip(' …'))}
+    if t == 'map' and kit:  # [HARİTA] on the satellite style: the place on satellite tiles (relief renderer)
+        from app.channels import map_style
+        if map_style(kit) == 'satellite':
+            from app.motion.templates_extra import build_extra
+            point = {'template': 'relief', 'data': {'mode': 'zoom', 'target': d['place'], 'lat': d['lat'], 'lon': d['lon'], 'title': d['place'], 'source': d['place']}, 'emphasis': ''}
+            return build_extra(s, point, language).result()
     if t in TEMPLATES_EXTRA:
         from app.motion.templates_extra import build_extra
         return build_extra(s, spec, language).result()

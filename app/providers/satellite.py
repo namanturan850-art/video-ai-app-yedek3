@@ -14,6 +14,8 @@ from pathlib import Path
 import httpx
 
 TILE = 512  # pixels per tile of the @2x template
+# Static Images API (eğik görünüm): the pattern given by the owner; a setting so it can be corrected without code.
+STATIC_URL = 'https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},{zoom},{bearing},{pitch}/{width}x{height}@2x'
 
 
 class SatelliteError(Exception):
@@ -30,6 +32,11 @@ class SatelliteProvider:
         """Image bytes (JPEG/PNG) of tile z/x/y, or SatelliteError."""
         raise NotImplementedError
 
+    def static(self, lon, lat, zoom, bearing, pitch, width, height):  # pragma: no cover - interface
+        """One whole picture (eğik görünüm: bearing/pitch) of width×height logical pixels
+        (@2x: twice as many real pixels), or SatelliteError."""
+        raise SatelliteError('static_unsupported', 'Bu uydu sağlayıcısı eğik görünüm vermiyor; düz görünüm kullanıldı.')
+
 
 MESSAGES = {
     'missing_key': 'Mapbox API anahtarı girilmeli (Ayarlar). Uydu yerine çizilmiş harita kullanıldı.',
@@ -39,6 +46,7 @@ MESSAGES = {
     'upstream_error': 'Mapbox sunucusu hata verdi. Biraz sonra yeniden deneyin; uydu yerine çizilmiş harita kullanıldı.',
     'network_error': 'Mapbox’a bağlanılamadı (internet bağlantısını kontrol edin). Uydu yerine çizilmiş harita kullanıldı.',
     'invalid_response': 'Mapbox resim yerine okunamayan bir yanıt verdi. Uydu yerine çizilmiş harita kullanıldı.',
+    'invalid_request': 'Mapbox eğik görünüm isteğini kabul etmedi (422). Ayarlar → Mapbox “Eğik görünüm adresi” alanını kontrol edin.',
 }
 
 
@@ -46,13 +54,23 @@ class MapboxSatelliteProvider(SatelliteProvider):
     name = 'mapbox'
     attribution = '© Mapbox'
 
-    def __init__(self, api_key, tile_url, *, cache=None, transport=None, timeout=20.):
+    def __init__(self, api_key, tile_url, *, static_url=STATIC_URL, cache=None, transport=None, timeout=20.):
         if not api_key: raise SatelliteError('missing_key', MESSAGES['missing_key'])
-        self.api_key, self.tile_url, self.cache = api_key, tile_url, Path(cache) if cache else None
+        self.api_key, self.tile_url, self.static_url, self.cache = api_key, tile_url, static_url or STATIC_URL, Path(cache) if cache else None
         self.client = httpx.Client(transport=transport, timeout=timeout, follow_redirects=False)
 
     def tile(self, z, x, y):
-        url = self.tile_url.format(z=int(z), x=int(x), y=int(y))
+        return self._get(self.tile_url.format(z=int(z), x=int(x), y=int(y)))
+
+    def static(self, lon, lat, zoom, bearing, pitch, width, height):
+        """Static Images API: the whole view in one request (pitch 0–60, bearing 0–360,
+        at most 1280×1280 logical pixels — the limits are kept here, the API checks them too)."""
+        url = self.static_url.format(lon=f'{lon:.5f}', lat=f'{max(-85., min(85., lat)):.5f}', zoom=f'{max(0., min(22., zoom)):.2f}',
+                                     bearing=f'{bearing % 360:.1f}', pitch=f'{max(0., min(60., pitch)):.1f}',
+                                     width=int(max(1, min(1280, width))), height=int(max(1, min(1280, height))))
+        return self._get(url)
+
+    def _get(self, url):
         path = None
         if self.cache:  # tiles are reused between clips (the key is never part of the file name)
             path = self.cache / (hashlib.sha256(url.encode()).hexdigest()[:32] + '.img')
@@ -65,6 +83,7 @@ class MapboxSatelliteProvider(SatelliteProvider):
         if status in (401, 403): raise SatelliteError('key_rejected', MESSAGES['key_rejected'])
         if status == 429: raise SatelliteError('rate_limit', MESSAGES['rate_limit'])
         if status == 404: raise SatelliteError('not_found', MESSAGES['not_found'])
+        if status == 422: raise SatelliteError('invalid_request', MESSAGES['invalid_request'])
         if status != 200: raise SatelliteError('upstream_error', MESSAGES['upstream_error'])
         data = response.content
         if not (data.startswith(b'\xff\xd8') or data.startswith(b'\x89PNG') or data[8:12] == b'WEBP'):
@@ -84,6 +103,15 @@ FACTORY = None
 def provider():
     if FACTORY is None: raise SatelliteError('missing_key', MESSAGES['missing_key'])
     return FACTORY()
+
+
+# Set by the app at start-up: () -> bool, Ayarlar → Mapbox → “Eğik görünüm”.
+OBLIQUE = None
+
+
+def oblique():
+    try: return bool(OBLIQUE and OBLIQUE())
+    except Exception: return False
 
 
 TEST_SECONDS = 15

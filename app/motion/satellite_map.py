@@ -130,13 +130,16 @@ def overlays(image, info, t, duration, crop_view, font):
     for i in range(dots):
         x = 64 + i * 26
         draw.ellipse((x - 7, 124 - 7, x + 7, 124 + 7), fill=(255, 255, 255, 255) if i < done else (255, 255, 255, 80))
-    # scale bar + big number (bottom left)
-    kmpp = km_per_pixel(crop_view, W)
-    length_km = nice(kmpp * 260); length_px = length_km / max(1e-9, kmpp)
+    # scale bar + big number (bottom left); a tilted picture has no single scale: number only
     y = H - 120
-    draw.rectangle((60, y, 60 + length_px, y + 10), fill=(255, 255, 255, 255))
-    draw.rectangle((60, y, 60 + length_px / 2, y + 10), fill=(20, 20, 20, 255))
-    draw.text((60, y - 12), f'{length_km:g} km', font=font(30), fill=(255, 255, 255), anchor='ls', stroke_width=3, stroke_fill=(0, 0, 0))
+    if not info.get('oblique'):
+        kmpp = km_per_pixel(crop_view, W)
+        length_km = nice(kmpp * 260); length_px = length_km / max(1e-9, kmpp)
+        draw.rectangle((60, y, 60 + length_px, y + 10), fill=(255, 255, 255, 255))
+        draw.rectangle((60, y, 60 + length_px / 2, y + 10), fill=(20, 20, 20, 255))
+        draw.text((60, y - 12), f'{length_km:g} km', font=font(30), fill=(255, 255, 255), anchor='ls', stroke_width=3, stroke_fill=(0, 0, 0))
+    else:
+        y += 60
     if info.get('figure'):
         draw.text((60, y - 60), info['figure'].upper(), font=font(92), fill=(255, 255, 255), anchor='ls', stroke_width=5, stroke_fill=(0, 0, 0))
     # note + credit
@@ -169,3 +172,72 @@ def closer(source_z, lon, lat):
         return Image.open(BytesIO(data)).convert('RGB')
     except Exception:
         return None
+
+
+# ---- Eğik görünüm (Static Images API: one picture with bearing + pitch) ----
+FOV = 0.6435011087932844  # vertical field of view of the Mapbox GL camera (36.87°); our marks use the same camera
+SIZE = (1280, 720)  # logical pixels requested (@2x: 2560×1440)
+
+
+def camera(lon, lat, zoom, bearing, pitch, width, height):
+    """(lon, lat) → (x, y) logical pixels of a Static Images picture. An approximation of
+    the GL camera (centre at the middle, 512-px world tiles, perspective tilt), close
+    enough to put a line and labels on the right town; None behind the horizon."""
+    world = 512 * 2 ** zoom
+    cx, cy = (lon + 180) / 360 * world, merc_y(lat) * world
+    b, p = math.radians(bearing), math.radians(pitch)
+    distance = .5 / math.tan(FOV / 2) * height
+
+    def project(plon, plat):
+        dx, dy = (plon + 180) / 360 * world - cx, merc_y(plat) * world - cy
+        rx, ry = dx * math.cos(b) + dy * math.sin(b), -dx * math.sin(b) + dy * math.cos(b)
+        depth = distance - ry * math.sin(p)
+        if depth <= distance * .05: return None
+        return width / 2 + distance * rx / depth, height / 2 + distance * ry * math.cos(p) / depth
+    return project
+
+
+def azimuth(a, b):
+    """Compass direction (degrees) from a to b, each (lon, lat)."""
+    la1, la2, dl = math.radians(a[1]), math.radians(b[1]), math.radians(b[0] - a[0])
+    return math.degrees(math.atan2(math.sin(dl) * math.cos(la2), math.cos(la1) * math.sin(la2) - math.sin(la1) * math.cos(la2) * math.cos(dl))) % 360
+
+
+def oblique_view(points, *, route=False):
+    """Centre, zoom, bearing and pitch so all points fit (about 60 % of the picture)."""
+    lon = (min(p[0] for p in points) + max(p[0] for p in points)) / 2
+    ys = [merc_y(p[1]) for p in points]
+    mid = (min(ys) + max(ys)) / 2
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * mid))))
+    bearing = round(azimuth(points[0], points[-1])) if route else 0  # the route runs “into” the picture
+    pitch = 40 if route else 35
+    w, h = SIZE
+    zoom = 12.
+    for _ in range(6):
+        project = camera(lon, lat, zoom, bearing, pitch, w, h)
+        spots = [project(*p[:2]) for p in points]
+        if any(s is None for s in spots): zoom -= 1; continue
+        need = max(max(abs(x - w / 2) / (w / 2), abs(y - h / 2) / (h / 2)) for x, y in spots) / .6
+        if abs(math.log2(max(need, 1e-6))) < .05: break
+        zoom -= math.log2(max(need, 1e-6))
+        zoom = max(1., min(15., zoom))
+    return lon, lat, round(zoom, 2), bearing, pitch
+
+
+def oblique(points, width, height, *, route=False, target=None):
+    """(picture width×height, projector (lon, lat) → canvas pixels, attribution) or SatelliteError.
+    target (lon, lat): where a closer view ends; it may make the zoom a little closer."""
+    lon, lat, zoom, bearing, pitch = oblique_view(points, route=route)
+    source = provider()
+    data = source.static(lon, lat, zoom, bearing, pitch, *SIZE)
+    try: picture = Image.open(BytesIO(data)).convert('RGB')
+    except Exception: raise SatelliteError('invalid_response', 'Mapbox eğik görünüm resmi okunamadı; düz görünüm kullanıldı.') from None
+    project = camera(lon, lat, zoom, bearing, pitch, *SIZE)
+    sx, sy = width / SIZE[0], height / SIZE[1]
+
+    def xy(plon, plat):
+        spot = project(plon, plat)
+        if spot is None: return (width / 2, -height)  # behind the horizon: off the top
+        return spot[0] * sx, spot[1] * sy
+    picture = picture.resize((width, height), Image.LANCZOS).filter(ImageFilter.UnsharpMask(2, 50, 3))
+    return picture, xy, getattr(source, 'attribution', ''), {'zoom': zoom, 'bearing': bearing, 'pitch': pitch}

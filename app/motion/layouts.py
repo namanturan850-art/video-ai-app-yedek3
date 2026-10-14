@@ -158,8 +158,8 @@ def _pictures(scene, spec, layout):
 
 def arrange(scene, spec, kit):
     layout = layout_of(spec)
-    if not layout or spec['template'] in MOMENTS:
-        return scene
+    if not layout or spec['template'] in MOMENTS or any(e['type'] == 'relief' for e in scene['elements']):
+        return scene  # a relief/satellite map frames itself
     scene = deepcopy(scene)
     kind = family(spec['template'])
     if kind == 'card': _card(scene, spec, kit, layout)

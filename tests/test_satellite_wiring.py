@@ -37,6 +37,7 @@ def fake_mapbox(monkeypatch):
     def handler(request):
         z, x, y = request.url.path.split('/')[-3:]
         return httpx.Response(200, content=textured_tile(int(z), int(x), int(y.split('@')[0])), headers={'Content-Type': 'image/jpeg'})
+    monkeypatch.setattr(satellite, 'OBLIQUE', lambda: False)  # the flat tile view (Eğik görünüm: test_satellite_oblique.py)
     monkeypatch.setattr(satellite, 'FACTORY', lambda: MapboxSatelliteProvider(
         'pk.test-key-123', 'https://api.mapbox.com/v4/mapbox.satellite/{z}/{x}/{y}@2x.jpg90', transport=httpx.MockTransport(handler)))
 

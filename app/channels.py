@@ -47,6 +47,7 @@ class SubtitleStyle(BaseModel):
     outline: str = Field(default='#101010', pattern=HEX)
     position: Literal['bottom', 'middle', 'top'] = 'bottom'
     size: int = Field(default=48, ge=32, le=96)
+    word_highlight: bool = False  # the word being read gets a coloured box (accent colour)
 
 
 class StyleKit(BaseModel):
@@ -60,6 +61,7 @@ class StyleKit(BaseModel):
     sfx_volume: float = Field(default=.18, ge=0, le=.5)
     subtitle: SubtitleStyle = Field(default_factory=SubtitleStyle)
     feeling: str = Field(default='', max_length=40)
+    map_style: Literal['relief', 'dark'] = 'relief'  # “Harita stili”: colour relief or the dark flat documentary map
 
     @field_validator('sfx')
     @classmethod
@@ -102,10 +104,13 @@ PRESETS = {  # deterministic suggestions when no AI engine is configured
     'sakin': {'palette': {'background': '#1E2A2F', 'primary': '#EEF3F1', 'accent': '#8FC1A9', 'text': '#FFFFFF'}, 'heading_font': 'lora', 'body_font': 'inter', 'motion_duration': .9, 'easing': 'smooth'},
     'eğlenceli': {'palette': {'background': '#1B1340', 'primary': '#FFFFFF', 'accent': '#FFD23F', 'text': '#FFFFFF'}, 'heading_font': 'montserrat', 'body_font': 'inter', 'motion_duration': .5, 'easing': 'bounce'},
     'bilimsel': {'palette': {'background': '#0E1A2B', 'primary': '#E6F0FF', 'accent': '#3FA9F5', 'text': '#FFFFFF'}, 'heading_font': 'inter', 'body_font': 'inter', 'motion_duration': .6, 'easing': 'snappy'},
+    'koyu_harita': {'palette': {'background': '#0B1426', 'primary': '#E8EEF7', 'accent': '#3D9BFF', 'text': '#FFFFFF'}, 'heading_font': 'montserrat', 'body_font': 'inter', 'motion_duration': .6, 'easing': 'smooth',
+                    'map_style': 'dark', 'word_highlight': True}
 }
 # One-click “Video görünümü” (Video screen) — the same presets, no wizard.
 LOOKS = {'ciddi': 'Belgesel (ciddi, altın vurgu)', 'gizemli': 'Gizem (koyu, turkuaz vurgu)', 'enerjik': 'Enerjik (hızlı, turuncu vurgu)',
-         'sakin': 'Sakin (yumuşak, yeşil vurgu)', 'eğlenceli': 'Eğlenceli (mor, sarı vurgu)', 'bilimsel': 'Bilim (mavi, keskin)'}
+         'sakin': 'Sakin (yumuşak, yeşil vurgu)', 'eğlenceli': 'Eğlenceli (mor, sarı vurgu)', 'bilimsel': 'Bilim (mavi, keskin)',
+         'koyu_harita': 'Koyu harita belgeseli (lacivert, parlak mavi, koyu harita)'}
 SUGGEST_SCHEMA = {'type': 'object', 'additionalProperties': False,
                   'required': ['background', 'primary', 'accent', 'text', 'heading_font', 'body_font', 'motion_duration', 'easing', 'subtitle_font', 'subtitle_position', 'reason'],
                   'properties': {**{k: {'type': 'string'} for k in ('background', 'primary', 'accent', 'text', 'heading_font', 'body_font', 'easing', 'subtitle_font', 'subtitle_position', 'reason')},
@@ -184,13 +189,27 @@ class ChannelService:
 
     def look(self, project_id):
         style = self.for_project(project_id)['style']
-        return {'look': style.get('feeling') if style.get('feeling') in LOOKS else '', 'looks': [{'id': k, 'label': v, 'accent': PRESETS[k]['palette']['accent']} for k, v in LOOKS.items()]}
+        return {'look': style.get('feeling') if style.get('feeling') in LOOKS else '', 'looks': [{'id': k, 'label': v, 'accent': PRESETS[k]['palette']['accent']} for k, v in LOOKS.items()],
+                'map_style': style.get('map_style', 'relief'), 'word_highlight': bool((style.get('subtitle') or {}).get('word_highlight')),
+                'map_styles': [{'id': 'relief', 'label': 'Renkli kabartma'}, {'id': 'dark', 'label': 'Koyu harita belgeseli (düz vektör)'}]}
 
-    def set_look(self, project_id, name):
-        if name not in LOOKS:
+    def set_look(self, project_id, name, *, map_style=None, word_highlight=None):
+        """A look preset and/or the “Harita stili” and word-highlight switches of the project's channel."""
+        if name is not None and name not in LOOKS:
             raise ProjectError('Listeden bir görünüm seçin.')
+        if map_style is not None and map_style not in ('relief', 'dark'):
+            raise ProjectError('Harita stili: kabartma veya koyu harita seçin.')
         channel = self.for_project(project_id)
-        self.update(channel['id'], {'style': {**PRESETS[name], 'palette': PRESETS[name]['palette'], 'feeling': name}})
+        style = {}
+        if name is not None:
+            preset = PRESETS[name]
+            style.update({k: v for k, v in preset.items() if k not in ('map_style', 'word_highlight')}, palette=preset['palette'], feeling=name)
+            if 'map_style' in preset: style['map_style'] = preset['map_style']
+            if preset.get('word_highlight'): word_highlight = True if word_highlight is None else word_highlight
+        if map_style is not None: style['map_style'] = map_style
+        if word_highlight is not None: style['subtitle'] = {**channel['style']['subtitle'], 'word_highlight': bool(word_highlight)}
+        if not style: raise ProjectError('Değiştirilecek bir görünüm ayarı seçin.')
+        self.update(channel['id'], {'style': style})
         return self.look(project_id)
 
     def _input(self, payload, partial=None):

@@ -88,12 +88,12 @@ def openmontage(scene, output, bridge, ffmpeg, folder):
 def with_pictures(spec, folder):
     """İŞARETLE / ÖNCESONRA: the spec keeps picture file names (project stock
     folder); drawing needs their full paths. Other templates are unchanged."""
-    if spec['template'] not in ('mark', 'beforeafter'): return spec
+    if spec['template'] not in ('mark', 'beforeafter', 'archive'): return spec
     spec = {**spec, 'data': {**spec['data']}}
-    names = [spec['data'].get('image')] if spec['template'] == 'mark' else list(spec['data'].get('images') or [])
+    names = [spec['data'].get('image')] if spec['template'] in ('mark', 'archive') else list(spec['data'].get('images') or [])
     paths = [Path(folder) / Path(str(n)).name for n in names if n]
     if not paths or not all(p.is_file() and not linked(p) for p in paths): raise RuntimeError('picture_missing')
-    if spec['template'] == 'mark': spec['data']['image_path'] = str(paths[0])
+    if spec['template'] in ('mark', 'archive'): spec['data']['image_path'] = str(paths[0])
     else: spec['data']['image_paths'] = [str(p) for p in paths]
     return spec
 

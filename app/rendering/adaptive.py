@@ -19,8 +19,9 @@ def apply(plan,t,h,seed=None,subtitle_mode='emphasis',media_details=None):
     meta={s['scene_id']:s for s in t['editing_scenes']};last_end=-100;special_seconds=0;split_index=0
     plan.update(algorithm_version='adaptive_edit_v1',edit_variation_seed=seed,subtitle_display=subtitle_mode,theme=THEMES[choice(seed,'theme',len(THEMES))])
     from app.rendering.smart_edit import lower_thirds
-    plan['emphasis']=lower_thirds(t) if subtitle_mode!='none' else []  # band over the video instead of a full-screen card
-    banded={e['slot_id'] for e in plan['emphasis']}
+    from app.rendering.smart_edit import badges
+    plan['emphasis']=(lower_thirds(t) if subtitle_mode!='none' else [])+badges(t)  # band over the video instead of a full-screen card; [SIRA] badge
+    banded={e['slot_id'] for e in plan['emphasis'] if e.get('style')!='badge'}
     for index,item in enumerate(plan['slots']):
         item.update(layout='full_broll',layout_label=LAYOUTS['full_broll'],texts=[],layout_window=None,secondary_slot_id=None,orientation='left' if (index+choice(seed,'side',2))%2==0 else 'right')
         # A motion graphic is already a graphic; it and its neighbours keep the

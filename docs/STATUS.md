@@ -1,5 +1,19 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (2) — “Koyu harita belgeseli” stili
+
+Video ekranı → “Video görünümü: Koyu harita belgeseli” bu stili tek tıkla açar (lacivert renkler, koyu harita, kelime vurgusu). Ayrıca aynı yerde: **Harita stili** (Renkli kabartma / Koyu harita belgeseli) ve **Altyazıda okunan kelimeyi vurgula** (aç/kapa). Varsayılanlar değişmedi; mevcut şablonlar aynı çizilir.
+
+- `[SIRA: 23/30 | Başlık]` → sol üst köşede “23/30 · BAŞLIK” rozeti ve altında ilerleme çizgisi (23/30 dolu), sahne boyunca.
+- **Koyu harita** (Natural Earth, düz vektör): lacivert kara/deniz, ülke ve il çizgileri; seçili bölge parlak mavi + hafif parlama, beyaz etiket kutusu, iğne (pin), `[OK]` kesikli çizgi.
+- **Rakam kutusu:** `[BÖLGE: Bretagne | 27.208 km²]`, `[OK: Paris > New York | 6.640 mil]` → sağ üstte “6.640 MİL”.
+- **Alan karşılaştırması:** `[KARŞILAŞTIR: Bretagne | Belgique]` (iki bölge, sayı yok) → Bretagne mavi, Belçika turuncu ve aynı ölçekte Bretagne'nin üstüne bindirilir; sağ üstte oran (“1,1×”). Sayılı karşılaştırmalar eskisi gibi karttır.
+- `[ŞERİT: Bretagne, 1910 | Balıkçılar aylarca denizdeydi]` → gerçek görüntü üstünde iki satırlı alt şerit (küçük üst satır, büyük alt satır daktilo gibi yazılır, en çok 6 sn).
+- **Kelime vurgusu:** açıkken altyazıda okunan kelime vurgu renginde kutuyla gösterilir (kelime zamanları cümle süresinden kelime uzunluğuna göre hesaplanır; gerçek kelime zamanı yok).
+- `[ARŞİV: old harbor photo | Brest, 1910]` → stok/arşiv fotoğrafı beyaz çerçevede, hafif eğik, bulanık koyu arka planda yavaş yakınlaşır; `|` sonrası fotoğrafın altına yazılır.
+- **Örnek kareler:** `docs/dark_style_samples/`.
+- **Testler:** `tests/test_dark_map_style.py` (Fransızca + Türkçe uçtan uca, harita/arşiv kareleri, ASS rozet/şerit/vurgu, ayar uç noktası) ve ilgili testler geçti. Render testleri bu makinede FFmpeg nedeniyle önceden de başarısız; tam paket çalıştırılmadı. Gerçek videoda rozet/şerit/vurgu görüntüsü sizde doğrulanmalı (bu ortamda seslendirmeli tam render denenmedi).
+
 ## 2026-10-14 — Düzeltme: Fransızca metin + kabartma harita işaretleri
 
 - **“unexpected_backend” çökmesi (Yuva 1):** kabartma harita `numpy` kullanıyordu ama `numpy` uygulamanın bileşen listesinde (`requirements.txt`) yoktu; bu bilgisayarda yüklü olduğu için testler geçmişti, sizin bilgisayarınızda `[BÖLGE]` işareti işi çökertiyordu. `numpy` listeye eklendi (START_AI_VIDEO_STUDIO.bat bir sonraki açılışta otomatik kurar). Ayrıca harita bileşeni okunamazsa artık Türkçe uyarı verilir; bir yuvadaki beklenmeyen hata da işi durdurmaz (yuva yazı kartıyla dolar, uyarı ekranda).

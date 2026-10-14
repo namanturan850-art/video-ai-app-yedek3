@@ -494,7 +494,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.put('/api/projects/{project_id}/look')
     def set_look(project_id: str, payload: dict):
         projects.get(project_id)
-        return channels.set_look(project_id, payload.get('look') if isinstance(payload, dict) else None)
+        payload = payload if isinstance(payload, dict) else {}
+        return channels.set_look(project_id, payload.get('look'), map_style=payload.get('map_style'),
+                                 word_highlight=payload['word_highlight'] if isinstance(payload.get('word_highlight'), bool) else None)
 
     @application.get('/api/channels/{channel_id}')
     def get_channel(channel_id: str):

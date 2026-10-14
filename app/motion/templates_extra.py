@@ -91,8 +91,8 @@ def where(name):
 def satellite_props(language):
     """Scene props of the satellite map style (+ Ayarlar → Mapbox → Eğik görünüm)."""
     from app.providers.satellite import oblique
-    # camera 2: north up, pitch 60, haze — older tilted clips (camera turned along the route) are drawn again
-    return {'theme': 'satellite', 'lang': language, **({'view': 'oblique', 'camera': 2} if oblique() else {})}
+    # camera 3: north up, pitch 60, no haze, names kept on screen — older tilted clips are drawn again
+    return {'theme': 'satellite', 'lang': language, **({'view': 'oblique', 'camera': 3} if oblique() else {})}
 
 
 def near_each_other(stops):
@@ -373,28 +373,13 @@ def build_extra(s, spec, language='de'):
             return s
     if t == 'route':
         from app.channels import map_style
-        if map_style(s.kit) == 'satellite':  # Harita stili → Uydu görüntüsü: the route on satellite tiles (yellow line, dots, names)
-            s.add('relief', spec={'template': 'relief', 'data': {'mode': 'arrow', 'stops': d['stops'], 'source': d.get('source', '')}, 'emphasis': ''},
-                  **satellite_props(language))
-            return s
-        stops = d['stops']
-        clat, clon, span = fit_view([(p['lat'], p['lon']) for p in stops])
-        s.add('map', {'zoom': [[0, 0], [max(.8, E * .4), 1]]}, lon=clon, lat=clat, span_from=min(330, span * 1.8), span_to=span, **map_colours(s))
-        lengths = [math.hypot(b['lat'] - a['lat'], b['lon'] - a['lon']) for a, b in zip(stops, stops[1:])]
-        total = sum(lengths) or 1
-        start, end = max(.6, E * .3), max(E, min(D - .8, E + 1.5))
-        s.add('geoline', {'progress': [[start, 0], [end, 1]]}, points=[[p['lat'], p['lon']] for p in stops], stroke=s.accent, width=10, opacity=1)
-        reached = 0.
-        for i, stop in enumerate(stops):
-            at = start + (end - start) * reached / total
-            if i < len(lengths): reached += lengths[i]
-            s.add('geopin', {'opacity': [[at - .05, 0], [at + .15, 1]], 'size': [[at, 0], [at + .25, 22]]}, lat=stop['lat'], lon=stop['lon'], size=0,
-                  fill=s.accent if i in (0, len(stops) - 1) else s.primary, hole=s.bg, opacity=0)
-            s.add('geotext', {'opacity': [[at, 0], [at + .3, 1]]}, lat=stop['lat'], lon=stop['lon'], text=stop['name'], size=44 if len(stops) <= 4 else 36,
-                  font=s.head, fill=s.fg, box=mix(s.bg, '#000000', .3), offset=62 if i % 2 == 0 else -62, opacity=0)
-            s.sound('click', at)
-        s.sound('rise', start - .2)
-    elif t == 'empire':
+        # Every map style draws a route like [OK] (relief renderer): the camera keeps every stop on screen
+        # and the names stay inside the safe area, also for places only a few km apart.
+        style = map_style(s.kit)
+        extra = satellite_props(language) if style == 'satellite' else {'theme': 'dark'} if style == 'dark' else {}
+        s.add('relief', spec={'template': 'relief', 'data': {'mode': 'arrow', 'stops': d['stops'], 'source': d.get('source', '')}, 'emphasis': ''}, **extra)
+        return s
+    if t == 'empire':
         area = [tuple(p) for p in d['area']]
         cap = d['capital']
         clat, clon, span = fit_view(area + [(cap['lat'], cap['lon'])], 1.25, 10)

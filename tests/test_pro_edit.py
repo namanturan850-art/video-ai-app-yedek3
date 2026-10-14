@@ -36,7 +36,9 @@ def test_whoosh_under_styled_transitions_only():
                       {'end': 9, 'transition_out': 'crossfade', 'transition_duration': .4, 'transition_style': 'fade'},
                       {'end': 14, 'transition_out': 'hard_cut', 'transition_duration': 0}]}
     out = RenderService._transition_sfx(None, plan, {'events': [], 'volume': .18}, {'sfx': {}}, {'audio_duration': 20})
-    assert [(e['t'], e['sound']) for e in out['events']] == [(4.45, 'whoosh')] and Path(out['events'][0]['path']).is_file()
+    from app.rendering.service import sound_peak
+    peak = sound_peak(out['events'][0]['path'])  # the whoosh's loudest moment lands mid-transition (cut 5 s + 0,4/2)
+    assert [(e['t'], e['sound']) for e in out['events']] == [(round(5.2 - peak, 3), 'whoosh')] and Path(out['events'][0]['path']).is_file()
     assert RenderService._transition_sfx(None, plan, {'events': []}, {'sfx': {'whoosh': 'none'}}, {})['events'] == []
 
 

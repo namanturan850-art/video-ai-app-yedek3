@@ -93,7 +93,7 @@ def discover(*,configured=None,root=ROOT):
     return {'found':True,'status':'Hazır','message':'FFmpeg bulundu ve çalışıyor. Render tamamen yerel çalışır.',
             'ffmpeg':str(executable),'ffprobe':probe,
             'encoders':[name for name in ('libx264','h264_nvenc') if re.search(r'\b'+name+r'\b',encoders)],
-            'filters':[name for name in ('ass','xfade','fade','zoompan','perspective','sidechaincompress','amix','afade') if re.search(r'\b'+name+r'\b',filters)]}
+            'filters':[name for name in ('ass','xfade','fade','zoompan','perspective','sidechaincompress','amix','afade','loudnorm','alimiter') if re.search(r'\b'+name+r'\b',filters)]}
 
 
 def select_encoder(requested,tools):

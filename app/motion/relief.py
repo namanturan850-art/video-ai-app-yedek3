@@ -350,10 +350,14 @@ def plan(spec):
     return {'mode': mode, 'view': view, 'unit': unit, 'arrow': None, 'title': title, 'figure': figure}
 
 
-def tint(picture, rings, xy, colour, alpha=105):
-    """See-through colour fill + a solid edge, with any projector (flat or tilted)."""
+def tint(picture, rings, xy, colour, alpha=105, lines=()):
+    """See-through colour fill + a solid edge, with any projector (flat or tilted);
+    a river valley: a see-through corridor along the river."""
     layer = Image.new('RGBA', picture.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(layer)
+    for line in lines:
+        points = [xy(x, y) for x, y in line]
+        if len(points) >= 2: draw.line(points, fill=tuple(colour) + (alpha + 40,), width=max(18, int(picture.size[0] * .022)), joint='curve')
     for ring in rings:
         points = [xy(x, y) for x, y in ring]
         if len(points) >= 3: draw.polygon(points, fill=tuple(colour) + (alpha,))
@@ -417,7 +421,7 @@ def render(scene, output, ffmpeg):
     canvas_view = (cx - hw, cy - hh, cx + hw, cy + hh)
     cw, ch = int(W * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)), int(H * MARGIN * (1.6 if info['mode'] == 'zoom' else 1))
     if info['mode'] == 'compare' and not sat:  # side by side at the same scale on a plain dark ground: neither fill hides the other
-        base = side_by_side(info, cw, ch)
+        base = side_by_side(info, cw, ch); info['side'] = True  # names drawn by side_by_side itself
     else:
         base = None
         global LAST_WARNING, LAST_INFO
@@ -469,16 +473,16 @@ def render(scene, output, ffmpeg):
             xy0 = oblique_xy if info.get('oblique') else projector(canvas_view, cw, ch)
             base = tint(base, info['unit']['polygons'], xy0, BLUE['fill'])
             if info['mode'] == 'compare': base = tint(base, info['other']['polygons'], xy0, ORANGE['fill'])
-        elif info['unit'] and (info['unit']['polygons'] or info['unit']['lines']):  # [BÖLGE] on satellite: red/white hatched oval
+        elif info['unit'] and (info['unit']['polygons'] or info['unit']['lines']):  # [BÖLGE] on satellite: the real border (never an oval)
             xy0 = oblique_xy if info.get('oblique') else projector(canvas_view, cw, ch)
-            w, s_, e, n = info['unit']['bbox']; corners = [xy0(w, n), xy0(e, n), xy0(e, s_), xy0(w, s_)]
-            base = satellite_map.hatched_oval(base, (min(c[0] for c in corners), min(c[1] for c in corners), max(c[0] for c in corners), max(c[1] for c in corners)))
+            base = tint(base, info['unit']['polygons'], xy0, RED['fill'], lines=info['unit']['lines'])
     info['canvas_view'] = canvas_view
     xy = oblique_xy if info.get('oblique') else projector(canvas_view, cw, ch)
     # Labels and the arrow are drawn on the canvas: they move with the map, readable from frame 0.
     overlay = Image.new('RGBA', base.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
     path = None
+    labels, keep = [], []  # names (drawn per frame, always inside the safe area) / points the camera never loses
     if info['arrow']:
         stops = info['arrow']  # two places ([OK]) or a whole route ([ROTA] on satellite)
         path = []
@@ -489,39 +493,47 @@ def render(scene, output, ffmpeg):
         down = end[1] >= xy(stops[0][0], stops[0][1])[1]
         for i, (x, y, n) in enumerate(stops):
             px, py = xy(x, y)
+            keep.append((px, py))  # every stop (both ends of [OK]/[ROTA]) stays on screen
             first = i == 0 if len(stops) == 2 else i % 2 == 0
             above = down == first  # each name sits on the side the arrow does not use
             if info.get('oblique'):  # the route runs into the picture: the name sits beside the dot, away from the line
                 draw.ellipse((px - 14, py - 14, px + 14, py + 14), fill=(255, 214, 10), outline=(255, 255, 255), width=5)
                 near = [xy(*stops[j][:2])[0] for j in (i - 1, i + 1) if 0 <= j < len(stops)]
                 left = sum(near) / len(near) >= px
-                label_box(draw, n, px - 46 if left else px + 46, py, 44, anchor='rm' if left else 'lm')
+                labels.append({'text': n, 'x': px - 46 if left else px + 46, 'y': py, 'size': 44, 'anchor': 'rm' if left else 'lm', 'box': True,
+                               'alt': (px + 46 if left else px - 46, 'lm' if left else 'rm')})  # the other side of the dot, if this one leaves the screen
             elif info.get('satellite'):
                 draw.ellipse((px - 14, py - 14, px + 14, py + 14), fill=(255, 214, 10), outline=(255, 255, 255), width=5)
-                label_box(draw, n, px, py - 70 if above else py + 50, 44)
+                labels.append({'text': n, 'x': px, 'y': py - 70 if above else py + 50, 'size': 44, 'box': True})
             elif dark:
                 pin(draw, px, py)
-                label_box(draw, n, px, py - 100 if above else py + 50, 44)
+                labels.append({'text': n, 'x': px, 'y': py - 100 if above else py + 50, 'size': 44, 'box': True})
             else:
                 draw.ellipse((px - 12, py - 12, px + 12, py + 12), fill=(255, 255, 255), outline=(20, 24, 30), width=4)
-                label(draw, n, px, py - 50 if above else py + 54, 54)
+                labels.append({'text': n, 'x': px, 'y': py - 50 if above else py + 54, 'size': 54})
     elif info['unit']:
         w, s, e, n = info['unit']['bbox']
         px, py = xy((w + e) / 2, (s + n) / 2)
         if info['unit']['lines']:  # a valley: the label sits beside the middle of the river
             line = max(info['unit']['lines'], key=len); mx, my = line[len(line) // 2]
             px, py = xy(mx, my); px += 40
-            label(draw, info['title'], px, py, 66, anchor='lm')
+            labels.append({'text': info['title'], 'x': px, 'y': py, 'size': 66, 'anchor': 'lm'})
+        elif info['mode'] == 'compare' and info.get('side'):
+            pass
         elif info['mode'] == 'compare':  # each name in a white box on its own area
             for unit, text in ((info['unit'], info['title']), (info['other'], info['other_title'])):
                 (x0, y0), (x1, y1) = xy(unit['bbox'][0], unit['bbox'][3]), xy(unit['bbox'][2], unit['bbox'][1])
-                label_box(draw, text, (x0 + x1) / 2, (y0 + y1) / 2, 46)
+                labels.append({'text': text, 'x': (x0 + x1) / 2, 'y': (y0 + y1) / 2, 'size': 46, 'box': True})
+                keep += [(x0, y0), (x1, y1)]
         elif dark:
-            label_box(draw, info['title'], px, py, 50)
+            labels.append({'text': info['title'], 'x': px, 'y': py, 'size': 50, 'box': True})
             if info['mode'] == 'zoom': pin(draw, px, py - 60)
         else:
-            label(draw, info['title'], px, py, 66)
+            labels.append({'text': info['title'], 'x': px, 'y': py, 'size': 66})
+        if info['mode'] != 'compare':  # the whole area (or the place) stays inside the frame
+            keep += [xy(w, n), xy(e, s)] if info['mode'] == 'region' else [(px, py)]
     base = Image.alpha_composite(base.convert('RGBA'), overlay)
+    info['labels'], info['keep'] = labels, keep
     command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
     if LAST_INFO: LOG.info('motion relief %s', LAST_INFO)
@@ -535,6 +547,51 @@ def render(scene, output, ffmpeg):
     finally:
         if process.poll() is None: process.kill()
     return frames
+
+
+# Screen areas no name may cover: the top band (scene badge, figure box), the bottom band
+# (scale bar, note, credit) and the side margins. Names are moved inside, never cut.
+SAFE = (48, 170, W - 48, H - 150)
+
+
+def contain(left, top, w, h, points, cw, ch, side=.1):
+    """The crop (left, top, w, h) widened/moved so every point lies inside its safe area."""
+    if not points: return left, top, w, h
+    xs, ys = [p[0] for p in points], [p[1] for p in points]
+    fx0, fy0, fx1, fy1 = SAFE[0] / W + side, SAFE[1] / H + .04, 1 - (W - SAFE[2]) / W - side, 1 - (H - SAFE[3]) / H - .04
+    need = max(w, (max(xs) - min(xs)) / (fx1 - fx0), (max(ys) - min(ys)) / (fy1 - fy0) * cw / ch)
+    if need > w:
+        cx, cy = left + w / 2, top + h / 2
+        w, h = min(cw, need), min(cw, need) * ch / cw
+        left, top = cx - w / 2, cy - h / 2
+    lo, hi = max(xs) - fx1 * w, min(xs) - fx0 * w  # left must lie in [lo, hi]
+    left = min(max(left, lo), hi) if lo <= hi else (lo + hi) / 2
+    lo, hi = max(ys) - fy1 * h, min(ys) - fy0 * h
+    top = min(max(top, lo), hi) if lo <= hi else (lo + hi) / 2
+    return min(max(0., left), cw - w), min(max(0., top), ch - h), w, h
+
+
+def names(out, info, left, top, w, h):
+    """The map's names on the finished frame: each box pushed fully inside SAFE, away from the magnifier."""
+    draw = ImageDraw.Draw(out)
+    avoid = [(W - 380, H - 400, W, H)] if info.get('inset') is not None and info.get('satellite') else []
+    for item in info.get('labels') or []:
+        f = font(item['size']); pad = (22, 14) if item.get('box') else (8, 8)
+
+        def box(cx, anchor):
+            x, y = (cx - left) * W / w, (item['y'] - top) * H / h
+            l, t, r, b = draw.textbbox((x, y), item['text'], font=f, anchor=anchor)
+            return x, y, anchor, (l - pad[0], t - pad[1], r + pad[0], b + pad[1])
+        x, y, anchor, (l, t, r, b) = box(item['x'], item.get('anchor', 'mm'))
+        if (l < SAFE[0] or r > SAFE[2]) and item.get('alt'):  # beside the dot on the other side: the dot stays visible
+            x, y, anchor, (l, t, r, b) = box(*item['alt'])
+        dx = SAFE[0] - l if l < SAFE[0] else SAFE[2] - r if r > SAFE[2] else 0
+        dy = SAFE[1] - t if t < SAFE[1] else SAFE[3] - b if b > SAFE[3] else 0
+        x, y, l, t, r, b = x + dx, y + dy, l + dx, t + dy, r + dx, b + dy
+        for al, at, ar, ab in avoid:
+            if l < ar and r > al and t < ab and b > at: y -= b - at; t -= b - at; b = at
+        if item.get('box'): label_box(draw, item['text'], x, y, item['size'], anchor=anchor)
+        else: label(draw, item['text'], x, y, item['size'], anchor=anchor)
 
 
 def ease(t):
@@ -557,6 +614,7 @@ def frame(base, info, t, duration, path):
         tx, ty = info.get('target_px') or (cw / 2, ch / 2)
         x, y = cw / 2 + (tx - cw / 2) * .85 * p, ch / 2 + (ty - ch / 2) * .85 * p
         left, top = min(max(0, x - w / 2), cw - w), min(max(0, y - h / 2), ch - h)
+    left, top, w, h = contain(left, top, w, h, info.get('keep') or [], cw, ch)
     image = base
     if path:
         k = max(2, int(len(path) * min(1., t / max(.6, duration * .45))))
@@ -587,5 +645,6 @@ def frame(base, info, t, duration, path):
         satellite_map.inset(out, info.get('inset'))
         satellite_map.overlays(out, info, t, duration, crop_view, font)
     elif info.get('figure'): figure_box(out, info['figure'].upper(), f'{info["title"]} / {info["other_title"]}' if info.get('other') else '')
+    names(out, info, left, top, w, h)
 
     return out

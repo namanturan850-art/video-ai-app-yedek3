@@ -175,10 +175,15 @@ class RenderService:
         path=Path(__file__).resolve().parents[1]/'static'/'sfx'/'whoosh.wav'
         if not path.is_file():return sfx
         events=list(sfx['events'])
+        peak=sound_peak(path)
         for item in plan.get('slots',[]):
             if item.get('transition_out')=='crossfade' and item.get('transition_style') not in (None,'fade'):
-                t=round(item['end']-item.get('transition_duration',0)-.15,3)
-                if 0<=t<h.get('audio_duration',1e9) and not any(abs(e['t']-t)<.3 for e in events):events.append({'t':t,'sound':'whoosh','path':str(path)})
+                # The picture changes in the middle of the transition, which starts at the slot's end:
+                # the whoosh's loudest moment lands there (it starts a little before the cut).
+                cut=item['end']+item.get('transition_duration',0)/2
+                t=round(max(0.,cut-peak),3)
+                if 0<=t<h.get('audio_duration',1e9) and not any(abs(e['t']-t)<.3 for e in events):
+                    events.append({'t':t,'sound':'whoosh','path':str(path),'slot_id':item['slot_id'],'peak':round(peak,3)})
         return {**sfx,'events':sorted(events,key=lambda e:e['t'])[:160]}
 
     def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None,draw=False):
@@ -517,3 +522,19 @@ class RenderService:
             except Exception:
                 path.unlink(missing_ok=True);raise RenderError('music_invalid','Müzik dosyası okunamadı. Geçerli bir ses dosyası seçin.',422) from None
         return {'message':'Müzik bilgisayarınızda kaydedildi.','music':meta}
+
+
+def sound_peak(path):
+    """Seconds from the start of a WAV to its loudest moment (20 ms window); 0 when unreadable."""
+    import wave
+    try:
+        import numpy as np
+        with wave.open(str(path)) as source:
+            rate, channels, width = source.getframerate(), source.getnchannels(), source.getsampwidth()
+            data = source.readframes(source.getnframes())
+        if width != 2: return 0.
+        samples = np.abs(np.frombuffer(data, np.int16).reshape(-1, channels).astype(np.float32).mean(axis=1))
+        window = max(1, rate // 50)
+        return float(np.convolve(samples, np.ones(window) / window, 'same').argmax() / rate)
+    except Exception:
+        return 0.

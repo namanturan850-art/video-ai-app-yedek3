@@ -16,7 +16,7 @@ from io import BytesIO
 import math
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw
 
 from app.providers.satellite import TILE, SatelliteError, provider
 
@@ -65,23 +65,7 @@ def base(view, width, height):
     """(picture, inset source, attribution) or SatelliteError."""
     source = provider()
     picture, z = mosaic(view, width, height, source)
-    return picture.filter(ImageFilter.UnsharpMask(2, 60, 3)), (source, z), getattr(source, 'attribution', '')
-
-
-def hatched_oval(picture, box):
-    """[BÖLGE]: red/white diagonal stripes inside an oval + a red and a white ring."""
-    l, t, r, b = box
-    pad = .04 * max(r - l, b - t)
-    box = (l - pad, t - pad, r + pad, b + pad)
-    mask = Image.new('L', picture.size, 0); ImageDraw.Draw(mask).ellipse(box, fill=120)
-    stripes = Image.new('RGB', picture.size, (255, 255, 255)); draw = ImageDraw.Draw(stripes)
-    for x in range(-picture.size[1], picture.size[0], 36):
-        draw.line([(x, picture.size[1]), (x + picture.size[1], 0)], fill=RED, width=18)
-    picture = Image.composite(stripes, picture, mask)
-    draw = ImageDraw.Draw(picture)
-    draw.ellipse(box, outline=(255, 255, 255), width=12)
-    draw.ellipse((box[0] + 6, box[1] + 6, box[2] - 6, box[3] - 6), outline=RED, width=6)
-    return picture
+    return picture, (source, z), getattr(source, 'attribution', '')
 
 
 def wavy(path, amplitude=10., waves=6):
@@ -247,14 +231,7 @@ def oblique(points, width, height, *, route=False, target=None):
         if spot is None: return (width / 2, -height)  # behind the horizon: off the top
         return spot[0] * sx, spot[1] * sy
     received = f'{getattr(source, "last_response", "")} {picture.size[0]}×{picture.size[1]}'.strip()
-    picture = haze(picture.resize((width, height), Image.LANCZOS).filter(ImageFilter.UnsharpMask(2, 50, 3)))
+    # No sharpening and no haze: on sea and flat land they left dark, blurry blotches (JPEG noise blown up).
+    picture = picture.resize((width, height), Image.LANCZOS)
     return picture, xy, getattr(source, 'attribution', ''), {'zoom': zoom, 'bearing': bearing, 'pitch': pitch,
                                                              'request': getattr(source, 'last_request', ''), 'response': received}
-
-
-def haze(picture):
-    """Light atmospheric haze toward the far (top) edge: depth reads at a glance."""
-    w, h = picture.size
-    alpha = np.clip(1 - np.arange(h) / (h * .42), 0, 1) ** 1.6 * 150
-    mask = Image.fromarray(np.repeat(alpha[:, None], w, axis=1).astype('uint8'), 'L')
-    return Image.composite(Image.new('RGB', (w, h), (196, 212, 228)), picture, mask)

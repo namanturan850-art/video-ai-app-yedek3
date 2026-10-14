@@ -19,7 +19,7 @@ from app.motion.raster import render as raster_render
 from app.projects import linked, now
 
 LOG = logging.getLogger('uvicorn.error.motion')
-ENGINE_VERSION = 'motion-v3'  # v2: 1:50m coastlines, timing limits, layouts; v3: 2-5 word texts, opaque boxes
+ENGINE_VERSION = 'motion-v4'  # v2: 1:50m coastlines, timing limits, layouts; v3: 2-5 word texts, opaque boxes; v4: real borders, names in the safe area, no haze
 
 
 def scene_key(scene):

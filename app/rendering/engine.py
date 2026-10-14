@@ -271,7 +271,8 @@ class FFmpegRenderProvider:
                 if opts['music_ducking']:self.warnings.append('Ducking desteklenmiyor; düşük ses seviyeli müzik karışımı kullanıldı.')
                 graph+='[nar][music]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.98:level=false[a]'
         else:graph+=';\n[nar]anull[a]'
-        events=[e for e in (plan.get('sfx') or {}).get('events',[]) if 0<=e['t']<duration]
+        events=[cut_aligned(e,slots,incoming) for e in (plan.get('sfx') or {}).get('events',[])]
+        events=[e for e in events if 0<=e['t']<duration]
         if events:
             # Kit sound effects at the motion emphasis moments: added UNDER the
             # narration at a low, fixed level (normalize=0 never lowers the voice).
@@ -284,6 +285,7 @@ class FFmpegRenderProvider:
             graph+=';\n'+''.join(f'[fx{k}]' for k in range(len(events)))+(f'amix=inputs={len(events)}:duration=longest:normalize=0' if len(events)>1 else 'anull')+'[fxall]'
             graph+=';\n[a0]aformat=channel_layouts=stereo[a1];[a1][fxall]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.98:level=false[a]'
             applied['sound_effects']=len(events)
+        graph=master(graph,self.tools['filters'])
         args+=self.graph(folder,graph)+['-map','[v]','-map','[a]',*self.codec(encoder),'-frames:v',str(timeline['frames']),
             '-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-t',f'{duration:.6f}','-movflags','+faststart','output.mp4']
         final_started=time.monotonic();self.progress('rendering',75,encoder,self.warnings)
@@ -324,3 +326,25 @@ class FFmpegRenderProvider:
             applied['broll_seconds']=round(duration-applied['graphic_seconds'],3)
         validated.update(subtitle_display=mode,edit_variation_seed=edit.get('edit_variation_seed') if edit else None,editing_style=style,smart_edit_applied_summary=applied,encoder_used=encoder,render_timing={**self.timing,'engine':'ffmpeg','slots':len(slots)},subtitle_burned=opts['subtitle_burned'],music_enabled=opts['music_enabled'],warnings=list(dict.fromkeys(self.warnings)))
         return {'path':output,'metadata':validated}
+
+
+def cut_aligned(event,slots,incoming):
+    """A transition whoosh moved so its loudest moment is the visible cut of the
+    rendered timeline: the slot's end, plus half of the crossfade really used."""
+    if event.get('sound')!='whoosh' or not event.get('slot_id'):return event
+    i=next((k for k,s in enumerate(slots) if s['slot_id']==event['slot_id']),None)
+    if i is None:return event
+    blend=incoming[i+1]/30 if i+1<len(slots) else 0.
+    return {**event,'t':round(max(0.,slots[i]['end_frame']/30+blend/2-float(event.get('peak') or 0)),3)}
+
+
+# Every render: about -14 LUFS, true peak at most -1 dBTP (limiter ceiling -1.5 dBFS leaves room for AAC).
+LOUDNESS='loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,alimiter=limit=0.84:attack=5:release=50:level=false'
+
+
+def master(graph,filters):
+    """The final [a] goes through the loudness/peak stage (limiter only when loudnorm is missing)."""
+    at=graph.rfind('[a]')
+    if at<0:return graph
+    stage=LOUDNESS if 'loudnorm' in filters else 'alimiter=limit=0.84:level=false'
+    return graph[:at]+'[premaster]'+graph[at+3:]+f';\n[premaster]{stage}[a]'

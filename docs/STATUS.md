@@ -1,5 +1,14 @@
 # AI Video Studio — Durum
 
+## 2026-10-13 (10) — Renkli kabartma (hipsometrik) harita
+
+- **Yeni işaretler:** `[BÖLGE: Bretagne]` bölgeyi kırmızıya boyar, parlak kenar; `[OK: Lyon > Marseille]` beyaz kavisli ok; `[YAKINLAŞ: yer]` artık bu haritada yavaş yakınlaşma.
+- **Veri uygulamayla gelir, internet gerekmez:** yükseklik ETOPO1 (NOAA, kamu malı; 10 yay-dakika ≈ 18 km), sınırlar Natural Earth 1:10m (kamu malı): tüm ülkeler, il/eyalet/département birimleri ve bunların bölgeleri (Fransa ve denizaşırı toprakları, Almanya, İtalya, İspanya, Hollanda, Brezilya…), nehirler. “Vallée du Rhône” gibi vadi adları nehir boyunca bir koridor olarak vurgulanır. Veriler `tools/build_relief_data.py` ile üretildi (~8 MB).
+- **Görünüm:** kara yüksekliğe göre renklenir (yeşil → sarı → kahverengi → beyaz zirve) ve gölgelenir; deniz düz tek mavi; kıyılar Natural Earth ile keskin. Kamera hafifçe kayar; etiketler kalın, beyaz, koyu kenarlı ve ilk karede tam görünür.
+- **Örnekler:** `docs/relief_samples/` (Bretagne, Vallée du Rhône, Guyane; ilk ve son kare).
+- **Sınırlar:** 10' yükseklik verisi küçük bölgelerde (ör. birkaç ilçe) yumuşak/ayrıntısız görünür; daha ince veri (SRTM) dosya boyutunu çok büyütür, eklenmedi. Bu şablon yalnız yerel çiziciyle çizilir (OpenMontage/Remotion değil). Bir klip bu makinede ~11–18 sn sürdü.
+- **Testler:** `tests/test_relief_map.py` (16) ve ilgili motion/işaret testleri geçti; `test_fast_media`'da [YAKINLAŞ] beklentisi “relief” oldu. Tam paket çalıştırılmadı.
+
 ## 2026-10-13 (9) — Medya ekranı: Türkçe cümleler ve kontrol listesi
 
 - **Her yuvada:** o yuvada söylenen cümle, Türkçesi ve [GÖRSEL] notunun Türkçesi. Çeviri video başına **tek** yapay zekâ isteğiyle yapılır ve proje klasörüne kaydedilir (`translations_tr.json`); sonraki işler istek göndermez. Yapay zekâ yoksa / cevap vermezse (en çok 60 sn) çeviri boş kalır, iş sürer. Türkçe videoda istek gönderilmez.

@@ -19,9 +19,9 @@ import re
 
 TEMPLATES_EXTRA = {'route': 'Rota', 'empire': 'İmparatorluk sınırı', 'zoom': 'Yakınlaşma (dünya → yer)', 'mark': 'Görselde işaretle',
                    'beforeafter': 'Önce / sonra', 'icons': 'İkonlarla sayı', 'ratio': 'Oran (pasta)', 'dynasty': 'Hanedan ağacı', 'fact': 'Biliyor muydunuz?',
-                   'intro': 'Açılış (başlık + kanal)', 'outro': 'Kapanış (abone ol + zil)', 'endscreen': 'YouTube bitiş ekranı'}
+                   'relief': 'Kabartma harita (bölge / ok / yakınlaşma)', 'intro': 'Açılış (başlık + kanal)', 'outro': 'Kapanış (abone ol + zil)', 'endscreen': 'YouTube bitiş ekranı'}
 MARKER_TEMPLATE = {'route': 'route', 'empire': 'empire', 'zoom': 'zoom', 'mark': 'mark', 'beforeafter': 'beforeafter', 'icons': 'icons',
-                   'ratio': 'ratio', 'dynasty': 'dynasty', 'fact': 'fact'}
+                   'ratio': 'ratio', 'dynasty': 'dynasty', 'fact': 'fact', 'region': 'relief', 'arrow': 'relief'}
 FACT_TITLE = {'de': 'Wussten Sie schon?', 'tr': 'Biliyor muydunuz?', 'en': 'Did you know?', 'es': '¿Sabías que…?', 'fr': 'Le saviez-vous ?'}
 APPROX = {'de': 'ungefähre Ausdehnung', 'tr': 'yaklaşık sınırlar', 'en': 'approximate extent', 'es': 'extensión aproximada', 'fr': 'étendue approximative'}
 WORLD = {'de': 'Welt', 'tr': 'Dünya', 'en': 'World', 'es': 'Mundo', 'fr': 'Monde'}
@@ -159,6 +159,11 @@ def parse(kind, value, sentence='', language='de'):
     """Owner marker → spec (raises MarkerError with a Turkish reason)."""
     value = ' '.join(str(value or '').split())
     template = MARKER_TEMPLATE[kind]
+    if template == 'relief' or kind == 'zoom':
+        relief_spec = relief_marker(kind, value)
+        if relief_spec: return relief_spec
+        if template == 'relief':
+            raise MarkerError(f'“{value}” kabartma haritada bulunamadı. Ülke, bölge/il ya da “Vallée du Rhône” gibi bir nehir vadisi yazın; ok için: [OK: Lyon > Marseille].')
     if template == 'route':
         names = [v.strip() for v in re.split(r'>|→|->|–>', value) if v.strip()]
         if len(names) < 2: raise MarkerError('[ROTA] için en az iki yer yazın: [ROTA: Ninive > Babil > Kudüs].')
@@ -228,6 +233,20 @@ def parse(kind, value, sentence='', language='de'):
     return {'template': 'fact', 'data': {'text': text, 'source': value}, 'emphasis': ''}
 
 
+def relief_marker(kind, value):
+    """[BÖLGE: Bretagne] / [OK: A > B] / [YAKINLAŞ: yer] → relief map spec, or None."""
+    from app.motion import relief
+    if kind == 'arrow':
+        parts = [v.strip() for v in re.split(r'>|→|->', value) if v.strip()]
+        if len(parts) != 2: raise MarkerError('[OK] için iki yer yazın: [OK: Lyon > Marseille].')
+        a, b = relief.place(parts[0]), relief.place(parts[1])
+        if not a or not b: return None
+        return {'template': 'relief', 'data': {'mode': 'arrow', 'from': parts[0][:60], 'to': parts[1][:60], 'source': value}, 'emphasis': ''}
+    if relief.find(value) or (kind == 'zoom' and relief.place(value)):
+        return {'template': 'relief', 'data': {'mode': 'region' if kind == 'region' else 'zoom', 'target': value[:80], 'source': value}, 'emphasis': ''}
+    return None
+
+
 def validate_extra(spec):
     """Shape check for a stored/edited spec (values come from the owner's marker)."""
     t, d = spec.get('template'), spec.get('data')
@@ -242,6 +261,9 @@ def validate_extra(spec):
     if t == 'ratio' and not 0 < float(d.get('percent') or 0) <= 100: raise ValueError('percent')
     if t == 'dynasty' and sum(len(g) for g in d.get('generations') or []) < 2: raise ValueError('people')
     if t == 'fact' and not d.get('text'): raise ValueError('text')
+    if t == 'relief':
+        from app.motion import relief
+        relief.plan({'data': d})  # the area / places must exist in the offline data
     return {'template': t, 'data': d, 'emphasis': str(spec.get('emphasis') or '')[:60]}
 
 
@@ -251,7 +273,7 @@ def summary(spec):
             'route': lambda: ' → '.join(s['name'] for s in d['stops']), 'empire': lambda: d['name'], 'zoom': lambda: d['place'],
             'mark': lambda: d['label'], 'beforeafter': lambda: f'{d["before"]} / {d["after"]}', 'icons': lambda: f'{d["value"]} {d["object"]}',
             'ratio': lambda: f'{d["value"]} {d["label"]}', 'dynasty': lambda: ' > '.join(', '.join(g) for g in d['generations']),
-            'fact': lambda: d['text']}[spec['template']]()
+            'fact': lambda: d['text'], 'relief': lambda: d.get('target') or f'{d.get("from")} → {d.get("to")}'}[spec['template']]()
 
 
 # ---- drawing --------------------------------------------------------------------
@@ -283,6 +305,9 @@ def build_extra(s, spec, language='de'):
     E, D, md = s.E, s.D, s.md
     t, d = spec['template'], spec['data']
     lang = language if language in FACT_TITLE else 'en'
+    if t == 'relief':  # drawn whole by app/motion/relief.py (terrain, highlight, arrow, camera)
+        s.add('relief', spec=spec)
+        return s
     if t in ('intro', 'outro', 'endscreen'):
         from app.moments import draw
         return {'intro': lambda: draw.draw_intro(s, d), 'outro': lambda: draw.draw_outro(s, d, language), 'endscreen': lambda: draw.draw_endscreen(s, d)}[t]()

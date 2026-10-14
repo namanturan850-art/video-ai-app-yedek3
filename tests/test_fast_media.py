@@ -310,7 +310,7 @@ def test_markers_become_infographics_on_every_topic(topic, tmp_path, monkeypatch
         assert job['status'] == 'completed' and view['media_summary']['missing'] == 0, job
         made = {s['selected_media']['source_metadata']['motion']['template'] for s in view['slots']
                 if s['selected_media']['provider'] == 'generated' and (s['selected_media'].get('source_metadata') or {}).get('owner_hint')}
-        wanted = {'history': {'route', 'empire', 'mark', 'icons', 'dynasty', 'fact'}, 'geography': {'zoom', 'ratio', 'beforeafter'},
+        wanted = {'history': {'route', 'empire', 'mark', 'icons', 'dynasty', 'fact'}, 'geography': {'relief', 'ratio', 'beforeafter'},
                   'space': {'route', 'icons', 'fact'}}[topic]
         assert wanted <= made, made
         if topic == 'history':  # a place that is not in the offline list is reported, never guessed

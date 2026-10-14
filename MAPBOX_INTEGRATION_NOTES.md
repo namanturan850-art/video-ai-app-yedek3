@@ -15,9 +15,9 @@ Kullanım: Video ekranı → **Harita stili → Uydu görüntüsü**. Anahtar Ay
 - Ayarlar → Mapbox → **“Eğik görünüm”** kutusu (varsayılan açık). Açıkken [OK], [ROTA], [HARİTA], [BÖLGE], [YAKINLAŞ] sahnelerinin her biri için **tek istek**:
   `GET https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},{zoom},{bearing},{pitch}/{width}x{height}@2x?access_token=<anahtar>`
   (adres deseni proje sahibinin verdiği biçimdir; Ayarlar → Mapbox → “Eğik görünüm adresi” alanından düzeltilebilir).
-- Kullanılan değerler: 1280×720 (@2x = 2560×1440), eğim (pitch) 40 (rota/ok) veya 35 (bölge/yer), açı (bearing) rotanın yönü (varış noktası “ileride” görünür), yakınlık tüm noktalar resmin ~%60'ına sığacak şekilde. Kodda sınırlar: pitch 0–60, zoom 0–22, en/boy ≤ 1280 (doğrulanmadı; API de denetler).
+- Kullanılan değerler: 1280×720 (@2x = 2560×1440), eğim (pitch) 60 (rota/ok) veya 55 (bölge/yer), açı (bearing) 0 — kuzey yukarıda, yönler haritadaki gibi, yakınlık tüm noktalar resmin ~%60'ına sığacak şekilde. Kodda sınırlar: pitch 0–60, zoom 0–22, en/boy ≤ 1280 (doğrulanmadı; API de denetler).
 - Çizgi ve isimler, Mapbox GL kamerasının yaklaşık modeliyle (36,87° görüş açısı, 512 px dünya karoları) resmin üstüne çizilir; gerçek görüntüde birkaç piksel kayma olabilir.
-- Kamera: sahne başında geniş görünüm, sonunda varış noktasına %40 yakınlaşma.
+- Kamera: sahne tüm eğik resimle başlar, sonunda varış noktasına %45 yakınlaşır; uzak (üst) kenarda hafif sis.
 - İstek başarısızsa (401/403, 404, 422, 429, ağ hatası, okunamayan resim): Türkçe uyarı “Eğik görünüm alınamadı (…); düz uydu görünümü kullanıldı.” ve eski düz karo görünümü; o da olmazsa koyu harita.
 - Kutu kapalıyken yalnız düz karo görünümü (eski davranış) kullanılır.
 - Tanılama: render uyarılarında her harita için “Harita (…): eğik görünüm (eğim …°, açı …°) — istek: <adres>?access_token=pk.***abcd” satırı; “Bağlantıyı Test Et” eğik isteği de dener ve adresi (anahtar gizli) gösterir.

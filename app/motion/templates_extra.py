@@ -86,7 +86,8 @@ def where(name):
 def satellite_props(language):
     """Scene props of the satellite map style (+ Ayarlar → Mapbox → Eğik görünüm)."""
     from app.providers.satellite import oblique
-    return {'theme': 'satellite', 'lang': language, **({'view': 'oblique'} if oblique() else {})}
+    # camera 2: north up, pitch 60, haze — older tilted clips (camera turned along the route) are drawn again
+    return {'theme': 'satellite', 'lang': language, **({'view': 'oblique', 'camera': 2} if oblique() else {})}
 
 
 def near_each_other(stops):

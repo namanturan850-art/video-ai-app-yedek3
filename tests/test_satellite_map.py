@@ -84,7 +84,8 @@ def test_no_key_falls_back_to_the_drawn_map_with_a_turkish_warning(tmp_path, mon
     monkeypatch.setattr(satellite, 'FACTORY', lambda: MapboxSatelliteProvider('', 'https://api.mapbox.com/v4/x/{z}/{x}/{y}.jpg'))
     frame = render('region', 'Bretagne', tmp_path)
     assert 'Mapbox API anahtarı girilmeli' in relief.LAST_WARNING
-    assert (frame.sum(axis=-1) < 140).mean() > .3  # the dark drawn map
+    assert (frame.sum(axis=-1) < 140).mean() < .3  # the colour relief, never the dark (neon) map on the satellite style
+    assert ((frame[..., 1] > frame[..., 2]) & (frame[..., 1] > 90)).mean() > .1  # green/brown land of the relief
     relief.LAST_WARNING = ''
     monkeypatch.setattr(satellite, 'FACTORY', lambda: MapboxSatelliteProvider('pk.bad-key-123', 'https://api.mapbox.com/v4/x/{z}/{x}/{y}.jpg', transport=fake(401)))
     render('region', 'Bretagne', tmp_path)

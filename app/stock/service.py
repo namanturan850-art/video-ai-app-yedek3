@@ -157,6 +157,41 @@ class StockService:
         value = dict(row);value['progress'] = json.loads(value.pop('progress_json'))
         return value
 
+    def retranslate(self, project_id):
+        """“Çeviriyi yeniden dene”: one translation request for the slots' sentences and
+        [GÖRSEL] notes, in the background (the screen polls); the reason is shown when it fails."""
+        plan_id = self.view(project_id)['plan_id']
+        language = self.projects.get(project_id).get('language') or 'de'
+        def mark(note, update=None):
+            with self.projects.lock, closing(self.projects._connection()) as connection, connection:
+                state = self._load(connection, project_id, plan_id)
+                if not state: return
+                for slot in state['slots']:
+                    if update and slot['slot_id'] in update: slot.update(update[slot['slot_id']])
+                state['translation_note'] = note
+                self._save(connection, state); self._mirror(state)
+        def work():
+            from app.stock.translate import turkish
+            try:
+                slots = self.view(project_id)['slots']
+                texts = [t for s in slots for t in (s.get('sentence'), s.get('visual_note')) if t]
+                report = {}
+                tr = turkish(self, project_id, language, texts, report)
+                clean = lambda text: ' '.join(str(text or '').split())
+                update = {s['slot_id']: {'sentence_tr': tr.get(clean(s.get('sentence')), ''), 'visual_note_tr': tr.get(clean(s.get('visual_note')), '')} for s in slots if s.get('sentence')}
+                missing = any(s.get('sentence') and not tr.get(clean(s['sentence'])) for s in slots)
+                mark(report.get('reason', 'Bazı cümleler çevrilemedi.') if missing else '', update)
+            except Exception:
+                LOG.warning('stock operation=retranslate category=unexpected')
+                try: mark('Çeviri beklenmeyen bir hata nedeniyle yapılamadı; yeniden deneyin.')
+                except Exception: pass
+        if not any(s.get('sentence') for s in self.view(project_id)['slots']):
+            raise StockError('invalid_input', 'Önce Medyayı Tamamla deyin; çevrilecek cümle yok.', 409)
+        mark('Çeviri yeniden deneniyor…')
+        import threading
+        threading.Thread(target=work, daemon=True).start()
+        return {'status': 'started'}
+
     def view(self, project_id):
         with self.projects.lock, closing(self.projects._connection()) as connection, connection:
             handoff = self._handoff(project_id)

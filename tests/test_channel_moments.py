@@ -52,8 +52,15 @@ def hints(items):
 
 
 def test_automatic_intro_and_closing_without_markers():
-    items = apply_moments(blocks('Willkommen zu diesem Video. Heute geht es um Rom.', 'Rom war groß. ' * 12, 'Abonniert den Kanal! Bis zum nächsten Mal.'), 'de')
+    items = apply_moments(blocks('Willkommen zu diesem Video. Heute geht es um Rom.', 'Rom war groß. ' * 12, 'Abonniert den Kanal! Bis zum nächsten Mal.'), 'de', intro=True, outro=True)
     assert hints(items) == [('intro', '*'), ('outro', 'subscribe'), ('outro', 'farewell')] and closing_present(items)
+
+
+def test_moments_are_off_by_default_even_with_markers():
+    items = blocks('Willkommen zu diesem Video. Heute geht es um Rom.', 'Rom war groß. ' * 12, 'Abonniert den Kanal! Bis zum nächsten Mal.')
+    items[0]['owner_hints'] = [{'type': 'intro', 'value': '*', 'sentence': 'Willkommen zu diesem Video.'}]
+    items[2]['owner_hints'] = [{'type': 'outro', 'value': '*', 'sentence': 'Abonniert den Kanal!'}]
+    assert hints(apply_moments(items, 'de')) == [] and not closing_present(items)  # [GİRİŞ]/[KAPANIŞ] and “abone ol” add nothing
 
 
 def test_subscribe_call_in_the_middle_gets_no_animation():
@@ -67,7 +74,7 @@ def test_subscribe_call_in_the_middle_gets_no_animation():
 def test_explicit_marker_is_not_doubled_by_automatic_recognition():
     items = blocks('Willkommen zu diesem Video.', 'Rom war groß. ' * 12, 'Abonniert den Kanal.')
     items[2]['owner_hints'] = [{'type': 'outro', 'value': '*', 'sentence': 'Abonniert den Kanal.'}]
-    assert hints(apply_moments(items, 'de')).count(('outro', '*')) == 1 and ('outro', 'subscribe') not in hints(items)
+    assert hints(apply_moments(items, 'de', outro=True)).count(('outro', '*')) == 1 and ('outro', 'subscribe') not in hints(items)
 
 
 def texts(scene):

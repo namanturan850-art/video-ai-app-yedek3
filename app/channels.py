@@ -61,7 +61,8 @@ class StyleKit(BaseModel):
     sfx_volume: float = Field(default=.18, ge=0, le=.5)
     subtitle: SubtitleStyle = Field(default_factory=SubtitleStyle)
     feeling: str = Field(default='', max_length=40)
-    map_style: Literal['relief', 'dark'] = 'relief'  # “Harita stili”: colour relief or the dark flat documentary map
+    map_style: Literal['relief', 'dark'] = 'dark'
+    map_style_chosen: bool = False  # the owner picked it (older kits stored 'relief' without choosing: they get the dark default)  # “Harita stili”: colour relief or the dark flat documentary map
 
     @field_validator('sfx')
     @classmethod
@@ -75,6 +76,12 @@ class StyleKit(BaseModel):
 
 
 DEFAULT_STYLE = StyleKit().model_dump()
+
+
+def map_style(style):
+    """'dark' (default) or 'relief' — relief only when the owner chose it."""
+    style = style or {}
+    return style.get('map_style', 'dark') if style.get('map_style_chosen') else 'dark'
 
 
 class ChannelInput(BaseModel):
@@ -190,7 +197,7 @@ class ChannelService:
     def look(self, project_id):
         style = self.for_project(project_id)['style']
         return {'look': style.get('feeling') if style.get('feeling') in LOOKS else '', 'looks': [{'id': k, 'label': v, 'accent': PRESETS[k]['palette']['accent']} for k, v in LOOKS.items()],
-                'map_style': style.get('map_style', 'relief'), 'word_highlight': bool((style.get('subtitle') or {}).get('word_highlight')),
+                'map_style': map_style(style), 'word_highlight': bool((style.get('subtitle') or {}).get('word_highlight')),
                 'map_styles': [{'id': 'relief', 'label': 'Renkli kabartma'}, {'id': 'dark', 'label': 'Koyu harita belgeseli (düz vektör)'}]}
 
     def set_look(self, project_id, name, *, map_style=None, word_highlight=None):
@@ -206,7 +213,7 @@ class ChannelService:
             style.update({k: v for k, v in preset.items() if k not in ('map_style', 'word_highlight')}, palette=preset['palette'], feeling=name)
             if 'map_style' in preset: style['map_style'] = preset['map_style']
             if preset.get('word_highlight'): word_highlight = True if word_highlight is None else word_highlight
-        if map_style is not None: style['map_style'] = map_style
+        if map_style is not None: style.update(map_style=map_style, map_style_chosen=True)
         if word_highlight is not None: style['subtitle'] = {**channel['style']['subtitle'], 'word_highlight': bool(word_highlight)}
         if not style: raise ProjectError('Değiştirilecek bir görünüm ayarı seçin.')
         self.update(channel['id'], {'style': style})

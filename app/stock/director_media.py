@@ -957,8 +957,11 @@ class MediaDirector:
         for scene in scenes:
             words = ' '.join(scene.get('narration_text', '').split())
             span = max(.001, scene['end_estimate'] - scene['start_estimate'])
+            switches = self.service.settings.moments() if hasattr(self.service.settings, 'moments') else {}
             for hint in scene.get('owner_hints') or []:
                 if hint.get('type') not in INFOGRAPHIC or not hint.get('value'): continue
+                if (hint['type'] == 'intro' and not switches.get('intro_card')) or (hint['type'] == 'outro' and not switches.get('outro_card')):
+                    continue  # switched off in Ayarlar (default): an older plan's moment becomes a normal scene
                 where = words.find(' '.join(str(hint.get('sentence', '')).split())) if hint.get('sentence') else -1
                 at = scene['start_estimate'] + span * (len(words[:where].split()) / max(1, len(words.split())) if where >= 0 else 0) + .3
                 wanted.append((at, scene['scene_id'], hint))
@@ -1065,14 +1068,32 @@ class MediaDirector:
         search, checked like any candidate) are downloaded into the project."""
         from app.scripts.query_clean import english_query
         data = spec['data']
+        old = spec['template'] == 'archive' and self.archive_period(data, scene)
         if spec['template'] in ('mark', 'archive'):
             if data.get('image'): return True
-            wanted = [english_query(data['label'], self.language, limit=5) or scene.get('primary_stock_query') or self.topic]
+            base = english_query(data['label'], self.language, limit=5) or scene.get('primary_stock_query') or self.topic
+            wanted = [f'{base} black and white', base] if old else [base]
         else:
             if len(data.get('images') or []) == 2: return True
             wanted = [english_query(data['before'], self.language, limit=5), english_query(data['after'], self.language, limit=5)]
         names = []
         slot['relevance_profile'] = slot.get('relevance_profile') or relevance.profile(scene, slot)
+        if old:
+            self.marker_error = f'{old} dönemine uygun siyah-beyaz / eski arşiv fotoğrafı bulunamadı'
+            chosen = None
+            for query in wanted:  # one archive photo: the first query that finds an old-looking one wins
+                log = {'steps': [{'stage': 'motion_owner', 'label': STAGES['motion_owner'], 'judged': []}], 'searches': [], 'judged': {}, 'rejected': {}}
+                pool = [m for m in self.pool(slot, self.search(slot, ['image'], query, log, scene), log, set(), scene)
+                        if m['media_type'] == 'image' and self.looks_old(m)][:CANDIDATES]
+                verdicts = self.judge(slot, scene, pool) if pool else {}
+                for media in sorted((m for m in pool if verdicts.get(key(m), {}).get('approved')), key=lambda m: -verdicts[key(m)]['score']):
+                    try: chosen = self.service.downloader.download(self.pid, media); break
+                    except StockError: continue
+                if chosen: break
+            if not chosen: return False
+            self.marker_error = ''
+            data['image'] = chosen['local_path'].rsplit('/', 1)[-1]
+            return True
         for query in wanted:
             log = {'steps': [{'stage': 'motion_owner', 'label': STAGES['motion_owner'], 'judged': []}], 'searches': [], 'judged': {}, 'rejected': {}}
             pool = [m for m in self.pool(slot, self.search(slot, ['image'], query or self.topic, log, scene), log, set(), scene)
@@ -1088,6 +1109,28 @@ class MediaDirector:
         if spec['template'] in ('mark', 'archive'): data['image'] = names[0]
         else: data['images'] = names
         return True
+
+    def archive_period(self, data, scene):
+        """'1910' / 'antik' …: the period an [ARŞİV] photo must look like ('' = present day, any photo)."""
+        text = ' '.join(str(x or '') for x in (data.get('label'), data.get('caption'), data.get('source'), scene.get('narration_text')))
+        years = [int(y) for y in re.findall(r'(?<!\d)(1[0-9]\d\d)(?!\d)', text) if int(y) < 1975]
+        if years: return str(min(years))
+        era = (self.where(scene) or {}).get('era')
+        return {'ancient': 'antik', 'medieval': 'Orta Çağ', 'early_modern': 'eski', '19th': '19. yüzyıl', '20th': '20. yüzyıl'}.get(era, '')
+
+    def looks_old(self, media):
+        """Black-and-white / sepia preview (low colour saturation), or archive tags when there is no preview."""
+        tags = ' ' + relevance.normalized(media.get('description', '')) + ' '
+        block = next((b for b in (self.thumbnail(u, media['provider']) for u in self.frame_urls(media)[:1]) if b), None)
+        if block:
+            try:
+                from io import BytesIO
+                from PIL import Image
+                picture = Image.open(BytesIO(base64.b64decode(block['source']['data']))).convert('HSV').resize((64, 64))
+                return sum(picture.getchannel('S').getdata()) / (64 * 64 * 255) < .14
+            except Exception:
+                pass
+        return any(f' {w} ' in tags for w in ('black and white', 'monochrome', 'sepia', 'vintage', 'historic', 'archive', 'old photo', 'bw'))
 
     def motion_spec(self, slot, scene, repeat=False):
         """Last-resort motion from the narration spoken during the slot;
@@ -1168,6 +1211,12 @@ class MediaDirector:
         log['steps'].append({'stage': stage, 'label': STAGES[stage], 'result': 'chosen', 'template': spec['template'], 'engine': engine,
                              'because': 'no_approved_stock' if stage == 'motion' else stage})
         return True
+
+    def moment_off(self, media):
+        template = (((media or {}).get('source_metadata') or {}).get('motion') or {}).get('template')
+        if template not in ('intro', 'outro'): return False
+        switches = self.service.settings.moments() if hasattr(self.service.settings, 'moments') else {}
+        return not switches.get('intro_card' if template == 'intro' else 'outro_card')
 
     def opening_card(self, slot, media):
         """A drawn card (not the owner's marker, intro/outro or own edit) filling
@@ -1446,6 +1495,7 @@ class MediaDirector:
             if single or slot['locked']: continue
             if is_generated(media):
                 if UNREACHABLE in slot.get('message', ''): targets.append((slot, 'retry_card'))
+                elif self.moment_off(media): targets.append((slot, 'reselect'))  # an intro/outro card that is now switched off
                 elif self.opening_card(slot, media): targets.append((slot, 'opening'))  # an older long full-screen card in the first scene
             elif (slot.get('local_review') or {}).get('method') == 'clip' and self.local:
                 pass  # the local picture model approved it and Gemini's look is off: nothing to re-check
@@ -1492,9 +1542,16 @@ class MediaDirector:
             hint = self.owner[slot['slot_id']]
             spec = self.owner_spec(hint, scene)
             self._release(slot); log = empty()
+            archive = spec is not None and spec['template'] == 'archive'
             if spec is not None and spec['template'] in ('mark', 'beforeafter', 'archive') and not self.pictures(spec, slot, scene):
-                self.marker_error = 'bu sahne için uygun görsel bulunamadı'
+                self.marker_error = self.marker_error or 'bu sahne için uygun görsel bulunamadı'
                 spec = None
+            if spec is None and archive:  # no fitting archive photo: a text card (never a modern colour photo)
+                why = self.marker_error
+                self.card(slot, scene, log)
+                slot['message'] = f'⚠ [ARŞİV: {hint["value"]}] {why.rstrip(".")}; yerine yazı kartı kondu. ' + slot.get('message', '')
+                self.progress.setdefault('marker_warnings', []).append(f'[{hint["value"][:60]}]: {why}; yazı kartı kondu')
+                return log
             if spec is None:  # e.g. a place nobody could locate: the narration decides
                 log = self.fill(slot, scene)
                 why = getattr(self, 'marker_error', '') or ('yer haritada bulunamadı' if hint['type'] == 'map' else 'işaret biçimi okunamadı')
@@ -1714,11 +1771,13 @@ class MediaDirector:
             notes[slot['slot_id']] = '; '.join(str(h.get('value', '')) for h in scene.get('owner_hints') or [] if h.get('type') == 'visual' and h.get('value'))
         self.progress['message'] = 'Cümlelerin Türkçesi hazırlanıyor (video başına tek istek; yapay zekâ yoksa boş kalır)'
         self.service._checkpoint(self.job, self.progress, light=True)
+        report = {}
         try:
-            tr = turkish(self.service, self.pid, self.language, [*spoken.values(), *notes.values()])
+            tr = turkish(self.service, self.pid, self.language, [*spoken.values(), *notes.values()], report)
         except Exception:  # translation is only a help: never stops the job
             LOG.warning('stock operation=translate category=unexpected')
-            tr = {}
+            tr, report = {}, {'reason': 'Çeviri beklenmeyen bir hata nedeniyle yapılamadı.'}
+        self.translation_note = report.get('reason', '') if any(s and not tr.get(' '.join(s.split())) for s in spoken.values()) else ''
         clean = lambda text: ' '.join(str(text or '').split())
         return {sid: {'sentence': spoken[sid], 'sentence_tr': tr.get(clean(spoken[sid]), ''),
                       'visual_note': notes.get(sid, ''), 'visual_note_tr': tr.get(clean(notes.get(sid, '')), '')} for sid in spoken}
@@ -1762,6 +1821,7 @@ class MediaDirector:
                 if mine and slot.get('selected_media') and key(slot['selected_media']) == key(mine['selected_media']):
                     slot['setting_check'] = mine['setting_check']
             state['media_summary'] = summary(state['slots'])
+            state['translation_note'] = getattr(self, 'translation_note', '')
             service._save(c, state)
             service._mirror(state)
         result = state['media_summary']

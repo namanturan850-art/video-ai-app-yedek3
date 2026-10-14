@@ -1,5 +1,16 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (3) — Kanal anları kapalı, video sesle biter, yanlış yer, arşiv dönemi, karşılaştırma, çeviri
+
+- **Açılış kartı, kapanış (abone ol + zil) ve YouTube bitiş ekranı varsayılan KAPALI.** Ayarlar → Genel'de her biri için ayrı kutu var. Kapalıyken `[GİRİŞ]`/`[KAPANIŞ]` işaretleri ve otomatik tanınan “abone ol / hoş geldiniz” cümleleri kart eklemez (o cümleler normal sahne olur); önceki işte çizilmiş açılış/kapanış kartları Medyayı Tamamla ile normal medyayla değiştirilir.
+- **Sondaki boş lacivert ekran:** video sesten uzun değildir; sona eklenen tek şey YouTube bitiş ekranıydı (20 sn, YouTube öğeleri için ortası boş, lacivert). Kapanış kartı varsa otomatik ekleniyordu; artık yalnız “YouTube bitiş ekranı” kutusu işaretliyse eklenir, yoksa video son sahneyle ve sesle biter.
+- **Yanlış yer:** Avustralya (Sydney Opera Binası, Harbour Bridge, Uluru), Rusya, Brezilya (Kurtarıcı İsa), Körfez (Burj Khalifa), Hollanda (yel değirmenleri), Londra (Big Ben, kırmızı otobüs), ABD (Golden Gate, Hollywood) eklendi. Kontrol artık videoda dönem bilgisi olmasa da (yalnız “Fransa” geçse de) her yuvada çalışır.
+- **[ARŞİV] dönemi:** işarette/cümlede 1975 öncesi bir yıl ya da videonun dönemi (antik, 19. yüzyıl…) varsa önce “… black and white” aranır ve yalnız siyah-beyaz / soluk renkli (düşük doygunluk) fotoğraf kabul edilir. Bulunamazsa Türkçe uyarı + yazı kartı.
+- **[KARŞILAŞTIR]:** harita stili ne olursa olsun düz koyu zeminde, sabit kamerayla; adlar sol altta renkli açıklama kutusunda (yazdığınız biçimde, ör. “Belgique”), oran kutusu her zaman kadraj içinde.
+- **Harita stili varsayılanı: Koyu harita belgeseli.** Kabartma, Video ekranındaki “Harita stili” seçimiyle açılır.
+- **Türkçe çeviri boş kalırsa** Medya ekranında nedeni Türkçe yazılır (Gemini ayarlı değil / 60 sn cevap yok / kota doldu / sunucu meşgul…) ve “Çeviriyi yeniden dene” düğmesi çıkar.
+- **Testler:** `test_dark_map_style.py` (+2), `test_channel_moments.py` (varsayılan kapalı), ilgili testler geçti. `test_endscreen_render.py` bu makinede FFmpeg nedeniyle önceden de başarısız; gerçek render ile “video sesle biter” sizde doğrulanmalı. Tam paket çalıştırılmadı.
+
 ## 2026-10-14 (2) — “Koyu harita belgeseli” stili
 
 Video ekranı → “Video görünümü: Koyu harita belgeseli” bu stili tek tıkla açar (lacivert renkler, koyu harita, kelime vurgusu). Ayrıca aynı yerde: **Harita stili** (Renkli kabartma / Koyu harita belgeseli) ve **Altyazıda okunan kelimeyi vurgula** (aç/kapa). Varsayılanlar değişmedi; mevcut şablonlar aynı çizilir.

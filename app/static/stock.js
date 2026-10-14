@@ -19,7 +19,8 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   controls.append(download);
   const summaryLine=node('p','','provider-status');summaryLine.id='stock-summary';section.insertBefore(summaryLine,controls);
   const clipNote=node('p','','note stock-clip-warning');clipNote.id='stock-clip-warning';clipNote.hidden=true;section.insertBefore(clipNote,controls);
-  const settingNote=node('p','','note stock-setting');settingNote.id='stock-setting';settingNote.hidden=true;section.insertBefore(settingNote,controls);
+  const translateNote=node('p','','note stock-translate');translateNote.id='stock-translate';translateNote.hidden=true;
+  const settingNote=node('p','','note stock-setting');settingNote.id='stock-setting';settingNote.hidden=true;section.insertBefore(settingNote,controls);section.insertBefore(translateNote,controls);
   // Kontrol edilmesi gerekenler: low CLIP score, tags only, close to a period/place problem.
   const reviewBox=node('section','','stock-review');reviewBox.id='stock-review';reviewBox.hidden=true;section.insertBefore(reviewBox,summaryLine);
   const stamp=()=>({plan_id:state.plan_id,revision:state.revision});
@@ -173,6 +174,8 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
       const media=node('section','','stock-scene');media.append(node('h3',`Medya Yuvaları · ${slots.length} görsel çekim`));for(const slot of slots)media.append(slotCard(slot));sceneCard.append(media);
     }
     summaryLine.textContent=state?.media_summary?.text||'';
+    translateNote.replaceChildren();const tnote=state?.translation_note;translateNote.hidden=!tnote;
+    if(tnote){translateNote.append(node('span','Türkçe çeviri: '+tnote+' '));if(!tnote.endsWith('…'))button(translateNote,'Çeviriyi yeniden dene',()=>operate(()=>request(base+'/translate','POST',{})),active()).id='stock-retranslate';else setTimeout(load,3000);}
     const clipWarning=state?.job?.progress?.clip_warning;clipNote.hidden=!clipWarning;clipNote.textContent=clipWarning?'ℹ '+clipWarning:'';
     const where=state?.job?.progress?.setting,dropped=state?.job?.progress?.setting_rejected||{},redo=state?.job?.progress?.setting_reselected||0;settingNote.hidden=!where?.label;
     settingNote.textContent=where?.label?`Dönem ve yer: ${where.label} · bu döneme/yere uymayan görüntüler elenir${dropped.anachronism?` · dönemle çelişen ${dropped.anachronism}`:''}${dropped.place?` · yanlış coğrafya ${dropped.place}`:''}${dropped.style?` · karikatür/3D ${dropped.style}`:''}${redo?` · önceki ${redo} seçim yenilendi`:''}`:'';

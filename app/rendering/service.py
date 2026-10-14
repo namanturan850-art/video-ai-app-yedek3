@@ -123,8 +123,8 @@ class RenderService:
         from app.moments.draw import END_SCREEN_SECONDS
         from app.moments.spec import endscreen_spec
         from app.stock.download import directory
-        owners={slot.get('continuation_of') or slot['slot_id'] for slot in t['slots']}
-        if not any(is_motion(m) and m['source_metadata']['motion']['template']=='outro' for m in (selected.get(o,{}).get('selected_media') for o in owners)):return None
+        # Only when the owner switched it on (Ayarlar → Genel, off by default): otherwise the video ends with the narration.
+        if not (self.settings.moments() if hasattr(self.settings,'moments') else {}).get('end_screen'):return None
         channels=getattr(self,'channels',None);language=h.get('target_language','de')
         spec=endscreen_spec(channels.for_project(pid)['name'] if channels else '')
         scene=templates.build(spec,kit,END_SCREEN_SECONDS,END_SCREEN_SECONDS*.6,language);key=scene_key(scene)

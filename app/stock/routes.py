@@ -44,6 +44,9 @@ def stock_router(service):
         return Response(json.dumps(data, ensure_ascii=False, indent=2), media_type='application/json',
                         headers={'Content-Disposition': f'attachment; filename="{name}"', 'Cache-Control': 'no-store'})
 
+    @router.post('/translate', status_code=202)
+    def retranslate(project_id: str): return service.retranslate(project_id)
+
     @router.get('/handoff')
     def handoff(project_id: str): return service.handoff(project_id)
 

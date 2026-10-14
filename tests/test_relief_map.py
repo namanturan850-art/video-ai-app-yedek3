@@ -44,7 +44,7 @@ def test_relief_clip_label_and_highlight_on_the_first_frame(tmp_path):
     from app.channels import DEFAULT_STYLE
     from app.motion.raster import render
     from app.motion.templates import build
-    scene = build(parse('region', 'Bretagne'), DEFAULT_STYLE, 1.0, .6, 'fr')
+    scene = build(parse('region', 'Bretagne'), {**DEFAULT_STYLE, 'map_style': 'relief', 'map_style_chosen': True}, 1.0, .6, 'fr')  # the relief look (the default is the dark map)
     out = tmp_path / 'relief.mp4'
     assert render(scene, out, 'ffmpeg') == 30
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(out), '-frames:v', '1', str(tmp_path / 'f0.png')], check=True)

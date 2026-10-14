@@ -98,6 +98,16 @@ class MapboxSettings(KeySettings):
     # Static Images API (one picture per scene, with bearing/pitch) for “Eğik görünüm”.
     static_url: str = Field(default='https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},{zoom},{bearing},{pitch}/{width}x{height}@2x', max_length=300)
     oblique: bool = True  # Eğik görünüm (3B his); off: the flat (pitch 0) tile map
+    # Forward geocoding for map-marker places the offline lists lack (MAPBOX_INTEGRATION_NOTES.md).
+    geocode_url: str = Field(default='https://api.mapbox.com/search/geocode/v6/forward', max_length=300)
+
+    @field_validator('geocode_url')
+    @classmethod
+    def geocode_template(cls, value):
+        value = value.strip()
+        if not value.startswith('https://api.mapbox.com/') or '?' in value:
+            raise ValueError('Yer arama adresi https://api.mapbox.com/ ile başlamalı (anahtar adrese yazılmaz).')
+        return value
 
     @field_validator('static_url')
     @classmethod
@@ -497,7 +507,7 @@ class SettingsService:
             config = dict(self._values()['mapbox'])
         default = MapboxSettings()
         return {'api_key': config.get('api_key') or '', 'tile_url': config.get('tile_url') or default.tile_url,
-                'static_url': config.get('static_url') or default.static_url, 'oblique': config.get('oblique', default.oblique) is not False}
+                'static_url': config.get('static_url') or default.static_url, 'geocode_url': config.get('geocode_url') or default.geocode_url, 'oblique': config.get('oblique', default.oblique) is not False}
 
     def tts_config(self):
         """Private key and legacy values; outbound URL is always the official API."""

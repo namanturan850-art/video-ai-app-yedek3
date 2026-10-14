@@ -75,11 +75,16 @@ class MarkerError(ValueError):
 
 
 def where(name):
-    """(display name, lat, lon, info) from the offline place list, or None."""
-    from app.motion.places import find
-    for option in str(name).split('|'):
-        place = find(option.strip())
-        if place: return option.strip(), place['lat'], place['lon'], place
+    """(display name, lat, lon, info) from the offline place lists (then the town
+    list and Mapbox Geocoding, see places.locate), or None."""
+    from app.motion.places import find, locate
+    options = [o.strip() for o in str(name).split('|') if o.strip()]
+    for option in options:  # the main lists first for every option (“Leptis Magna|Tripolis”)
+        place = find(option)
+        if place: return option, place['lat'], place['lon'], place
+    for option in options:
+        place = locate(option)
+        if place: return option, place['lat'], place['lon'], place
     return None
 
 
@@ -356,6 +361,16 @@ def build_extra(s, spec, language='de'):
     if t in ('intro', 'outro', 'endscreen'):
         from app.moments import draw
         return {'intro': lambda: draw.draw_intro(s, d), 'outro': lambda: draw.draw_outro(s, d, language), 'endscreen': lambda: draw.draw_endscreen(s, d)}[t]()
+    if t in ('zoom', 'empire'):
+        from app.channels import map_style
+        if map_style(s.kit) == 'satellite':  # Uydu görüntüsü: no drawn (dark) map at all — the place / the extent on satellite
+            if t == 'zoom':
+                data = {'mode': 'zoom', 'target': d['place'], 'lat': d['lat'], 'lon': d['lon'], 'title': d['place'], 'source': d.get('source', '')}
+            else:
+                years = f'{year_text(d["start_year"], lang)} – {year_text(d["end_year"], lang)}' if d.get('start_year') is not None and d.get('end_year') is not None else ''
+                data = {'mode': 'region', 'target': d['name'], 'polygon': d['area'], 'title': d['name'], 'source': d.get('source', ''), **({'figure': years[:24]} if years else {})}
+            s.add('relief', spec={'template': 'relief', 'data': data, 'emphasis': ''}, **satellite_props(language))
+            return s
     if t == 'route':
         from app.channels import map_style
         if map_style(s.kit) == 'satellite':  # Harita stili → Uydu görüntüsü: the route on satellite tiles (yellow line, dots, names)

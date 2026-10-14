@@ -98,6 +98,7 @@ PROBE_SCHEMA = {'type': 'object', 'required': ['ok'], 'properties': {'ok': {'typ
 PLACE_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['found', 'lat', 'lon'],
                 'properties': {'found': {'type': 'boolean'}, 'lat': {'type': 'number'}, 'lon': {'type': 'number'}}}
 INFOGRAPHIC = ('map', 'number', 'timeline', 'compare', 'list', 'route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'intro', 'outro', 'region', 'arrow', 'archive')
+MAP_MARKERS = ('map', 'route', 'empire', 'zoom', 'region', 'arrow', 'compare')  # never stock footage, even when the place is unknown
 NEW_MARKERS = ('route', 'empire', 'zoom', 'mark', 'beforeafter', 'icons', 'ratio', 'dynasty', 'fact', 'region', 'arrow', 'archive')
 QUERY_SCHEMA = {'type': 'object', 'additionalProperties': False, 'required': ['queries'],
                 'properties': {'queries': {'type': 'array', 'items': {'type': 'string'}}}}
@@ -989,10 +990,10 @@ class MediaDirector:
         return out
 
     def place(self, name):
-        """(lat, lon) from the local place list, else from the AI, else None."""
-        from app.motion.places import lookup
-        found = lookup(name)
-        if found: return found[:2]
+        """(lat, lon) from the local place lists / Mapbox Geocoding, else from the AI, else None."""
+        from app.motion.places import locate
+        found = locate(name)
+        if found: return found['lat'], found['lon']
         try:
             answer = self._ask('motion_place', f'Give the latitude and longitude (decimal degrees) of this place: "{name}". '
                                'If it is not a real, locatable place, set found=false.', PLACE_SCHEMA, max_tokens=200)
@@ -1003,6 +1004,31 @@ class MediaDirector:
                 and -85 <= answer['lat'] <= 85 and -180 <= answer['lon'] <= 180:
             return float(answer['lat']), float(answer['lon'])
         return None
+
+    def nearest_map(self, hint, scene):
+        """(spec, Turkish note) for a map marker whose place could not be found: the
+        map of the nearest known place — another place in the same marker, a place
+        spoken in this scene, then in the neighbouring scenes, then anywhere in the
+        script; the whole world as the very last resort."""
+        from app.motion.places import locate, spoken_places
+        value = ' '.join(str(hint['value']).split())
+        reason = getattr(self, 'marker_error', '') or 'yer listesinde ve Mapbox yer aramasında bulunamadı'
+        found = None
+        for part in re.split(r'>|→|->|\||;|,|\bvs\.?\b|\bkarşı\b|\bgegen\b', value):
+            part = part.strip()
+            if part and not re.search(r'\d', part) and (place := locate(part)):
+                found = (part, place['lat'], place['lon']); break
+        if not found:
+            order = getattr(self, 'scene_order', []) or [scene.get('scene_id')]
+            here = order.index(scene['scene_id']) if scene.get('scene_id') in order else 0
+            texts = [str(hint.get('sentence') or ''), scene.get('narration_text', '')] + [
+                getattr(self, 'scene_text', {}).get(order[i], '') for i in sorted(range(len(order)), key=lambda i: abs(i - here)) if i != here]
+            found = next((spot for text in texts for spot in spoken_places(text)[:1]), None)
+        name, lat, lon = found or ('', 20., 0.)
+        spec = {'template': 'relief', 'data': {'mode': 'zoom', 'target': (name or value)[:60], 'lat': float(lat), 'lon': float(lon),
+                                               'title': (name or value)[:60], 'source': value, **({} if name else {'span': 50.})}, 'emphasis': ''}
+        where = f'en yakın bilinen yer ({name})' if name else 'dünya haritası'
+        return spec, f'[{value[:60]}] {reason.rstrip(".")}; {where} ile harita çizildi. Yer adını kontrol edin (yazım veya daha bilinen bir ad).'
 
     def owner_spec(self, hint, scene):
         """The marker's own values become the infographic (only the shape is checked)."""
@@ -1588,7 +1614,10 @@ class MediaDirector:
                 slot['message'] = f'⚠ [ARŞİV: {hint["value"]}] {why.rstrip(".")}; yerine yazı kartı kondu. ' + slot.get('message', '')
                 self.progress.setdefault('marker_warnings', []).append(f'[{hint["value"][:60]}]: {why}; yazı kartı kondu')
                 return log
-            if spec is None:  # e.g. a place nobody could locate: the narration decides
+            if spec is None and hint['type'] in MAP_MARKERS:  # a place nobody could locate: still a map (nearest known place), never stock footage
+                spec, note = self.nearest_map(hint, scene)
+                self.marker_note = note
+            if spec is None:  # e.g. an unreadable [SAYI] marker: the narration decides
                 log = self.fill(slot, scene)
                 why = getattr(self, 'marker_error', '') or ('yer haritada bulunamadı' if hint['type'] == 'map' else 'işaret biçimi okunamadı')
                 slot['message'] = f'⚠ [{hint["type"]}: {hint["value"]}] işareti çizilemedi ({why.rstrip(".")}). ' + slot.get('message', '')

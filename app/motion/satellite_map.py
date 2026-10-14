@@ -214,8 +214,10 @@ def oblique_view(points, *, route=False):
     bearing = 0
     pitch = 60 if route else 55  # the API's maximum (60): on a flat satellite photo less tilt hardly shows
     w, h = SIZE
-    zoom = 12.
-    for _ in range(6):
+    # start from the flat (top-down) fit: a big area (an empire, two countries) is far from zoom 12
+    span = max((max(p[0] for p in points) - min(p[0] for p in points)) / 360, max(ys) - min(ys), 1e-6)
+    zoom = max(1., min(12., math.log2(w * .6 / (512 * span))))
+    for _ in range(12):
         project = camera(lon, lat, zoom, bearing, pitch, w, h)
         spots = [project(*p[:2]) for p in points]
         if any(s is None for s in spots): zoom -= 1; continue

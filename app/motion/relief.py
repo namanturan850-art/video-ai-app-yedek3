@@ -312,7 +312,10 @@ def plan(spec):
     if mode == 'compare':
         a, b = find(d['target']), find(d['other'])
         if not a or not b or not a['polygons'] or not b['polygons']: raise ValueError('compare areas')
-        over = moved_onto(b, a)
+        (ax, ay), (bx, by) = centre(a), centre(b)
+        size = max(math.hypot(u['bbox'][2] - u['bbox'][0], u['bbox'][3] - u['bbox'][1]) for u in (a, b))
+        near = math.hypot((ax - bx) * math.cos(math.radians((ay + by) / 2)), ay - by) < 1.5 * size
+        over = b if near else moved_onto(b, a)  # neighbours stay where they are; far apart: b is laid onto a (same scale)
         box = (min(a['bbox'][0], over['bbox'][0]), min(a['bbox'][1], over['bbox'][1]), max(a['bbox'][2], over['bbox'][2]), max(a['bbox'][3], over['bbox'][3]))
         ratio = area_km2(a) / max(1e-6, area_km2(b))
         big = ratio if ratio >= 1 else 1 / ratio
@@ -329,10 +332,15 @@ def plan(spec):
         points = [(p['lon'], p['lat'], p['name']) for p in near_each_other([{'name': n, 'lat': y, 'lon': x} for x, y, n in points])]
         bbox = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
         return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=2.5), 'arrow': points, 'unit': None, 'title': d.get('title') or '', 'figure': figure}
-    unit = None if d.get('lat') is not None else find(d['target'])
+    unit = None if d.get('lat') is not None or d.get('polygon') else find(d['target'])
+    if d.get('polygon'):  # [İMPARATORLUK] on satellite: the approximate extent ([lat, lon] points)
+        ring = [(float(lon), float(lat)) for lat, lon in d['polygon']]
+        if len(ring) < 3: raise ValueError('area points')
+        unit = {'kind': 'area', 'name': d['target'], 'polygons': [ring], 'lines': [],
+                'bbox': (min(x for x, _ in ring), min(y for _, y in ring), max(x for x, _ in ring), max(y for _, y in ring))}
     if unit is None and d.get('lat') is not None:  # [HARİTA] on satellite: the marker's own coordinates
-        lon, lat = float(d['lon']), float(d['lat'])
-        unit = {'kind': 'point', 'name': d['target'], 'polygons': [], 'lines': [], 'bbox': (lon - .3, lat - .3, lon + .3, lat + .3)}
+        lon, lat, r = float(d['lon']), float(d['lat']), float(d.get('span') or .3)
+        unit = {'kind': 'point', 'name': d['target'], 'polygons': [], 'lines': [], 'bbox': (lon - r, lat - r, lon + r, lat + r)}
     if unit is None:
         p = place(d['target'])
         if not p: raise ValueError('area not found')
@@ -340,6 +348,19 @@ def plan(spec):
     view = view_around(unit['bbox'], pad=1.7 if mode == 'region' else 1.4, minimum=1.5)
     title = d.get('title') or (d['target'] if unit['kind'] == 'river' else unit['name'])  # “Vallée du Rhône”, not “Rhône”
     return {'mode': mode, 'view': view, 'unit': unit, 'arrow': None, 'title': title, 'figure': figure}
+
+
+def tint(picture, rings, xy, colour, alpha=105):
+    """See-through colour fill + a solid edge, with any projector (flat or tilted)."""
+    layer = Image.new('RGBA', picture.size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    for ring in rings:
+        points = [xy(x, y) for x, y in ring]
+        if len(points) >= 3: draw.polygon(points, fill=tuple(colour) + (alpha,))
+    for ring in rings:
+        points = [xy(x, y) for x, y in ring]
+        if len(points) >= 3: draw.line(points + points[:1], fill=(255, 255, 255, 235), width=9, joint='curve'); draw.line(points + points[:1], fill=tuple(colour) + (255,), width=5, joint='curve')
+    return Image.alpha_composite(picture.convert('RGBA'), layer).convert('RGB')
 
 
 def km_shape(unit):
@@ -386,8 +407,8 @@ def render(scene, output, ffmpeg):
     info = plan(element['props']['spec'])
     theme = element['props'].get('theme')
     info['lang'] = element['props'].get('lang', 'en')
-    sat = theme == 'satellite' and info['mode'] != 'compare'
-    dark = theme == 'dark' or info['mode'] == 'compare' or sat  # a size comparison is always on the plain dark map
+    sat = theme == 'satellite'  # Harita stili → Uydu görüntüsü: every map marker, the size comparison too
+    dark = theme == 'dark' or (info['mode'] == 'compare' and not sat)  # without satellite a size comparison is on the plain dark map
     info['dark'] = dark
     duration = scene['duration']; frames = max(1, round(duration * FPS))
     view = info['view']
@@ -395,7 +416,7 @@ def render(scene, output, ffmpeg):
     hw, hh = (view[2] - view[0]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1), (view[3] - view[1]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)
     canvas_view = (cx - hw, cy - hh, cx + hw, cy + hh)
     cw, ch = int(W * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)), int(H * MARGIN * (1.6 if info['mode'] == 'zoom' else 1))
-    if info['mode'] == 'compare':  # side by side at the same scale on a plain dark ground: neither fill hides the other
+    if info['mode'] == 'compare' and not sat:  # side by side at the same scale on a plain dark ground: neither fill hides the other
         base = side_by_side(info, cw, ch)
     else:
         base = None
@@ -409,12 +430,16 @@ def render(scene, output, ffmpeg):
             if info['arrow']: points = [p[:2] for p in info['arrow']]
             else:
                 w, s_, e, n = info['unit']['bbox']; points = [(w, s_), (e, n)]
+                if info['mode'] == 'compare' or info['unit'].get('kind') == 'area':  # every corner (both areas) inside the tilted picture
+                    boxes = [info['unit']['bbox']] + ([info['other']['bbox']] if info['mode'] == 'compare' else [])
+                    points = [(b[i], b[j]) for b in boxes for i in (0, 2) for j in (1, 3)]
             try:
                 base, oblique_xy, info['credit'], info['camera'] = satellite_map.oblique(points, cw, ch, route=bool(info['arrow']))
                 info.update(satellite=True, oblique=True)
                 c = info['camera']
                 LAST_INFO = f'Harita ({name}): eğik görünüm (eğim {c["pitch"]:g}°, açı {c["bearing"]:g}°, kuzey yukarıda) — istek: {c["request"]} — yanıt: {c["response"]}'
-                end = info['arrow'][-1][:2] if info['arrow'] else ((points[0][0] + points[1][0]) / 2, (points[0][1] + points[1][1]) / 2)
+                end = info['arrow'][-1][:2] if info['arrow'] else ((min(p[0] for p in points) + max(p[0] for p in points)) / 2, (min(p[1] for p in points) + max(p[1] for p in points)) / 2) \
+                    if info['mode'] == 'compare' else centre(info['unit'])  # a comparison ends on both areas
                 info['target_px'] = oblique_xy(*end)
             except Exception as error:  # SatelliteError (Turkish) or anything unexpected: never stops the clip
                 reason = str(error).split(';')[0].split('. ')[0].rstrip('.') if isinstance(error, SatelliteError) else 'beklenmeyen hata'
@@ -435,9 +460,15 @@ def render(scene, output, ffmpeg):
             except SatelliteError as error:
                 LAST_WARNING = str(error)
                 base = None
-        if base is None:
+        if base is None:  # no satellite picture: the colour relief (satellite style) or the drawn map — never the dark map on satellite
             base = dark_map(canvas_view, cw, ch) if dark else terrain(canvas_view, cw, ch)
-            if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
+            if info['mode'] == 'compare':
+                base = highlight(highlight(base, info['unit'], canvas_view, BLUE), info['other'], canvas_view, ORANGE)
+            elif info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
+        elif info['mode'] == 'compare' or (info['unit'] or {}).get('kind') == 'area':  # [KARŞILAŞTIR] / [İMPARATORLUK] on satellite: see-through fills
+            xy0 = oblique_xy if info.get('oblique') else projector(canvas_view, cw, ch)
+            base = tint(base, info['unit']['polygons'], xy0, BLUE['fill'])
+            if info['mode'] == 'compare': base = tint(base, info['other']['polygons'], xy0, ORANGE['fill'])
         elif info['unit'] and (info['unit']['polygons'] or info['unit']['lines']):  # [BÖLGE] on satellite: red/white hatched oval
             xy0 = oblique_xy if info.get('oblique') else projector(canvas_view, cw, ch)
             w, s_, e, n = info['unit']['bbox']; corners = [xy0(w, n), xy0(e, n), xy0(e, s_), xy0(w, s_)]
@@ -481,8 +512,10 @@ def render(scene, output, ffmpeg):
             line = max(info['unit']['lines'], key=len); mx, my = line[len(line) // 2]
             px, py = xy(mx, my); px += 40
             label(draw, info['title'], px, py, 66, anchor='lm')
-        elif info['mode'] == 'compare':
-            pass  # names are in the on-screen legend (always inside the frame)
+        elif info['mode'] == 'compare':  # each name in a white box on its own area
+            for unit, text in ((info['unit'], info['title']), (info['other'], info['other_title'])):
+                (x0, y0), (x1, y1) = xy(unit['bbox'][0], unit['bbox'][3]), xy(unit['bbox'][2], unit['bbox'][1])
+                label_box(draw, text, (x0 + x1) / 2, (y0 + y1) / 2, 46)
         elif dark:
             label_box(draw, info['title'], px, py, 50)
             if info['mode'] == 'zoom': pin(draw, px, py - 60)

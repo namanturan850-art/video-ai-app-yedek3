@@ -331,7 +331,7 @@ def plan(spec):
         from app.motion.templates_extra import near_each_other  # [OK: Paris > Brest]: Brest in France
         points = [(p['lon'], p['lat'], p['name']) for p in near_each_other([{'name': n, 'lat': y, 'lon': x} for x, y, n in points])]
         bbox = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
-        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=2.5), 'arrow': points, 'unit': None, 'title': d.get('title') or '', 'figure': figure}
+        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=.8), 'arrow': points, 'unit': None, 'title': d.get('title') or '', 'figure': figure}
     unit = None if d.get('lat') is not None or d.get('polygon') else find(d['target'])
     if d.get('polygon'):  # [İMPARATORLUK] on satellite: the approximate extent ([lat, lon] points)
         ring = [(float(lon), float(lat)) for lat, lon in d['polygon']]
@@ -346,7 +346,8 @@ def plan(spec):
         if not p: raise ValueError('area not found')
         unit = {'kind': 'point', 'name': p[2], 'polygons': [], 'lines': [], 'bbox': (p[0] - .3, p[1] - .3, p[0] + .3, p[1] + .3)}
     view = view_around(unit['bbox'], pad=1.7 if mode == 'region' else 1.4, minimum=1.5)
-    title = d.get('title') or (d['target'] if unit['kind'] == 'river' else unit['name'])  # “Vallée du Rhône”, not “Rhône”
+    # “Vallée du Rhône”, not “Rhône”; “Nevşehir” as the owner wrote it, not the data's “Nevsehir”
+    title = d.get('title') or (d['target'] if unit['kind'] == 'river' or fold(d['target']) == fold(unit['name']) else unit['name'])
     return {'mode': mode, 'view': view, 'unit': unit, 'arrow': None, 'title': title, 'figure': figure}
 
 
@@ -575,6 +576,7 @@ def names(out, info, left, top, w, h):
     """The map's names on the finished frame: each box pushed fully inside SAFE, away from the magnifier."""
     draw = ImageDraw.Draw(out)
     avoid = [(W - 380, H - 400, W, H)] if info.get('inset') is not None and info.get('satellite') else []
+    placed = []
     for item in info.get('labels') or []:
         f = font(item['size']); pad = (22, 14) if item.get('box') else (8, 8)
 
@@ -590,6 +592,12 @@ def names(out, info, left, top, w, h):
         x, y, l, t, r, b = x + dx, y + dy, l + dx, t + dy, r + dx, b + dy
         for al, at, ar, ab in avoid:
             if l < ar and r > al and t < ab and b > at: y -= b - at; t -= b - at; b = at
+        for _ in range(6):  # never on top of a name already drawn: moved down (or up near the bottom band)
+            hit = next((o for o in placed if l < o[2] and r > o[0] and t < o[3] and b > o[1]), None)
+            if not hit: break
+            step = hit[3] - t + 6 if hit[3] + (b - t) + 6 <= SAFE[3] else -(b - hit[1] + 6)
+            y, t, b = y + step, t + step, b + step
+        placed.append((l, t, r, b))
         if item.get('box'): label_box(draw, item['text'], x, y, item['size'], anchor=anchor)
         else: label(draw, item['text'], x, y, item['size'], anchor=anchor)
 

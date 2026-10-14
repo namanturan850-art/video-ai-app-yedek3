@@ -68,6 +68,7 @@ SIMILAR_FRAMING = 6     # dHash bits: closer than this to the previous shot of t
 # Never-wanted signs in provider metadata (checked before the AI look).
 RED_FLAGS = {'watermark', 'watermarked', 'logo', 'logos', 'subscribe', 'intro', 'outro', 'template', 'lower third', 'green screen', 'chroma key'}
 MERGE_SECONDS = 1.5
+REUSE_GAP = 6           # the same clip again (another part of it) only this many slots apart, in another scene
 OPENING_CARD = 4        # first scene: a card's words show at most this long, over moving footage
 WAIT_BUDGET = 60        # seconds of rate-limit pauses per job; then the job continues with local scoring
 FIRST_ANSWER_SECONDS = 60  # no AI answer at all within this time → the whole job continues locally
@@ -718,9 +719,20 @@ class MediaDirector:
                 found.extend(results)
         return found
 
-    def segment(self, media, need):
-        """Same clip in a second slot: only a different, non-overlapping part."""
+    def segment(self, media, need, slot=None):
+        """Same footage again only rarely: at most a second use, a different part of a long
+        video, never in the same scene and never within REUSE_GAP slots of its first use
+        (no repeats in a row). Pictures are used once."""
         taken = self.usage.get(key(media), [])
+        if taken:
+            if len(taken) >= 2 or media['media_type'] != 'video': return None
+            if slot is not None:
+                order = {s['slot_id']: i for i, s in enumerate(sorted(getattr(self, 'slots', []), key=lambda s: s['estimated_start']))}
+                scene_of = {s['slot_id']: s['scene_id'] for s in getattr(self, 'slots', [])}
+                here = order.get(slot['slot_id'])
+                for other, _ in taken:
+                    if scene_of.get(other) == slot.get('scene_id') or (here is not None and other in order and abs(order[other] - here) < REUSE_GAP):
+                        return None
         if media['media_type'] != 'video' or not taken: return None if taken else 0.
         start = max(end for _, end in taken) + .5
         return round(start, 3) if start + need + .3 <= float(media.get('duration') or 0) else None
@@ -754,7 +766,7 @@ class MediaDirector:
             if k in seen or k in exclude: continue
             seen.add(k)
             reason = technical(media, need)
-            if reason is None and self.segment(media, need) is None: reason = 'used_elsewhere'
+            if reason is None and self.segment(media, need, slot) is None: reason = 'used_elsewhere'
             if reason is None and k in log['judged'] and not log['judged'][k]['approved']: reason = 'ai_rejected_before'
             if reason is None: reason = self.prefilter(media, scene or {})
             if reason:
@@ -875,7 +887,7 @@ class MediaDirector:
 
     def take(self, slot, media, verdict, stage, log):
         need = used_seconds(slot)
-        start = self.segment(media, need)
+        start = self.segment(media, need, slot)
         if start is None: return None
         try:
             saved = self.service.downloader.download(self.pid, media)
@@ -1080,12 +1092,23 @@ class MediaDirector:
         slot['relevance_profile'] = slot.get('relevance_profile') or relevance.profile(scene, slot)
         if old:
             self.marker_error = f'{old} dönemine uygun siyah-beyaz / eski arşiv fotoğrafı bulunamadı'
+            from app.stock.setting import _era_of_year
+            base_setting = self.where(scene) or {}
+            era = {**base_setting, 'era': _era_of_year(int(old)) if old.isdigit() else (base_setting.get('era') or '20th'),
+                   'decade': (int(old) // 10 * 10) if old.isdigit() and int(old) >= 1900 else None}
+            era['label'] = era.get('label') or old
             chosen = None
             for query in wanted:  # one archive photo: the first query that finds an old-looking one wins
                 log = {'steps': [{'stage': 'motion_owner', 'label': STAGES['motion_owner'], 'judged': []}], 'searches': [], 'judged': {}, 'rejected': {}}
                 pool = [m for m in self.pool(slot, self.search(slot, ['image'], query, log, scene), log, set(), scene)
-                        if m['media_type'] == 'image' and self.looks_old(m)][:CANDIDATES]
-                verdicts = self.judge(slot, scene, pool) if pool else {}
+                        if m['media_type'] == 'image' and not self.archive_conflict(m, era) and self.looks_old(m)][:CANDIDATES]
+                sid = scene.get('scene_id'); before = self.scene_settings.get(sid) if hasattr(self, 'scene_settings') else None
+                if hasattr(self, 'scene_settings') and self.setting: self.scene_settings[sid] = era  # CLIP: penalties of that period (CG, 3D, modern ships…)
+                try: verdicts = self.judge(slot, scene, pool) if pool else {}
+                finally:
+                    if hasattr(self, 'scene_settings') and self.setting:
+                        if before is None: self.scene_settings.pop(sid, None)
+                        else: self.scene_settings[sid] = before
                 for media in sorted((m for m in pool if verdicts.get(key(m), {}).get('approved')), key=lambda m: -verdicts[key(m)]['score']):
                     try: chosen = self.service.downloader.download(self.pid, media); break
                     except StockError: continue
@@ -1117,6 +1140,13 @@ class MediaDirector:
         if years: return str(min(years))
         era = (self.where(scene) or {}).get('era')
         return {'ancient': 'antik', 'medieval': 'Orta Çağ', 'early_modern': 'eski', '19th': '19. yüzyıl', '20th': '20. yüzyıl'}.get(era, '')
+
+    def archive_conflict(self, media, era):
+        """An archive candidate's tags show CG / 3D / a modern scene (whatever the video's own period)."""
+        from app.stock.setting import tag_conflict
+        tags = ' ' + relevance.normalized(f'{media.get("description", "")} {media.get("query_used", "")}') + ' '
+        cg = any(f' {w} ' in tags for w in ('3d', 'render', 'rendering', 'cgi', 'illustration', 'digital art', 'ai generated', 'modern', 'cruise', 'container'))
+        return cg or bool(tag_conflict({**era, 'era': era.get('era') or '20th'}, tags, media.get('provider', '')))
 
     def looks_old(self, media):
         """Black-and-white / sepia preview (low colour saturation), or archive tags when there is no preview."""
@@ -1249,14 +1279,14 @@ class MediaDirector:
         slot['message'] = f'Açılış: hareketli görüntü üstünde “{text}” ({OPENING_CARD:g} sn; tam ekran kart yerine).'
         return True
 
-    def card(self, slot, scene, log):
+    def card(self, slot, scene, log, framed=False):
         kind, text = card_spec(slot, scene, self.card_texts)
         if text in self.card_texts and self.continue_card(slot, text, log):
             return True
         self.card_texts.add(text)
         folder = directory(self.service.projects, self.pid)
         name = uuid4().hex + '.png'
-        drawn = render_card(folder / name, kind, text)
+        drawn = render_card(folder / name, kind, text, framed=framed)
         data = (folder / name).read_bytes()
         media = {'provider': 'generated', 'media_id': 'card-' + name[:12], 'media_type': 'image', 'source_url': '', 'page_url': '',
                  'creator_name': 'AI Video Studio', 'creator_url': '', 'width': 1920, 'height': 1080, 'duration': None,
@@ -1546,9 +1576,9 @@ class MediaDirector:
             if spec is not None and spec['template'] in ('mark', 'beforeafter', 'archive') and not self.pictures(spec, slot, scene):
                 self.marker_error = self.marker_error or 'bu sahne için uygun görsel bulunamadı'
                 spec = None
-            if spec is None and archive:  # no fitting archive photo: a text card (never a modern colour photo)
+            if spec is None and archive:  # no fitting archive photo: a framed text card (never a modern colour photo or CG)
                 why = self.marker_error
-                self.card(slot, scene, log)
+                self.card(slot, scene, log, framed=True)
                 slot['message'] = f'⚠ [ARŞİV: {hint["value"]}] {why.rstrip(".")}; yerine yazı kartı kondu. ' + slot.get('message', '')
                 self.progress.setdefault('marker_warnings', []).append(f'[{hint["value"][:60]}]: {why}; yazı kartı kondu')
                 return log

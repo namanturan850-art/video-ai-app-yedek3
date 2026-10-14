@@ -135,8 +135,9 @@ def _plain_png(path):
     path.write_bytes(data)
 
 
-def render_card(path, kind, text):
-    """Write a 1920x1080 PNG. Returns 'drawn' or 'plain' (text could not be drawn)."""
+def render_card(path, kind, text, framed=False):
+    """Write a 1920x1080 PNG. Returns 'drawn' or 'plain' (text could not be drawn).
+    framed=True: a white photo-style frame around it (stands in for a missing archive photo)."""
     path = Path(path)
     try:
         from PIL import Image
@@ -144,6 +145,9 @@ def render_card(path, kind, text):
         draw = _background(image)
         from app.motion.templates import focus
         {'map': _map, 'number': _number, 'quote': _quote}.get(kind, _title)(draw, focus(' '.join(str(text).split())[:150]))  # 2-5 words, never the whole sentence
+        if framed:
+            draw.rectangle((150, 110, W - 150, H - 110), outline=(246, 244, 238), width=22)
+            draw.rectangle((190, 150, W - 190, H - 150), outline=(246, 244, 238), width=3)
         image.save(path, 'PNG', optimize=True)
         return 'drawn'
     except Exception:  # Pillow/fonts missing or broken: still produce a valid card

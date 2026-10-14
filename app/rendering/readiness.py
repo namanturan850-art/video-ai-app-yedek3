@@ -62,6 +62,6 @@ def estimated_plan(h,p,opts):
     try:
         t=timeline.build(projected,p)
         seed=opts.get('edit_variation_seed') or smart_edit.digest(h)[:16]
-        plan=smart_edit.build(t,h,opts['editing_style'],smart_edit.digest(h),seed=seed,subtitle_mode=opts.get('subtitle_display') or 'emphasis')
+        plan=smart_edit.build(t,h,opts['editing_style'],smart_edit.digest(h),seed=seed,subtitle_mode=opts.get('subtitle_display') or 'full')
         plan['estimated']=True;plan['fingerprint']=smart_edit.digest({k:v for k,v in plan.items() if k!='fingerprint'});return plan
     except (ScriptError,ValueError,KeyError,TypeError):return None

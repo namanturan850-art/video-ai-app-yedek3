@@ -235,7 +235,7 @@ class OpenMontageProvider:
             neutral={'project_id':plan['handoff']['project_id'],'source_script_version_id':plan['handoff'].get('source_script_version_id'),
                      'source_subtitle_version_id':plan['handoff'].get('subtitle_version_id'),'duration':plan['timeline']['duration'],'frames':plan['timeline']['frames'],
                      'fps':30,'width':1920,'height':1080,'narration_audio':str(plan['audio']),
-                     'subtitle_display':plan['options'].get('subtitle_display') or 'emphasis','subtitles':plan['handoff']['subtitles'],
+                     'subtitle_display':plan['options'].get('subtitle_display') or 'full','subtitles':plan['handoff']['subtitles'],
                      'theme':edit.get('theme','minimal_dark'),'scenes':plan['timeline']['scenes'],'clips':clips,'emphasis':edit.get('emphasis',[]),
                      'layout_hints':edit['summary'],'music':str(plan['music']) if plan['music'] else None,'output_path':str(plan['temporary']/'om-output.mp4'),
                      **self.kit_props(plan,public)}

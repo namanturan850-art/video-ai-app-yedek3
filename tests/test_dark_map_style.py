@@ -156,3 +156,31 @@ def test_archive_period_needs_an_old_looking_photo():
     assert d.looks_old({'provider': 'pixabay', 'description': 'harbor'})
     d.thumbnail = lambda url, provider: block((30, 140, 220))
     assert not d.looks_old({'provider': 'pixabay', 'description': 'harbor'})  # a colourful modern photo never passes as archive
+
+
+def test_archive_never_takes_cg_or_modern_and_falls_back_to_a_framed_card(tmp_path, monkeypatch):
+    text = FR.replace('[ARŞİV: old harbor photo]', '[ARŞİV: Brest 1910 harbor photo]')
+    client, pid, world, fake = F.make(tmp_path, monkeypatch, text, language='fr')
+    try:
+        for n, tags in enumerate(('3d render sailing ship harbor', 'modern cruise ship harbor photo')):  # grey (old-looking) but CG / modern
+            world.items.insert(0, {'id': 8_600_001 + n * 2, 'tags': tags, 'kind': 'image', 'portrait': False, 'duration': 8})
+        client.app.state.stock.fetch_thumbnail = lambda url: F.jpeg((120, 120, 120))
+        client.app.state.stock.clip_scorer = F.clip_fake(world, [])
+        view = T.complete(client, pid)
+        assert view['job']['status'] == 'completed', view['job']
+        chosen = [s['selected_media'] for s in view['slots']]
+        assert not any(set(str(m.get('description', '')).replace(',', ' ').split()) & {'3d', 'render', 'cruise'} for m in chosen)
+        archive = [s for s in view['slots'] if 'ARŞİV' in (s.get('message') or '')]
+        assert archive and 'yazı kartı' in archive[0]['message'] and archive[0]['selected_media']['provider'] == 'generated'
+        assert any('1910' in w for w in view['job']['progress'].get('marker_warnings', []))
+    finally:
+        client.__exit__(None, None, None)
+
+
+def test_compare_is_side_by_side_on_plain_ground(tmp_path):
+    from app.motion.templates_extra import relief_marker
+    frame = render_frame(relief_marker('compare', 'Bretagne | Belgique'), tmp_path, at=0.)
+    blue = (frame[..., 2] - frame[..., 0] > 90) & (frame[..., 2] > 150)
+    orange = (frame[..., 0] - frame[..., 2] > 60) & (frame[..., 0] > 140)
+    cols_b, cols_o = np.where(blue[260:].any(axis=0))[0], np.where(orange[260:].any(axis=0))[0]  # (below the number box)
+    assert cols_b.max() < cols_o.min()  # side by side: no overlap, neither fill hides the other

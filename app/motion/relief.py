@@ -313,7 +313,7 @@ def plan(spec):
         ratio = area_km2(a) / max(1e-6, area_km2(b))
         big = ratio if ratio >= 1 else 1 / ratio
         shown = f'{big:.1f}×'.replace('.', ',') if d.get('language', 'tr') != 'en' else f'{big:.1f}×'
-        return {'mode': mode, 'view': view_around(box, pad=1.5, minimum=1.5), 'unit': a, 'other': over, 'arrow': None,
+        return {'mode': mode, 'view': view_around(box, pad=1.5, minimum=1.5), 'unit': a, 'other': over, 'arrow': None, 'pair': (a, b),
                 'title': d.get('title') or d['target'], 'other_title': d['other'], 'figure': figure or shown}  # the names as the owner wrote them (Belgique)
     if mode == 'arrow':
         a, b = place(d['from']), place(d['to'])
@@ -330,6 +330,43 @@ def plan(spec):
     return {'mode': mode, 'view': view, 'unit': unit, 'arrow': None, 'title': title, 'figure': figure}
 
 
+def km_shape(unit):
+    """The unit's polygons in km around its own centre (x east, y north)."""
+    cx, cy = centre(unit); k = math.cos(math.radians(cy)) * 111.32
+    return [[((x - cx) * k, (y - cy) * 110.57) for x, y in ring] for ring in unit['polygons']]
+
+
+def side_by_side(info, width, height):
+    """[KARŞILAŞTIR]: both areas next to each other at the same scale (km), blue and orange,
+    each name in a white box under its shape, on a plain dark ground with a faint grid."""
+    a, b = (km_shape(u) for u in info['pair'])
+    span = lambda rings, i: (min(p[i] for r in rings for p in r), max(p[i] for r in rings for p in r))
+    (ax0, ax1), (ay0, ay1), (bx0, bx1), (by0, by1) = span(a, 0), span(a, 1), span(b, 0), span(b, 1)
+    gap = max(ax1 - ax0, bx1 - bx0) * .18
+    total_w = (ax1 - ax0) + gap + (bx1 - bx0); total_h = max(ay1 - ay0, by1 - by0)
+    # the pair fills about 70 % of the visible frame width / 60 % of its height (room for the names and the number box)
+    scale = min(W * .70 / total_w, H * .58 / total_h)
+    km_w, km_h = width / scale, height / scale
+    left = -total_w / 2
+    move = lambda rings, dx, dy: [[(x + dx, y + dy) for x, y in r] for r in rings]
+    a = move(a, left - ax0, -(ay0 + ay1) / 2 + total_h * .05); b = move(b, left + (ax1 - ax0) + gap - bx0, -(by0 + by1) / 2 + total_h * .05)
+    view = (-km_w / 2, -km_h / 2, km_w / 2, km_h / 2)
+    picture = Image.new('RGB', (width, height), DARK['sea'])
+    draw = ImageDraw.Draw(picture)
+    step = max(40, int(scale * 100))  # a faint 100 km grid
+    for x in range(width // 2 % step, width, step): draw.line([(x, 0), (x, height)], fill=(20, 32, 54), width=1)
+    for y in range(height // 2 % step, height, step): draw.line([(0, y), (width, y)], fill=(20, 32, 54), width=1)
+    picture = highlight(picture, {'polygons': a, 'lines': []}, view, BLUE)
+    picture = highlight(picture, {'polygons': b, 'lines': []}, view, ORANGE)
+    xy = projector(view, width, height)
+    draw = ImageDraw.Draw(picture)
+    for rings, name in ((a, info['title']), (b, info['other_title'])):
+        xs = [p[0] for r in rings for p in r]; ys = [p[1] for r in rings for p in r]
+        x, y = xy((min(xs) + max(xs)) / 2, min(ys))
+        label_box(draw, name, x, y + 56, 46)
+    return picture
+
+
 def render(scene, output, ffmpeg):
     """The relief clip (local renderer). Camera: slow drift (region/arrow) or a
     slow zoom-in (zoom), all within the pre-drawn canvas."""
@@ -343,9 +380,11 @@ def render(scene, output, ffmpeg):
     hw, hh = (view[2] - view[0]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1), (view[3] - view[1]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)
     canvas_view = (cx - hw, cy - hh, cx + hw, cy + hh)
     cw, ch = int(W * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)), int(H * MARGIN * (1.6 if info['mode'] == 'zoom' else 1))
-    base = dark_map(canvas_view, cw, ch) if dark else terrain(canvas_view, cw, ch)
-    if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
-    if info.get('other'): base = highlight(base, info['other'], canvas_view, ORANGE)  # [KARŞILAŞTIR]: the other area laid over, same scale
+    if info['mode'] == 'compare':  # side by side at the same scale on a plain dark ground: neither fill hides the other
+        base = side_by_side(info, cw, ch)
+    else:
+        base = dark_map(canvas_view, cw, ch) if dark else terrain(canvas_view, cw, ch)
+        if info['unit'] and (info['unit']['polygons'] or info['unit']['lines']): base = highlight(base, info['unit'], canvas_view, BLUE if dark else RED)
     xy = projector(canvas_view, cw, ch)
     # Labels and the arrow are drawn on the canvas: they move with the map, readable from frame 0.
     overlay = Image.new('RGBA', base.size, (0, 0, 0, 0))
@@ -427,5 +466,5 @@ def frame(base, info, t, duration, path):
         draw.polygon(tip, fill=(255, 255, 255, 255))
     out = image.convert('RGB').resize((W, H), Image.BICUBIC, box=(left, top, left + w, top + h))
     if info.get('figure'): figure_box(out, info['figure'].upper(), f'{info["title"]} / {info["other_title"]}' if info.get('other') else '')
-    if info.get('other'): legend(out, [(BLUE['fill'], info['title']), (ORANGE['fill'], info['other_title'])])
+
     return out

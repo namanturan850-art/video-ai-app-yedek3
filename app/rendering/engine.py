@@ -66,7 +66,7 @@ class FFmpegRenderProvider:
         folder=plan['temporary'];timeline=plan['timeline'];duration=timeline['duration'];slots=timeline['slots'];opts=plan['options']
         opts=dict(opts)
         edit=plan.get('smart_edit_plan');style=edit['editing_style'] if edit else 'basic';smart=style!='basic' and edit is not None
-        mode=opts.get('subtitle_display') or ('emphasis' if style=='adaptive' else 'full' if opts['subtitle_burned'] else 'none')
+        mode=opts.get('subtitle_display') or 'full'  # full subtitles (every sentence, bottom centre) unless the owner chose otherwise
         opts['subtitle_burned']=mode=='full'
         edits={item['slot_id']:item for item in edit['slots']} if edit else {}
         emphasis=list(edit['emphasis']) if smart else None

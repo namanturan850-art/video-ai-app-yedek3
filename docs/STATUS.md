@@ -1,5 +1,14 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (4) — Arşiv, karşılaştırma, bölünmüş kare, tekrar, altyazı
+
+- **[ARŞİV]:** eski/siyah-beyaz fotoğraf yoksa Türkçe uyarı + **çerçeveli** yazı kartı. Arşiv adayları ayrıca etiketten elenir (3D, render, CGI, illüstrasyon, “modern”, yolcu/konteyner gemisi) ve CLIP o yılın dönem kurallarıyla bakar (1910 → modern gemi, 3D/karikatür cezalı). Dönem listesine “modern yolcu/konteyner gemisi” eklendi.
+- **[KARŞILAŞTIR]:** iki bölge artık **yan yana, aynı ölçekte** (km), düz koyu zeminde hafif ızgarayla; mavi ve turuncu dolgu birbirini kapatmaz; her ad şeklinin altında beyaz kutuda; oran kutusu sağ üstte.
+- **Bir karede iki görüntü (Özgürlük Anıtı + gemi):** kurgu planının “iki medya yan yana” (dual_media) yerleşimiydi; kaldırıldı, her kare tek görüntü.
+- **Tekrar:** aynı klip artık en çok bir kez daha, yalnız uzun videonun başka bir bölümü olarak, başka bir sahnede ve en az 6 yuva sonra kullanılabilir (art arda / sık tekrar yok). Görseller bir kez kullanılır.
+- **Altyazı neredeyse görünmüyordu:** “Adaptif” kurgu stilinde varsayılan gösterim “Sadece önemli vurgular”dı (tam altyazı değil). Varsayılan artık **Tam altyazı**: her cümle, altta ortada. (Video ekranında değiştirilebilir.)
+- **Testler:** `test_dark_map_style.py` (+2: arşivde CG/modern yok + çerçeveli kart; karşılaştırma yan yana), ilgili medya testleri geçti; bir test Gemini bekleme bütçesine göre ayarlandı. Render testleri bu makinede önceden de başarısız; tam paket çalıştırılmadı.
+
 ## 2026-10-14 (3) — Kanal anları kapalı, video sesle biter, yanlış yer, arşiv dönemi, karşılaştırma, çeviri
 
 - **Açılış kartı, kapanış (abone ol + zil) ve YouTube bitiş ekranı varsayılan KAPALI.** Ayarlar → Genel'de her biri için ayrı kutu var. Kapalıyken `[GİRİŞ]`/`[KAPANIŞ]` işaretleri ve otomatik tanınan “abone ol / hoş geldiniz” cümleleri kart eklemez (o cümleler normal sahne olur); önceki işte çizilmiş açılış/kapanış kartları Medyayı Tamamla ile normal medyayla değiştirilir.

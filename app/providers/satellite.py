@@ -84,3 +84,36 @@ FACTORY = None
 def provider():
     if FACTORY is None: raise SatelliteError('missing_key', MESSAGES['missing_key'])
     return FACTORY()
+
+
+TEST_SECONDS = 15
+
+
+def mapbox_check(config, transport=None):
+    """“Bağlantıyı Test Et”: one tile (0/0/0) with a hard TEST_SECONDS limit.
+    {'status': 'Hazır'|'Hata', 'message' (Turkish), 'category'}."""
+    import threading
+    if not config.get('api_key'):
+        return {'status': 'Hata', 'category': 'missing_key', 'message': 'Mapbox API anahtarı girilmeli: anahtarı yazıp Kaydet deyin, sonra test edin.'}
+    box = {}
+
+    def work():
+        try:
+            MapboxSatelliteProvider(config['api_key'], config['tile_url'], transport=transport, timeout=TEST_SECONDS).tile(0, 0, 0)
+            box['ok'] = True
+        except SatelliteError as error:
+            box['error'] = error
+        except Exception:  # never leave the button hanging
+            box['error'] = SatelliteError('network_error', MESSAGES['network_error'])
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start(); thread.join(TEST_SECONDS + 1)
+    if thread.is_alive():
+        return {'status': 'Hata', 'category': 'timeout', 'message': f'Mapbox {TEST_SECONDS} sn içinde yanıt vermedi. İnternet bağlantısını kontrol edip yeniden deneyin.'}
+    if box.get('ok'):
+        return {'status': 'Hazır', 'category': 'none', 'message': 'Mapbox bağlantısı başarılı: uydu karosu indirildi. Harita stili → Uydu görüntüsü kullanılabilir.'}
+    error = box['error']
+    text = {'key_rejected': 'Mapbox anahtarı geçersiz veya yetkisiz (401/403). Anahtarı kontrol edip yeniden kaydedin.',
+            'network_error': 'Mapbox’a bağlanılamadı. İnternet bağlantısını kontrol edip yeniden deneyin.',
+            'not_found': 'Mapbox karo adresi bulunamadı (404). “Uydu karo adresi” alanını kontrol edin.',
+            'rate_limit': 'Mapbox istek sınırına takıldı (429). Biraz sonra yeniden deneyin.'}.get(error.category, str(error).split(';')[0] + '.')
+    return {'status': 'Hata', 'category': error.category, 'message': text}

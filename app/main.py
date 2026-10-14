@@ -639,6 +639,9 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             except StockError as error:
                 outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test(section,config,outcome)}
+        if section == 'mapbox':  # one small tile (z=0) with a hard 15 s limit: never waits longer
+            from app.providers.satellite import mapbox_check
+            return {'result': mapbox_check(settings.mapbox_config()), 'settings': settings.safe_view()}
         if section == "ai33":
             config=settings.tts_config()
             try:outcome=narration.factory(settings).test_connection()

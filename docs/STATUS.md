@@ -1,5 +1,13 @@
 # AI Video Studio — Durum
 
+## 2026-10-15 — Video dönemi, motion oranı, Wikimedia
+
+- Dönem artık metnin AĞIRLIKLI dönemine göre seçilir: cümlelerin en az %20'si geçmiş bir dönemden söz etmiyorsa video "günümüz" sayılır (belirsizse de modern). Birkaç tarihî cümle videoyu antik yapmaz.
+- Ayarlar → Genel → **Video dönemi**: Otomatik / Modern (dönem filtresi yok, sahneyi tarihsel yapmaz) / Tarihsel (eski sert okuma). “Modern görüntü elenir” kuralı yalnız tarihsel videoda/sahnede geçerli.
+- Motion oranı %25'i aşarsa, dönem/yer filtresinin boşalttığı yuvalar için önce dönem/görünüm kuralları, sonra coğrafya kuralları gevşetilip stok yeniden aranır (infografikten önce); ana tur sonunda hâlâ hedef aşılıyorsa dolgu amaçlı motion yuvaları aynı şekilde yeniden denenir. Her aday yine 7/10 eşiğini geçmek zorunda. Yuva mesajında uyarı görünür.
+- Wikimedia “invalid_response”: nedeni, yalnız elenen dosyalar (NC lisans, ogv, dosyasız sayfa) dönen geçerli yanıtın hata sayılmasıydı. Artık “elendi” sayılır; gerçekten okunamayan yanıt ve `ratelimited` ayrı bildirilir. Canlı Wikimedia bu ortamdan denenemedi.
+- Test (sentetik And Dağları metni, 60 cümle, 1 tarihî cümle; gerçek 13 dk'lık metin elimde yok): eski sert okuma %55 motion, yeni Otomatik %27 (78 yuva). Kalan yuvalar dönem filtresinden değil, sentetik kütüphanede sonuç olmamasından.
+
 ## 2026-10-14 (13) — Harita ve ses için genel kurallar (tüm projeler, diller, harita stilleri)
 
 - [BÖLGE] her stilde gerçek bölge/ülke sınırıyla çizilir (Natural Earth; yarı saydam dolgu + belirgin kenar). Uydu stilindeki kaba taralı elips kaldırıldı.

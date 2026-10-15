@@ -81,7 +81,7 @@ class APIStockProvider:
         SecretGuard((key,)).validate(query)
         started, category = time.monotonic(), 'success'
         self.last_diagnostic = {'raw_count':None,'normalized_count':0,
-                                'rejected':{'malformed_result':0,'unsafe_url':0}}
+                                'rejected':{'malformed_result':0,'unsafe_url':0},'filtered':0}
         try:
             url, headers, params, field = self.request(query, media_type, key)
             if page>1:params.update(self.page_params(page))
@@ -112,13 +112,16 @@ class APIStockProvider:
                     for field in ('source_url','page_url','preview_url','download_url','creator_url'):
                         if media[field]: safe_url(media[field], self.name, page=field in ('source_url','page_url','creator_url'))
                     normalized.append(media)
+                except FilteredResult:
+                    self.last_diagnostic['filtered'] += 1  # a valid answer that is not usable here (licence, file type): not an error
+                    continue
                 except (ValueError, TypeError, KeyError, AttributeError, ScriptError) as error:
                     reason = 'unsafe_url' if isinstance(error,StockError) and error.category=='unsafe_url' else 'malformed_result'
                     self.last_diagnostic['rejected'][reason] += 1
                     continue  # A malformed/unsafe item cannot become a download.
             self.last_diagnostic['normalized_count'] = len(normalized)
-            if results and not normalized:
-                raise ValueError()
+            if results and not normalized and not self.last_diagnostic['filtered']:
+                raise ValueError()  # every item unreadable (none merely filtered out): the answer's shape changed
             return normalized
         except httpx.TimeoutException:
             category = 'timeout'
@@ -239,6 +242,11 @@ def commercial_licence(meta):
     return short, url if isinstance(url, str) and url.startswith('https://') else ''
 
 
+class FilteredResult(ValueError):
+    """A readable search hit that may not be offered (non-commercial licence, a file type we cannot use).
+    Not a malformed answer: Wikimedia searches often return only such files, which used to be reported as “invalid_response”."""
+
+
 class WikimediaStockProvider(APIStockProvider):
     """Wikimedia Commons through the documented MediaWiki Action API (no key):
     full-text search in the File namespace + imageinfo with licence metadata."""
@@ -256,27 +264,31 @@ class WikimediaStockProvider(APIStockProvider):
         return {'gsroffset': str((page - 1) * 30)}
 
     def results(self, data, field):
-        if 'error' in data: raise ValueError()
+        if 'error' in data:
+            if str((data['error'] or {}).get('code', '')) in ('ratelimited', 'maxlag', 'readonly'):
+                raise StockError('rate_limit', self.label + ' kullanım sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.')
+            raise ValueError()
         pages = (data.get('query') or {}).get('pages', [])  # no hits: no 'query' at all
         return sorted(pages, key=lambda p: p.get('index', 0)) if isinstance(pages, list) else pages
 
     def normalize_result(self, item, media_type, query):
+        if not item.get('imageinfo'): raise FilteredResult()  # a page without a file (deleted / redirect)
         info = item['imageinfo'][0]
         meta = info.get('extmetadata') or {}
         licence = commercial_licence(meta)
-        if not licence: raise ValueError()  # NC/ND/unknown licence: never offered
+        if not licence: raise FilteredResult()  # NC/ND/unknown licence: never offered
         mime = info['mime']
         title = item['title'].removeprefix('File:')
         author = text_of((meta.get('Artist') or {}).get('value')) or text_of((meta.get('Credit') or {}).get('value')) or 'Bilinmeyen yazar'
         about = text_of((meta.get('ImageDescription') or {}).get('value'), 600)
         description = ' '.join(f'{re.sub(r"[_.-]+", " ", title.rsplit(".", 1)[0])} {about}'.split())[:1000]
         if media_type == 'video':
-            if mime not in ('video/webm',) or not info.get('duration') or info.get('size', 0) > 200_000_000: raise ValueError()
+            if mime not in ('video/webm',) or not info.get('duration') or info.get('size', 0) > 200_000_000: raise FilteredResult()  # ogv/mpeg, too long, too big
             download, width, height = info['url'], info['width'], info['height']
             duration = min(float(info['duration']), MAX_VIDEO_SECONDS)
             preview = info.get('thumburl') or ''
         else:
-            if not mime.startswith('image/') or not info.get('thumburl'): raise ValueError()
+            if not mime.startswith('image/') or not info.get('thumburl'): raise FilteredResult()  # PDF/audio, or no 1920 px thumbnail
             download, width, height = info['thumburl'], info.get('thumbwidth') or info['width'], info.get('thumbheight') or info['height']
             duration, preview = None, info['thumburl']
         return normalized_media({'provider': self.name, 'media_id': str(item['pageid']), 'media_type': media_type,

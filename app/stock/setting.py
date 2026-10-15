@@ -199,14 +199,48 @@ def places(text):
     return [k for k in sorted(counts, key=counts.get, reverse=True) if counts[k]]
 
 
-def infer(texts, topic=''):
-    """The video's setting from all of its narration (+ the topic, counted twice)."""
-    joined = ' '.join([str(topic or '')] * 2 + [str(t or '') for t in texts])
-    era, decade, evidence = period(joined)
+MODES = ('auto', 'modern', 'historic')  # Ayarlar → Video dönemi: Otomatik / Modern / Tarihsel
+HISTORIC_SHARE = .2  # auto: this share of the sentences must speak of a past period, else the video is modern
+
+
+def sentences(text):
+    """Sentences of a narration (also lines without a full stop)."""
+    return [x.strip() for x in re.split(r'(?<=[.!?…])\s+|\n+', str(text or '')) if x.strip()]
+
+
+def weighted_period(parts, minimum=HISTORIC_SHARE):
+    """(era, decade, evidence) by the period most of the TEXT speaks of: every sentence votes for its own
+    period; a past period wins only when at least `minimum` of the sentences speak of it (a few historical
+    asides in a video about today's geography do not make the whole video ancient). Unsure → 'contemporary'."""
+    votes, decades, past = {}, [], 0
+    for part in parts:
+        era, decade, evidence = period(part)
+        if era in HISTORY:
+            past += 1
+            votes[era] = votes.get(era, 0) + evidence
+            if era == '20th': decades += _decade(part) or ([decade] if decade else [])
+    if not votes or past < minimum * max(1, len(parts)): return 'contemporary', None, past
+    era = max(votes, key=lambda e: (votes[e], HISTORY.index(e)))
+    decade = max(set(decades), key=decades.count) if era == '20th' and decades else None
+    return era, decade, votes[era]
+
+
+def infer(texts, topic='', mode='auto'):
+    """The video's setting from all of its narration (+ the topic, counted twice).
+    mode: 'auto' (weighted by the text, modern when unsure), 'modern' (never a period filter),
+    'historic' (the period found in the text, however few sentences speak of it)."""
+    mode = mode if mode in MODES else 'auto'
+    parts = [x for t in texts for x in sentences(t)] + [str(topic)] * 2 * bool(str(topic or '').strip())
+    joined = ' '.join(parts)
     regions = places(joined)
-    if era is None:
-        era = 'contemporary' if regions and set(regions) <= {'ocean', 'space'} else None
-    return describe(era, decade, regions, evidence)
+    if mode == 'modern':
+        era, decade, evidence = 'contemporary', None, 0
+    elif mode == 'historic':
+        era, decade, evidence = weighted_period(parts, 0)
+        if era == 'contemporary': era, decade, evidence = period(joined)  # nothing dated: whatever the text as a whole says
+    else:
+        era, decade, evidence = weighted_period(parts)
+    return {**describe(era, decade, regions, evidence), 'mode': mode}
 
 
 def describe(era, decade, regions, evidence=0):
@@ -223,7 +257,7 @@ def describe(era, decade, regions, evidence=0):
 def for_scene(setting, scene_text):
     """The video's setting; a scene that names its own years/period (a flashback,
     "1850", "v. Chr.") gets that period. Places stay the video's (all allowed)."""
-    if not setting: return setting
+    if not setting or setting.get('mode') == 'modern': return setting  # the owner chose “Modern”: no scene is made historical
     era, decade, evidence = period(scene_text)
     if era and era != setting.get('era') and evidence >= 2 and (BC.search(scene_text or '') or YEAR.search(scene_text or '') or _decade(scene_text or '')):
         return {**describe(era, decade, setting.get('regions') or [], evidence), 'scene_override': True}
@@ -242,17 +276,18 @@ def penalties(setting, descriptor=''):
     [{'kind', 'text', 'label'}]. Prompts that share all their words with
     the shot's own description are left out (it may ask for exactly that)."""
     if not setting or not (setting.get('era') or setting.get('regions')): return []  # no period: the wrong-place check still runs
+    relax = int(setting.get('relax') or 0)  # 1: period/look rules off, 2: the wrong-place rules off too (see Director.relaxed)
     out, own = [], _words(descriptor) - {'a', 'an', 'the', 'of', 'in', 'on', 'with', 'and', 'or', 'photo'}
     when = year(setting)
     for since, _, text, label, _ in ANACHRONISMS:
-        if when is not None and when < since and not (_words(text) - {'a', 'an', 'the', 'in', 'on', 'and', 'or', 'with'}) <= own:
+        if not relax and when is not None and when < since and not (_words(text) - {'a', 'an', 'the', 'in', 'on', 'and', 'or', 'with'}) <= own:
             out.append({'kind': 'anachronism', 'text': text, 'label': label})
-    if setting.get('era') in HISTORY:
+    if setting.get('era') in HISTORY and not relax:
         for text, label, _, always in STYLE:
             if setting['era'] == 'prehistoric' and not always: continue  # dinosaurs/early humans: reconstructions are normal
             out.append({'kind': 'style', 'text': text, 'label': label})
     allowed = set(setting.get('regions') or [])
-    if allowed - {'ocean', 'space'}:
+    if allowed - {'ocean', 'space'} and relax < 2:
         families = {REGIONS[r][3] for r in allowed}
         for region, (_, name, name_tr, family, prompts, _, _) in REGIONS.items():
             if region in allowed or family in families: continue
@@ -271,11 +306,12 @@ def tag_conflict(setting, tags, provider=''):
     if not setting or not (setting.get('era') or setting.get('regions')): return None
     tags = ' ' + ' '.join(re.findall(r'\w+', str(tags).casefold())) + ' '  # provider tags come comma-separated
     has = lambda word: f' {word} ' in tags or f' {word}s ' in tags
-    when = year(setting)
-    if provider != 'wikimedia' and when is not None:  # museum/archive photos may mention modern things in their captions
+    when, relax = year(setting), int(setting.get('relax') or 0)
+    if relax >= 2: return None
+    if provider != 'wikimedia' and when is not None and not relax:  # museum/archive photos may mention modern things in their captions
         for _, before, _, label, words in ANACHRONISMS:
             if when < before and any(has(w) for w in words): return 'anachronism', label
-    if setting.get('era') in HISTORY:
+    if setting.get('era') in HISTORY and not relax:
         for _, label, words, always in STYLE:
             if setting['era'] == 'prehistoric' and not always: continue
             if any(has(w) for w in words): return 'style', label

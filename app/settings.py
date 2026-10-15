@@ -33,6 +33,9 @@ class GeneralSettings(StrictModel):
     intro_card: bool = False      # opening card (title + channel name)
     outro_card: bool = False      # “Abone ol” button + bell
     end_screen: bool = False      # 20 s YouTube end screen after the narration
+    # “Video dönemi”: the period/look filter of Medyayı Tamamla. auto = read from the text (weighted, modern when
+    # unsure); modern = no period filter at all; historic = the period found in the text, strict.
+    era_mode: Literal['auto', 'modern', 'historic'] = 'auto'
     _language = field_validator('content_language')(validate_language)
 
 
@@ -483,6 +486,11 @@ class SettingsService:
         with self.store.lock:
             general = self._values()['general']
             return {k: bool(general.get(k, False)) for k in ('intro_card', 'outro_card', 'end_screen')}
+
+    def era_mode(self):
+        with self.store.lock:
+            value = self._values()['general'].get('era_mode', 'auto')
+        return value if value in ('auto', 'modern', 'historic') else 'auto'
 
     def ai_visual_check(self):
         with self.store.lock:

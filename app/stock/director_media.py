@@ -56,8 +56,10 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
           'neutral': '5 · Nötr görüntü (manzara / gökyüzü / doku)',
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
           'motion_edit': 'Motion grafik (sizin düzenlemeniz)', 'motion_owner': 'İnfografik (metindeki işaretiniz)',
-          'motion_balance': 'Motion grafik (dengeli kurgu)'}  # older projects only
+          'motion_balance': 'Motion grafik (dengeli kurgu)',  # older projects only
+          'relaxed': '4b · Gevşetilmiş dönem/yer filtresiyle stok'}
 MOTION_WARN = 25        # % of slots: above this the screen warns (too little stock footage)
+MOTION_TARGET = MOTION_WARN / 100  # above this share the period/place rules are loosened (relaxed())
 QUOTE_SHARE = .30       # at most this share of motion slots may be a plain text (quote) card
 CANDIDATES = 4          # at most this many candidates per slot go to the AI (after a metadata pre-filter)
 IMAGES_PER_REQUEST = 4  # pictures per AI request (each ≤512 px JPEG); one after a batch got “server busy”
@@ -233,6 +235,7 @@ class MediaDirector:
         self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
         self.scene_order, self.scene_text, self.topic, self.owner, self.language = [], {}, '', {}, 'de'
         self.setting, self.scene_settings, self.setting_seen = None, {}, set()
+        self.relax = 0  # 0: period/place rules in full; 1: period/look rules off; 2: place rules off too (see relaxed())
 
     # ---- AI engine---------------------------------------------------------
     def connect(self):
@@ -746,7 +749,8 @@ class MediaDirector:
         tags = ' ' + relevance.normalized(f'{media.get("description", "")} {media.get("query_used", "")}') + ' '
         if any(f' {flag} ' in tags for flag in RED_FLAGS):
             return 'watermark_or_logo'
-        if media.get('provider') != 'wikimedia' and historic(scene) and any(f' {w} ' in tags or f' {w}s ' in tags for w in MODERN):
+        past = self.where(scene).get('era') != 'contemporary'  # only a historical video (or scene) gets the strict “no modern stock” rule
+        if media.get('provider') != 'wikimedia' and historic(scene) and past and not self.relax and any(f' {w} ' in tags or f' {w}s ' in tags for w in MODERN):
             return 'modern_in_history'  # a history/museum scene never gets modern stock (cars, phones, offices …)
         from app.stock.setting import tag_conflict
         conflict = tag_conflict(self.where(scene), tags, media.get('provider', ''))
@@ -1361,6 +1365,9 @@ class MediaDirector:
             broader = memo['broader']
             log['broader_queries'] = broader
             if broader: chosen = self.try_step(slot, scene, 'broader', ['video', 'image'], broader, log, exclude)
+        if not chosen and not keep_if_only_card and self.setting_blocked(log, memo) and self.motion_count() + 1 > MOTION_TARGET * len(self.slots):
+            # Too many motion graphics already and the period/place filter is what emptied this slot: looser rules before a graphic.
+            chosen = self.relaxed(slot, scene, memo, log, exclude, (planned + rewritten + memo.get('broader', []))[:8])
         if not chosen and keep_if_only_card:
             log['steps'].append({'stage': 'kept', 'label': STAGES['kept'], 'result': 'kept_no_better_option'})
             return log
@@ -1384,6 +1391,61 @@ class MediaDirector:
             self.motion(slot, scene, log, spec)
         return log
 
+    # ---- motion share: looser period/place rules before (or instead of) a graphic ----
+    def motion_count(self):
+        return sum(1 for s in self.slots if s.get('status') == 'complete' and is_generated(s.get('selected_media')))
+
+    def setting_blocked(self, log, memo):
+        """Did the period/place rules (not the lack of footage) empty this slot?"""
+        return bool(log.get('rejected', {}).get('setting_conflict') or log.get('rejected', {}).get('modern_in_history')
+                    or any(v.get('setting_conflict') for v in memo['judged'].values()))
+
+    def relaxed(self, slot, scene, memo, log, exclude, queries):
+        """Searches again with looser rules: level 1 drops the period/look rules (anachronism, cartoon/3D, “modern in a
+        history scene”), level 2 the wrong-place rules too. Candidates dropped before come back through the same
+        search; each still has to reach 7/10 (CLIP / AI / words). Verdicts made here never leak into the strict ones."""
+        if not queries: return None
+        for level in (1, 2):
+            self.relax = level
+            local = {**log, 'judged': {k: v for k, v in memo['judged'].items() if not v.get('setting_conflict')}, 'rejected': {}}
+            try: chosen = self.try_step(slot, scene, 'relaxed', ['video', 'image'], queries, local, exclude)
+            finally: self.relax = 0
+            if chosen:
+                note = 'dönem/görünüm kuralları gevşetildi' if level == 1 else 'dönem ve coğrafya kuralları gevşetildi'
+                slot['setting_relaxed'] = level
+                slot['message'] = f'⚠ Motion oranı yüksek olduğu için {note}. ' + slot.get('message', '')
+                self.progress['relaxed_slots'] = self.progress.get('relaxed_slots', 0) + 1
+                return chosen
+        return None
+
+    def relax_pass(self):
+        """After the main pass: still above the motion target → the graphics that only filled an empty slot get
+        another try with looser rules, best-fitting first (the order of the slots), until the target is met."""
+        total = len(self.slots)
+        if total < 4: return
+        def candidate(slot):
+            media, meta = slot.get('selected_media'), (slot.get('selected_media') or {}).get('source_metadata') or {}
+            return (slot.get('status') == 'complete' and is_generated(media) and not slot.get('locked') and not slot.get('manual_stock')
+                    and not slot.get('motion_edited') and not meta.get('owner_hint') and not meta.get('planned') and not slot.get('continuation_of')
+                    and (meta.get('motion') or {}).get('template') not in ('intro', 'outro', 'endscreen'))
+        for slot in sorted((s for s in self.slots if candidate(s)), key=lambda s: s['estimated_start']):
+            if self.motion_count() <= MOTION_TARGET * total or self.service.closed: break
+            scene = self.scene_by_id[slot['scene_id']]
+            memo = self.memo.setdefault(slot['scene_id'], {'judged': {}})
+            slot['relevance_profile'] = relevance.profile(scene, slot)
+            planned = list(dict.fromkeys(q for q in [slot.get('search_query'), *slot.get('fallback_queries', []), scene.get('primary_stock_query'),
+                                                     *scene.get('alternative_stock_queries', []), *memo.get('rewritten', []), *memo.get('broader', [])] if q))[:8]
+            backup, old = deepcopy(slot), slot.get('selected_media')
+            self._release(slot)
+            log = {'started_at': now(), 'steps': [], 'searches': [], 'judged': {}, 'rejected': {}}
+            self.progress.update(message=f'Yuva {slot["order"]} · motion oranı yüksek, gevşetilmiş kurallarla stok aranıyor')
+            self.service._checkpoint(self.job, self.progress, light=True)
+            if self.relaxed(slot, scene, memo, log, set(), planned):
+                self.finish_slot(slot, log)
+            else:
+                slot.clear(); slot.update(backup)
+                if old: self.register(slot['slot_id'], old, float(slot.get('segment_start') or 0), used_seconds(slot))
+
     def where(self, scene):
         """The period/place this scene is checked against (the video's, or the
         scene's own when it names other years, e.g. a flashback)."""
@@ -1393,7 +1455,8 @@ class MediaDirector:
         if sid not in self.scene_settings:
             from app.stock.setting import for_scene
             self.scene_settings[sid] = for_scene(self.setting, scene.get('narration_text', ''))
-        return self.scene_settings[sid] or {}
+        setting = self.scene_settings[sid] or {}
+        return {**setting, 'relax': self.relax} if self.relax and setting else setting
 
     def setting_rejected(self, media, conflict):
         counts = self.progress.setdefault('setting_rejected', {})
@@ -1511,10 +1574,11 @@ class MediaDirector:
         self.topic = project.get('topic') or project.get('name', '')
         self.language = project.get('language') or 'de'
         from app.stock.setting import infer
-        self.setting = infer([sc.get('narration_text', '') for sc in ordered_scenes], self.topic)
+        mode = getattr(service.settings, 'era_mode', lambda: 'auto')()  # Ayarlar → Video dönemi
+        self.setting = infer([sc.get('narration_text', '') for sc in ordered_scenes], self.topic, mode)
         self.scene_settings, self.setting_seen = {}, set()
         if self.setting.get('label'):
-            self.progress['setting'] = {k: self.setting.get(k) for k in ('label', 'label_en', 'era', 'decade', 'regions')}
+            self.progress['setting'] = {k: self.setting.get(k) for k in ('label', 'label_en', 'era', 'decade', 'regions', 'mode')}
         self.connect()
         single = job.get('slot_id')
         action = {'reselect': 'reselect', 'to_motion': 'to_motion', 'to_stock': 'to_stock', 'motion_edit': 'motion_edit'}.get(job['action'], 'reselect')
@@ -1590,6 +1654,7 @@ class MediaDirector:
                 self.progress.setdefault('slot_errors', []).append(f'Yuva {slot.get("order")}: beklenmeyen hata ({type(error).__name__}); yazı kartı kullanıldı.')
                 self.card(slot, scene, log)
             self.finish_slot(slot, log)
+        if targets and not single: self.relax_pass()
         if targets and not single and not self.local:  # nothing new chosen: nothing to re-review
             try:
                 self.review(scenes)

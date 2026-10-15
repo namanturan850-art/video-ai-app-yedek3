@@ -50,6 +50,9 @@ def pasted_text(data, words=390):
 
 
 def build(tmp_path, monkeypatch, key):
+    monkeypatch.setattr('app.stock.quality.inspect_media', lambda projects,pid,media,tools,start: {
+        'accepted': True, 'sha256': media['sha256'], 'width': media['width'],
+        'height': media['height'], 'duration': media.get('duration')})
     monkeypatch.setattr('app.motion.clips.raster_render', T.fast_motion)
     monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))  # synthetic two-provider library (Commons: test_wikimedia.py)
     data = T.TOPICS[key]

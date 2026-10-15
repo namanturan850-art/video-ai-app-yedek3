@@ -1,5 +1,6 @@
 """Internally generated Unicode ASS; cue timing is read, never regenerated."""
 import math
+import re
 from app.rendering.models import RenderError
 from app.subtitles.models import validate_cues,SubtitleError
 
@@ -33,17 +34,25 @@ def styled(header,style):
     return '\n'.join(lines)
 
 
-H_LOWER=760  # top of the lower-third band (subtitles stay below it)
+H_LOWER=630  # reserve the bottom area for two-line subtitles
+
+
+def fitted(text, font, width, lines, size):
+    from app.channels import FONTS
+    from app.motion.templates import measure
+    from app.text_layout import fit_text
+    file = FONTS[font][1] if font in FONTS else next((v[1] for v in FONTS.values() if v[0] == font), 'Inter.ttf')
+    size, rows = fit_text(text, lambda value, size: measure(value, file, size), width, lines, size)
+    return size, '\n'.join(rows)
 
 
 def graphic(item,start,end,g):
     """Emphasis text as a broadcast-style graphic (kit colours and heading
     font): a translucent box slides in, an accent bar grows, the text follows.
     Vector drawing only (libass), no images."""
-    text=' '.join(item['text'].split());size=72 if len(text)<=30 else 60 if len(text)<=48 else 50
-    factor=.43 if g['font'] in ('Oswald','Bebas Neue') else .55  # average glyph width (narrow heading fonts)
-    natural=len(text)*size*factor;width=int(min(1640,natural+96));squeeze=100 if natural+96<=1640 else max(60,int(1544*100/natural))
-    height=int(size*1.55);bg=ass_colour(g['background'])[4:];accent=ass_colour(g['accent'])[4:];fg=ass_colour(g['primary'])[4:]
+    size,text=fitted(item['text'],g['font'],1500,2,64)
+    width=1640;squeeze=100
+    height=int(size*1.4*len(text.splitlines())+30);bg=ass_colour(g['background'])[4:];accent=ass_colour(g['accent'])[4:];fg=ass_colour(g['primary'])[4:]
     a,b=timecode(start),timecode(end);out=max(0,int((end-start)*1000)-220)
     font=g['font'];shape=lambda w,h:f'm 0 0 l {w} 0 {w} {h} 0 {h}'
     if item.get('style') in ('upper_left','lower_third'):  # kicker on the left; lower_third: band over the video, above subtitles
@@ -60,29 +69,30 @@ def graphic(item,start,end,g):
 def badge(item,start,end,g):
     """[SIRA]: “23/30 · TITLE” in a dark box at the top left + a thin progress line under it."""
     g=g or {};accent=ass_colour(g.get('accent') or '#3D9BFF')[4:];bg=ass_colour(g.get('background') or '#0B1426')[4:];font=g.get('font') or 'Arial'
-    text=' '.join(item['text'].split());width=int(min(900,len(text)*21+60));a,b=timecode(start),timecode(end)
+    size,text=fitted(item['text'],font,1500,1,36)
+    width=1600;a,b=timecode(start),timecode(end)
     filled=max(4,int((width-0)*min(1,max(0,float(item.get('fraction') or 0)))))
     shape=lambda w,h:f'm 0 0 l {w} 0 {w} {h} 0 {h}'
     return [f'Dialogue: 5,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(60,48)\\p1\\bord0\\shad0\\1c&H{bg}&\\1a&H30&\\fad(250,250)}}{shape(width,64)}{{\\p0}}',
-            f'Dialogue: 6,{a},{b},Graphic,,0,0,0,,{{\\an4\\pos(84,80)\\fn{font}\\fs36\\b1\\bord0\\shad0\\1c&HFFFFFF&\\fad(250,250)}}{escape(text)}',
+            f'Dialogue: 6,{a},{b},Graphic,,0,0,0,,{{\\an4\\pos(84,80)\\fn{font}\\fs{size}\\b1\\bord0\\shad0\\1c&HFFFFFF&\\fad(250,250)}}{escape(text)}',
             f'Dialogue: 6,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(60,116)\\p1\\bord0\\shad0\\1c&HFFFFFF&\\1a&HB0&\\fad(250,250)}}{shape(width,6)}{{\\p0}}',
             f'Dialogue: 7,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(60,116)\\p1\\bord0\\shad0\\1c&H{accent}&\\fscx0\\t(200,900,\\fscx100)\\fad(250,250)}}{shape(filled,6)}{{\\p0}}']
 
 
 def band2(item,start,end,g):
-    """[ŞERİT]: two-line band over real footage — a small top line, then a big
-    bottom line typed in letter by letter (typewriter)."""
+    """[ŞERİT]: a fitted heading and complete phrase over real footage."""
     g=g or {};accent=ass_colour(g.get('accent') or '#3D9BFF')[4:];bg=ass_colour(g.get('background') or '#0B1426')[4:];font=g.get('font') or 'Arial'
-    top=' '.join(str(item.get('top') or '').split());bottom=' '.join(item['text'].split());a,b=timecode(start),timecode(end)
-    width=int(min(1680,max(len(bottom)*36,len(top)*20)+120));y=H_LOWER-10
+    top=' '.join(str(item.get('top') or '').split()).upper();bottom=' '.join(item['text'].split());a,b=timecode(start),timecode(end)
+    size,bottom=fitted(bottom,font,1560,2,52)
+    top_size,top=fitted(top,font,1560,1,30)
+    width=1680;y=H_LOWER-10
     shape=lambda w,h:f'm 0 0 l {w} 0 {w} {h} 0 {h}'
     lines=[f'Dialogue: 2,{a},{b},Graphic,,0,0,0,,{{\\an7\\move(40,{y},90,{y},0,300)\\p1\\bord0\\shad0\\1c&H{bg}&\\1a&H38&\\fad(200,250)}}{shape(width,160)}{{\\p0}}',
            f'Dialogue: 3,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(90,{y})\\p1\\bord0\\shad0\\1c&H{accent}&\\fscy0\\t(100,400,\\fscy100)\\fad(0,250)}}{shape(10,160)}{{\\p0}}']
-    if top:lines.append(f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(130,{y+18})\\fn{font}\\fs34\\b1\\bord0\\shad0\\1c&H{accent}&\\fad(250,250)}}{escape(top.upper())}')
-    step=max(25,min(70,int(1400/max(1,len(bottom)))));typed=''
-    for i,char in enumerate(bottom):  # each letter appears at its own moment
-        at=400+i*step;typed+=f'{{\\alpha&HFF&\\t({at},{at+1},\\alpha&H00&)}}'+escape(char)
-    lines.append(f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(130,{y+66})\\fn{font}\\fs62\\b1\\bord0\\shad2\\4c&H000000&\\1c&HFFFFFF&\\fad(0,250)}}{typed}')
+    if top:lines.append(f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(130,{y+18})\\fn{font}\\fs{top_size}\\b1\\bord0\\shad0\\1c&H{accent}&\\fad(250,250)}}{escape(top)}')
+    # Keep the complete phrase visible; per-letter delays could outlast a short slot.
+    typed=escape(bottom)
+    lines.append(f'Dialogue: 4,{a},{b},Graphic,,0,0,0,,{{\\an7\\pos(130,{y+54})\\fn{font}\\fs{size}\\b1\\bord0\\shad2\\4c&H000000&\\1c&HFFFFFF&\\fad(180,250)}}{typed}')
     return lines
 
 
@@ -90,11 +100,18 @@ def word_boxes(cue,colour):
     """The word being read gets a coloured box (thick outline in the accent colour);
     word times are spread over the cue by word length (cue timing stays exact)."""
     words=cue['text'].split()
-    if len(words)<2:return [f'Dialogue: 0,{timecode(cue["start"])},{timecode(cue["end"])},Subtitle,,0,0,0,,{escape(cue["text"])}']
+    size=f'\\fs{cue["font_size"]}' if cue.get('font_size') else ''
+    if len(words)<2:return [f'Dialogue: 0,{timecode(cue["start"])},{timecode(cue["end"])},Subtitle,,0,0,0,,'+ ('{'+size+'}' if size else '') + escape(cue['text'])]
     weights=[len(w)+1 for w in words];total=sum(weights);span=cue['end']-cue['start'];at=cue['start'];out=[];box=ass_colour(colour)[4:]
     for i,w in enumerate(weights):
         end=cue['end'] if i==len(words)-1 else at+span*w/total
-        text=' '.join(f'{{\\3c&H{box}&\\bord10\\shad0}}{escape(word)}{{\\r}}' if j==i else escape(word) for j,word in enumerate(words))
+        parts=re.split(r'(\s+)',cue['text']);word_index=-1;rendered=[]
+        for part in parts:
+            if not part.isspace() and part:
+                word_index+=1
+                rendered.append(f'{{\\3c&H{box}&\\bord10\\shad0}}{escape(part)}{{\\r{size}}}' if word_index==i else escape(part))
+            else:rendered.append(escape(part))
+        text=('{'+size+'}' if size else '')+''.join(rendered)
         out.append(f'Dialogue: 0,{timecode(at)},{timecode(end)},Subtitle,,0,0,0,,{text}');at=end
     return out
 
@@ -135,8 +152,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         except SubtitleError:raise RenderError('subtitle_invalid','Aktif altyazı metni veya zamanları geçersiz. Altyazı ve Zamanlama ekranını kontrol edin.') from None
         highlight=(graphic_style or {}).get('accent') or '#3D9BFF' if (subtitle_style or {}).get('word_highlight') else None
         for cue in valid:
+            # Fit using the actual selected font; only presentation changes.
+            cue=dict(cue)
+            requested=(subtitle_style or {}).get('size',50 if smart else 48)
+            if any(e.get('style') in ('lower_third','band2') and e['start']<cue['end'] and e['end']>cue['start'] for e in emphasis or []):requested=min(requested,64)
+            size,text=fitted(cue['text'], (subtitle_style or {}).get('font','Arial'), 1680, 2,requested)
+            cue['text']=text
+            cue['font_size']=size
             if highlight:lines+=word_boxes(cue,highlight);continue
-            lines.append(f'Dialogue: 0,{timecode(cue["start"])},{timecode(cue["end"])},Subtitle,,0,0,0,,{escape(cue["text"])}')
+            lines.append(f'Dialogue: 0,{timecode(cue["start"])},{timecode(cue["end"])},Subtitle,,0,0,0,,{{\\fs{size}}}{escape(cue["text"])}')
     if smart and emphasis is not None and overlays:
         for item in emphasis:
             start,end=item['start'],item['end'];text=item['text']
@@ -147,8 +171,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             if graphic_style:
                 lines+=graphic(item,start,end,graphic_style);continue
             style='EmphasisLeft' if item.get('style') in ('upper_left','lower_third') else 'EmphasisCenter'
+            size,text=fitted(text,'Arial',1500,2,64)
             animation=r'{\fad(180,100)\fscx98\fscy98\t(0,180,\fscx100\fscy100)}'
             if item.get('style')=='lower_third':animation=r'{\an7\pos(120,'+str(H_LOWER)+r')\fad(180,100)}'
+            animation+='{\\fs'+str(size)+'}'
             lines.append(f'Dialogue: 1,{timecode(start)},{timecode(end)},{style},,0,0,0,,{animation}{escape(text)}')
     elif overlays:
         for scene in scenes:
@@ -159,5 +185,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 warnings.append('Geçersiz bir vurgu yazısı atlandı.');continue
             start=scene['start'];end=min(scene['end'],start+3,duration)
             if end-start<.1:warnings.append('Çok kısa sahnede vurgu yazısı atlandı.');continue
-            lines.append(f'Dialogue: 1,{timecode(start)},{timecode(end)},Overlay,,0,0,0,,{escape(text)}')
+            size,text=fitted(text,'Arial',1500,2,56)
+            lines.append(f'Dialogue: 1,{timecode(start)},{timecode(end)},Overlay,,0,0,0,,{{\\fs{size}}}{escape(text)}')
     return header+'\n'.join(lines)+'\n',warnings,bool(lines)

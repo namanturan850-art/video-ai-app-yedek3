@@ -24,6 +24,9 @@ YEAR = re.compile(r'(?i)(?:\b(?:im\s+jahre?|jahr|anno|um|seit|bis|ab|in|year|sin
 DECADE = re.compile(r'(?i)(?<!\d)(1[89]\d0|20[0-2]0)(?:\s*[\'’]?\s*(?:s|er|lar|ler|larda|lerde|lı|li)\b|-?ies\b)|'
                     r'\b(?:the\s+)?(?:twenties|thirties|forties|fifties|sixties|seventies|eighties|nineties)\b|'
                     r'\b(?:zwanziger|dreißiger|vierziger|fünfziger|sechziger|siebziger|achtziger|neunziger)\b')
+# Explicit year words distinguish early dates from counts ("100 soldiers").
+EARLY_YEAR = re.compile(r'(?i)\b(?:jahre?|year|anno|año|en\s+l[\'’]an)\s+([1-9]\d{0,2})(?![\d.,])\b|'
+                        r'(?<![\d.,])([1-9]\d{0,2})\s+(?:yılında|yılından|senesinde)\b')
 DECADE_WORDS = {'twenties': 1920, 'thirties': 1930, 'forties': 1940, 'fifties': 1950, 'sixties': 1960, 'seventies': 1970,
                 'eighties': 1980, 'nineties': 1990, 'zwanziger': 1920, 'dreißiger': 1930, 'vierziger': 1940, 'fünfziger': 1950,
                 'sechziger': 1960, 'siebziger': 1970, 'achtziger': 1980, 'neunziger': 1990}
@@ -176,6 +179,7 @@ def period(text):
         hits = len(pattern.findall(text))
         if hits: votes[era] = votes.get(era, 0) + 2 * hits
     years = [] if bc else [int(a or b) for a, b in YEAR.findall(text)]
+    if not bc: years += [int(a or b) for a, b in EARLY_YEAR.findall(text)]
     decades = _decade(text)
     for year in years + decades:
         era = _era_of_year(year)
@@ -259,7 +263,7 @@ def for_scene(setting, scene_text):
     "1850", "v. Chr.") gets that period. Places stay the video's (all allowed)."""
     if not setting or setting.get('mode') == 'modern': return setting  # the owner chose “Modern”: no scene is made historical
     era, decade, evidence = period(scene_text)
-    if era and era != setting.get('era') and evidence >= 2 and (BC.search(scene_text or '') or YEAR.search(scene_text or '') or _decade(scene_text or '')):
+    if era and era != setting.get('era') and evidence >= 2 and (BC.search(scene_text or '') or YEAR.search(scene_text or '') or EARLY_YEAR.search(scene_text or '') or _decade(scene_text or '')):
         return {**describe(era, decade, setting.get('regions') or [], evidence), 'scene_override': True}
     return setting
 
@@ -344,5 +348,6 @@ def reason(conflict):
 def rules_version():
     """Changes whenever the period/place rules change: earlier checks are then redone."""
     import hashlib, json
-    data = [ANACHRONISMS, STYLE, {k: v[3:6] for k, v in REGIONS.items()}]
+    data = [ANACHRONISMS, STYLE, {k: v[3:6] for k, v in REGIONS.items()},
+            YEAR.pattern, EARLY_YEAR.pattern, BC.pattern, ERA_WORDS]
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]

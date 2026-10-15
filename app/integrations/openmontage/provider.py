@@ -30,6 +30,29 @@ SUPPORTED=('.mp4','.jpg','.png','.webp')
 REEL_CRF=16  # intermediate: re-encoded once more by the delivery pass
 
 
+def text_layout(plan,props):
+    """Share pixel-measured typography with FFmpeg; keep source strings intact."""
+    from app.rendering.ass import fitted
+    kit=plan.get('style_kit') or {}
+    heading=kit.get('heading_font','arial')
+    for clip in props.get('clips',[]):
+        text='\n'.join(str(t) for t in clip.get('texts',[]))
+        if text:
+            width=800 if clip.get('layout') in ('split_media_text','dual_media') else 1400
+            lines=3 if clip.get('layout') in ('minimal_title','quote_emphasis') else 6
+            clip['text_font_size'],clip['display_text']=fitted(text,heading,width,lines,54)
+        if clip.get('number'):
+            clip['number_font_size'],clip['display_number']=fitted(str(clip['number']),heading,1400,1,110)
+    for item in props.get('emphasis',[]):
+        item['font_size'],item['display_text']=fitted(str(item.get('text','')),heading,1500,2,64)
+    for cue in props.get('subtitles',[]):
+        sub=kit.get('subtitle') or {}
+        size=sub.get('size',50)
+        if any(e.get('style') in ('lower_third','band2') and e['start']<cue['end'] and e['end']>cue['start'] for e in props.get('emphasis',[])):size=min(size,64)
+        cue['font_size'],cue['display_text']=fitted(cue['text'],sub.get('font','arial'),1680,2,size)
+    return props
+
+
 def remotion_workers():
     chosen=os.environ.get('AVS_REMOTION_WORKERS','')
     if chosen.isdigit() and 1<=int(chosen)<=4:return int(chosen)
@@ -80,6 +103,7 @@ class OpenMontageProvider:
         return props
 
     def compose(self,plan,request_props,public,staging,output,audio,folder,crf,runner,progress):
+        request_props=text_layout(plan,deepcopy(request_props))
         self.bridge.settings_guard(request_props)
         props=staging/'props.json';props.write_text(json.dumps(request_props,ensure_ascii=False),encoding='utf-8')
         entry=staging/'index.tsx';shutil.copyfile(Path(__file__).with_name('composition.tsx'),entry)

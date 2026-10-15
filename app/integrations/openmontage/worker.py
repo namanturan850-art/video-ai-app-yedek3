@@ -114,9 +114,15 @@ def command(args,*,timeout=None,cwd=None):
     return result
 
 
+_VISUAL = None
+
+
 def work(operation,inputs):
-    spec=importlib.util.spec_from_file_location('avs_visual_engine',Path(__file__).with_name('visual_engine.py'))
-    visual=importlib.util.module_from_spec(spec);spec.loader.exec_module(visual)
+    global _VISUAL
+    if _VISUAL is None:
+        spec=importlib.util.spec_from_file_location('avs_visual_engine',Path(__file__).with_name('visual_engine.py'))
+        _VISUAL=importlib.util.module_from_spec(spec);spec.loader.exec_module(_VISUAL)
+    visual=_VISUAL
     if operation in ('visual','semantic','frames'):
         status=visual.model_status(ROOT)
         if not status:raise ValueError('semantic_model_missing')
@@ -172,7 +178,22 @@ def work(operation,inputs):
     raise ValueError('operation_invalid')
 
 
-if __name__=='__main__':
+def serve_frames():
+    # One sequential model owner; module/model objects survive between batches.
+    for line in sys.stdin:
+        try:
+            if len(line)>2_000_000:raise ValueError('input_too_large')
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                data=work('frames',json.loads(line))
+            result={'success':True,'data':data}
+        except Exception:
+            result={'success':False,'category':'external_engine_failed'}
+        sys.__stdout__.write(json.dumps(result)+'\n');sys.__stdout__.flush()
+
+
+if __name__=='__main__' and sys.argv[2]=='--serve-frames':
+    serve_frames()
+elif __name__=='__main__':
     target=None
     try:
         if sys.argv[2]=='doctor':operation='doctor';inputs={}

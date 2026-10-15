@@ -83,6 +83,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         try:
             yield
         finally:
+            stock.closed = True  # stop scheduling media work before closing the shared CLIP worker
             rendering.close()
             narration.close()
             stock.close()

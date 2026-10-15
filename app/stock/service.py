@@ -46,12 +46,16 @@ class StockService:
         self.factory = make_stock_provider
         self.downloader = Downloader(self.projects)
         self.executor = ThreadPoolExecutor(max_workers=2,thread_name_prefix='stock-media')
+        # Only independent provider reads run concurrently. Selection/checkpoints
+        # stay on the job thread, preserving deterministic ownership and locks.
+        self.search_executor = ThreadPoolExecutor(max_workers=2,thread_name_prefix='stock-search')
         self.futures = {}
         self.closed = False
 
     def close(self):
         self.closed = True
         self.executor.shutdown(wait=True, cancel_futures=True)
+        self.search_executor.shutdown(wait=True, cancel_futures=True)
 
     def recover(self):
         with self.projects.lock, closing(self.projects._connection()) as connection, connection:

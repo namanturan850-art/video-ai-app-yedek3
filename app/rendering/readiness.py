@@ -11,7 +11,7 @@ from app.rendering import smart_edit,timeline
 
 def inspect(service,pid,tool,source,error,engine_status=None):
     r={'ready':False,'narration_ready':False,'subtitles_ready':False,'ffmpeg_ready':bool(tool['found']),
-       'stock_ready':False,'unresolved_stock_slots':0,'stale_stock_slots':0,'missing_files':0,'blockers':[]}
+       'stock_ready':False,'unresolved_stock_slots':0,'stale_stock_slots':0,'missing_files':0,'blockers':[],'quality_warnings':[]}
     def block(code,message,screen):r['blockers'].append({'code':code,'message':message,'screen':screen})
     h=service.subtitles.handoff(pid)
     with closing(service.projects._connection()) as c:
@@ -38,6 +38,11 @@ def inspect(service,pid,tool,source,error,engine_status=None):
             for slot in slots:
                 m=slot.get('selected_media')
                 if not m or slot['status']!='complete':r['unresolved_stock_slots']+=1;continue
+                proof=slot.get('local_validation') or {}
+                if proof.get('accepted') is False:
+                    block('quality_rejected','Bir medyanın kalite kontrolü başarısız. Medya ekranında bu yuvayı kontrol edin.','production')
+                if m.get('provider')!='generated' and (m.get('width',0)<1280 or m.get('height',0)<720 or m.get('width',0)<=m.get('height',0)):
+                    r['quality_warnings'].append({'slot_id':slot['slot_id'],'message':'Mevcut seçim yatay HD standardının altında; seçim korundu.'})
                 try:asset_path(service.projects,pid,m)
                 except (ScriptError,OSError):r['missing_files']+=1
             r['stock_ready']=bool(slots and not stale and not r['unresolved_stock_slots'] and not r['missing_files'])

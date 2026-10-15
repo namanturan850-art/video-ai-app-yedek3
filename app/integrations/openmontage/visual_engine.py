@@ -8,6 +8,8 @@ import shutil
 import subprocess
 import tempfile
 from uuid import uuid4
+from functools import lru_cache
+from collections import OrderedDict
 
 MODEL='openai/clip-vit-base-patch32'  # Verified upstream lib.clip_embedder._MODEL_ID.
 NEGATIVES=('a dog on grass','a passenger inside a train','a barbershop haircut',
@@ -20,6 +22,31 @@ def sha(path):
     with path.open('rb') as f:
         for block in iter(lambda:f.read(1024*1024),b''):digest.update(block)
     return digest.hexdigest()
+
+
+@lru_cache(maxsize=4)
+def verified_weight(path, signature, expected):
+    if sha(Path(path)) != expected:raise ValueError('semantic_model_changed')
+    return True
+
+
+_EMBEDDINGS = OrderedDict()
+EMBEDDING_LIMIT = 4096
+_LOADED_VERSION = None
+
+
+def embedded(values, keys, fn, clip, torch):
+    """Cache actual model vectors, never an approval for a different sentence."""
+    import numpy as np
+    missing = list(dict.fromkeys(key for key in keys if key not in _EMBEDDINGS))
+    if missing:
+        first = {key: value for key, value in zip(keys, values)}
+        rows = inference(fn, [first[key] for key in missing], clip, torch)
+        for key, row in zip(missing, rows):_EMBEDDINGS[key] = row.copy()
+    result = np.stack([_EMBEDDINGS[key] for key in keys])
+    for key in keys:_EMBEDDINGS.move_to_end(key)
+    while len(_EMBEDDINGS)>EMBEDDING_LIMIT:_EMBEDDINGS.popitem(last=False)
+    return result
 
 
 def save(path,value):
@@ -68,6 +95,7 @@ def score_frames(root,inputs):
     """Preview frames (JPEG files the app already has) of up to 32 stock
     candidates against one English description, one model load. Returns
     per candidate: verdict match/mismatch/uncertain, similarity, margin, score 0-10."""
+    global _LOADED_VERSION
     status=model_status(root)
     if not status:raise ValueError('semantic_model_missing')
     os.environ.update(HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',TOKENIZERS_PARALLELISM='false')
@@ -75,19 +103,24 @@ def score_frames(root,inputs):
     from lib.clip_embedder import embed_images,embed_texts
     import torch
     torch.set_num_threads(min(4,os.cpu_count() or 1))
-    if sha(status['weight'])!=status['version']:raise ValueError('semantic_model_changed')
+    stat=status['weight'].stat()
+    verified_weight(str(status['weight']), (stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns), status['version'])
+    if _LOADED_VERSION != status['version']:
+        clip_embedder._MODEL = clip_embedder._PROCESSOR = None
+        _LOADED_VERSION = status['version']
     clip_embedder._MODEL_ID=str(status['folder'])
     descriptor=str(inputs['descriptor'])[:300]
     words=set(re.findall(r'[a-z]+',descriptor.casefold()))-{'a','an','the','of','in','on','with'}
     negatives=[n for n in FRAME_NEGATIVES+NEGATIVES if not set(re.findall(r'[a-z]+',n))&words] or ['unrelated footage']
     penalties=setting_penalties(inputs.get('penalties'),descriptor)
-    texts=inference(embed_texts,[descriptor,*negatives,*(p['text'] for p in penalties)],clip_embedder,torch)
+    labels=[descriptor,*negatives,*(p['text'] for p in penalties)]
+    texts=embedded(labels,[('text',status['version'],t) for t in labels],embed_texts,clip_embedder,torch)
     split=1+len(negatives)
     results=[]
     for item in inputs['candidates'][:32]:
         frames=[Path(p) for p in item['frames'][:3]]
         if not frames or any(not f.is_file() or f.is_symlink() or not f.is_absolute() for f in frames):raise ValueError('source_missing')
-        images=inference(embed_images,frames,clip_embedder,torch)
+        images=embedded(frames,[('image',status['version'],sha(f)) for f in frames],embed_images,clip_embedder,torch)
         scores=images@texts.T;target=float(scores[:,0].mean());other=float(scores[:,1:split].mean(axis=0).max())
         margin=target-other
         votes=int((scores[:,0]>scores[:,1:split].max(axis=1)+.01).sum())

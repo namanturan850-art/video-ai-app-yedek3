@@ -80,7 +80,9 @@ def test_badge_band_and_word_highlight_in_subtitles():
     content, _, _ = ass.create([{'start': 0., 'end': 3., 'text': 'Les pêcheurs partaient en mer'}], [], 10., editing_style='adaptive',
                                emphasis=[badge, band], subtitle_style=style, graphic_style={'background': '#0B1426', 'accent': '#3D9BFF', 'primary': '#FFFFFF', 'font': 'Montserrat'})
     assert content.count(',Subtitle,') == 5 and '\\3c&HFF9B3D&\\bord10' in content  # one line per word, the word boxed in the accent colour
-    assert '23/30 · LA FRANCE CACHÉE' in content and 'BRETAGNE, 1910' in content and '\\t(400,401,\\alpha&H00&)' in content  # typewriter
+    assert '23/30 · LA FRANCE CACHÉE' in content and 'BRETAGNE, 1910' in content
+    assert 'Les pêcheurs partaient' in content  # full band remains readable for the entire shot
+    assert '\\t(400,401,\\alpha&H00&)' not in content
     plain, _, _ = ass.create([{'start': 0., 'end': 3., 'text': 'Les pêcheurs partaient en mer'}], [], 10.)
     assert plain.count(',Subtitle,') == 1  # off by default
 

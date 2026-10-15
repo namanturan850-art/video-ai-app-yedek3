@@ -46,15 +46,9 @@ def _wrap(draw, text, font, width, lines=3):
 
 
 def _fit(draw, text, width, lines, start, smallest=44):
-    size = start
-    while size > smallest:
-        font = _font(size)
-        rows = _wrap(draw, text, font, width, lines)
-        if all(draw.textlength(r, font=font) <= width for r in rows) and not rows[-1].endswith('…'):
-            return font, rows
-        size -= 6
-    font = _font(smallest)
-    return font, _wrap(draw, text, font, width, lines)
+    from app.text_layout import fit_text
+    size, rows = fit_text(text, lambda value, size: draw.textlength(value, font=_font(size)), width, lines, start)
+    return _font(size), rows
 
 
 def _centered(draw, rows, font, top, fill, spacing=1.25):

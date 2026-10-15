@@ -10,7 +10,7 @@ import test_media_director_topics as T
 from app.stock import setting
 from app.stock.providers import WikimediaStockProvider
 
-ANDES = {'topic': 'Los Andes', 'scenario': 'no_results', 'shots': 3, 'themes': [
+ANDES = {'topic': 'Los Andes', 'scenario': 'plenty', 'shots': 3, 'themes': [
     ('andes mountains aerial', ['andes peaks snow', 'mountain range aerial'], 'andes mountains', 'andes mountains aerial range peaks'),
     ('tourists hiking mountain trail', ['hikers andes trail', 'trekking peaks'], 'hikers on a trail', 'tourists hiking trail mountain andes'),
     ('road through the mountains', ['car on mountain road', 'highway andes'], 'road in the mountains', 'car road highway mountain andes'),
@@ -28,7 +28,7 @@ ANDES = {'topic': 'Los Andes', 'scenario': 'no_results', 'shots': 3, 'themes': [
 
 def text(aside=True, sentences=60):
     out = [ANDES['sentences'][i % 6] for i in range(sentences)]
-    if aside: out[17] = ANDES['sentences'][6]  # ONE historical sentence in sixty
+    if aside: out[17] = 'Hace siglos los antiguos incas construyeron caminos entre los picos.'  # ONE historical sentence in sixty
     return '# Los Andes\n\n' + '\n\n'.join(' '.join(out[i:i + 4]) for i in range(0, len(out), 4))
 
 
@@ -101,7 +101,7 @@ def test_wikimedia_answer_with_only_filtered_files_is_not_invalid_response():
     provider = WikimediaStockProvider('', transport=httpx.MockTransport(lambda r: httpx.Response(200, json={'query': {'pages': pages}})))
     assert provider.search_videos('andes mountains') == []  # ogv, NC licence, page without a file: nothing usable, but a valid answer
     assert provider.last_diagnostic['filtered'] == 3
-    broken = WikimediaStockProvider('', transport=httpx.MockTransport(lambda r: httpx.Response(200, json={'query': {'pages': [{'weird': 1}, {'weird': 2}]}})))
+    broken = WikimediaStockProvider('', transport=httpx.MockTransport(lambda r: httpx.Response(200, json={'query': {'pages': [{'pageid': 1, 'title': 'File:a', 'imageinfo': ['x']}, {'pageid': 2, 'title': 'File:b', 'imageinfo': [7]}]}})))
     from app.stock.models import StockError
     with pytest.raises(StockError) as error:
         broken.search_videos('andes')

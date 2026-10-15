@@ -377,6 +377,12 @@ def build(tmp_path, monkeypatch, key, engine='gemini'):
         lambda request: httpx.Response(200, headers={'Content-Type': 'video/mp4' if request.url.path.endswith('.mp4') else 'image/jpeg'},
                                        content=(MP4 if request.url.path.endswith('.mp4') else JPEG) + str(request.url).encode())))
     stock.fetch_thumbnail = lambda url: JPEG + url.encode()
+    stock.fetch_video_frames = lambda url, duration: [JPEG + url.encode()] * 3
+    # This library deliberately uses MP4/JPEG headers rather than decodable
+    # sources. Real local decoding/blur inspection has separate FFmpeg tests.
+    stock.quality_inspector = lambda projects, pid, media, tools, start: {
+        'accepted': True, 'sha256': media['sha256'], 'width': media['width'],
+        'height': media['height'], 'duration': media.get('duration')}
     return client, pid, world, claude, fake
 
 
@@ -440,10 +446,13 @@ def test_three_minute_topic_fills_every_slot_with_approved_or_generated_media(ke
         assert 'synthetic-pexels-key' not in diag.text and 'sk-ant' not in diag.text
         calls = len(fake.requests)
         print(f'\nRESULT {engine} {key}: {summary["text"]} · motion {summary["motion_percent"]}% of time · AI calls {calls} · paid ${usage["total_cost_usd"]:.4f}')
-        # Motion only where the director planned it or no stock fits: with a
-        # stock-rich library the screen's 25% warning never shows.
+        # Sentence-level matching can need more graphics than scene-level
+        # approval. Never weaken period/place or orientation to meet a quota.
         if key in ('bermuda', 'rome'):
-            assert summary['motion_slot_percent'] <= 25 and not any('motion grafik (hedef' in w for w in again['warnings'])
+            assert not any(s.get('setting_relaxed') for s in again['slots'])
+            assert all(s['selected_media']['width'] > s['selected_media']['height'] for s in again['slots'])
+            if summary['motion_slot_percent'] > 25:
+                assert any('motion grafik (hedef' in w for w in again['warnings'])
         assert not any((s.get('director') or {}).get('stage') == 'motion_balance' for s in again['slots'])  # no forced motion
         planned = [s for s in again['slots'] if (s.get('director') or {}).get('stage') == 'motion_planned']
         assert planned and all(s['selected_media']['media_type'] == 'video' for s in planned)
@@ -545,7 +554,10 @@ def test_gemini_per_minute_limit_waits_and_still_chooses_stock(tmp_path, monkeyp
         monkeypatch.setattr('app.stock.director_media.WAIT_BUDGET', 600)  # (a clip is used once: more looks, so more 7 s waits than the 60 s default allows)
         view = complete(client, pid)
         summary = check(client, pid, claude, view)
-        assert summary['videos'] > 0 and summary['cards'] == 0
+        # Rome's fixture supplies portrait videos; landscape photos are the
+        # suitable stock alternative under the quality policy.
+        assert summary['videos'] + summary['images'] > 0 and summary['cards'] == 0
+        assert all(s['selected_media']['width'] > s['selected_media']['height'] for s in view['slots'])
         assert client.app.state.stock.slept and set(client.app.state.stock.slept) == {7}  # waited Retry-After, then retried
     finally:
         client.__exit__(None, None, None)

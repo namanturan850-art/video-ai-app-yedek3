@@ -22,7 +22,9 @@ def test_period_and_place_from_the_text(text, topic, label, region):
 
 
 def test_counts_are_not_years():
-    assert S.infer(['Rund 1200 Kilometer weit zogen 10000 Soldaten.'])['era'] is None
+    text = 'Rund 1200 Kilometer weit zogen 10000 Soldaten.'
+    assert S.period(text)[0] is None
+    assert S.infer([text])['era'] == 'contemporary'  # automatic mode's existing default
 
 
 def test_penalties_follow_the_setting():
@@ -114,7 +116,7 @@ def test_clip_conflict_is_rejected_with_a_turkish_reason(tmp_path, monkeypatch):
         client.__exit__(None, None, None)
 
 
-def test_neutral_footage_when_nothing_fits(tmp_path, monkeypatch):
+def test_related_graphic_instead_of_neutral_footage_when_nothing_fits(tmp_path, monkeypatch):
     text = ('# Alltag\n\nDie Kaufleute handelten mit Getreide und Wein. Die Priester beteten still im Tempel. '
             'Die Bauern arbeiteten hart auf den Feldern. Die Kinder spielten mit kleinen Steinen. '
             'Die Frauen webten bunte Stoffe für den Winter. Die Soldaten bewachten die Tore der Stadt.')
@@ -127,10 +129,10 @@ def test_neutral_footage_when_nothing_fits(tmp_path, monkeypatch):
         client.app.state.stock.clip_scorer = score
         view = T.complete(client, pid)
         assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
-        assert view['job']['progress']['setting']['label'] == 'antik Roma'
         neutral = [s for s in view['slots'] if (s.get('director') or {}).get('stage') == 'neutral']
-        assert neutral, [(st.get('result'), st.get('judged'), (s.get('director') or {}).get('rejected')) for s in view['slots'] for st in (s.get('director') or {}).get('steps', []) if st['stage'] == 'neutral'][:2]
-        assert all('Nötr görüntü' in s['message'] and s['selected_media']['media_id'] in ('8400001', '9300001') for s in neutral)
+        assert not neutral
+        assert all(s['selected_media']['provider'] == 'generated' for s in view['slots'])
+        assert not any(s.get('setting_relaxed') for s in view['slots'])
     finally:
         client.__exit__(None, None, None)
 
@@ -141,7 +143,7 @@ def test_earlier_picks_are_checked_once_and_conflicts_chosen_again(tmp_path, mon
         good = F.clip_fake(world, [])
         client.app.state.stock.clip_scorer = lambda descriptor, items: good(descriptor, items)
         with monkeypatch.context() as older:  # a run from before the period check
-            older.setattr(S, 'infer', lambda texts, topic='': S.describe(None, None, []))
+            older.setattr(S, 'infer', lambda texts, topic='', mode='auto': S.describe(None, None, []))
             older.setattr(S, 'for_scene', lambda setting, text: setting)
             first = T.complete(client, pid)
         assert not any(s.get('setting_check') for s in first['slots']), [s.get('setting_check') for s in first['slots']]

@@ -266,11 +266,13 @@ def render(scene, output, ffmpeg):
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
                '-movflags', '+faststart', str(output)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
-    try:
+    from app.motion.control import guard, check
+    with guard(process):
         # Nothing changes after the last keyframe: the settled picture is written again, not redrawn.
         settled = max((key[0] for e in scene['elements'] for track in (e.get('tracks') or {}).values() for key in track), default=0)
         data = None
         for i in range(frames):
+            check()
             if data is None or i / FPS <= settled + 1e-6:
                 data = draw_frame(scene, i / FPS, base, maps, pictures).tobytes()
             process.stdin.write(data)
@@ -278,7 +280,4 @@ def render(scene, output, ffmpeg):
         error = process.stderr.read()
         if process.wait(timeout=600):
             raise RuntimeError(error.decode('utf-8', 'replace')[-300:] or 'ffmpeg failed')
-    finally:
-        if process.poll() is None:
-            process.kill()
     return frames

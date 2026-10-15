@@ -12,6 +12,8 @@ Yerel kare analizi isteğe bağlıdır: **INSTALL_OPENMONTAGE_SEMANTIC.bat** aç
 
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
+Kalite ve uzun video geliştirme dalı: [Neler değişti, mevcut kayıtlar nasıl korunuyor, hangi kontroller henüz yapılmadı?](docs/QUALITY_AND_PERFORMANCE.md)
+
 **Part 7 seslendirme:** Sahibinin canlı doğruladığı AI33 TTS sözleşmesi etkin: done/tts/metadata.audio_url. Onaylı senaryo ve seçili sesle, açık kredi onayından sonra görev oluşturma/izleme, güvenli indirme, yerel oynatma ve sürümler kullanılabilir. Devam Et aynı görevi kullanır. ElevenLabs yeni ayarın varsayılanıdır. Ses adı araması ve hızlı sayfalama; ücretsiz hazır örnek ile ücretli Kısa TTS Testi ayrı gösterilir. [19 basit Windows adımı](docs/NARRATION.md) ve [doğrulanmış sözleşme](AI33_INTEGRATION_NOTES.md). Part 7 sahibi tarafından gerçek Windows'ta ses üretimi/oynatma/kalıcılık ve Pixabay korunumu ile doğrulandı.
 
 **Part 8 altyazı ve zamanlama:** Çalışan sesinizin projesinde **Altyazı ve Zamanlama → Altyazıları Oluştur**. Yerel sesin gerçek süresi ölçülüp kaydedilir; onaylı metin korunarak SRT/VTT, yerel sesle önizleme, zaman/metin editörü ve eski sürümler hazırlanır. İşlem kredi/API kullanmaz. **Ses süresine göre yaklaşık zamanlama**; kesin kelime hizalaması değildir. [15 çok basit Windows adımı](docs/SUBTITLES.md). Part 9 bu mevcut zamanlamayı salt okunur kullanarak video oluşturur.

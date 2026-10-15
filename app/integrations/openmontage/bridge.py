@@ -38,6 +38,11 @@ class Bridge:
         self.projects,self.settings=projects,settings;self.cache=None;self.cache_time=0
         self.config_file=projects.storage/'openmontage.json'
         self.semantic_error=False
+        from app.integrations.openmontage.frames_process import FramesProcess
+        self.frames = FramesProcess()
+
+    def close(self):
+        self.frames.close()
 
     def config(self):
         if linked(self.config_file):raise RenderError('openmontage_path','OpenMontage ayar dosyası güvenli değil.',409)
@@ -119,7 +124,11 @@ class Bridge:
         python=root/'.venv'/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
         try:
             args=[str(python),str(WORKER),str(root),str(request)]
-            if operation in ('visual','frames'):
+            if operation == 'frames':
+                result=self.frames.call([str(python),str(WORKER),str(root),'--serve-frames'],root,env,inputs)
+                self.settings_guard(result)
+                return result.get('data', {})
+            if operation == 'visual':
                 # Bounded model inference; raw output never reaches diagnostics.
                 checked=subprocess.run(args,cwd=folder,shell=False,env=env,stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180 if operation=='visual' else 120)

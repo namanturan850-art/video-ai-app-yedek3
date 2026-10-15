@@ -9,8 +9,7 @@ at the candidates' preview frames; irrelevant media is never used to fill):
   4. media for the broader topic (still approved by the AI)
   5. very short slots (<1.5 s): continue the neighbouring shot
   6. motion graphic from the narration (only when no stock fits); a scene
-     with no number/place/date: neutral footage of the setting (landscape,
-     sky, texture) before a plain text card
+     with no number/place/date uses its own text, never generic scenery.
 Every candidate is also checked against the video's period and place
 (app/stock/setting.py): modern things in an ancient topic, cartoon/3D in a
 history documentary, landmarks of places the video never names are dropped.
@@ -38,6 +37,8 @@ from app.projects import linked, now
 from app.providers.base import ScriptProviderError
 from app.providers.gemini_chain import MAX_MODELS
 from app.stock import relevance
+from app.stock.shot import bind as bind_shot, narration as shot_narration, memo_key
+from app.stock.performance import timed
 from app.stock.cards import render_card
 from app.stock.download import USER_AGENT, asset_path, directory, safe_url
 from app.stock.identities import identity_keys
@@ -59,7 +60,7 @@ STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapa
           'motion_balance': 'Motion grafik (dengeli kurgu)',  # older projects only
           'relaxed': '4b · Gevşetilmiş dönem/yer filtresiyle stok'}
 MOTION_WARN = 25        # % of slots: above this the screen warns (too little stock footage)
-MOTION_TARGET = MOTION_WARN / 100  # above this share the period/place rules are loosened (relaxed())
+MOTION_TARGET = MOTION_WARN / 100  # legacy relaxation helper; automatic calls disabled
 QUOTE_SHARE = .30       # at most this share of motion slots may be a plain text (quote) card
 CANDIDATES = 4          # at most this many candidates per slot go to the AI (after a metadata pre-filter)
 IMAGES_PER_REQUEST = 4  # pictures per AI request (each ≤512 px JPEG); one after a batch got “server busy”
@@ -143,9 +144,10 @@ def clip_descriptor(slot, scene, language='de', setting=None):
     """English description for the picture model: the owner's [GÖRSEL] note,
     the slot's planned query and the sentence's filmable words (+ the video's
     period and place, e.g. “ancient Mesopotamia”)."""
+    scene = bind_shot(scene, slot, language) if not scene.get('_shot_bound') and 'estimated_start' in slot else scene
     from app.scripts.query_clean import english_query
     hints = [h.get('value', '') for h in scene.get('owner_hints') or [] if h.get('type') == 'visual']
-    narration = sentence_at(scene.get('narration_text', ''), .5) if used_seconds(slot) < 6 else scene.get('narration_text', '')[:400]
+    narration = scene.get('narration_text', '')
     parts = [english_query(h, language, limit=6) for h in hints]
     parts += [english_query(q, language, limit=5) for q in (slot.get('search_query'), scene.get('primary_stock_query')) if q]
     parts.append(english_query(narration, language, strict=True, limit=6))
@@ -177,6 +179,9 @@ def is_card(media):
 def technical(media, need):
     """Hard limits only; content is the AI's call. Portrait/square is allowed
     (rendered on a blurred background) but ranked after landscape."""
+    ratio = media['width'] / max(1, media['height'])
+    if not (1.6 <= ratio <= 1.95 if media['media_type']=='video' else 1.3 <= ratio <= 2.):
+        return 'orientation'
     short = min(media['width'], media['height'])
     if media['media_type'] == 'video':
         if short < 720: return 'resolution'
@@ -437,7 +442,7 @@ class MediaDirector:
                 f'Narration of this shot (spoken language {scene.get("stock_query_language", "")}): '
                 f'"{sentence_at(scene.get("narration_text", ""), .5) if used_seconds(slot) < 6 else scene.get("narration_text", "")[:600]}"\n'
                 f'Scene narration: "{scene.get("narration_text", "")[:900]}"\n'
-                f'Visual goal: {slot.get("visual_goal") or scene.get("visual_intent", "")}\n'
+                f'Visual goal: {scene.get("visual_intent") or slot.get("visual_goal", "")}\n'
                 f'MUST show: {scene.get("must_show") or "(not specified)"}\n'
                 f'MUST NOT show: {scene.get("must_not_show") or "(not specified)"}\n'
                 f'Shot length: {used_seconds(slot):.1f} s. Mood: {scene.get("mood", "")}.')
@@ -476,29 +481,57 @@ class MediaDirector:
         except (StockError, OSError, ValueError):
             return []
 
-    def judge(self, slot, scene, pool, *, batch=None):
+    @timed('judging')
+    def judge(self, slot, scene, pool, *, batch=None, review_selected=False):
         """Verdicts by key for up to CANDIDATES candidates per slot. Known
         verdicts (any project, same kind of shot) are reused; the rest go to
         the AI in ONE request, each candidate as one picture (a video's start/
         middle/end frames side by side). Without the AI: local scoring."""
+        if 'estimated_start' in slot:
+            scene = bind_shot(scene, slot, getattr(self, 'language', 'en'))
         from app.stock.verdict_cache import VerdictCache, cache_key, context
         cache = self.verdict_cache()
-        fingerprint = context(scene, slot)
+        if getattr(self, 'clip', None):
+            self.clip.ready()  # initialize the model identity before cache lookup
+        model = getattr(getattr(self,'clip',None),'model_version','')
+        evaluator = {'clip': model, 'cloud': getattr(self, 'engine', '') if not self.local else '',
+                     'model': getattr(getattr(self, 'ai', None), 'model', '')}
+        fingerprint = context(scene, {**slot, 'quality_setting': self.where(scene), 'quality_evaluator': evaluator})
+        budget_key = (fingerprint, scene.get('scene_id'))
         verdicts, ask = {}, []
         for media in pool:
             known = cache.get(cache_key(media, fingerprint)) if cache else None
             if known and isinstance(known.get('score'), int):
                 verdicts[key(media)] = {**known, 'cached': True}
                 self.progress['ai_cached'] = self.progress.get('ai_cached', 0) + 1
+                self.look_budget = getattr(self, 'look_budget', {})
+                self.look_budget[budget_key] = 1
             else:
                 ask.append(media)
         if not ask: return verdicts
         decided = self.clip_judge(slot, scene, ask)  # the local picture model first: clear matches / clear misses
+        if cache and decided:
+            cache.put({cache_key(m, fingerprint): {**decided[key(m)], 'at': now()}
+                       for m in ask if key(m) in decided})
         verdicts.update(decided)
         ask = [m for m in ask if key(m) not in decided]
         if not ask: return verdicts
         if self.local:
             verdicts.update(self.local_judge(slot, scene, ask)); return verdicts
+        profile = slot.get('relevance_profile') or relevance.profile(scene, slot)
+        supported = []
+        for media in ask:
+            if relevance.acceptable(relevance.evaluate(media, profile), profile):
+                supported.append(media)
+            else:
+                verdicts[key(media)] = {'score': 0, 'approved': False, 'local': True,
+                                       'reason': 'Kaynak etiketleri cümlenin konusunu desteklemiyor; elendi.'}
+        ask = supported
+        if not ask: return verdicts
+        if not review_selected and getattr(self, 'look_budget', {}).get(budget_key, 0) >= 1:
+            # Do not fetch/composite previews for a cloud request we will skip.
+            self.progress['visual_budget_skipped'] = self.progress.get('visual_budget_skipped', 0) + len(ask)
+            return verdicts
         entries = []
         for index, media in enumerate(ask, 1):
             frames = self.frames(media)
@@ -516,9 +549,20 @@ class MediaDirector:
             start += len(group)
             if self.local:
                 verdicts.update(self.local_judge(slot, scene, [m for _, m, _ in group])); continue
+            self.look_budget = getattr(self,'look_budget',{})
+            if not review_selected and self.look_budget.get(budget_key,0)>=1:
+                # One bounded visual batch per exact sentence/scene/constraints.
+                # Extra searches use confirmed CLIP verdicts or relevant motion;
+                # they never create an unbounded cascade of paid requests.
+                # An exhausted paid budget is not visual approval. Only the
+                # already resolved CLIP/cache verdicts may select stock here.
+                self.progress['visual_budget_skipped']=self.progress.get('visual_budget_skipped',0)+len(group)
+                continue
+            self.look_budget[budget_key]=self.look_budget.get(budget_key,0)+1
             answer = self._rate(slot, scene, group, batch)
             if answer is None and self.last_error == 'batch_rejected' and not self.local:
                 if self.diagnose_batch():  # small text requests work: the picture batch was the problem
+                    self.look_budget[budget_key]=0  # retry the rejected batch once as individual pictures
                     start -= len(group); continue  # the same candidates again, one per request
             if answer is None:  # skipped look or the AI went away: score these locally
                 verdicts.update(self.local_judge(slot, scene, [m for _, m, _ in group])); continue
@@ -534,6 +578,10 @@ class MediaDirector:
                     verdict = {'score': score, 'approved': item.get('approved') is not False and score >= APPROVE_SCORE,
                                'reason': ' '.join(str(item.get('reason', '')).split())[:300],
                                **({'model': model} if isinstance(model, str) and model else {})}
+                    profile = slot.get('relevance_profile') or relevance.profile(scene, slot)
+                    if verdict['approved'] and not relevance.acceptable(relevance.evaluate(listed[index], profile), profile):
+                        verdict.update(score=min(score,4), approved=False,
+                                       reason='Görsel yanıt olumlu olsa da kaynak etiketleri cümlenin konusunu desteklemiyor; elendi.')
                     verdicts[key(listed[index])] = verdict
                     fresh[cache_key(listed[index], fingerprint)] = {**verdict, 'at': now()}
             if cache: cache.put(fresh)
@@ -576,6 +624,7 @@ class MediaDirector:
         elif not self.local: self._go_local(ScriptProviderError(f'{self.label} metin isteğine de yanıt vermedi.', 503, category='upstream_error'))
         return works
 
+    @timed('clip')
     def clip_judge(self, slot, scene, pool, descriptor=None):
         """CLIP scores (0-10) of the candidates' preview frames against the
         sentence + [GÖRSEL] note. Clear match → approved, clear miss or below
@@ -637,8 +686,7 @@ class MediaDirector:
             value = scored.get('relevance_score') or 0
             # The English query that found it was made from this scene (plan, rewrite or topic): its words count too.
             shared = (wanted | local_words(media.get('query_used', ''))) & local_words(media.get('description', ''))
-            strong = {w for w in shared if len(w) >= 4}
-            ok = relevance.acceptable(scored, profile) or len(shared) >= 2 or bool(strong)
+            ok = relevance.acceptable(scored, profile) and (len(shared) >= 2 or value >= relevance.STRONG)
             verdicts[key(media)] = {'score': min(9, APPROVE_SCORE + max(0, len(shared) - 1) + (value >= 40)) if ok else min(4, len(shared) * 2),
                                     'approved': ok, 'local': True, 'relevance_label': scored.get('relevance_label'),
                                     **({'clip': media['clip']} if media.get('clip') else {}),
@@ -655,6 +703,15 @@ class MediaDirector:
             ask = ('These stock queries found nothing usable for this shot. Write 3 NEW English stock-footage queries with '
                    'different angles: concrete objects, places, actions or atmosphere a camera could film. 2-4 words each, '
                    'no names of people unless famous public places/things, no abstract words.')
+        local = self.local_queries(scene, broader)
+        seen = {frozenset(t.casefold().split()) for t in tried}
+        fresh_local = [q for q in local if frozenset(q.casefold().split()) not in seen]
+        if fresh_local:return list(dict.fromkeys(fresh_local))[:3]
+        # Rare unknown vocabulary may need a rewrite; never one paid rewrite
+        # for every slot and tier of a long film.
+        self.query_requests=getattr(self,'query_requests',0)
+        if self.query_requests>=3:return []
+        self.query_requests+=1
         answer = self._ask('media_queries', self.brief(slot, scene) + f'\nAlready tried: {", ".join(tried)[:600]}\n' + ask, QUERY_SCHEMA, max_tokens=600)
         queries = [' '.join(str(q).split())[:80] for q in (answer or {}).get('queries', []) if isinstance(q, str) and q.strip()]
         if not queries:  # no AI (off, down or no answer): English queries made locally, never an empty step
@@ -684,6 +741,7 @@ class MediaDirector:
         if scene is not None and historic(scene): names.sort(key=lambda n: n != 'wikimedia')
         return [n for n in names if n not in self.unavailable]
 
+    @timed('search')
     def search(self, slot, kinds, query, log, scene=None):
         from app.scripts.query_clean import english_query, generic_queries
         language = self.language  # the narration language (German/Turkish words are translated)
@@ -693,13 +751,17 @@ class MediaDirector:
         if english != query: log.setdefault('translated', {})[query] = english
         query = english
         found = []
+        executor = getattr(self.service, 'search_executor', None)
+        pending = {(kind, name): executor.submit(self.service._cache_search, self.pid, name, kind, query)
+                   for kind in kinds for name in self.providers(scene)} if executor else {}
         for kind in kinds:
             for name in self.providers(scene):
                 entry = {'provider': name, 'media_type': kind, 'query': query}
                 self.progress['message'] = f'Yuva {slot["order"]} · {name.title()} {"video" if kind == "video" else "görsel"} aranıyor: “{query}”'
                 self.service._checkpoint(self.job, self.progress, light=True)
                 try:
-                    results, _, cached = self.service._cache_search(self.pid, name, kind, query)
+                    future = pending.get((kind, name))
+                    results, _, cached = future.result() if future else self.service._cache_search(self.pid, name, kind, query)
                 except StockError as error:
                     entry.update(error=error.category, error_text=ERROR_TEXT.get(error.category, 'hata'))
                     if error.category in PROVIDER_DOWN:
@@ -750,7 +812,7 @@ class MediaDirector:
         if any(f' {flag} ' in tags for flag in RED_FLAGS):
             return 'watermark_or_logo'
         past = self.where(scene).get('era') != 'contemporary'  # only a historical video (or scene) gets the strict “no modern stock” rule
-        if media.get('provider') != 'wikimedia' and historic(scene) and past and not self.relax and any(f' {w} ' in tags or f' {w}s ' in tags for w in MODERN):
+        if media.get('provider') != 'wikimedia' and historic(scene) and past and not getattr(self, 'relax', False) and any(f' {w} ' in tags or f' {w}s ' in tags for w in MODERN):
             return 'modern_in_history'  # a history/museum scene never gets modern stock (cars, phones, offices …)
         from app.stock.setting import tag_conflict
         conflict = tag_conflict(self.where(scene), tags, media.get('provider', ''))
@@ -829,11 +891,21 @@ class MediaDirector:
         verdicts; only a slot whose candidates all failed asks again."""
         clip = bool(self.clip and self.clip.ready())
         if (self.local and not clip) or not slots: return
-        memo = self.memo.setdefault(scene['scene_id'], {'judged': {}})
+        # Only pool shots which describe the same narration, never different sentences.
+        groups = {}
+        for slot in slots:
+            bound = bind_shot(scene, slot, self.language)
+            groups.setdefault(memo_key(bound), []).append(slot)
+        if len(groups) > 1:
+            for group in groups.values():
+                self.prejudge(bind_shot(scene, group[0], self.language), group)
+            return
+        scene = bind_shot(scene, slots[0], self.language)
+        memo = self.memo.setdefault(memo_key(scene), {'judged': {}})
         pooled, seen = [], set()
         for slot in slots:
             slot['relevance_profile'] = relevance.profile(scene, slot)
-            query = next((q for q in [slot.get('search_query'), *slot.get('fallback_queries', []), scene.get('primary_stock_query')] if q), None)
+            query = next((q for q in [scene.get('primary_stock_query'), slot.get('search_query'), *slot.get('fallback_queries', [])] if q), None)
             if not query: continue
             kinds = ['video'] if slot.get('preferred_type') != 'stock_image' else ['image', 'video']
             log = {'steps': [], 'searches': [], 'judged': memo['judged'], 'rejected': {}}
@@ -890,12 +962,27 @@ class MediaDirector:
         step['result'] = step.get('result') or 'no_approved_candidate'
         return None
 
+    @timed('download_validation')
     def take(self, slot, media, verdict, stage, log):
         need = used_seconds(slot)
         start = self.segment(media, need, slot)
         if start is None: return None
         try:
             saved = self.service.downloader.download(self.pid, media)
+            from app.stock.quality import inspect_media
+            from app.rendering.tools import discover
+            inspector = getattr(self.service, 'quality_inspector', inspect_media)
+            if not hasattr(self, 'quality_tools'): self.quality_tools = discover()
+            self.quality_cache = getattr(self, 'quality_cache', {})
+            quality_key = (saved.get('sha256'), round(start,3))
+            if quality_key not in self.quality_cache:
+                self.quality_cache[quality_key] = inspector(self.service.projects, self.pid, saved, self.quality_tools, start)
+            quality = self.quality_cache[quality_key]
+            if not quality.get('accepted'):
+                log['steps'][-1].setdefault('quality_rejections', []).append(quality.get('reason','quality_unverified'))
+                return None
+            if media['media_type']=='video' and (quality.get('duration') or 0) + .05 < start + need:
+                return None
         except StockError as error:
             log['steps'][-1].setdefault('download_errors', []).append(error.category)
             return None
@@ -903,7 +990,7 @@ class MediaDirector:
             return None  # same bytes under another id: still a duplicate
         segment = start if key(media) in self.usage else None
         self.register(slot['slot_id'], saved, segment or 0., need)
-        slot.update(selected_media=saved, status='complete', missing_reasons=[], warnings=[], local_validation={},
+        slot.update(selected_media=saved, status='complete', missing_reasons=[], warnings=[], local_validation=quality,
                     segment_start=segment, continuation_of=None,
                     ai_review=None if verdict.get('local') else {'approved': True, 'score': verdict['score'], 'reason': verdict['reason'], 'reviewed_at': now(),
                                                                  **({'model': verdict['model']} if verdict.get('model') else {})},
@@ -917,6 +1004,10 @@ class MediaDirector:
         if segment is not None:
             slot['warnings'].append('Aynı uzun klibin başka bir bölümü kullanılıyor (çakışma yok).')
         log['steps'][-1]['result'] = 'chosen'
+        from app.stock.verdict_cache import context
+        original = getattr(self, 'scene_by_id', {}).get(slot['scene_id'])
+        if original:
+            slot['selection_context'] = context(bind_shot(original, slot, self.language), slot)
         where = self.where(self.scene_by_id.get(slot['scene_id'], {}) if hasattr(self, 'scene_by_id') else {})
         if where.get('label'):
             from app.stock.setting import rules_version
@@ -936,6 +1027,9 @@ class MediaDirector:
         for neighbour in (ordered[index - 1] if index else None, ordered[index + 1] if index + 1 < len(ordered) else None):
             media = neighbour and neighbour.get('selected_media')
             if not media or neighbour['status'] != 'complete' or media['media_type'] != 'video' or neighbour.get('continuation_of') or is_generated(media):
+                continue
+            scene = getattr(self, 'scene_by_id', {}).get(slot['scene_id'])
+            if scene and (neighbour['scene_id'] != slot['scene_id'] or shot_narration(scene, neighbour) != shot_narration(scene, slot)):
                 continue
             chain = used_seconds(neighbour) + used_seconds(slot)
             if chain + .6 > float(media.get('duration') or 0): continue
@@ -1236,6 +1330,7 @@ class MediaDirector:
             return None
         return first(reversed(ordered[:index])), first(ordered[index + 1:])
 
+    @timed('motion')
     def motion(self, slot, scene, log, spec=None, stage='motion'):
         from app.motion.clips import render_clip, media_record
         from app.motion.layouts import pick
@@ -1257,8 +1352,9 @@ class MediaDirector:
         language = self.service._handoff(self.pid).get('language', 'de')
         try:
             path, scene_data, engine = render_clip(folder, spec, self.kit(), need, self.emphasis_offset(slot, scene, spec), language=language,
-                                                   bridge=getattr(self.service, 'openmontage', None))
+                                                   bridge=getattr(self.service, 'openmontage', None), cancelled=lambda:self.service.closed)
         except Exception:
+            if self.service.closed:raise StockError('interrupted','İşlem durdu; tamamlanan grafikler korundu.')
             LOG.warning('stock operation=motion category=render_failed')
             return self.card(slot, scene, log)  # extreme fallback (e.g. FFmpeg missing): still a picture
         media = media_record(path, spec, scene_data, engine)
@@ -1309,7 +1405,7 @@ class MediaDirector:
         slot.setdefault('relevance_profile', relevance.profile(scene, slot))
         tried = any(step.get('stage') == 'stock_video' for step in log['steps'])  # a planned graphic: stock was not searched yet
         chosen = bool(planned) and not tried and self.try_step(slot, scene, 'stock_video', ['video'], planned, log, set())
-        chosen = chosen or self.merge(slot, log, limit=60.0) or self.neutral(slot, scene, log, set())
+        chosen = chosen or self.merge(slot, log, limit=60.0)
         if not chosen: return False
         slot['lower_third'], slot['lower_third_seconds'] = text, OPENING_CARD
         slot['message'] = f'Açılış: hareketli görüntü üstünde “{text}” ({OPENING_CARD:g} sn; tam ekran kart yerine).'
@@ -1342,14 +1438,15 @@ class MediaDirector:
 
     # ---- per slot ----------------------------------------------------------
     def fill(self, slot, scene, exclude=frozenset(), *, keep_if_only_card=False):
+        scene = bind_shot(scene, slot, self.language)
         slot.pop('lower_third', None)  # belongs to the media chosen below
         slot.pop('lower_third_seconds', None)
         slot['relevance_profile'] = relevance.profile(scene, slot)
         # Slots of one scene share the AI's verdicts and rewritten queries.
-        memo = self.memo.setdefault(slot['scene_id'], {'judged': {}})
+        memo = self.memo.setdefault(memo_key(scene), {'judged': {}})
         log = {'started_at': now(), 'steps': [], 'searches': [], 'judged': memo['judged'], 'rejected': {}}
-        planned = list(dict.fromkeys(q for q in [slot.get('search_query'), *slot.get('fallback_queries', []),
-                                                 scene.get('primary_stock_query'), *scene.get('alternative_stock_queries', [])] if q))[:4]
+        planned = list(dict.fromkeys(q for q in [scene.get('primary_stock_query'), slot.get('search_query'), *slot.get('fallback_queries', []),
+                                                 *scene.get('alternative_stock_queries', [])] if q))[:4]
         video_first = ['video'] if slot.get('preferred_type') != 'stock_image' else ['image', 'video']
         chosen = self.try_step(slot, scene, 'stock_video', video_first, planned, log, exclude)
         rewritten = []
@@ -1365,9 +1462,6 @@ class MediaDirector:
             broader = memo['broader']
             log['broader_queries'] = broader
             if broader: chosen = self.try_step(slot, scene, 'broader', ['video', 'image'], broader, log, exclude)
-        if not chosen and not keep_if_only_card and self.setting_blocked(log, memo) and self.motion_count() + 1 > MOTION_TARGET * len(self.slots):
-            # Too many motion graphics already and the period/place filter is what emptied this slot: looser rules before a graphic.
-            chosen = self.relaxed(slot, scene, memo, log, exclude, (planned + rewritten + memo.get('broader', []))[:8])
         if not chosen and keep_if_only_card:
             log['steps'].append({'stage': 'kept', 'label': STAGES['kept'], 'result': 'kept_no_better_option'})
             return log
@@ -1382,12 +1476,7 @@ class MediaDirector:
                     slot['lower_third'] = highlight(' '.join(spec['data']['text'].split()))
                     slot['message'] = 'Komşu çekim devam ediyor; yazı video üstünde alt bant olarak gösterilir.'
                     return log
-                # No number/place/date to draw: neutral footage of the setting (landscape, sky, texture) before a text card.
-                if self.neutral(slot, scene, log, exclude):
-                    return log
-                if self.quote_full():
-                    # Enough text cards already: another nearby infographic or this scene's graphic again instead.
-                    spec = self.nearby_infographic(slot, scene) or self.motion_spec(slot, scene, repeat=True)
+                # A relevant graphic is preferable to generic scenery or another sentence's facts.
             self.motion(slot, scene, log, spec)
         return log
 
@@ -1450,7 +1539,7 @@ class MediaDirector:
         """The period/place this scene is checked against (the video's, or the
         scene's own when it names other years, e.g. a flashback)."""
         if not getattr(self, 'setting', None): return {}  # (unit tests build the director without run())
-        sid = scene.get('scene_id')
+        sid = (scene.get('scene_id'), scene.get('narration_text', ''))
         if not hasattr(self, 'scene_settings'): self.scene_settings = {}
         if sid not in self.scene_settings:
             from app.stock.setting import for_scene
@@ -1623,8 +1712,8 @@ class MediaDirector:
                 if UNREACHABLE in slot.get('message', ''): targets.append((slot, 'retry_card'))
                 elif self.moment_off(media): targets.append((slot, 'reselect'))  # an intro/outro card that is now switched off
                 elif self.opening_card(slot, media): targets.append((slot, 'opening'))  # an older long full-screen card in the first scene
-            elif (slot.get('local_review') or {}).get('method') == 'clip' and self.local:
-                pass  # the local picture model approved it and Gemini's look is off: nothing to re-check
+            elif self.local and (slot.get('local_review') or {}).get('approved') and slot.get('selection_context') == self.selection_context(slot, scenes[slot['scene_id']]):
+                pass  # a completed, unchanged sentence was already checked; resume skips it
             elif not (slot.get('ai_review') or {}).get('approved') or (slot['ai_review'].get('score') or 0) < APPROVE_SCORE:
                 targets.append((slot, 'unreviewed'))  # below 7/10 is never kept
         if not single: targets += self.recheck_setting(scenes, {t['slot_id'] for t, _ in targets})
@@ -1654,7 +1743,7 @@ class MediaDirector:
                 self.progress.setdefault('slot_errors', []).append(f'Yuva {slot.get("order")}: beklenmeyen hata ({type(error).__name__}); yazı kartı kullanıldı.')
                 self.card(slot, scene, log)
             self.finish_slot(slot, log)
-        if targets and not single: self.relax_pass()
+        # Period/place constraints never weaken just to reduce the motion share.
         if targets and not single and not self.local:  # nothing new chosen: nothing to re-review
             try:
                 self.review(scenes)
@@ -1663,7 +1752,12 @@ class MediaDirector:
                 self.progress['review_skipped'] = str(error)  # every slot is already filled; only the extra look is skipped
         self.finalize()
 
+    def selection_context(self, slot, scene):
+        from app.stock.verdict_cache import context
+        return context(bind_shot(scene, slot, self.language), slot)
+
     def handle(self, slot, scene, why):
+        scene = bind_shot(scene, slot, self.language)
         empty = lambda: {'steps': [], 'searches': [], 'judged': {}}
         if why == 'motion_owner':
             hint = self.owner[slot['slot_id']]
@@ -1730,19 +1824,21 @@ class MediaDirector:
             slot['relevance_profile'] = relevance.profile(scene, slot)
             media = slot['selected_media']
             log = {'steps': [{'stage': 'kept', 'label': STAGES['kept'], 'judged': []}], 'searches': [], 'judged': {}}
-            verdict = self.judge(slot, scene, [media]).get(key(media))
+            verdict = self.judge(slot, scene, [media],review_selected=True).get(key(media))
             if verdict and verdict.get('clip_approved'):  # the local picture model confirms it
                 slot.update(local_review={'approved': True, 'score': verdict['score'], 'clip': verdict['clip'], 'method': 'clip', 'reviewed_at': now()},
                             needs_ai_review=False, message=verdict['reason'])
+                slot['selection_context'] = self.selection_context(slot, scene)
                 log['steps'][0]['result'] = 'kept'
                 return log
             if verdict and verdict.get('local') and not (verdict.get('clip') and not verdict['approved']):
                 # No AI right now: a pick that still matches the scene's words stays (marked for a later AI look).
-                if verdict['approved'] or slot.get('local_review'):
+                if verdict['approved']:
                     if not slot.get('local_review'):
                         slot.update(local_review={'approved': True, 'score': verdict['score'], 'label': verdict.get('relevance_label'), 'reviewed_at': now()},
                                     message=verdict['reason'])
                     slot['needs_ai_review'] = True
+                    slot['selection_context'] = self.selection_context(slot, scene)
                     log['steps'][0]['result'] = 'kept_no_better_option'
                     return log
             elif verdict and verdict['approved'] and verdict['score'] >= APPROVE_SCORE:
@@ -1897,7 +1993,7 @@ class MediaDirector:
             if not scene: continue
             span = max(.001, scene['end_estimate'] - scene['start_estimate'])
             middle = (slot['estimated_start'] + slot['estimated_end']) / 2
-            spoken[slot['slot_id']] = sentence_at(scene.get('narration_text', ''), min(1, max(0, (middle - scene['start_estimate']) / span)))
+            spoken[slot['slot_id']] = shot_narration(scene, slot)
             notes[slot['slot_id']] = '; '.join(str(h.get('value', '')) for h in scene.get('owner_hints') or [] if h.get('type') == 'visual' and h.get('value'))
         self.progress['message'] = 'Cümlelerin Türkçesi hazırlanıyor (video başına tek istek; yapay zekâ yoksa boş kalır)'
         self.service._checkpoint(self.job, self.progress, light=True)
@@ -1927,7 +2023,7 @@ class MediaDirector:
                 at = scene['start_estimate'] + span * (len(words[:where].split()) / max(1, len(words.split())) if where >= 0 else 0)
                 own = sorted((s for s in slots if s['scene_id'] == scene['scene_id'] and s.get('selected_media')), key=lambda s: abs((s['estimated_start'] + s['estimated_end']) / 2 - at))
                 real = [s for s in own if not is_generated(s['selected_media'])] or own
-                if real: out[real[0]['slot_id']] = {'top': top[:60], 'bottom': bottom[:60]}
+                if real: out[real[0]['slot_id']] = {'top': top, 'bottom': bottom}
         return out
 
     def finalize(self):
@@ -2200,9 +2296,13 @@ def fetch_thumbnail(url):
     """Small preview image from the provider CDN (no API key is sent)."""
     try:
         with httpx.Client(timeout=httpx.Timeout(15, connect=8), follow_redirects=False, headers={'User-Agent': USER_AGENT}) as client:
-            response = client.get(url)
-            if response.status_code != 200 or len(response.content) > 3_000_000: return None
-            return response.content
+            with client.stream('GET',url) as response:
+                if response.status_code!=200:return None
+                data=bytearray()
+                for chunk in response.iter_bytes(65536):
+                    data.extend(chunk)
+                    if len(data)>3_000_000:return None
+                return bytes(data)
     except httpx.HTTPError:
         return None
 
@@ -2223,7 +2323,7 @@ def diagnostics(service, project_id):
                       'missing_reasons': s.get('missing_reason_messages', [])})
     with closing(service.projects._connection()) as c:
         jobs = [{'id': r['id'], 'action': r['action'], 'status': r['status'], 'error': r['error_message'], 'created_at': r['created_at'],
-                 'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
+                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'timings', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
                                                                                     'ai_attempts', 'ai_requests', 'ai_cached', 'ai_requests_total', 'local_mode', 'local_reason')}}
                 for r in c.execute('SELECT * FROM stock_jobs WHERE project_id=? ORDER BY created_at DESC LIMIT 10', (project_id,))]
     from app.providers.gemini_chain import ATTEMPTS

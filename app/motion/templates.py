@@ -244,21 +244,13 @@ def measure(text, file, size, bold=True):
 
 
 def wrap(text, file, size, width, lines=3):
-    out = ['']
-    for word in text.split():
-        trial = (out[-1] + ' ' + word).strip()
-        if measure(trial, file, size) <= width or not out[-1]:
-            out[-1] = trial
-        else:
-            out.append(word)
-    return out[:lines]
+    from app.text_layout import wrap_text
+    return wrap_text(text, lambda value: measure(value, file, size), width)
 
 
 def fit(text, file, start, width, lines=2, smallest=40):
-    size = start
-    while size > smallest and (len(wrap(text, file, size, width, 99)) > lines or max(measure(r, file, size) for r in wrap(text, file, size, width, lines)) > width):
-        size -= 4
-    return size, wrap(text, file, size, width, lines)
+    from app.text_layout import fit_text
+    return fit_text(text, lambda value, size: measure(value, file, size), width, lines, start)
 
 
 # ---- scene builder ------------------------------------------------------------

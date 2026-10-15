@@ -48,7 +48,7 @@ def badges(t):
         if not match or not 0<int(match.group(1))<=int(match.group(2)):continue
         slot=next((s for s in t['slots'] if s['scene_id']==scene['scene_id']),None)
         if not slot or scene['end']-scene['start']<1:continue
-        text=f'{match.group(1)}/{match.group(2)}'+(' · '+' '.join(title.split()).upper()[:40] if title.strip() else '')
+        text=f'{match.group(1)}/{match.group(2)}'+(' · '+' '.join(title.split()).upper() if title.strip() else '')
         result.append({'scene_id':scene['scene_id'],'slot_id':slot['slot_id'],'text':text,'start':scene['start'],'end':scene['end'],'style':'badge',
                        'fraction':round(int(match.group(1))/int(match.group(2)),4),'source':'sequence','cue_index':None,'punch_in':False})
     return result
@@ -63,12 +63,12 @@ def lower_thirds(t):
         if not isinstance(band,dict) or not str(band.get('bottom') or '').strip():continue
         start=slot['start']+min(.3,slot['duration']/4);end=min(slot['end'],start+6)
         if end-start<1.5:continue
-        result.append({'scene_id':slot['scene_id'],'slot_id':slot['slot_id'],'text':' '.join(str(band['bottom']).split())[:60],
-                       'top':' '.join(str(band.get('top') or '').split())[:60],'start':start,'end':end,'style':'band2',
+        result.append({'scene_id':slot['scene_id'],'slot_id':slot['slot_id'],'text':' '.join(str(band['bottom']).split()),
+                       'top':' '.join(str(band.get('top') or '').split()),'start':start,'end':end,'style':'band2',
                        'source':'band','cue_index':None,'punch_in':False})
     taken={r['slot_id'] for r in result}
     for slot in t['slots']:
-        text=' '.join(str(slot.get('lower_third') or '').split())[:80]
+        text=' '.join(str(slot.get('lower_third') or '').split())
         if not text or any(ord(c)<32 for c in text) or slot['slot_id'] in taken:continue
         start=slot['start']+min(.2,slot['duration']/4);end=slot['end']
         if slot.get('lower_third_seconds'):end=min(end,start+float(slot['lower_third_seconds']))

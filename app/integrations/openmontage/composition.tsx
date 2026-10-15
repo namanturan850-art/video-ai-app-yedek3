@@ -53,8 +53,8 @@ const Scene:React.FC<any>=({clip,theme,g})=>{
     :<div style={{position:'absolute',left:120,right:120,top:clip.layout==='minimal_title'?180:clip.layout==='quote_emphasis'?350:180,height:clip.layout==='minimal_title'?200:clip.layout==='quote_emphasis'?300:720,background:bg,borderLeft:`12px solid ${accent}`,opacity:clip.layout==='minimal_title'||clip.layout==='quote_emphasis'?.85:1}}/>}
   {theme==='grid_dark'&&!split&&<AbsoluteFill style={{pointerEvents:'none',backgroundImage:'linear-gradient(#ffffff08 1px,transparent 1px),linear-gradient(90deg,#ffffff08 1px,transparent 1px)',backgroundSize:'120px 120px'}}/>}
   <div style={{position:'absolute',left:split?(left?'50%':'0'):180,width:split?'50%':1560,top:clip.layout==='minimal_title'?220:clip.layout==='quote_emphasis'?390:280,padding:60,boxSizing:'border-box',fontFamily:family,color:fg,textAlign:'center',fontWeight:700,fontSize:54,opacity,transform:g?`translateY(${28*(1-enter)}px)`:undefined}}>
-   {clip.layout==='big_number'&&<div style={{fontSize:g?130:110,marginBottom:50,color:g?accent:fg,transform:g?`scale(${.7+.3*enter})`:undefined}}>{clip.number}</div>}
-   {(clip.texts||[]).map((text:string,i:number)=><div key={i} style={{marginBottom:30}}>{text}</div>)}
+   {clip.layout==='big_number'&&<div style={{fontSize:clip.number_font_size||110,marginBottom:40,color:g?accent:fg,transform:g?`scale(${.7+.3*enter})`:undefined}}>{clip.display_number||clip.number}</div>}
+   <div style={{fontSize:clip.text_font_size||54,whiteSpace:'pre-wrap',overflowWrap:'anywhere',lineHeight:1.2}}>{clip.display_text||(clip.texts||[]).join('\n')}</div>
   </div></>}
  </AbsoluteFill>;
 };
@@ -84,13 +84,13 @@ const Slot:React.FC<any>=({clip,previous,theme,g})=>{
 // graphic(): translucent box slides in, accent bar grows, text follows.
 const Graphic:React.FC<any>=({item,g,frame,opacity})=>{
  const p=(a:number,b:number)=>smooth(clamp((frame-a)/Math.max(1,b-a)));
- const text=String(item.text||''),size=text.length<=34?64:text.length<=52?54:46,family=g.font_asset?"'KitHeading',Arial,sans-serif":'Arial,sans-serif';
+ const text=String(item.display_text||item.text||''),size=item.font_size||46,family=g.font_asset?"'KitHeading',Arial,sans-serif":'Arial,sans-serif';
  const box={background:g.background+'CC',boxSizing:'border-box' as const};
- if(item.style==='upper_left'||item.style==='lower_third')return <div style={{position:'absolute',left:120-60*(1-p(0,8)),top:item.style==='lower_third'?760:110,opacity,display:'flex',alignItems:'stretch',maxWidth:1640}}>
+ if(item.style==='upper_left'||item.style==='lower_third')return <div style={{position:'absolute',left:120-60*(1-p(0,8)),top:item.style==='lower_third'?630:110,opacity,display:'flex',alignItems:'stretch',maxWidth:1640}}>
   <div style={{width:12,background:g.accent,transform:`scaleY(${p(2,11)})`,transformOrigin:'top'}}/>
-  <div style={{...box,padding:`${size*.22}px 40px ${size*.22}px 28px`,color:g.primary,fontFamily:family,fontWeight:700,fontSize:size,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',transform:`translateX(${-30*(1-p(2,10))}px)`,textShadow:'0 2px 4px rgba(0,0,0,.6)'}}>{text}</div></div>;
+  <div style={{...box,padding:`${size*.22}px 40px ${size*.22}px 28px`,width:1640,color:g.primary,fontFamily:family,fontWeight:700,fontSize:size,whiteSpace:'pre-wrap',overflowWrap:'anywhere',lineHeight:1.2,transform:`translateX(${-30*(1-p(2,10))}px)`,textShadow:'0 2px 4px rgba(0,0,0,.6)'}}>{text}</div></div>;
  return <div style={{position:'absolute',left:0,right:0,top:150,display:'flex',flexDirection:'column',alignItems:'center',opacity}}>
-  <div style={{...box,padding:`${size*.25}px 48px`,maxWidth:1640,color:g.primary,fontFamily:family,fontWeight:700,fontSize:size,textAlign:'center',transform:`scale(${.92+.08*p(0,7)}) translateY(${20*(1-p(1,10))}px)`,textShadow:'0 2px 4px rgba(0,0,0,.6)'}}>{text}</div>
+  <div style={{...box,padding:`${size*.25}px 48px`,maxWidth:1640,color:g.primary,fontFamily:family,fontWeight:700,fontSize:size,whiteSpace:'pre-wrap',lineHeight:1.2,textAlign:'center',transform:`scale(${.92+.08*p(0,7)}) translateY(${20*(1-p(1,10))}px)`,textShadow:'0 2px 4px rgba(0,0,0,.6)'}}>{text}</div>
   <div style={{height:10,marginTop:8,width:'min(1480px,80%)',background:g.accent,transform:`scaleX(${p(4,14)})`}}/></div>;
 };
 // Reserved for a future channel avatar window (no avatar is generated yet).
@@ -108,9 +108,9 @@ const Film:React.FC<any>=props=>{
  const emphasisOpacity=emphasis?Math.min(1,(frame-emphasis.start*30)/6,(emphasis.end*30-frame)/6):0;
  return <AbsoluteFill style={{background:'black'}}>
   {props.clips.map((c:any,i:number)=><Sequence key={c.slot_id} from={c.start_frame} durationInFrames={c.end_frame-c.start_frame+(c.transition_out==='crossfade'?(c.handle||0):0)}><Slot clip={c} previous={props.clips[i-1]} theme={props.theme} g={props.graphic_style}/></Sequence>)}
-  {emphasis&&(props.graphic_style?<Graphic item={emphasis} g={props.graphic_style} frame={frame-Math.round(emphasis.start*30)} opacity={emphasisOpacity}/>:<div style={{position:'absolute',left:['upper_left','lower_third'].includes(emphasis.style)?120:200,right:['upper_left','lower_third'].includes(emphasis.style)?'auto':200,top:emphasis.style==='lower_third'?760:110,textAlign:['upper_left','lower_third'].includes(emphasis.style)?'left':'center',color:'white',font:'bold 60px Arial,sans-serif',textShadow:'0 0 12px rgba(0,0,0,.85),2px 2px 2px black',opacity:emphasisOpacity}}>{emphasis.text}</div>)}
+  {emphasis&&(props.graphic_style?<Graphic item={emphasis} g={props.graphic_style} frame={frame-Math.round(emphasis.start*30)} opacity={emphasisOpacity}/>:<div style={{position:'absolute',left:120,right:120,top:emphasis.style==='lower_third'?630:110,textAlign:['upper_left','lower_third'].includes(emphasis.style)?'left':'center',color:'white',fontFamily:'Arial,sans-serif',fontWeight:700,fontSize:emphasis.font_size||60,whiteSpace:'pre-wrap',lineHeight:1.2,textShadow:'0 0 12px rgba(0,0,0,.85),2px 2px 2px black',opacity:emphasisOpacity}}>{emphasis.display_text||emphasis.text}</div>)}
   <AvatarLayer avatar={props.avatar}/>
-  {cue&&<div style={{position:'absolute',left:100,right:100,...subPlace,textAlign:'center',color:subColor,fontFamily:subFont,fontWeight:700,fontSize:subSize,textShadow:`-2px -2px 1px ${subOutline},2px 2px 1px ${subOutline}`}}>{cue.text}</div>}
+  {cue&&<div style={{position:'absolute',left:100,right:100,...subPlace,textAlign:'center',color:subColor,fontFamily:subFont,fontWeight:700,fontSize:cue.font_size||subSize,whiteSpace:'pre-wrap',lineHeight:1.2,textShadow:`-2px -2px 1px ${subOutline},2px 2px 1px ${subOutline}`}}>{cue.display_text||cue.text}</div>}
  </AbsoluteFill>;
 };
 registerRoot(()=> <Composition id="AIVideoStudio" component={Film} width={1920} height={1080} fps={30} durationInFrames={30} calculateMetadata={({props}:any)=>({durationInFrames:props.frames})}/>);

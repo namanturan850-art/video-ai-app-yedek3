@@ -17,9 +17,13 @@ _lock = threading.Lock()
 
 
 def context(scene, slot=None):
-    text = ' '.join(str(x or '') for x in ((slot or {}).get('visual_goal'), scene.get('visual_intent'), scene.get('must_show'), scene.get('must_not_show')))
-    words = sorted(set(re.findall(r'[a-z0-9äöüß]+', text.casefold())))
-    return hashlib.sha256(' '.join(words).encode()).hexdigest()[:16]
+    slot = slot or {}
+    value = {'policy': 4, 'narration': scene.get('narration_text'), 'visual': scene.get('visual_intent'),
+             'must': scene.get('must_show'), 'must_not': scene.get('must_not_show'),
+             'entities': scene.get('entities'), 'goal': scene.get('visual_intent') if scene.get('_shot_bound') else slot.get('visual_goal'),
+             'setting': slot.get('quality_setting'),
+             'evaluator': slot.get('quality_evaluator')}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:32]
 
 
 def cache_key(media, fingerprint):
@@ -30,12 +34,18 @@ class VerdictCache:
     def __init__(self, folder):
         self.path = Path(folder) / 'ai_verdict_cache.json'
         self.data = None
+        self.signature = None
 
-    def _load(self):
-        if self.data is None:
+    def _load(self, refresh=False):
+        try:
+            stat = self.path.stat(); signature = (stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size)
+        except OSError:
+            signature = None
+        if self.data is None or refresh or signature != self.signature:
             try: self.data = json.loads(self.path.read_text(encoding='utf-8'))
             except (OSError, ValueError): self.data = {}
             if not isinstance(self.data, dict): self.data = {}
+            self.signature = signature
         return self.data
 
     def get(self, key):
@@ -46,7 +56,8 @@ class VerdictCache:
     def put(self, entries):
         if not entries: return
         with _lock:
-            data = self._load()
+            # Other jobs may have saved since this instance was constructed.
+            data = self._load(refresh=True)
             data.update(entries)
             while len(data) > MAX: data.pop(next(iter(data)))
             try:
@@ -56,3 +67,7 @@ class VerdictCache:
                 os.replace(temporary, self.path)
             except OSError:
                 pass
+            finally:
+                if 'temporary' in locals():
+                    try:temporary.unlink(missing_ok=True)
+                    except OSError:pass

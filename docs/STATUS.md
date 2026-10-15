@@ -1,5 +1,35 @@
 # AI Video Studio — Durum
 
+## 2026-10-15 — Kalite ve performans geliştirme dalı
+
+Dal: `improve/video-quality-performance`. Ana dala gönderim ve mevcut kullanıcı verileri üzerinde işlem yapılmadı. Önceki kayıttaki otomatik dönem/yer gevşetme davranışı bu dalda kaldırıldı: kalite ve konu uyumu, stok/motion oranından önce gelir.
+
+- Yuva değerlendirmesi cümleye bağlandı; farklı cümleler aynı sahne onayını paylaşmaz. Yanlış konuya geçiren yerel onay istisnaları kaldırıldı.
+- Yeni otomatik stoklarda yatay/HD koşulu ve gerçek dosya çözümleme/netlik kontrolü var. Kilitli ve manuel mevcut seçimler korunur; eski düşük kaliteli seçimler render ekranında uyarılır.
+- Motion, başlık ve altyazılarda ölçülmüş satır kırma/boyutlandırma; kesilmeden tam metin ve ayrılmış alt bant/altyazı alanı. Senaryo ve SRT kaynakları değişmez.
+- CLIP için kalıcı süreç ve sınırlı embedding önbelleği; cümle/model/koşul bazlı ortak karar önbelleği; iki işçili sağlayıcı araması; yerel sorgu önceliği ve sınırlı yeni görsel istekleri.
+- Aynı tamamlanmış yerel seçimler devam işleminde tekrar kullanılabilir. Motion/renderer alt süreçleri iptal ve takılma denetimine alındı. 10 dakika ve üzeri yeni çıktılar aktif edilmeden tam ses/görüntü çözümlemesinden geçer.
+- Arama/değerlendirme/CLIP/indirme-kalite/motion süreleri güvenli tanılama çıktısında ayrı kaydedilir.
+
+Doğrulananlar:
+- Yeni kalite/performans testleri; gerçek net/bulanık/portre dosyalar, 338 cümle/900 saniye zaman çizelgesi, kayıpsız yazı yerleşimi, önbellek, paralellik, süreç yeniden kullanımı/iptali/takılması içerir. Son sonuçlar aşağıdadır.
+- Sentetik kaynaklarla gerçek **15 dakikalık 1080p30 FFmpeg çıktısı** üretildi; iki akış, kare sayısı, son kare ve tam çözümleme doğrulandı. Üretim+test yaklaşık 5 dakika 30 saniye sürdü; bu süre medya hazırlama ölçümü değildir.
+- Motion regresyonları: **17 geçti, 1 atlandı**, önceden var olan ses tepe seviyesi testi ayrı tutuldu. `render.js` Node sözdizimi kontrolü geçti.
+- Yeni kontrollerin son çalışması: **25 geçti**. Dönem/yer ve mod testleri: **23 geçti**. Altyazı/akıllı kurgu paketi: **158 geçti** (paketler ortak testler içerir; sayılar toplanmamalıdır).
+- Render/hybrid/yerleşim/kurgu regresyon paketinde **176 geçti, 2 atlandı**; eski rota beklentisi ayrı tutuldu. Bant testi sonraki düzeltmeyle ayrıca geçti. Özel tema seçilmemiş başlıklar da ölçülmüş yerleşim kullanır.
+- Konu/servis kesintisi paketinde **16 geçti**; yalnız portre video sunan Roma testinin “mutlaka stok video” beklentisi yatay fotoğrafı da kabul edecek şekilde güncellendi. Bu test ve Roma konu testi birlikte yeniden çalıştırıldı: **2 geçti**.
+- Gemini kapalı/kotalı/yoğun durumları ve paylaşılan önbellek paketi: **9 geçti**. Kullanıcının medya reddi kaydı ayrıca yeniden doğrulandı. Çevrimdışı bağlantı engeli açık tutuldu; sahte sağlayıcıların eksik video kare kaynağı tamamlandı.
+- Son kodla birlikte yeni 25 kontrol + kullanıcı reddi kaydının korunması + projeler arası önbellek: **27 geçti** (91,93 saniye). Kullanılmayacak görsel istekleri için önizleme indirmeme ve etiketlerden ilgisizliği belli adaylarla görsel bütçesini tüketmeme denetlendi.
+- Eski sabit motion yüzdesi ve nötr manzara beklentileri yeni kalite şartına göre güncellendi. Çok motion gerekirse uyarı sürer; dönem/yer/yön filtresi bunun için gevşetilmez.
+
+Sınırlar / kalanlar:
+- Değişiklik öncesi kodda da doğrulanan iki test hatası var: rota şablonlarının üç yerleşiminin aynı olması ve ses karışımı tepe seviyesinin test sınırını biraz aşması. Bu dal bunları çözülmüş saymaz.
+- Gerçek CLIP ağırlıkları, canlı Pixabay/Wikimedia/ücretli görsel servisler, Remotion tarayıcı çizimi ve Windows üzerinde doğrulama yapılmadı. Canlı/ücretli işlem için ayrı kullanıcı onayı gerekir.
+- Gerçek 338 işlemin süre kaydı yok; 2–2,5 saatten ne kadar hızlandığı ölçülmedi. Kesin konuşma hizalaması, her konu için kusursuz semantik doğruluk ve kesilmiş renderın aynı kareden devamı iddia edilmez.
+- Bilerek kapatılmış senaryo üretimi/avatar/Pexels yeniden açılmadı; OpenMontage ve yerel motor akışları korunur.
+
+[Basit kullanım, değişiklik nedenleri ve doğrulama sınırları](QUALITY_AND_PERFORMANCE.md).
+
 ## 2026-10-15 — Video dönemi, motion oranı, Wikimedia
 
 - Dönem artık metnin AĞIRLIKLI dönemine göre seçilir: cümlelerin en az %20'si geçmiş bir dönemden söz etmiyorsa video "günümüz" sayılır (belirsizse de modern). Birkaç tarihî cümle videoyu antik yapmaz.

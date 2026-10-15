@@ -46,6 +46,9 @@ def validate(probe,path,duration):
         video=next(s for s in data['streams'] if s.get('codec_type')=='video')
         audio=next(s for s in data['streams'] if s.get('codec_type')=='audio')
         value=float(data['format']['duration']);a,b=video['avg_frame_rate'].split('/');fps=float(a)/float(b)
+        for stream in (video,audio):
+            if stream.get('duration') is not None and abs(float(stream['duration'])-duration)>.08:raise ValueError()
+        if video.get('nb_frames') not in (None,'N/A') and abs(int(video['nb_frames'])-round(duration*30))>1:raise ValueError()
         if (not math.isfinite(value) or value<=0 or abs(value-duration)>.04
                 or video.get('width')!=1920 or video.get('height')!=1080 or video.get('codec_name')!='h264'
                 or video.get('pix_fmt')!='yuv420p' or abs(fps-30)>.001
@@ -53,3 +56,13 @@ def validate(probe,path,duration):
         return {'duration':value,'width':1920,'height':1080,'fps':30,'video_codec':'h264','audio_codec':'aac','validation_method':'ffprobe'}
     except (RenderError,KeyError,ValueError,TypeError,StopIteration,ZeroDivisionError):
         raise RenderError('output_invalid','Oluşan video biçimi veya süresi hedefle eşleşmiyor; önceki video aktif kaldı.') from None
+
+
+def decode(runner,ffmpeg,path,duration,folder):
+    """Verify the complete audio/video payload, not just container metadata."""
+    command=[ffmpeg,'-v','error','-nostdin','-xerror','-err_detect','explode',
+             '-i',str(path),'-map','0:v:0','-map','0:a:0',
+             '-progress','pipe:1','-nostats','-f','null','-']
+    end=runner.run(command,folder,phase='output_decode_validation')
+    if abs(end-duration)>.1:raise RenderError('output_invalid','Video ve ses süreleri eşleşmedi; önceki video korundu.')
+    return True

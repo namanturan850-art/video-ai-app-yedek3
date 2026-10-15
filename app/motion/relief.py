@@ -539,14 +539,14 @@ def render(scene, output, ffmpeg):
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
     if LAST_INFO: LOG.info('motion relief %s', LAST_INFO)
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
-    try:
+    from app.motion.control import guard, check
+    with guard(process):
         for i in range(frames):
+            check()
             process.stdin.write(frame(base, info, i / FPS, duration, path).tobytes())
         process.stdin.close()
         error = process.stderr.read()
         if process.wait(timeout=600): raise RuntimeError(error.decode('utf-8', 'replace')[-300:] or 'ffmpeg failed')
-    finally:
-        if process.poll() is None: process.kill()
     return frames
 
 

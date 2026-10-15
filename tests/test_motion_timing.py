@@ -146,7 +146,7 @@ def test_lower_third_is_drawn_low_in_both_engines():
     lines = ass.graphic({'text': 'Babil düştü', 'style': 'lower_third'}, 1, 4, {'background': '#101010', 'accent': '#ff0000', 'primary': '#ffffff', 'font': 'Arial'})
     assert f'\\move(60,{ass.H_LOWER},120,{ass.H_LOWER}' in lines[0] and 'Babil düştü' in lines[-1]
     tsx = (Path(__file__).resolve().parent.parent / 'app' / 'integrations' / 'openmontage' / 'composition.tsx').read_text(encoding='utf-8')
-    assert "lower_third'?760" in tsx
+    assert f"lower_third'?{ass.H_LOWER}" in tsx
 
 
 def picture_specs(folder):

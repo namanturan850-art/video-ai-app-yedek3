@@ -44,6 +44,9 @@ def clip_fake(world, calls):
 
 
 def make(tmp_path, monkeypatch, text=None, *, key='rome', visual_check=False, plan='local', fast=True, language='de'):
+    monkeypatch.setattr('app.stock.quality.inspect_media', lambda projects,pid,media,tools,start: {
+        'accepted': True, 'sha256': media['sha256'], 'width': media['width'],
+        'height': media['height'], 'duration': media.get('duration')})
     if fast: monkeypatch.setattr('app.motion.clips.raster_render', T.fast_motion)
     monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))
     monkeypatch.setattr('app.providers.gemini_chain.PAUSE', lambda seconds: None)
@@ -225,7 +228,10 @@ def test_clip_drops_irrelevant_candidates_and_shows_the_score(tmp_path, monkeypa
         assert calls and max(n for _, n in calls) <= 24 and 'clip_warning' not in job['progress']
         assert job['progress']['clip_ready'] is True
         motion = sum(s['selected_media']['provider'] == 'generated' and not s.get('continuation_of') for s in view['slots'])
-        assert motion <= .3 * len(view['slots']), view['media_summary']['text']  # without Gemini, still mostly stock footage
+        # This fixture offers portrait videos only: quality wins over the old
+        # arbitrary motion quota. Landscape photos / relevant graphics remain.
+        assert all(s['selected_media']['width'] > s['selected_media']['height'] for s in chosen)
+        assert not any(s.get('setting_relaxed') for s in view['slots'])
     finally:
         client.__exit__(None, None, None)
 
@@ -239,7 +245,8 @@ def test_without_clip_a_plain_warning_and_the_job_still_finishes(tmp_path, monke
         assert 'INSTALL_OPENMONTAGE_SEMANTIC.bat' in job['progress']['clip_warning']
         assert not any(s['selected_media']['media_id'] in noise_ids(world) for s in stock_slots(view))
         motion = sum(s['selected_media']['provider'] == 'generated' and not s.get('continuation_of') for s in view['slots'])
-        assert motion <= .3 * len(view['slots']), view['media_summary']['text']  # no CLIP, no Gemini: still mostly stock footage
+        assert not any(s.get('setting_relaxed') for s in view['slots'])
+        assert all(s['selected_media']['width'] > s['selected_media']['height'] for s in stock_slots(view))
         page = client.get('/static/stock.js').text
         assert 'stock-clip-warning' in page and 'Yerel görüntü modeli (CLIP)' in page
     finally:

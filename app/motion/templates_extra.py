@@ -234,13 +234,13 @@ def parse(kind, value, sentence='', language='de'):
     if template == 'archive':
         if len(value.split()) < 1: raise MarkerError('[ARŞİV] için fotoğrafı tarif edin: [ARŞİV: 1910 Paris sokakları].')
         search, _, caption = value.partition('|')  # [ARŞİV: old harbor photo | Brest, 1910]: the part after | is written under the photo
-        return {'template': 'archive', 'data': {'label': search.strip()[:70], 'caption': caption.strip()[:50], 'image': '', 'source': value}, 'emphasis': ''}
+        return {'template': 'archive', 'data': {'label': search.strip(), 'caption': caption.strip(), 'image': '', 'source': value}, 'emphasis': ''}
     if template == 'mark':
-        return {'template': 'mark', 'data': {'label': value[:70], 'image': '', 'fx': .5, 'fy': .5, 'source': value}, 'emphasis': ''}
+        return {'template': 'mark', 'data': {'label': value, 'image': '', 'fx': .5, 'fy': .5, 'source': value}, 'emphasis': ''}
     if template == 'beforeafter':
         parts = [p.strip() for p in re.split(r'\||/| vs\.? ', value) if p.strip()]
         if len(parts) != 2: raise MarkerError('[ÖNCESONRA] için iki şey yazın: [ÖNCESONRA: Antik liman | Bugünkü kıyı].')
-        return {'template': 'beforeafter', 'data': {'before': parts[0][:40], 'after': parts[1][:40], 'images': [], 'source': value}, 'emphasis': ''}
+        return {'template': 'beforeafter', 'data': {'before': parts[0], 'after': parts[1], 'images': [], 'source': value}, 'emphasis': ''}
     if template == 'icons':
         match = re.match(r'\s*([\d.,  ]+\d|\d+)\s*(.*)', value)
         if not match: raise MarkerError('[İKON] için sayı ve nesne yazın: [İKON: 10000 asker].')
@@ -256,7 +256,7 @@ def parse(kind, value, sentence='', language='de'):
         if not 0 < number <= 100: raise MarkerError('[ORAN] değeri 0 ile 100 arasında olmalı.')
         label = (value[:match.start()] + value[match.end():]).strip(' ,;:-')
         shown = f'%{match.group(1) or match.group(2)}' if language == 'tr' else f'{match.group(1) or match.group(2)} %'
-        return {'template': 'ratio', 'data': {'value': shown, 'percent': number, 'label': label[:70], 'source': value}, 'emphasis': ''}
+        return {'template': 'ratio', 'data': {'value': shown, 'percent': number, 'label': label, 'source': value}, 'emphasis': ''}
     if template == 'dynasty':
         generations = [[n.strip()[:28] for n in g.split(',') if n.strip()][:4] for g in re.split(r'>|→', value) if g.strip()]
         generations = [g for g in generations if g][:5]
@@ -338,10 +338,10 @@ def map_colours(s):
 def title(s, text, y=96, size=58):
     from app.motion.templates import W, fit, mix
     if not text: return
-    fs, rows = fit(text, s.head, size, 1500, 1, 34)
+    fs, rows = fit(text, s.head, size, 1500, 2, 34)
     width = min(1700, max(400, len(rows[0]) * fs * .6 + 120))
-    s.add('rect', s.appear(.05, 0, .88), x=W / 2 - width / 2, y=y - fs * .85, w=width, h=fs * 1.7, fill=mix(s.bg, '#000000', .25), radius=18, opacity=0)
-    s.text(rows[0], W / 2, y, fs, start=.1, dy=20)
+    s.add('rect', s.appear(.05, 0, .88), x=W / 2 - width / 2, y=y - fs * .85, w=width, h=fs * (1.7+1.25*(len(rows)-1)), fill=mix(s.bg, '#000000', .25), radius=18, opacity=0)
+    for i,row in enumerate(rows):s.text(row, W / 2, y+i*fs*1.25, fs, start=.1, dy=20)
 
 
 def build_extra(s, spec, language='de'):

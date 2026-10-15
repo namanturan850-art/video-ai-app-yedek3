@@ -23,6 +23,7 @@ from app.rendering.runner import ProcessRunner
 from app.rendering.engine import FFmpegRenderProvider
 from app.rendering.diagnostics import safe_diagnostic
 from app.rendering import smart_edit
+from app.motion.control import MotionCancelled
 
 LOG=logging.getLogger('uvicorn.error.rendering')
 
@@ -58,7 +59,7 @@ class RenderService:
         row=c.execute('SELECT metadata_json FROM render_music WHERE project_id=?',(pid,)).fetchone()
         return json.loads(row[0]) if row else None
 
-    def _motion(self,pid,t,h,selected,media,originals,kit,force,draw=False,pending=None):
+    def _motion(self,pid,t,h,selected,media,originals,kit,force,draw=False,pending=None,cancelled=None):
         """Re-anchor motion clips to the real narration timing and collect the
         kit's sound effects (absolute times) for the final audio mix."""
         from app.motion.clips import is_motion,render_clip
@@ -100,13 +101,14 @@ class RenderService:
                     for slot in parts:media[slot['slot_id']]['sha256']='pending-'+scene_key(scene)
                 else:
                     try:
-                        path,_,_=render_clip(directory(self.projects,pid),spec,kit,duration,offset,language=h.get('target_language','de'),bridge=getattr(self,'openmontage',None))
+                        path,_,_=render_clip(directory(self.projects,pid),spec,kit,duration,offset,language=h.get('target_language','de'),bridge=getattr(self,'openmontage',None),cancelled=cancelled)
                         from app.motion import relief
                         if relief.LAST_WARNING:notes.append(relief.LAST_WARNING);relief.LAST_WARNING=''  # satellite failed: the drawn map, and why
                         if relief.LAST_INFO:notes.append(relief.LAST_INFO);relief.LAST_INFO=''  # tanılama: which satellite view + the Mapbox request (key hidden)
                         digest=self._hash(path,force);originals[str(path)]=digest
                         for slot in parts:media[slot['slot_id']].update(path=path,duration=duration,sha256=digest,segment_start=0.)
                     except Exception:
+                        if cancelled and cancelled():raise RenderError('render_cancelled','Grafik hazırlığı iptal edildi; kaynaklar korundu.')
                         if spec.get('template') in ('relief','route'):notes.append('Bir harita grafiği yeni harita stiliyle çizilemedi; önceki hali kullanıldı. Medya ekranında bu sahneyi yeniden hazırlayın.')
                         scene=templates.build(spec,kit,float(m.get('duration') or duration),original,h.get('target_language','de'))  # keep the prepared clip
             for slot in parts:media[slot['slot_id']].update(segment_start=0.,motion=True)  # animation always starts at its first frame
@@ -120,7 +122,7 @@ class RenderService:
         if notes:out['notes']=list(dict.fromkeys(notes))
         return out
 
-    def _endscreen(self,pid,t,h,selected,kit,force,draw,pending,originals):
+    def _endscreen(self,pid,t,h,selected,kit,force,draw,pending,originals,cancelled=None):
         """Closing moment ([KAPANIŞ] / abone ol cümlesi) varsa videonun sonuna 20 sn YouTube
         bitiş ekranı eklenir. Klip içeriğe göre önbelleklenir; çizimi yalnız render işi yapar."""
         if not kit:return None
@@ -136,7 +138,7 @@ class RenderService:
         scene=templates.build(spec,kit,END_SCREEN_SECONDS,END_SCREEN_SECONDS*.6,language);key=scene_key(scene)
         folder=directory(self.projects,pid);target=folder/(key+'.mp4')
         if not (target.is_file() and not linked(target)) and draw:
-            target,_,_=render_clip(folder,spec,kit,END_SCREEN_SECONDS,END_SCREEN_SECONDS*.6,language=language)
+            target,_,_=render_clip(folder,spec,kit,END_SCREEN_SECONDS,END_SCREEN_SECONDS*.6,language=language,cancelled=cancelled)
         if target.is_file() and not linked(target):
             digest=self._hash(target,force);originals[str(target)]=digest
         else:
@@ -186,7 +188,7 @@ class RenderService:
                     events.append({'t':t,'sound':'whoosh','path':str(path),'slot_id':item.get('slot_id'),'peak':round(peak,3)})
         return {**sfx,'events':sorted(events,key=lambda e:e['t'])[:160]}
 
-    def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None,draw=False):
+    def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None,draw=False,cancelled=None):
         try:
             h=self.subtitles.handoff(pid);p=self.production.handoff(pid)
             with closing(self.projects._connection()) as c:
@@ -211,6 +213,8 @@ class RenderService:
                 owner=slot.get('continuation_of') or slot['slot_id']
                 m=selected.get(owner,{}).get('selected_media');identity=slot['selected_media_local_identity']
                 if not m or any(m.get(k)!=v for k,v in identity.items()):raise RenderError('source_stale',SOURCE_MESSAGE)
+                if (selected[owner].get('local_validation') or {}).get('accepted') is False:
+                    raise RenderError('input_invalid','Bir medya kalite kontrolünü geçemedi. Medya ekranında ilgili yuvayı kontrol edin; mevcut dosyalar korundu.')
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
                 originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest}
                 if selected.get(owner,{}).get('segment_start') is not None:media[slot['slot_id']]['segment_start']=float(selected[owner]['segment_start'])
@@ -229,8 +233,8 @@ class RenderService:
                 music_identity={'local_path':music['local_path'],'sha256':music_hash};originals[str(music_file)]=music_hash
             channels=getattr(self,'channels',None)
             kit=channels.for_project(pid)['style'] if channels else None
-            pending=[];sfx=self._motion(pid,t,h,selected,media,originals,kit,force,draw,pending)
-            endscreen=self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals)
+            pending=[];sfx=self._motion(pid,t,h,selected,media,originals,kit,force,draw,pending,cancelled)
+            endscreen=self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals,cancelled)
             fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
             from app.channels import DEFAULT_STYLE
             if endscreen:fingerprint_data['endscreen']={'key':endscreen['key'],'seconds':endscreen['seconds']}  # absent without a closing moment: old fingerprints kept
@@ -270,6 +274,7 @@ class RenderService:
             if endscreen:self._append_endscreen(inputs,endscreen)
             return inputs
         except RenderError:raise
+        except MotionCancelled:raise RenderError('render_cancelled','Grafik hazırlığı iptal edildi; kaynaklar korundu.') from None
         except ScriptError:raise RenderError('source_stale',SOURCE_MESSAGE) from None
         except (OSError,ValueError,KeyError,TypeError):raise RenderError('input_invalid','Yerel video kaynakları okunamadı. Ses, altyazı ve stok medya dosyalarını kontrol edin.') from None
 
@@ -338,7 +343,7 @@ class RenderService:
             if inputs.get('motion_pending'):
                 # Motion graphics whose look changed are redrawn here, in the background job.
                 self._progress(pid,jid,vid,started,'preparing',1,'',[])
-                inputs=self._inputs(pid,inputs['options'],True,draw=True)
+                inputs=self._inputs(pid,inputs['options'],True,draw=True,cancelled=runner.event.is_set)
                 with self.projects.lock,closing(self.projects._connection()) as c,c:
                     item=self._version(c,pid,vid);meta=item['metadata']
                     if inputs['smart_edit_plan']:meta.update(smart_edit_plan=inputs['smart_edit_plan'],smart_edit_summary=inputs['smart_edit_plan']['summary'])
@@ -352,6 +357,11 @@ class RenderService:
                 from app.integrations.openmontage.provider import OpenMontageProvider
                 engine=OpenMontageProvider(self.openmontage,tool,runner,lambda *args:self._progress(pid,jid,vid,started,*args),lambda event:self._log(pid,version,event))
             result=engine.render(inputs)
+            if inputs['timeline']['duration']>=600:
+                # A header-only probe cannot detect a damaged middle segment in
+                # a long film. Decode both actual streams before activation.
+                self._progress(pid,jid,vid,started,'validating',98,result['metadata'].get('encoder_used',''),[])
+                result['metadata']['full_decode_verified']=probe.decode(runner,tool['ffmpeg'],result['path'],inputs['timeline']['duration'],inputs['temporary'])
             # Reject activation if a source changed during the job. No source is modified here.
             with self.projects.lock,self.lock:
                 if runner.event.is_set():raise RenderError('render_cancelled','Render iptal edildi.')
@@ -424,6 +434,7 @@ class RenderService:
         for runner in runners:runner.cancel()
         # Queued work runs only to observe cancellation and persist terminal status.
         self.executor.shutdown(wait=True)
+        self.openmontage.close()
 
     def view(self,pid,*,refresh_tools=False,editing_style='adaptive',edit_variation_seed=None,subtitle_display=None,montage_engine='openmontage'):
         self.projects.get(pid);source=None;source_error='';source_category='';error=None;opts=options({'editing_style':editing_style,'edit_variation_seed':edit_variation_seed,'subtitle_display':subtitle_display,'montage_engine':montage_engine})

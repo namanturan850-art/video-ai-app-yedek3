@@ -39,6 +39,11 @@ def build(tmp_path, monkeypatch, key='rome'):
     """A pasted-text project whose Gemini answers per model: `world.dead`
     models answer with the daily-quota 429, `world.minute` with a minute limit."""
     monkeypatch.setattr('app.motion.clips.raster_render', T.fast_motion)
+    # Provider contract fixtures contain header-only media. Decode quality is
+    # exercised with real local FFmpeg sources in test_quality_performance.
+    monkeypatch.setattr('app.stock.quality.inspect_media', lambda projects,pid,media,tools,start: {
+        'accepted': True, 'sha256': media['sha256'], 'width': media['width'],
+        'height': media['height'], 'duration': media.get('duration')})
     monkeypatch.setattr('app.stock.providers.ACTIVE', ('pexels', 'pixabay'))  # synthetic two-provider library
     data = T.TOPICS[key]
     world, director = R.World(key, data), T.Director(data)

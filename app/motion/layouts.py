@@ -74,6 +74,8 @@ def _keep_inside(element):
     if element['type'] == 'rect' and 'w' in p and p['w'] < W - 80:
         dx = min(max(p['x'], 40), W - 40 - p['w']) - p['x']
     elif element['type'] == 'text' and p.get('anchor', 'mm') == 'mm':
+        while _text_width(element)>W-160 and p.get('size',40)>18:
+            p['size']-=1
         half = _text_width(element) / 2
         dx = min(max(p['x'], 80 + half), W - 80 - half) - p['x']
     else:

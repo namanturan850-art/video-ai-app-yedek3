@@ -43,9 +43,11 @@ def render(scene, output, ffmpeg):
     command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
-    try:
+    from app.motion.control import guard, check
+    with guard(process):
         cw, ch = still.size
         for i in range(frames):
+            check()
             p = i / max(1, frames - 1)
             scale = 1 / 1.12 * (1 - ZOOM * p)  # crop shrinks → slow zoom-in
             w, h = cw * scale * 1.12 / 1.12, ch * scale
@@ -55,6 +57,4 @@ def render(scene, output, ffmpeg):
         process.stdin.close()
         error = process.stderr.read()
         if process.wait(timeout=600): raise RuntimeError(error.decode('utf-8', 'replace')[-300:] or 'ffmpeg failed')
-    finally:
-        if process.poll() is None: process.kill()
     return frames

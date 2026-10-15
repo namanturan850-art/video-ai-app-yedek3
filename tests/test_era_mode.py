@@ -80,7 +80,7 @@ def run_project(tmp_path, monkeypatch, mode):
         client.__exit__(None, None, None)
 
 
-def test_andes_text_motion_share_auto_vs_strict_historic(tmp_path, monkeypatch):
+def test_andes_text_setting_is_preserved_without_weakening_for_a_motion_quota(tmp_path, monkeypatch):
     strict = run_project(tmp_path, monkeypatch, 'historic')
     auto = run_project(tmp_path, monkeypatch, 'auto')
     ratio = lambda v: v['media_mix']['motion_ratio_percent']
@@ -89,7 +89,10 @@ def test_andes_text_motion_share_auto_vs_strict_historic(tmp_path, monkeypatch):
     print('STAGES auto', Counter((x.get('director') or {}).get('stage') for x in auto['slots'] if (x.get('selected_media') or {}).get('provider') == 'generated'),
           'relaxed', auto['job']['progress'].get('relaxed_slots'), 'rejected', auto['job']['progress'].get('setting_rejected'))
     assert auto['job']['progress']['setting']['era'] == 'contemporary' and strict['job']['progress']['setting']['era'] == 'ancient'
-    assert ratio(strict) >= 40 and ratio(auto) <= ratio(strict) - 20  # the rest is the synthetic library having nothing for those queries (no period rejections left)
+    for view in (strict, auto):
+        assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0
+        assert not any(s.get('setting_relaxed') for s in view['slots'])
+        assert all(s['selected_media']['width'] > s['selected_media']['height'] for s in view['slots'])
 
 
 def wikimedia_page(pageid, mime, licence):

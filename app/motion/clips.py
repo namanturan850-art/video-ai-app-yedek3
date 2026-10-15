@@ -9,7 +9,6 @@ import hashlib
 import json
 import logging
 import shutil
-import subprocess
 import wave
 from pathlib import Path
 from uuid import uuid4
@@ -19,7 +18,7 @@ from app.motion.raster import render as raster_render
 from app.projects import linked, now
 
 LOG = logging.getLogger('uvicorn.error.motion')
-ENGINE_VERSION = 'motion-v4'  # v2: 1:50m coastlines, timing limits, layouts; v3: 2-5 word texts, opaque boxes; v4: real borders, names in the safe area, no haze
+ENGINE_VERSION = 'motion-v5'  # lossless, measured text layout; old files remain intact
 
 
 def scene_key(scene):
@@ -69,17 +68,22 @@ def openmontage(scene, output, bridge, ffmpeg, folder):
         entry = staging / 'index.tsx'; shutil.copyfile(Path(__file__).with_name('motion.tsx'), entry)
         audio = public / 'silence.wav'; silent_wav(audio, scene['duration'])
         raw = public / 'motion-raw.mp4'
-        bridge.call('compose', {'operation': 'render', 'output_path': str(raw), 'audio_path': str(audio),
+        from app.rendering.runner import ProcessRunner
+        from app.motion.control import guard_runner
+        runner=ProcessRunner()
+        with guard_runner(runner):
+            bridge.call('compose', {'operation': 'render', 'output_path': str(raw), 'audio_path': str(audio),
                                 'edit_decisions': {'render_runtime': 'remotion', 'composition_mode': 'atelier', 'renderer_family': 'bespoke',
                                                    'bespoke': {'entry': str(entry), 'composition_id': 'AVSMotion', 'props_path': str(staging / 'props.json'),
-                                                               'public_dir': str(public), 'crf': 18, 'concurrency': 1}}}, folder)
+                                                               'public_dir': str(public), 'crf': 18, 'concurrency': 1}}}, folder, runner=runner)
         if not raw.is_file():
             raise RuntimeError('openmontage_output')
         frames = max(1, round(scene['duration'] * templates.FPS))
         # Same delivery format as the local renderer: exact frames, no audio.
-        subprocess.run([ffmpeg, '-v', 'error', '-y', '-i', str(raw), '-an', '-vf', 'fps=30,scale=1920:1080,setsar=1,format=yuv420p,tpad=stop_mode=clone:stop_duration=1',
-                        '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-movflags', '+faststart', str(output)],
-                       check=True, stdin=subprocess.DEVNULL, capture_output=True, timeout=600)
+        with guard_runner(runner):
+            runner.run([ffmpeg, '-v', 'error', '-y', '-i', str(raw), '-an', '-vf', 'fps=30,scale=1920:1080,setsar=1,format=yuv420p,tpad=stop_mode=clone:stop_duration=1',
+                        '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-movflags', '+faststart',
+                        '-progress', 'pipe:1', '-nostats', str(output)], folder)
     finally:
         if not linked(staging): shutil.rmtree(staging, ignore_errors=True)
         shutil.rmtree(public, ignore_errors=True)
@@ -98,7 +102,7 @@ def with_pictures(spec, folder):
     return spec
 
 
-def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True):
+def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
     from app.rendering.tools import discover
@@ -114,22 +118,28 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         return target, scene, 'cache'
     temporary = folder / ('.motion-' + uuid4().hex + '.mp4')
     engine = 'local'
+    from app.motion.control import CANCELLED, check
+    token = CANCELLED.set(cancelled or (lambda:False))
     try:
+        check()
         if prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC and not any(e['type'] == 'relief' for e in scene['elements']):  # the nine marker templates: local renderer only
             try:
                 openmontage(scene, temporary, bridge, ffmpeg, folder)
                 engine = 'openmontage'
             except Exception as error:  # absence or any failure: local fallback
+                check()
                 LOG.info('motion engine=openmontage result=fallback category=%s', type(error).__name__)
                 temporary.unlink(missing_ok=True)
         if engine == 'local':
             raster_render(scene, temporary, ffmpeg)
+        check()
         if relief.LAST_WARNING and any(e['type'] == 'relief' for e in scene['elements']):  # satellite fell back to the drawn map: not cached
             # Not under the satellite key (retried next time). The name must stay 32 hex characters: the media
             # screen and the render only accept stock/<32 hex>.mp4 (a “-fallback-” name read as “Yerel dosya eksik”).
             target = folder / (uuid4().hex + '.mp4')
         temporary.replace(target)
     finally:
+        CANCELLED.reset(token)
         temporary.unlink(missing_ok=True)
     return target, scene, engine
 

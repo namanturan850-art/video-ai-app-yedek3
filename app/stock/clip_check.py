@@ -26,13 +26,20 @@ class ClipCheck:
         self.service, self.broken = service, False
         self.fake = getattr(service, 'clip_scorer', None)  # tests: callable(descriptor, [(key, [jpeg bytes])]) → {key: result}
         self.bridge = getattr(service, 'openmontage', None)
+        self._ready = None
+        self.model_version = ''
 
     def ready(self):
         if self.broken: return False
         if self.fake is not None: return True
+        if self._ready is not None:return self._ready
         try:
-            return bool(self.bridge and self.bridge.status().get('semantic_ready'))
+            status=self.bridge.status() if self.bridge else {}
+            self.model_version=status.get('semantic_model_version','')
+            self._ready=bool(status.get('semantic_ready'))
+            return self._ready
         except Exception:
+            self._ready = False
             return False
 
     def score(self, descriptor, items, folder, penalties=()):

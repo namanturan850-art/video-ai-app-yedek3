@@ -138,8 +138,10 @@ def draw_frame(scene, t, base, maps, pictures=None):
                 font = _font(p['font'], int(p['size']), p.get('bold', True))
                 text = p['text']
                 width = font.getlength(text)
-                x = min(max(x, width / 2 + 30), W - width / 2 - 30)
-                y = min(max(y + p.get('offset', 0) + p.get('dy', 0), p['size']), H - p['size'])
+                # inside the safe area: never under the top band (badge/breadcrumb) or the bottom band, never cut at the sides
+                pad = p['size'] * .45 + 48
+                x = min(max(x, width / 2 + pad), W - width / 2 - pad)
+                y = min(max(y + p.get('offset', 0) + p.get('dy', 0), 170 + p['size'] * .75), H - 150 - p['size'] * .75)
                 if p.get('box'):
                     pad = p['size'] * .45
                     draw.rounded_rectangle((x - width / 2 - pad, y - p['size'] * .75, x + width / 2 + pad, y + p['size'] * .75), radius=12,

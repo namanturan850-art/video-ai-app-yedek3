@@ -1,5 +1,15 @@
 # AI Video Studio — Durum
 
+## 2026-10-14 (13) — Harita ve ses için genel kurallar (tüm projeler, diller, harita stilleri)
+
+- [BÖLGE] her stilde gerçek bölge/ülke sınırıyla çizilir (Natural Earth; yarı saydam dolgu + belirgin kenar). Uydu stilindeki kaba taralı elips kaldırıldı.
+- Yer adları her karede güvenli alanın içinde: yanlarda kesilmez, sol üst rozetin/üst şeridin ve alt şeridin (ölçek, not, telif) üstüne yazılmaz; büyüteç varsa onun da üstüne gelmez. Ad kenara taşarsa noktanın öbür yanına alınır.
+- Kamera [OK] ve [ROTA]'nın bütün duraklarını (iki uç dahil), [BÖLGE]'nin tamamını ve [YAKINLAŞ]/[HARİTA] yerini kenarlarda boşlukla kadrajda tutar. [ROTA] artık her harita stilinde aynı çizimle (koyu ve kabartmada da) yapılır.
+- Eğik uydu görünümündeki sis ve keskinleştirme kaldırıldı (deniz ve düz alanlarda koyu bulanık leke bırakıyordu). Eski harita klipleri bir kez yeniden çizilir.
+- Geçiş sesi: whoosh'un en yüksek anı görüntünün gerçekten değiştiği ana (geçişin ortası) denk gelir; ses kesmeden biraz önce başlar. Zaman, render sırasında gerçekten uygulanan geçiş süresinden hesaplanır.
+- Ses: her render'da son aşama loudnorm (−14 LUFS) + limiter; çıkış true peak ≤ −1,0 dBTP (test sinyalinde AAC sonrası ölçüldü).
+- Örnek kareler: `docs/map_fix_samples/` (Fransızca Mont-Saint-Michel ve Türkçe örnekler; uydu, koyu, kabartma; başlangıç/son kare). Uydu kareleri sahte, yapay manzara resmidir; gerçek Mapbox ile denenmedi.
+
 ## 2026-10-14 (12) — Mapbox aylık güvenlik sınırı
 
 - Mapbox istekleri her ay sayılıyor (karo ve eğik görüntü ayrı, ay başında sıfır). Sayaç Ayarlar → Mapbox durum satırında: “Bu ay: X karo / Y eğik görüntü”.

@@ -203,9 +203,8 @@ def test_connection_button_also_checks_the_oblique_request():
 
 def test_marseille_to_nice_runs_east_on_the_tilted_view(tmp_path, monkeypatch):
     scene, frame, provider = render('arrow', 'Marseille > Nice | 200 km', tmp_path, monkeypatch, at=3.9)
-    assert next(e for e in scene['elements'] if e['type'] == 'relief')['props']['camera'] == 2
+    assert next(e for e in scene['elements'] if e['type'] == 'relief')['props']['camera'] == 3
     assert provider.calls[0][3] == 0 and provider.calls[0][4] == 60  # bearing 0 (north up), pitch 60
     ys, xs = np.nonzero((frame[..., 0] > 200) & (frame[..., 1] > 170) & (frame[..., 2] < 90))
     assert xs.max() - xs.min() > 2 * (ys.max() - ys.min())  # the yellow line runs left → right, not upward
-    top, bottom = frame[:120, 600:1300].mean(), frame[700:900, 600:1300].mean()
-    assert top > bottom + 25  # haze toward the far edge
+    # no extra haze: it left dark, blurry blotches on sea and flat land

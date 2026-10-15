@@ -68,7 +68,7 @@ def test_satellite_map_with_marks(tmp_path, monkeypatch):
     green = (abs(frame[150:300, 1300:1700] - np.array([40, 90, 60])).max(axis=-1) < 30).mean()  # outside the oval
     assert green > .2  # the (fake) satellite picture
     red = (frame[..., 0] > 180) & (frame[..., 1] < 90)
-    assert red.mean() > .005  # the red/white hatched oval
+    assert red.mean() > .005  # the region's real border, filled see-through red
     white = (frame > 230).all(axis=-1)
     assert white[30:140, 40:500].mean() > .02 and white[H_ - 60:H_, 760:1160].mean() > .005  # badge + dots, ŞEMATİK note
     assert white[H_ - 40:H_, W_ - 200:W_].mean() > .01  # © Mapbox

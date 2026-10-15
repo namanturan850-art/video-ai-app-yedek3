@@ -85,6 +85,9 @@ def test_andes_text_motion_share_auto_vs_strict_historic(tmp_path, monkeypatch):
     auto = run_project(tmp_path, monkeypatch, 'auto')
     ratio = lambda v: v['media_mix']['motion_ratio_percent']
     print('MOTION RATIO strict-historic', ratio(strict), 'auto', ratio(auto), 'slots', auto['media_mix']['total_slots'])
+    from collections import Counter
+    print('STAGES auto', Counter((x.get('director') or {}).get('stage') for x in auto['slots'] if (x.get('selected_media') or {}).get('provider') == 'generated'),
+          'relaxed', auto['job']['progress'].get('relaxed_slots'), 'rejected', auto['job']['progress'].get('setting_rejected'))
     assert auto['job']['progress']['setting']['era'] == 'contemporary' and strict['job']['progress']['setting']['era'] == 'ancient'
     assert ratio(auto) <= ratio(strict) and ratio(auto) <= 25
 

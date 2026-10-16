@@ -61,7 +61,8 @@ def make_slots(scene, *, adaptive=False):
         words = word_count(scene['narration_text'])
         rate = words / max(.001, duration)
         units = narration_units(scene['narration_text'])
-        dense = rate > 3.1 or len(units) / max(.001, duration) > .32
+        facts = len(re.findall(r'\d+(?:[.,]\d+)?', scene['narration_text'])) + len(scene.get('entities') or [])
+        dense = rate > 3.1 or len(units) / max(.001, duration) > .32 or facts / max(.001, duration) > .3
         target = 3.5 if dense else 4.2 if importance < 40 else 5.0 if importance >= 85 else 4.6
     count = max(1, min(max(1,math.floor(duration/2.5)),max(round(duration/target),math.ceil(duration/(5.5 if adaptive else 4.5)))))
     longest = 6.0 if adaptive else 5.5

@@ -4,6 +4,8 @@
 - CLIP kare embedding işlemleri 24 karelik paketlere alındı; mevcut model/hash önbelleği ve kalite eşikleri korundu.
 - Dosya hash doğrulaması, dosya kimliği/boyut/mtime/ctime değişmedikçe yeniden kullanılır. İlk okumadan sonra atime değişmesi yeniden indirmeye yol açmaz.
 - Yalnız bulut kodu ve geçici test verileri kullanılıyor; mevcut Windows işi/veritabanı/projeleri değiştirilmedi. Canlı veya ücretli API testi yapılmadı.
+- Sahne coğrafyası, İspanyolca işlev kelimeleri, yalnız yeni projelerde uyarlanabilir tempo, içerik değişiminde karar önbelleği iptali ve ekrandaki ayrı süre/önbellek sayaçları eklendi.
+- Son cache/parse paketi: **48 geçti** (45 yeni regresyon + 3 mevcut karar önbelleği testi).
 - Ayrıntılı test ve sentetik ölçüm raporu bu dalın son doğrulama commit’inde eklenecek. Gerçek 30–45 dakika hedefi henüz ölçülmedi.
 
 # AI Video Studio — Durum

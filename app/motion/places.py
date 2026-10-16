@@ -307,6 +307,7 @@ def spoken_places(text):
         for size in range(min(4, len(spans) - i), 0, -1):
             key = ' '.join(w for _, _, w, _ in spans[i:i + size])
             place = table.get(key)
+            if key in {'america', 'amerika'}: continue  # continent is not evidence for the USA
             if not place or len(key) < 3 or not notable(place, key) or (place['rank'] > 1 and not spans[i][3]): continue
             if (place['lat'], place['lon']) not in taken:
                 found.append((text[spans[i][0]:spans[i + size - 1][1]], place['lat'], place['lon']))

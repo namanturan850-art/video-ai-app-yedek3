@@ -147,7 +147,7 @@ class APIStockProvider:
         except StockError as error:
             category = error.category
             raise
-        except (ValueError, TypeError, KeyError):
+        except (ValueError, TypeError, KeyError, AttributeError):
             category = 'invalid_response'
             raise StockError(category, self.label+' API yanıtı okunamadı. Daha sonra tekrar deneyin.', 502) from None
         finally:

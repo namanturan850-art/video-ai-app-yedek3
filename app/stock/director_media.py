@@ -146,11 +146,11 @@ def clip_descriptor(slot, scene, language='de', setting=None):
     the slot's planned query and the sentence's filmable words (+ the video's
     period and place, e.g. “ancient Mesopotamia”)."""
     scene = bind_shot(scene, slot, language) if not scene.get('_shot_bound') and 'estimated_start' in slot else scene
-    from app.scripts.query_clean import english_query
+    from app.scripts.query_clean import english_query, scope_query
     hints = [h.get('value', '') for h in scene.get('owner_hints') or [] if h.get('type') == 'visual']
     narration = scene.get('narration_text', '')
     parts = [english_query(h, language, limit=6) for h in hints]
-    parts += [english_query(q, language, limit=5) for q in (slot.get('search_query'), scene.get('primary_stock_query')) if q]
+    parts += [scope_query(english_query(q, language, limit=5), narration) for q in (slot.get('search_query'), scene.get('primary_stock_query')) if q]
     parts.append(english_query(narration, language, strict=True, limit=6))
     seen, words = set(), []
     for part in parts:
@@ -656,6 +656,7 @@ class MediaDirector:
         self.progress['message'] = f'Yuva {slot["order"]} · yerel görüntü modeli (CLIP) {len(items)} adayı karşılaştırıyor'
         self.service._checkpoint(self.job, self.progress, light=True)
         scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid), penalties(self.where(scene), descriptor))
+        self.progress['clip_metrics'] = dict(getattr(self.clip, 'metrics', {}))
         if not scores and self.clip.broken:
             self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; bu işte medya etiket/kelime eşleşmesiyle seçildi.'
         decided = {}
@@ -2401,7 +2402,7 @@ def diagnostics(service, project_id):
                       'missing_reasons': s.get('missing_reason_messages', [])})
     with closing(service.projects._connection()) as c:
         jobs = [{'id': r['id'], 'action': r['action'], 'status': r['status'], 'error': r['error_message'], 'created_at': r['created_at'],
-                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'timings', 'performance', 'search_metrics', 'api_errors', 'preview_cache_hits', 'preview_reads', 'quality_cache_hits', 'provider_searches', 'cached_search_reads', 'motion_cache_hits', 'motion_renders', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
+                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'timings', 'performance', 'search_metrics', 'api_errors', 'preview_cache_hits', 'preview_reads', 'clip_metrics', 'quality_cache_hits', 'provider_searches', 'cached_search_reads', 'motion_cache_hits', 'motion_renders', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
                                                                                     'ai_attempts', 'ai_requests', 'ai_cached', 'ai_requests_total', 'local_mode', 'local_reason')}}
                 for r in c.execute('SELECT * FROM stock_jobs WHERE project_id=? ORDER BY created_at DESC LIMIT 10', (project_id,))]
     from app.providers.gemini_chain import ATTEMPTS

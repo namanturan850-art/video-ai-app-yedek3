@@ -115,8 +115,16 @@ def shared_render(fn):
         value = json.dumps([str(Path(folder).resolve()), spec, kit, duration, emphasis_offset,
                             kwargs.get('language', 'de'), ENGINE_VERSION], sort_keys=True, ensure_ascii=False)
         index = int(hashlib.sha256(value.encode()).hexdigest()[:8], 16) % len(_RENDER_LOCKS)
-        with _RENDER_LOCKS[index]:
+        lock = _RENDER_LOCKS[index]
+        from app.motion.control import MotionCancelled
+        cancelled = kwargs.get('cancelled') or (lambda: False)
+        while not lock.acquire(timeout=.2):
+            if cancelled(): raise MotionCancelled('Grafik hazırlığı durduruldu; tamamlanan dosyalar korundu.')
+        try:
+            if cancelled(): raise MotionCancelled('Grafik hazırlığı durduruldu; tamamlanan dosyalar korundu.')
             return fn(folder, spec, kit, duration, emphasis_offset, **kwargs)
+        finally:
+            lock.release()
     return render
 
 

@@ -469,6 +469,7 @@ class StockService:
 
     def _cache_search(self, project_id, name, kind, query, *, page=1):
         from app.stock.search_session import canonical_query
+        self._guard(query)  # validate before case folding can change a secret's spelling
         query = canonical_query(query, name)
         # Keys include configuration identity, never the raw secret.
         config = self.settings.stock_config(name) if name != 'openmontage' else {}

@@ -18,7 +18,7 @@ _lock = threading.Lock()
 
 def context(scene, slot=None):
     slot = slot or {}
-    value = {'policy': 4, 'narration': scene.get('narration_text'), 'visual': scene.get('visual_intent'),
+    value = {'policy': 5, 'narration': scene.get('narration_text'), 'visual': scene.get('visual_intent'),
              'must': scene.get('must_show'), 'must_not': scene.get('must_not_show'),
              'entities': scene.get('entities'), 'goal': scene.get('visual_intent') if scene.get('_shot_bound') else slot.get('visual_goal'),
              'setting': slot.get('quality_setting'),
@@ -27,7 +27,11 @@ def context(scene, slot=None):
 
 
 def cache_key(media, fingerprint):
-    return f'{media["provider"]}:{media["media_type"]}:{media["media_id"]}|{fingerprint}'
+    meta = media.get('source_metadata') or {}
+    revision = [media.get('sha256'), media.get('preview_url'), meta.get('preview_frames'),
+                meta.get('sample_url'), media.get('duration')]
+    version = hashlib.sha256(json.dumps(revision, sort_keys=True).encode()).hexdigest()[:16]
+    return f'{media["provider"]}:{media["media_type"]}:{media["media_id"]}|{fingerprint}|{version}'
 
 
 class VerdictCache:

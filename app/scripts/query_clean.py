@@ -121,6 +121,7 @@ def place_english(word, exact=False):
     """English name of a place written in any language, or ''."""
     from app.motion.places import find, index, notable, plain
     key = plain(word)
+    if key in {'america', 'amerika', 'solo', 'para'}: return ''  # ambiguous continent/function-word aliases
     place = index().get(key) if exact else find(word)
     if not place or not notable(place, key): return ''  # never a small town that happens to share a common word
     return place.get('en') or ''
@@ -251,7 +252,9 @@ def scope_query(query, narration):
     """
     from app.motion.places import spoken_places, find, country_name, plain
     spoken = spoken_places(narration)
-    if not spoken: return query
+    from app.stock.setting import places as regions, REGION_RE
+    own_regions = set(regions(narration))
+    if not spoken and not own_regions: return query
     allowed = set()
     for name, _, _ in spoken:
         place = find(name)
@@ -261,6 +264,6 @@ def scope_query(query, narration):
             allowed.update(plain(country_name(place, lang)) for lang in ('en', 'de', 'es', 'tr', 'fr'))
     result = query
     for name, _, _ in spoken_places(query):
-        if plain(name) not in allowed:
+        if plain(name) not in allowed and not any(REGION_RE[r].search(name) for r in own_regions):
             result = re.sub(r'(?<!\w)' + re.escape(name) + r'(?!\w)', ' ', result, flags=re.I)
     return ' '.join(result.split())

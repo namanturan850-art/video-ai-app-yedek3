@@ -117,7 +117,10 @@ def score_frames(root,inputs):
     negatives=[n for n in FRAME_NEGATIVES+NEGATIVES if not set(re.findall(r'[a-z]+',n))&words] or ['unrelated footage']
     penalties=setting_penalties(inputs.get('penalties'),descriptor)
     labels=[descriptor,*negatives,*(p['text'] for p in penalties)]
-    texts=embedded(labels,[('text',status['version'],t) for t in labels],embed_texts,clip_embedder,torch)
+    text_keys = [('text', status['version'], t) for t in labels]
+    metrics = {'text_vector_hits': sum(k in _EMBEDDINGS for k in text_keys),
+               'text_vectors_encoded': len({k for k in text_keys if k not in _EMBEDDINGS})}
+    texts=embedded(labels,text_keys,embed_texts,clip_embedder,torch)
     split=1+len(negatives)
     results=[]
     grouped = []
@@ -127,7 +130,10 @@ def score_frames(root,inputs):
         grouped.append((item, frames))
     all_frames = [f for _, frames in grouped for f in frames]
     if not all_frames: return {'results': []}
-    vectors = embedded(all_frames, [('image', status['version'], sha(f)) for f in all_frames], embed_images, clip_embedder, torch)
+    image_keys = [('image', status['version'], sha(f)) for f in all_frames]
+    metrics.update(image_vector_hits=sum(k in _EMBEDDINGS for k in image_keys),
+                   image_vectors_encoded=len({k for k in image_keys if k not in _EMBEDDINGS}))
+    vectors = embedded(all_frames, image_keys, embed_images, clip_embedder, torch)
     cursor = 0
     for item, frames in grouped:
         images = vectors[cursor:cursor + len(frames)]
@@ -145,7 +151,7 @@ def score_frames(root,inputs):
             i=max(range(len(leads)),key=leads.__getitem__)
             result.update(setting_margin=round(leads[i],4),setting_closest=penalties[i]['label'])
         results.append(result)
-    return {'results':results}
+    return {'results':results, 'metrics': metrics}
 
 
 def setting_penalties(raw,descriptor):

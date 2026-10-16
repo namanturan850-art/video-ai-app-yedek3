@@ -1,5 +1,6 @@
 ## 2026-10-16 — Performans devam çalışması: eşzamanlı kota beklemesi
 
+- **Son kodla 188/188 ilgili regresyon testi geçti** (342,98 sn): kalite, coğrafya, kilit/resume, sağlayıcılar, kota sıfırlaması ve model zinciri sonrası seçim koruması dahil. Tam taramanın eski/ortam başarısızlıkları ayrıca belgeli; tüm testler yeşil iddiası yoktur.
 - Kullanıcı canlı/ücretli ve gerçek ölçüm testlerini onayladı; yeniden onay beklenmiyor. Windows'taki çalışan işi koruma şartı sürüyor.
 - PR #81 GitHub'da bu devam çalışması dışında birleştirilmiş olarak bulundu. Yeni `improve/media-preparation-followup` dalı güncel `main` (`94dd80a`) üzerinden açıldı; bu çalışmada main'e birleştirme yapılmaz.
 - Aynı sağlayıcıya paralel giden bir başarılı yanıtın 429 beklemesini silmesi ve geç gelen timeout'un Retry-After süresini kısaltması iki regresyon testiyle yeniden üretildi. Başarı yalnız başladığında gördüğü hata durumunu temizler; yeni hata mevcut daha uzun beklemeyi korur.

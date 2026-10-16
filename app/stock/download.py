@@ -150,7 +150,8 @@ class Downloader:
         temporary=folder/('.download-'+uuid4().hex+'.part')
         converted=folder/('.converted-'+uuid4().hex+'.mp4')
         try:
-            with httpx.Client(timeout=httpx.Timeout(90,connect=10), follow_redirects=False, trust_env=False,
+            with httpx.Client(timeout=httpx.Timeout(90,connect=10), follow_redirects=True, max_redirects=3,
+                              trust_env=False, event_hooks={'request':[lambda request: safe_url(str(request.url),'magnific')]},
                               transport=self.transport) as client:
                 with client.stream('GET',link,headers={'Accept-Encoding':'identity','User-Agent':USER_AGENT}) as response:
                     if response.status_code!=200:

@@ -50,6 +50,19 @@ def rendition(files):
     return min(suitable, key=lambda f: f['width']*f['height']) if suitable else max(usable, key=lambda f: f['width']*f['height'])
 
 
+def retry_after(response):
+    """Documented HTTP Retry-After, seconds or date; no immediate retries."""
+    value = response.headers.get('retry-after', '')
+    try:
+        delay = float(value)
+    except ValueError:
+        from email.utils import parsedate_to_datetime
+        from datetime import datetime, timezone
+        try: delay = (parsedate_to_datetime(value) - datetime.now(timezone.utc)).total_seconds()
+        except (ValueError, TypeError, OverflowError): return 60.
+    return min(86400., max(1., delay)) if delay == delay else 60.
+
+
 class APIStockProvider:
     name = ''
     label = ''
@@ -94,7 +107,9 @@ class APIStockProvider:
                                    'rate_limit':' kullanım sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.',
                                    'invalid_request':' API isteği kabul edilmedi. Ayarlar ekranındaki anahtarı kontrol edin.',
                                    'upstream_error':' API şu anda yanıt veremiyor. Daha sonra tekrar deneyin.'}[category]
-                        raise StockError(category, self.label+message)
+                        error = StockError(category, self.label+message)
+                        if category == 'rate_limit': error.retry_after = retry_after(response)
+                        raise error
                     raw = bytearray()
                     for chunk in response.iter_bytes():
                         raw.extend(chunk)

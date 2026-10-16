@@ -10,6 +10,8 @@ import json
 import logging
 import shutil
 import wave
+from threading import RLock
+from functools import wraps
 from pathlib import Path
 from uuid import uuid4
 
@@ -101,6 +103,24 @@ def with_pictures(spec, folder):
     else: spec['data']['image_paths'] = [str(p) for p in paths]
     return spec
 
+
+# Fixed stripes bound synchronization memory. Only identical content/folder
+# must share a lock; selection and checkpoints remain on their job thread.
+_RENDER_LOCKS = [RLock() for _ in range(64)]
+
+
+def shared_render(fn):
+    @wraps(fn)
+    def render(folder, spec, kit, duration, emphasis_offset, **kwargs):
+        value = json.dumps([str(Path(folder).resolve()), spec, kit, duration, emphasis_offset,
+                            kwargs.get('language', 'de'), ENGINE_VERSION], sort_keys=True, ensure_ascii=False)
+        index = int(hashlib.sha256(value.encode()).hexdigest()[:8], 16) % len(_RENDER_LOCKS)
+        with _RENDER_LOCKS[index]:
+            return fn(folder, spec, kit, duration, emphasis_offset, **kwargs)
+    return render
+
+
+@shared_render
 
 def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None):
     """Render (or reuse) a clip in `folder` (the project's stock folder).

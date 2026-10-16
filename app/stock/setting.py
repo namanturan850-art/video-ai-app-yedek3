@@ -74,7 +74,7 @@ REGIONS = {
                ('mediterranean coast cliffs', 'olive grove', 'marble texture')),
     'rome': (r'rom|rome|roma|römer\w*|römisch\w*|roman\w*|romain\w*|romano\w*|kolosseum|colosseum|kolezyum|caesar|cäsar|sezar|pompeji|pompeii',
              'Rome', 'Roma', 'mediterranean', ('the Colosseum in Rome',), ('colosseum', 'coliseum', 'vatican'), ('italian countryside hills', 'old stone texture')),
-    'mesoamerica': (r'maya\w*|azte[kc]\w*|tenochtitlan|teotihuacan|mexik\w*|mexico|meksika\w*|olme[kc]\w*',
+    'mesoamerica': (r'maya\w*|azte[kc]\w*|tenochtitlan|teotihuacan|olme[kc]\w*',
                     'Mesoamerica', 'Orta Amerika', 'americas', ('a Mayan step pyramid in the jungle', 'an Aztec stone calendar carving'), ('mayan', 'maya', 'aztec', 'chichen', 'teotihuacan', 'tikal'),
                     ('tropical jungle canopy', 'misty rainforest')),
     'andes': (r'inka\w*|inca\w*|peru\w*|machu picchu|anden|andes|and dağları',
@@ -98,7 +98,11 @@ REGIONS = {
                 'Britain', 'Britanya', 'europe_north', ('Stonehenge stone circle', 'Big Ben and the Houses of Parliament in London', 'a red double-decker bus in London'), ('stonehenge', 'london', 'big ben', 'thames', 'westminster'), ('green hills fog', 'rainy moor landscape')),
     'france': (r'frankreich|france|fransa\w*|französisch\w*|french|paris|eiffel',
                'France', 'Fransa', 'europe_west', ('the Eiffel Tower in Paris',), ('eiffel', 'paris'), ('countryside fields', 'old stone texture')),
-    'usa': (r'usa|u\.s\.a?\.?|amerika\w*|america\w*|abd|vereinigte staaten|united states|états-unis|estados unidos|new york|washington|kalifornien|california',
+    'mexico': (r'mexico|méxico|mexiko|meksika\w*|mexican\w*|tijuana|monterrey|guadalajara|puebla|cancun|cancún',
+               'Mexico', 'Meksika', 'mexico', ('a city street in Mexico',), ('mexico', 'mexican', 'tijuana', 'monterrey'), ('Mexico landscape',)),
+    'venezuela': (r'venezuela\w*|maracaibo|catatumbo', 'Venezuela', 'Venezuela', 'venezuela',
+                  ('Lake Maracaibo in Venezuela',), ('venezuela', 'maracaibo', 'catatumbo'), ('Maracaibo lake',)),
+    'usa': (r'usa|u\.s\.a?\.?|abd|vereinigte staaten|united states|états-unis|estados unidos|new york|washington|kalifornien|california',
             'the USA', 'ABD', 'americas_north', ('the New York City skyline', 'the Statue of Liberty', 'the Golden Gate Bridge in San Francisco', 'the Hollywood sign'), ('manhattan', 'liberty', 'hollywood', 'york', 'golden gate', 'san francisco', 'las vegas', 'times square'),
             ('prairie landscape', 'highway desert landscape')),
     'australia': (r'australi\w*|avustralya\w*|sydney|sidney|melbourne|uluru|canberra|kanguru\w*|kangaroo\w*|känguru\w*',
@@ -260,8 +264,19 @@ def describe(era, decade, regions, evidence=0):
 
 def for_scene(setting, scene_text):
     """The video's setting; a scene that names its own years/period (a flashback,
-    "1850", "v. Chr.") gets that period. Places stay the video's (all allowed)."""
-    if not setting or setting.get('mode') == 'modern': return setting  # the owner chose “Modern”: no scene is made historical
+    "1850", "v. Chr.") gets that period. Explicit scene places override the majority."""
+    if not setting: return setting
+    own = places(scene_text)
+    # A named scene takes precedence over the video's majority geography.
+    # Modern mode fixes time, not geography.
+    if own:
+        setting = {**setting, **describe(setting.get('era'), setting.get('decade'), own, setting.get('evidence', 0)), 'scene_override': True}
+    else:
+        from app.motion.places import spoken_places
+        if spoken_places(scene_text):
+            # A known city outside our small region vocabulary: no invented country.
+            setting = {**setting, **describe(setting.get('era'), setting.get('decade'), [], setting.get('evidence', 0)), 'scene_override': True}
+    if setting.get('mode') == 'modern': return setting
     era, decade, evidence = period(scene_text)
     if era and era != setting.get('era') and evidence >= 2 and (BC.search(scene_text or '') or YEAR.search(scene_text or '') or EARLY_YEAR.search(scene_text or '') or _decade(scene_text or '')):
         return {**describe(era, decade, setting.get('regions') or [], evidence), 'scene_override': True}
@@ -348,6 +363,6 @@ def reason(conflict):
 def rules_version():
     """Changes whenever the period/place rules change: earlier checks are then redone."""
     import hashlib, json
-    data = [ANACHRONISMS, STYLE, {k: v[3:6] for k, v in REGIONS.items()},
+    data = ['scene-geography-v2', ANACHRONISMS, STYLE, {k: v[3:6] for k, v in REGIONS.items()},
             YEAR.pattern, EARLY_YEAR.pattern, BC.pattern, ERA_WORDS]
     return hashlib.sha256(json.dumps(data, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]

@@ -10,6 +10,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const message=node('p','Güncel sahne planı kontrol ediliyor…');message.setAttribute('role','status');
   const controls=node('div','','settings-actions'),warningList=node('ul');section.append(message,controls,warningList);root.insertBefore(section,blocks);
   const recovery=node('section');recovery.id='stock-recovery-report';section.append(recovery);const mix=node('details'),recent=node('details');recent.append(node('summary','Son arama tanısı'));section.append(mix,recent);
+  const performanceLine=node('p','','note');performanceLine.id='stock-performance';section.insertBefore(performanceLine,controls);
   let state=null,pending=false,timer=null,loading=false,previewSlot=null;
   const active=()=>pending||['queued','running'].includes(state?.job?.status);
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.disabled=disabled;b.addEventListener('click',fn);parent.append(b);return b;}
@@ -176,6 +177,10 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     summaryLine.textContent=state?.media_summary?.text||'';
     translateNote.replaceChildren();const tnote=state?.translation_note;translateNote.hidden=!tnote;
     if(tnote){translateNote.append(node('span','Türkçe çeviri: '+tnote+' '));if(!tnote.endsWith('…'))button(translateNote,'Çeviriyi yeniden dene',()=>operate(()=>request(base+'/translate','POST',{})),active()).id='stock-retranslate';else setTimeout(load,3000);}
+    const perf=state?.job?.progress||{},timings=perf.timings||{},search=perf.search_metrics||{};
+    const labels={search:'Arama',clip:'CLIP (judging içinde)',judging:'Judging',download_validation:'İndirme + kontrol',motion:'Motion'};
+    performanceLine.hidden=!Object.keys(timings).length;
+    performanceLine.textContent=[`Geçen aktif süre: ${perf.performance?.active_wall_seconds??0} sn`,...Object.entries(labels).map(([k,label])=>`${label}: ${timings[k]?.seconds??0} sn / ${timings[k]?.calls??0} işlem`),`Benzersiz sorgu: ${search.unique_queries??0}`,`Sağlayıcı araması (başarılı): ${perf.provider_searches??0}`,`Arama önbelleği: ${perf.cached_search_reads??0}`,`Önizleme önbelleği: ${perf.preview_cache_hits??0}`,`Kalite önbelleği: ${perf.quality_cache_hits??0}`,`Motion önbelleği: ${perf.motion_cache_hits??0}`,`API hataları: ${Object.values(perf.api_errors||{}).reduce((a,b)=>a+b,0)}`,`Kalan yuva: ${state?.slots.filter(s=>s.status!=='complete').length??0}`,'Aşama süreleri toplanmaz; CLIP judging içinde, aramalar paralel olabilir.'].join(' · ');
     const clipWarning=state?.job?.progress?.clip_warning;clipNote.hidden=!clipWarning;clipNote.textContent=clipWarning?'ℹ '+clipWarning:'';
     const where=state?.job?.progress?.setting,dropped=state?.job?.progress?.setting_rejected||{},redo=state?.job?.progress?.setting_reselected||0;settingNote.hidden=!where?.label;
     settingNote.textContent=where?.label?`Dönem ve yer: ${where.label} · bu döneme/yere uymayan görüntüler elenir${dropped.anachronism?` · dönemle çelişen ${dropped.anachronism}`:''}${dropped.place?` · yanlış coğrafya ${dropped.place}`:''}${dropped.style?` · karikatür/3D ${dropped.style}`:''}${redo?` · önceki ${redo} seçim yenilendi`:''}`:'';

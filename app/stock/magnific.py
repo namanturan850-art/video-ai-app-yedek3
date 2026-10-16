@@ -66,12 +66,16 @@ class MagnificStockProvider:
             raise StockError('timeout', 'Magnific stok API zamanında yanıt vermedi.') from None
         except httpx.HTTPError:
             raise StockError('connection_error', 'Magnific stok API bağlantısı tamamlanamadı.') from None
+        self.last_diagnostic = {'http_status': response.status_code, 'response_category': {200: 'success', 401: 'authentication', 403: 'permission', 429: 'quota'}.get(response.status_code, 'upstream_error')}
         if response.status_code == 401:
             raise StockError('key_rejected', 'Magnific API anahtarı kabul edilmedi.')
         if response.status_code == 403:
             raise StockError('key_rejected', 'Magnific hesabının stok video API erişimi yok.')
         if response.status_code == 429:
-            raise StockError('rate_limit', 'Magnific API kullanım sınırına ulaşıldı.')
+            from app.stock.providers import retry_after
+            error = StockError('rate_limit', 'Magnific API kullanım sınırına ulaşıldı.')
+            error.retry_after = retry_after(response)
+            raise error
         if response.status_code != 200:
             raise StockError('upstream_error', 'Magnific stok API isteği tamamlanamadı.')
         try:
@@ -97,9 +101,13 @@ class MagnificStockProvider:
         if not isinstance(listing, list):
             raise StockError('invalid_response', 'Magnific video listesi okunamadı.')
         output = []
+        rejected = {'malformed_result': 0, 'unsafe_url': 0}
+        filtered = no_preview = 0
         for item in listing[:MAX_RESULTS]:
-            if not isinstance(item, dict) or item.get('is_ai_generated') is True:
-                continue
+            if not isinstance(item, dict):
+                rejected['malformed_result'] += 1; continue
+            if item.get('is_ai_generated') is True:
+                filtered += 1; continue
             try:
                 ident = str(item['id'])
                 if not ident.isalnum() or len(ident) > 80:
@@ -113,10 +121,12 @@ class MagnificStockProvider:
                 height = int(item.get('height') or best.get('height') or 0)
                 if not 0 < width <= 16384 or not 0 < height <= 16384:
                     raise ValueError()
-            except (KeyError, TypeError, ValueError):
+            except (KeyError, TypeError, ValueError, OverflowError):
+                rejected['malformed_result'] += 1
                 continue
             preview_url = _https_url(item.get('thumbnails'))
             if not preview_url:
+                no_preview += 1
                 continue  # Premium media is never selected from tags alone.
             tags = item.get('tags') or []
             description = ' '.join(str(tag.get('name', '') if isinstance(tag, dict) else tag) for tag in tags) if isinstance(tags, list) else ''
@@ -134,8 +144,13 @@ class MagnificStockProvider:
                 },
             }))
         meta = body.get('meta') if isinstance(body.get('meta'), dict) else {}
-        self.last_diagnostic = {'page': page, 'results': len(output),
+        self.last_diagnostic = {**(self.last_diagnostic or {}), 'raw_count': len(listing), 'normalized_count': len(output),
+                                'rejected': rejected, 'filtered': filtered, 'missing_preview': no_preview,
+                                'result_category': 'empty' if not listing else 'usable' if output else 'filtered' if filtered + no_preview else 'parse_error',
+                                'page': page, 'results': len(output),
                                 'current_page': meta.get('current_page'), 'last_page': meta.get('last_page')}
+        if listing and not output and rejected['malformed_result'] and not (filtered + no_preview):
+            raise StockError('invalid_response', 'Magnific sonuçları geldi fakat medya şeması okunamadı.')
         return output
 
     def download_link(self, ident):

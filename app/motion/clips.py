@@ -18,7 +18,7 @@ from app.motion.raster import render as raster_render
 from app.projects import linked, now
 
 LOG = logging.getLogger('uvicorn.error.motion')
-ENGINE_VERSION = 'motion-v5'  # lossless, measured text layout; old files remain intact
+ENGINE_VERSION = 'motion-v6'  # animated safe-area guard + distinct route layouts; v5 files are not reused
 
 
 def scene_key(scene):

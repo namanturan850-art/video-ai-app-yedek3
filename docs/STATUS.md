@@ -1,5 +1,20 @@
 # AI Video Studio — Durum
 
+## 2026-10-16 — Motion güvenli alanı, ses zinciri ve rota düzeni
+
+Tamamlandı:
+- Bütün motion metinleri için animasyon ölçeğini de kapsayan son güvenli alan denetimi; uzun sayı/işaret, başlık, harita adı ve açıklama yerleşimleri.
+- Üç gerçek yerel 1920×1080 FFmpeg motion çıktısında uzun `#123.456.789` örneğinin görsel kontrolü.
+- Eski hatalı motion MP4'lerinin tekrar seçilmesini önleyen `motion-v6` önbellek anahtarı; eski kullanıcı dosyaları silinmez.
+- Relief rota grafiklerinde üç düzenin farklı kamera çerçevesi üretmesi.
+- Loudness işleminin efekti sessiz aralıklarda büyütmesini önleyen ses sırası ve güvenli varsayılan efekt seviyesi.
+- Motion önbellek isabeti, gerçek çizim ve motor sayaçları.
+
+Doğrulama ve sınırlar:
+- Medya eşleşmesi, motion, FFmpeg, kalite, önbellek, rota, ses ve Windows uyumluluk senaryolarından oluşan paket: **429 geçti, 3 atlandı**.
+- Canlı Pixabay/Wikimedia veya ücretli model çağrısı yapılmadı. 238 öğelik gerçek çalışma süresi ölçülmedi.
+- Linux üzerinde yerel FFmpeg yolu doğrulandı. Windows, gerçek OpenMontage/Remotion ve canlı sağlayıcılar ayrıca doğrulanmalıdır.
+
 ## 2026-10-15 — Kalite ve performans geliştirme dalı
 
 Dal: `improve/video-quality-performance`. Ana dala gönderim ve mevcut kullanıcı verileri üzerinde işlem yapılmadı. Önceki kayıttaki otomatik dönem/yer gevşetme davranışı bu dalda kaldırıldı: kalite ve konu uyumu, stok/motion oranından önce gelir.
@@ -23,7 +38,7 @@ Doğrulananlar:
 - Eski sabit motion yüzdesi ve nötr manzara beklentileri yeni kalite şartına göre güncellendi. Çok motion gerekirse uyarı sürer; dönem/yer/yön filtresi bunun için gevşetilmez.
 
 Sınırlar / kalanlar:
-- Değişiklik öncesi kodda da doğrulanan iki test hatası var: rota şablonlarının üç yerleşiminin aynı olması ve ses karışımı tepe seviyesinin test sınırını biraz aşması. Bu dal bunları çözülmüş saymaz.
+- Bu kayıtta açık bırakılan rota yerleşimi ve ses tepe uyuşmazlıkları 2026-10-16 düzeltmesinde kapatıldı.
 - Gerçek CLIP ağırlıkları, canlı Pixabay/Wikimedia/ücretli görsel servisler, Remotion tarayıcı çizimi ve Windows üzerinde doğrulama yapılmadı. Canlı/ücretli işlem için ayrı kullanıcı onayı gerekir.
 - Gerçek 338 işlemin süre kaydı yok; 2–2,5 saatten ne kadar hızlandığı ölçülmedi. Kesin konuşma hizalaması, her konu için kusursuz semantik doğruluk ve kesilmiş renderın aynı kareden devamı iddia edilmez.
 - Bilerek kapatılmış senaryo üretimi/avatar/Pexels yeniden açılmadı; OpenMontage ve yerel motor akışları korunur.

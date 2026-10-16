@@ -1,4 +1,5 @@
 """Quality regressions and bounded-worker checks; no network or user data."""
+import hashlib
 import json
 import sys
 import threading
@@ -128,6 +129,13 @@ def test_motion_text_fit_preserves_all_words_and_long_names():
     assert ''.join(''.join(rows).split()) == ''.join(text.split())
     assert len(rows) <= 3
     assert all(measure(row, 'Inter.ttf', size) <= 1400 for row in rows)
+
+
+def test_motion_cache_version_excludes_pre_safe_area_files():
+    from app.motion.clips import ENGINE_VERSION, scene_key
+    scene = {'duration': 4, 'elements': [{'type': 'text', 'props': {'text': '#123'}}]}
+    assert ENGINE_VERSION == 'motion-v6'
+    assert scene_key(scene) != hashlib.sha256(('motion-v5' + json.dumps(scene, sort_keys=True, ensure_ascii=False)).encode()).hexdigest()[:32]
 
 
 def test_ass_band_and_badge_keep_complete_long_titles():

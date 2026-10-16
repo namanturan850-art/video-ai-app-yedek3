@@ -65,7 +65,12 @@ class RenderService:
         from app.motion.clips import is_motion,render_clip
         from app.motion import templates
         from app.stock.download import directory
-        events=[];notes=[];volume=float((kit or {}).get('sfx_volume',.18))
+        configured=float((kit or {}).get('sfx_volume',.10))
+        # .18 was the old implicit default and could push transient peaks over
+        # the narration.  Treat that legacy value as the new safe default;
+        # any other owner-selected level remains untouched.
+        volume=.10 if abs(configured-.18)<1e-9 else configured
+        events=[];notes=[]
         if not kit:return {'events':[],'volume':volume}
         chains={}
         for slot in t['slots']:

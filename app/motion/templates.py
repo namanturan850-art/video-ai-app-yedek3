@@ -293,7 +293,46 @@ class Scene:
 
 def build(spec, kit, duration, emphasis_offset, language='de'):
     from app.motion.layouts import arrange
-    return arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit)
+    return keep_text_safe(arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit))
+
+
+def keep_text_safe(scene, margin_x=80, margin_y=64):
+    """Final renderer-neutral guard for every animated text element.
+
+    Templates measure their own rows, but counters grow during their hit
+    animation and alternative layouts transform the completed scene.  Apply
+    the same final bounds before either Pillow or Remotion sees it so the
+    largest animated state remains inside the 16:9 safe area.
+    """
+    for element in scene.get('elements', []):
+        if element.get('type') not in ('text', 'counter', 'years'):
+            continue
+        p = element.get('props', {})
+        text = str(p.get('text') or p.get('target') or '')
+        if not text and element.get('type') != 'years':
+            continue
+        tracks = element.get('tracks') or {}
+        scales = [float(p.get('scale', 1) or 1)] + [float(v) for _, v in tracks.get('scale', [])]
+        scale = max(scales)
+        size = float(p.get('size', 40))
+        available = W - 2 * margin_x
+        while text and size > 18 and measure(text, p.get('font'), round(size * scale), p.get('bold', True)) > available:
+            size -= 1
+        p['size'] = size
+        width = measure(text, p.get('font'), round(size * scale), p.get('bold', True)) if text else size * 6
+        anchor = p.get('anchor', 'mm')
+        x = float(p.get('x', W / 2))
+        if anchor == 'lm':
+            p['x'] = min(max(x, margin_x), W - margin_x - width)
+        elif anchor == 'rm':
+            p['x'] = min(max(x, margin_x + width), W - margin_x)
+        else:
+            p['x'] = min(max(x, margin_x + width / 2), W - margin_x - width / 2)
+        dys = [float(p.get('dy', 0) or 0)] + [float(v) for _, v in tracks.get('dy', [])]
+        half = size * scale * .72
+        low, high = margin_y + half - min(dys), H - margin_y - half - max(dys)
+        p['y'] = min(max(float(p.get('y', H / 2)), low), high) if low <= high else H / 2
+    return scene
 
 
 def _build(spec, kit, duration, emphasis_offset, language='de'):
@@ -316,7 +355,8 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
     if t == 'stat':
         d = {**d, 'value': grouped(d['value'], language)}
         match = NUMBER.search(d['value'])
-        size = 300 if len(d['value']) <= 6 else 220
+        # Fit the final formatted value at the animation's 1.08x peak.
+        size, _ = fit(d['value'], s.head, 300, (W - 160) / 1.08, 1, 64)
         start = max(.15, E - max(1.2, md * 2))
         s.add('counter', {'value': [[start, 0], [E, 1]], 'opacity': [[start - .1, 0], [start + .2, 1]],
                           'scale': [[E, 1], [E + .15, 1.08], [E + .35, 1]]},
@@ -342,10 +382,12 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         s.add('circle', {'r': [[at, 0], [at + 1.2, 140]], 'opacity': [[at, .55], [at + 1.2, 0]]}, cx=cx, cy=cy, r=0, fill='', stroke=s.accent, width=6, opacity=0)
         s.add('pin', {'dy': [[at - .45, -160], [at, 0]], 'opacity': [[at - .45, 0], [at - .3, 1]]}, x=cx, y=cy, size=46, fill=s.accent, hole=s.bg, opacity=0, dy=-160)
         label = d['place'] + (' · ' + d['label'] if d['label'] else '')
-        fs = 64 if len(label) < 26 else 52
-        width = measure(label, s.head, fs) + 80
-        s.add('rect', s.appear(at + .1, 30), x=cx - width / 2, y=cy + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
-        s.text(label, cx, cy + 90 + fs * .8, fs, start=at + .1, dy=30)
+        fs, rows = fit(label, s.head, 64, W - 240, 2, 34)
+        width = min(W - 160, max(measure(row, s.head, fs) for row in rows) + 80)
+        box_y = min(cy + 90, H - 100 - fs * (1.7 + 1.25 * (len(rows) - 1)))
+        s.add('rect', s.appear(at + .1, 30), x=cx - width / 2, y=box_y, w=width, h=fs * (1.7 + 1.25 * (len(rows) - 1)), fill=s.bg, radius=16, opacity=0)
+        for i, row in enumerate(rows):
+            s.text(row, cx, box_y + fs * .8 + i * fs * 1.25, fs, start=at + .1 + i * .05, dy=30)
         s.sound('rise', at - .9); s.sound('hit', at)
     elif t == 'quote':
         tokens = d['text'].split()
@@ -377,7 +419,8 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
             at = .2 + (E - .2) * (x - left) / (right - left)
             at = E if i == key else at
             s.add('circle', {'r': [[at, 0], [at + md * .6, 18], [at + md, 14 if i != key else 22]]}, cx=x, cy=y, r=0, fill=s.accent if i == key else s.primary, opacity=1)
-            s.text(e['date'], x, y - 90, 70 if i == key else 56, fill=s.accent if i == key else s.primary, start=at, dy=30)
+            date_size, date_rows = fit(e['date'], s.head, 70 if i == key else 56, (right - left) / len(events) - 24, 1, 24)
+            s.text(date_rows[0], x, y - 90, date_size, fill=s.accent if i == key else s.primary, start=at, dy=30)
             fs, rows = fit(e['label'], s.body, 40, 1500 / len(events), 2, 28)
             for j, row in enumerate(rows):
                 s.text(row, x, y + 80 + j * fs * 1.25, fs, font=s.body, start=at + .1, dy=20, bold=False)
@@ -385,7 +428,9 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
     elif t == 'compare':
         items = d['items']
         if d.get('title'):
-            s.text(d['title'], W / 2, 140, 64, start=.1)
+            title_size, title_rows = fit(d['title'], s.head, 64, W - 240, 2, 34)
+            for i, row in enumerate(title_rows):
+                s.text(row, W / 2, 120 + i * title_size * 1.2, title_size, start=.1 + i * .05)
         target = spec.get('emphasis', '')
         key = next((i for i, it in enumerate(items) if target and target in (it['label'] + ' ' + it['value'])), len(items) - 1)
         if all(it['value'] for it in items):  # bar chart
@@ -422,7 +467,10 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         items, title = d['items'], d.get('title')
         top = 200 if title else 260
         if title:
-            s.text(title, 200, top, 84, anchor='lm', start=.1, fill=s.primary)
+            title_size, title_rows = fit(title, s.head, 84, W - 400, 2, 38)
+            for i, row in enumerate(title_rows):
+                s.text(row, 200, top + i * title_size * 1.15, title_size, anchor='lm', start=.1 + i * .05, fill=s.primary)
+            top += (len(title_rows) - 1) * title_size * 1.15
         target = spec.get('emphasis', '')
         key = next((i for i, it in enumerate(items) if target and target in it), len(items) - 1)
         gap = 175

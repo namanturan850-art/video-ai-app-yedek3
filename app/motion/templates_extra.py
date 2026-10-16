@@ -377,7 +377,9 @@ def build_extra(s, spec, language='de'):
         # and the names stay inside the safe area, also for places only a few km apart.
         style = map_style(s.kit)
         extra = satellite_props(language) if style == 'satellite' else {'theme': 'dark'} if style == 'dark' else {}
-        s.add('relief', spec={'template': 'relief', 'data': {'mode': 'arrow', 'stops': d['stops'], 'source': d.get('source', '')}, 'emphasis': ''}, **extra)
+        nested = {'template': 'relief', 'data': {'mode': 'arrow', 'stops': d['stops'], 'source': d.get('source', '')}, 'emphasis': ''}
+        if 'layout' in spec: nested['layout'] = spec['layout']
+        s.add('relief', spec=nested, **extra)
         return s
     if t == 'empire':
         area = [tuple(p) for p in d['area']]
@@ -423,10 +425,12 @@ def build_extra(s, spec, language='de'):
                   text=other['name'], size=32, font=s.body, fill=mix(s.fg, s.bg, .2), offset=36, bold=False, opacity=0)
         s.add('circle', {'r': [[at, 0], [at + 1.2, 150]], 'opacity': [[at, .55], [at + 1.2, 0]]}, cx=W / 2, cy=H / 2, r=0, fill='', stroke=s.accent, width=6, opacity=0)
         s.add('pin', {'dy': [[at - .4, -160], [at, 0]], 'opacity': [[at - .4, 0], [at - .25, 1]]}, x=W / 2, y=H / 2, size=46, fill=s.accent, hole=s.bg, opacity=0, dy=-160)
-        fs = 60 if len(d['place']) < 24 else 48
-        width = measure(d['place'], s.head, fs) + 80
-        s.add('rect', s.appear(at + .1, 30), x=W / 2 - width / 2, y=H / 2 + 90, w=width, h=fs * 1.6, fill=s.bg, radius=16, opacity=0)
-        s.text(d['place'], W / 2, H / 2 + 90 + fs * .8, fs, start=at + .1, dy=30)
+        fs, rows = fit(d['place'], s.head, 60, W - 240, 2, 34)
+        width = min(W - 160, max(measure(row, s.head, fs) for row in rows) + 80)
+        box_y = H / 2 + 90
+        s.add('rect', s.appear(at + .1, 30), x=W / 2 - width / 2, y=box_y, w=width, h=fs * (1.7 + 1.25 * (len(rows) - 1)), fill=s.bg, radius=16, opacity=0)
+        for i, row in enumerate(rows):
+            s.text(row, W / 2, box_y + fs * .8 + i * fs * 1.25, fs, start=at + .1 + i * .05, dy=30)
         s.sound('whoosh', .3); s.sound('hit', at)
     elif t == 'mark':
         fx, fy = float(d.get('fx', .5)), float(d.get('fy', .5))

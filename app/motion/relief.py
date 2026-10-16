@@ -307,6 +307,7 @@ def label(draw, text, x, y, size=58, anchor='mm'):
 def plan(spec):
     """Everything the clip needs, resolved from the offline data."""
     d = spec['data']
+    layout = spec.get('layout', 0) if type(spec.get('layout', 0)) is int else 0
     mode = d.get('mode', 'region')
     figure = str(d.get('figure') or '')[:24]
     if mode == 'compare':
@@ -331,7 +332,8 @@ def plan(spec):
         from app.motion.templates_extra import near_each_other  # [OK: Paris > Brest]: Brest in France
         points = [(p['lon'], p['lat'], p['name']) for p in near_each_other([{'name': n, 'lat': y, 'lon': x} for x, y, n in points])]
         bbox = (min(p[0] for p in points), min(p[1] for p in points), max(p[0] for p in points), max(p[1] for p in points))
-        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=.8), 'arrow': points, 'unit': None, 'title': d.get('title') or '', 'figure': figure}
+        return {'mode': mode, 'view': view_around(bbox, pad=1.9, minimum=.8), 'arrow': points, 'unit': None, 'title': d.get('title') or '', 'figure': figure,
+                'layout': max(0, min(2, layout))}
     unit = None if d.get('lat') is not None or d.get('polygon') else find(d['target'])
     if d.get('polygon'):  # [İMPARATORLUK] on satellite: the approximate extent ([lat, lon] points)
         ring = [(float(lon), float(lat)) for lat, lon in d['polygon']]
@@ -616,6 +618,10 @@ def frame(base, info, t, duration, path):
         scale = 1.0
     w, h = cw / MARGIN / (1.6 if info['mode'] == 'zoom' else 1) * scale, ch / MARGIN / (1.6 if info['mode'] == 'zoom' else 1) * scale
     drift = (cw - w) * .5 * (.35 + .3 * p) if info['mode'] not in ('zoom', 'compare') else (cw - w) / 2  # gentle sideways drift (compare: still)
+    if info['mode'] == 'arrow' and info.get('layout') in (1, 2):
+        # Alternative route layouts keep the whole route visible while placing
+        # it slightly left/right, giving consecutive maps a distinct framing.
+        drift += (cw - w) * (.10 if info['layout'] == 1 else -.10)
     left, top = drift, (ch - h) / 2 - ((ch - h) * .08 * (p - .5) if info['mode'] != 'compare' else 0)
     if info.get('oblique'):  # wide at the start, close to the target at the end
         w, h = cw * (1 - .45 * p), ch * (1 - .45 * p)  # the whole tilted picture first (far edge visible)

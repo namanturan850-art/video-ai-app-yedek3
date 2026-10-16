@@ -68,16 +68,24 @@ class ProviderGate:
         with self.lock: gate = self.gates.setdefault(name, BoundedSemaphore(2))
         with gate:
             with self.lock:
-                category, until, count = self.failures.get(name, ('', 0, 0))
+                observed = self.failures.get(name)
+                category, until, count = observed or ('', 0, 0)
             if monotonic() < until:
                 raise StockError(category, 'Stok sağlayıcısı kısa süre bekletiliyor; tamamlanan seçimler korundu.')
             try:
                 value = operation()
             except StockError as error:
                 if error.category in ('rate_limit', 'timeout', 'connection_error', 'upstream_error', 'key_rejected', 'invalid_response'):
-                    count += 1
-                    delay = getattr(error, 'retry_after', 60) if error.category == 'rate_limit' else min(60, 2 ** min(count, 6))
-                    with self.lock: self.failures[name] = (error.category, monotonic() + delay, count)
+                    with self.lock:
+                        previous = self.failures.get(name, ('', 0, 0))
+                        count = previous[2] + 1
+                        delay = getattr(error, 'retry_after', 60) if error.category == 'rate_limit' else min(60, 2 ** min(count, 6))
+                        deadline = monotonic() + delay
+                        # A parallel response must not shorten a Retry-After.
+                        self.failures[name] = ((previous[0], previous[1], count) if previous[1] > deadline
+                                               else (error.category, deadline, count))
                 raise
-            with self.lock: self.failures.pop(name, None)
+            with self.lock:
+                # Only clear the failure state this request actually observed.
+                if self.failures.get(name) == observed: self.failures.pop(name, None)
             return value

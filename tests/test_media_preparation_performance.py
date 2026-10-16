@@ -80,6 +80,42 @@ def test_provider_parallelism_is_bounded():
     assert peak[0] == 2
 
 
+@pytest.mark.parametrize('late_failure', [False, True])
+def test_inflight_response_cannot_clear_or_shorten_retry_after(monkeypatch, late_failure):
+    import app.stock.search_session as module
+    now = [0.]
+    monkeypatch.setattr(module, 'monotonic', lambda: now[0])
+    gate, entered, release = ProviderGate(), Event(), Event()
+    def slow():
+        entered.set()
+        assert release.wait(3)
+        if late_failure:
+            raise StockError('timeout', 'Bekleyin')
+        return 'ok'
+    def limited():
+        error = StockError('rate_limit', 'Bekleyin')
+        error.retry_after = 120
+        raise error
+    with ThreadPoolExecutor(1) as pool:
+        pending = pool.submit(gate.call, 'magnific', slow)
+        try:
+            assert entered.wait(3)
+            with pytest.raises(StockError): gate.call('magnific', limited)
+        finally:
+            release.set()
+        if late_failure:
+            with pytest.raises(StockError): pending.result(3)
+        else:
+            assert pending.result(3) == 'ok'
+    now[0] = 119
+    calls = []
+    with pytest.raises(StockError) as caught:
+        gate.call('magnific', lambda: calls.append(1))
+    assert caught.value.category == 'rate_limit' and calls == []
+    now[0] = 121
+    assert gate.call('magnific', lambda: 'recovered') == 'recovered'
+
+
 @pytest.mark.parametrize('word', ['Pero', 'solo', 'Sólo', 'para', 'aunque', 'mientras'])
 def test_spanish_function_words_never_turn_into_places(word):
     query = english_query(f'{word} Tijuana city Mexico', 'es', limit=8)

@@ -1,4 +1,12 @@
-## 2026-10-16 — Medya hazırlama performansı (geliştirme dalı)
+## 2026-10-16 — Performans devam çalışması: eşzamanlı kota beklemesi
+
+- Kullanıcı canlı/ücretli ve gerçek ölçüm testlerini onayladı; yeniden onay beklenmiyor. Windows'taki çalışan işi koruma şartı sürüyor.
+- PR #81 GitHub'da bu devam çalışması dışında birleştirilmiş olarak bulundu. Yeni `improve/media-preparation-followup` dalı güncel `main` (`94dd80a`) üzerinden açıldı; bu çalışmada main'e birleştirme yapılmaz.
+- Aynı sağlayıcıya paralel giden bir başarılı yanıtın 429 beklemesini silmesi ve geç gelen timeout'un Retry-After süresini kısaltması iki regresyon testiyle yeniden üretildi. Başarı yalnız başladığında gördüğü hata durumunu temizler; yeni hata mevcut daha uzun beklemeyi korur.
+- Düzeltme sonrası performans/Magnific/Wikimedia paketi: **67 geçti** (106,76 sn). Çevrimdışı Windows hata örnekleri, medya kurtarma ve OpenMontage sözleşme paketi: **122 geçti, 2 atlandı** (216,73 sn); bu paket düzeltmeden önce başlatıldı, gerçek Windows/GPU testi değildir.
+- Canlı Wikimedia denemesi sağlayıcıya ulaşmadan proxy CONNECT 403 ile engellendi. Yönetilen ağ politikası ilgili alan adlarını içermiyor; Magnific anahtar bağlantısı da yok. Bu yanıt Wikimedia API hatası olarak yorumlanmaz. Ortam Linux; GPU, torch ve kurulu harici OpenMontage test bağlantısı yok.
+
+## 2026-10-16 — Medya hazırlama performansı (ilk geliştirme)
 
 - İş başına sınırlı arama/önizleme paylaşımı; aynı istek için eşzamanlı sonuç paylaşımı, sağlayıcı başına iki istek ve 429/Retry-After beklemesi eklendi.
 - CLIP kare embedding işlemleri 24 karelik paketlere alındı; mevcut model/hash önbelleği ve kalite eşikleri korundu.

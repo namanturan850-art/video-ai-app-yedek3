@@ -243,7 +243,7 @@ def test_cloud_yes_cannot_approve_unrelated_source_tags(tmp_path, monkeypatch):
 def test_search_prefetch_is_bounded_parallel_and_results_are_deterministic():
     from concurrent.futures import ThreadPoolExecutor
     barrier=threading.Barrier(2)
-    def search(pid,name,kind,query):
+    def search(pid,name,kind,query,page=1):
         barrier.wait(timeout=3)
         return [{'provider':name,'media_type':kind,'media_id':str(i)} for i in range(15)],{},False
     director=MediaDirector.__new__(MediaDirector)

@@ -318,6 +318,8 @@ class SettingsService:
                     configured = configured and config['enabled'] and bool(public['model'])
                 if name == 'wikimedia':
                     configured = True  # no key needed
+                if name == 'magnific':
+                    configured = bool(key) and bool(config.get('enabled', False))
                 if name == 'pexels':
                     from app.stock.providers import PEXELS_ENABLED
                     public['disabled'] = not PEXELS_ENABLED
@@ -325,8 +327,8 @@ class SettingsService:
                     public['models'] = [{'id': key, 'label': label} for key, label in CLAUDE_MODELS.items()]
                 status = "Hazır" if configured else "Yapılandırılmadı"
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
-                if name == 'magnific':
-                    configured = bool(key) and bool(config.get('enabled', False))
+                if name == 'magnific' and key and not config.get('enabled', False):
+                    status, message = 'Kapalı', 'API anahtarı kaydedildi; Premium stok video yedeği kapalı.'
                 if name == 'wikimedia':
                     message = 'Anahtar gerekmez; Medyayı Tamamla Wikimedia Commons’u kendiliğinden kullanır. İsterseniz Bağlantıyı Test Et ile kontrol edin.'
                 if name == 'pexels' and public.get('disabled'):
@@ -354,7 +356,7 @@ class SettingsService:
                     message = f'{message} · {usage_text()}'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','magnific','ai33','claude','youtube','wikimedia')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result['images'] = self.image_view()

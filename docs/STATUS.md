@@ -1,5 +1,14 @@
 # AI Video Studio — Durum
 
+## 2026-10-16 — Freepik / Magnific Premium stok yedeği
+
+- Pixabay ve Wikimedia adayları görsel kontrolden geçmezse ikinci ve üçüncü sayfa sırayla denenir; yeterli aday bulununca arama durur. Premium kaynak yalnız ayardan açık ve anahtarlıysa, ücretsiz sayfalar bittikten sonra kullanılır.
+- Magnific araması ve özgün indirme ayrıldı. Geçici imzalı bağlantılar proje kaydına yazılmaz; yönlendirmeler izinli HTTPS alan adlarıyla sınırlıdır. Lisans ve kaynak etiketi korunur.
+- Premium medya yalnız etiket eşleşmesiyle onaylanmaz. CLIP onayı veya önizleme karelerini değerlendiren görsel model kararı gerekir; aksi halde mevcut motion akışı devam eder.
+- Seçilen MOV/MP4, FFmpeg ile sessiz H.264/yuv420p/30 FPS MP4'e çevrilir. Günlük yerel güvenlik sınırı başarısız denemeleri ve tamamlanan indirmeleri ayrı sayar; tamamlanmış dosya yeniden kullanılır.
+- Sentetik entegrasyon paketi **12 geçti**. Arama/sayfalama, hatalı şema, 401/403/429, zaman aşımı, gizli anahtar, yönlendirme, kota, önbellek ve gerçek yerel MOV dönüşümü kapsandı.
+- Canlı veya ücretli istek yapılmadı. Resmî Magnific belge adresi bu bulut ortamında 403 verdiği için mevcut PR'daki endpoint/header sözleşmesi değiştirilmedi; gerçek hesap erişimi, güncel canlı yanıt şeması, lisans/kota davranışı ve Windows doğrulaması açık kalır.
+
 ## 2026-10-16 — Motion güvenli alanı, ses zinciri ve rota düzeni
 
 Tamamlandı:

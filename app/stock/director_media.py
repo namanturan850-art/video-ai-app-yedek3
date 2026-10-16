@@ -53,6 +53,7 @@ def clock():  # replaced in tests
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
+          'premium_video': '5 · Magnific / Freepik Premium stok video',
           'merged': '6 · Komşu çekimin devamı (çok kısa yuva)', 'card': '5 · Üretilmiş kart',
           'neutral': '5 · Nötr görüntü (manzara / gökyüzü / doku)',
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
@@ -774,12 +775,6 @@ class MediaDirector:
                     entry.update(error='unexpected', error_text='beklenmeyen yanıt')
                     log['searches'].append(entry)
                     continue
-                if page == 1 and len(results) < 15 and name != 'magnific':  # legacy thin page fallback
-                    try:
-                        more, _, _ = self.service._cache_search(self.pid, name, kind, query, page=2)
-                        results = list(results) + [m for m in more if key(m) not in {key(r) for r in results}]
-                    except Exception:
-                        pass
                 entry.update(results=len(results), cached=cached)
                 log['searches'].append(entry)
                 found.extend(results)
@@ -964,33 +959,39 @@ class MediaDirector:
 
     def extended_search(self, slot, scene, queries, log, exclude):
         """Extra pages, then optional Premium source; stop as soon as a candidate passes checks."""
-        from app.stock import relevance
-        from app.stock.magnific import MagnificStockProvider
         config = self.service.settings.stock_config('magnific')
         sources = self.providers(scene)
         free = [name for name in sources if name in ('pixabay', 'wikimedia')]
+
+        def checked(results, stage, *, premium=False):
+            candidates = self.pool(slot, results, log, exclude, scene)[:CANDIDATES]
+            if not candidates:
+                return False
+            verdicts = self.judge(slot, scene, candidates)
+            for media in self.order(slot, candidates, verdicts):
+                verdict = verdicts.get(key(media)) or {}
+                if not verdict.get('approved') or verdict.get('score', 0) < APPROVE_SCORE:
+                    continue
+                # Premium is paid and therefore requires an actual preview verdict.
+                # A local metadata/tag fallback must never authorize a download.
+                if premium and verdict.get('local') and not verdict.get('clip_approved'):
+                    continue
+                if self.take(slot, media, verdict, stage, log):
+                    return True
+            return False
+
         for query in list(dict.fromkeys(queries))[:2]:
             for page in (2, 3):
-                for provider in free:
-                    results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=[provider])
-                    pool = self.pool(slot, results, log, exclude, scene)
-                    for media in pool[:CANDIDATES]:
-                        verdict = self.judge(slot, scene, [media]).get(key(media))
-                        if verdict and verdict.get('approved') and verdict.get('score', 0) >= APPROVE_SCORE:
-                            if self.take(slot, media, verdict, 'stock_video', log):
-                                return True
+                results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=free)
+                if checked(results, 'stock_video'):
+                    return True
         if not (config.get('enabled') and config.get('api_key')):
             return False
         for query in list(dict.fromkeys(queries))[:2]:
             for page in (1, 2):
                 results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=['magnific'])
-                pool = self.pool(slot, results, log, exclude, scene)
-                for media in pool[:CANDIDATES]:
-                    verdict = self.judge(slot, scene, [media]).get(key(media))
-                    if (verdict and verdict.get('approved') and verdict.get('score', 0) >= APPROVE_SCORE
-                            and (verdict.get('clip_approved') or not verdict.get('local'))):
-                        if self.take(slot, media, verdict, 'stock_video', log):
-                            return True
+                if checked(results, 'premium_video', premium=True):
+                    return True
         return False
 
     @timed('download_validation')

@@ -23,6 +23,7 @@ TYPES = {'video/mp4':('.mp4','video'), 'image/jpeg':('.jpg','image'),
 # Wikimedia's User-Agent policy asks every client to identify itself with a contact URL.
 USER_AGENT = 'AIVideoStudio/1.0 (local desktop app; https://github.com/naman85331/video-ai-app)'
 WEBM_SECONDS = 60
+MAGNIFIC_DAILY_LIMIT = 50
 
 
 def safe_url(value, provider, *, page=False):
@@ -134,45 +135,58 @@ class Downloader:
                 current=json.loads(usage.read_text('utf-8'))
             except (OSError, ValueError):
                 current={}
-            count=int(current.get('count',0)) if current.get('day')==today else 0
-            if count>=50:
-                raise StockError('rate_limit','Magnific günlük güvenlik sınırı (50) doldu.')
-            next_count={'day':today,'count':count+1}
+            attempts=int(current.get('attempts', current.get('count', 0))) if current.get('day')==today else 0
+            completed=int(current.get('completed', 0)) if current.get('day')==today else 0
+            if attempts>=MAGNIFIC_DAILY_LIMIT:
+                raise StockError('rate_limit',f'Magnific günlük güvenlik sınırı ({MAGNIFIC_DAILY_LIMIT}) doldu.')
+            next_count={'day':today,'attempts':attempts+1,'completed':completed}
             temporary_count=usage.with_name('.magnific-'+uuid4().hex)
             try:
                 temporary_count.write_text(json.dumps(next_count),encoding='utf-8')
                 os.replace(temporary_count,usage)
             finally:temporary_count.unlink(missing_ok=True)
-        provider=MagnificStockProvider(config['api_key'])
+        factory=getattr(self, 'magnific_factory', MagnificStockProvider)
+        provider=factory(config['api_key'], transport=self.transport)
         link=provider.download_link(media['media_id'])
         # Signed URLs are ephemeral. No redirects, unknown hosts, loopback, or proxies.
         safe_url(link,'magnific')
         temporary=folder/('.download-'+uuid4().hex+'.part')
         converted=folder/('.converted-'+uuid4().hex+'.mp4')
         try:
-            with httpx.Client(timeout=httpx.Timeout(90,connect=10), follow_redirects=True, max_redirects=3,
-                              trust_env=False, event_hooks={'request':[lambda request: safe_url(str(request.url),'magnific')]},
-                              transport=self.transport) as client:
-                with client.stream('GET',link,headers={'Accept-Encoding':'identity','User-Agent':USER_AGENT}) as response:
-                    if response.status_code!=200:
-                        raise StockError('download_http','Magnific özgün videosu alınamadı.')
-                    mime=response.headers.get('content-type','').split(';')[0].lower()
-                    if mime not in ('video/mp4','video/quicktime','application/octet-stream'):
-                        raise StockError('download_type','Magnific özgün video türü desteklenmiyor.')
-                    size=0;head=bytearray()
-                    with temporary.open('xb') as stream:
-                        for chunk in response.iter_bytes(65536):
-                            size+=len(chunk)
-                            if size>250_000_000:raise StockError('download_size','Magnific video boyutu sınırı aşıldı.')
-                            if len(head)<32:head.extend(chunk[:32-len(head)])
-                            stream.write(chunk)
-                    if size<12 or head[4:8]!=b'ftyp':
-                        raise StockError('download_type','Magnific videosunun içeriği doğrulanamadı.')
+            with httpx.Client(timeout=httpx.Timeout(90,connect=10), follow_redirects=False,
+                              trust_env=False, transport=self.transport) as client:
+                url = link
+                for redirect in range(4):
+                    request = client.build_request('GET',url,headers={'Accept-Encoding':'identity','User-Agent':USER_AGENT})
+                    response = client.send(request, stream=True)
+                    try:
+                        if response.status_code in (301,302,303,307,308):
+                            if redirect == 3 or not response.headers.get('location'):
+                                raise StockError('unsafe_redirect','Magnific indirmesi çok fazla yönlendirildi.')
+                            url = safe_url(urljoin(url,response.headers['location']),'magnific')
+                            continue
+                        if response.status_code!=200:
+                            raise StockError('download_http','Magnific özgün videosu alınamadı.')
+                        mime=response.headers.get('content-type','').split(';')[0].lower()
+                        if mime not in ('video/mp4','video/quicktime','application/octet-stream'):
+                            raise StockError('download_type','Magnific özgün video türü desteklenmiyor.')
+                        size=0;head=bytearray()
+                        with temporary.open('xb') as stream:
+                            for chunk in response.iter_bytes(65536):
+                                size+=len(chunk)
+                                if size>250_000_000:raise StockError('download_size','Magnific video boyutu sınırı aşıldı.')
+                                if len(head)<32:head.extend(chunk[:32-len(head)])
+                                stream.write(chunk)
+                        if size<12 or head[4:8]!=b'ftyp':
+                            raise StockError('download_type','Magnific videosunun içeriği doğrulanamadı.')
+                        break
+                    finally:
+                        response.close()
             # Normalize MOV or MP4 to local, sound-free H.264 for the existing renderer.
             ffmpeg=discover().get('ffmpeg')
             if not ffmpeg:raise StockError('download_type','Magnific videosu için FFmpeg gerekli.')
-            result=subprocess.run([ffmpeg,'-v','error','-y','-i',str(temporary),'-an',
-                                   '-vf',"scale='min(1920,iw)':-2",'-c:v','libx264','-preset','veryfast',
+            result=subprocess.run([ffmpeg,'-v','error','-y','-i',str(temporary),'-map','0:v:0','-an','-sn','-dn',
+                                   '-vf',"scale='min(1920,iw)':-2,fps=30,setsar=1",'-c:v','libx264','-preset','veryfast',
                                    '-crf','20','-pix_fmt','yuv420p','-movflags','+faststart',str(converted)],
                                   capture_output=True,stdin=subprocess.DEVNULL,timeout=900)
             if result.returncode or not converted.is_file() or converted.stat().st_size<12:
@@ -188,6 +202,17 @@ class Downloader:
                     self.projects._row(connection,project_id)
                     connection.execute('INSERT OR REPLACE INTO stock_assets VALUES (?,?,?,?,?)',
                                       (project_id,'magnific',media['media_id'],'video',json.dumps(public,ensure_ascii=False)))
+                try:
+                    current=json.loads(usage.read_text('utf-8'))
+                except (OSError, ValueError):
+                    current={}
+                if current.get('day') == today:
+                    current['completed'] = int(current.get('completed', 0)) + 1
+                    temporary_count=usage.with_name('.magnific-'+uuid4().hex)
+                    try:
+                        temporary_count.write_text(json.dumps(current),encoding='utf-8')
+                        os.replace(temporary_count,usage)
+                    finally:temporary_count.unlink(missing_ok=True)
                 return public
         except (httpx.HTTPError,OSError,subprocess.SubprocessError):
             raise StockError('download_connection','Magnific videosu güvenli biçimde tamamlanamadı.') from None

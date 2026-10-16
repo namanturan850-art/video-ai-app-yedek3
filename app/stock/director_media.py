@@ -907,13 +907,19 @@ class MediaDirector:
         prev_look = self.look(previous) if previous else None
         ranked = []
         for media in candidates:
+            verdict = verdicts.get(key(media))
+            score = verdict.get('score') if isinstance(verdict, dict) else None
+            # Budget limits or missing previews can leave candidates unjudged.
+            # Absence of a valid score is never visual approval.
+            if type(score) not in (int, float) or not 0 <= score <= 10:
+                continue
             here = self.look(media) if prev_look else None
             distance = sum(abs(a - b) for a, b in zip(prev_look[0], here[0])) if prev_look and here else 0
             textured = prev_look and here and all(8 <= bin(x[1]).count('1') <= 56 for x in (prev_look, here))  # flat sky/sea frames prove nothing
             if textured and bin(prev_look[1] ^ here[1]).count('1') < SIMILAR_FRAMING and distance < 30:
-                verdicts[key(media)]['note'] = 'önceki çekimle neredeyse aynı kadraj'
+                verdict['note'] = 'önceki çekimle neredeyse aynı kadraj'
                 continue
-            ranked.append((verdicts[key(media)]['score'], -distance // 60, media['width'] > media['height'], media))
+            ranked.append((score, -distance // 60, media['width'] > media['height'], media))
         return [m for *_, m in sorted(ranked, key=lambda r: r[:3], reverse=True)]
 
     def prejudge(self, scene, slots):

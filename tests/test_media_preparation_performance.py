@@ -80,6 +80,19 @@ def test_provider_parallelism_is_bounded():
     assert peak[0] == 2
 
 
+@pytest.mark.parametrize('missing', [None, {'approved': True}, {'score': float('nan')}, {'score': 11}])
+def test_candidate_order_skips_unjudged_without_inventing_approval(missing):
+    from app.stock.director_media import MediaDirector, key
+    director = MediaDirector(SimpleNamespace(), {'project_id': 'test', 'progress': {}})
+    director.scene_last = {}
+    checked = {'provider': 'pixabay', 'media_type': 'video', 'media_id': 'checked', 'width': 1920, 'height': 1080}
+    unknown = {**checked, 'media_id': 'unjudged'}
+    verdicts = {key(checked): {'approved': True, 'score': 8}}
+    if missing is not None: verdicts[key(unknown)] = missing
+    assert director.order({'scene_id': 'scene'}, [unknown, checked], verdicts) == [checked]
+    assert key(unknown) not in verdicts or verdicts[key(unknown)] is missing
+
+
 @pytest.mark.parametrize('late_failure', [False, True])
 def test_inflight_response_cannot_clear_or_shorten_retry_after(monkeypatch, late_failure):
     import app.stock.search_session as module

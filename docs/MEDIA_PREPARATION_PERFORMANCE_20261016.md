@@ -1,5 +1,7 @@
 # Medya hazırlama performansı — 16 Ekim 2026
 
+Devam güncellemesi: PR #81 bu ilk çalışmadan sonra birleştirilmiş bulundu. Güncel main üzerinden [taslak PR #82](https://github.com/naman85331/video-ai-app/pull/82) açıldı. Canlı test onayı artık verilmiştir; eksik olan güvenli API/ağ bağlantısı ve Windows/GPU test ortamıdır. Tam Python taraması, ek iki hata düzeltmesi ve kalan doğrulamalar [devam raporunda](MEDIA_PREPARATION_FOLLOWUP_20261016.md) kayıtlıdır. Aşağıdaki bölüm ilk çalışmanın tarihsel sonuçlarını anlatır.
+
 Dal: `improve/media-preparation-speed-quality`. Başlangıç: güncel `main`, `cab809cea55aaca59556af7ed730f25e05181176` (PR #80 dahil). Bu çalışma yalnız bulutta yapıldı. Windows’taki iş, projeler, senaryolar, medya, kilitler ve veritabanı kullanılmadı/değiştirilmedi. Ana dala birleştirme ve dağıtım yapılmadı.
 
 ## Kök nedenler ve değişiklikler

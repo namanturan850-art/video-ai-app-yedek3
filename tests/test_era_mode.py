@@ -4,6 +4,7 @@ sentences do not make a video about today's geography ancient), Ayarlar → Vide
 over the target, and Wikimedia answers that only hold filtered files. Offline fakes."""
 import httpx
 import pytest
+from copy import deepcopy
 
 import test_fast_media as F
 import test_media_director_topics as T
@@ -50,9 +51,13 @@ def test_a_few_historical_sentences_do_not_make_the_video_ancient():
 
 def test_modern_mode_never_turns_a_scene_historical_and_has_no_period_rules():
     modern = setting.infer(['Los Andes.'], 'Andes', 'modern')
-    assert setting.for_scene(modern, 'En el año 1450 los incas construyeron un camino.') is modern
-    assert not [p for p in setting.penalties(modern) if p['kind'] in ('anachronism', 'style')]
-    assert setting.tag_conflict(modern, ' tourists car cartoon ') is None
+    before = deepcopy(modern)
+    scene = setting.for_scene(modern, 'En el año 1450 los incas construyeron un camino.')
+    # Modern fixes the period; a scene may still refine its own geography.
+    assert scene['era'] == modern['era'] == 'contemporary' and scene['decade'] is None
+    assert modern == before
+    assert not [p for p in setting.penalties(scene) if p['kind'] in ('anachronism', 'style')]
+    assert setting.tag_conflict(scene, ' tourists car cartoon ') is None
 
 
 def test_relax_levels_drop_the_period_rules_then_the_place_rules():

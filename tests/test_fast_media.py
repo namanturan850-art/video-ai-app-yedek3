@@ -190,7 +190,8 @@ def test_plan_goes_local_when_gemini_hangs(tmp_path, monkeypatch):
     ('Siebenhundertfünf Christus Leichnam', 'jesus christ burial'),
     ('Kudüs surları', 'Jerusalem city walls'),
     ('v. Chr. 586 Babylon Zerstörung', 'Babylon'),
-    ('eski Mısır tapınağı', 'old egyptian temple'),
+    # Known place names are preserved before adjective/stem translation.
+    ('eski Mısır tapınağı', 'old Egypt temple'),
     ('airplane cockpit at night', 'airplane cockpit at night'),
     ('black hole space', 'black hole space'),
 ])

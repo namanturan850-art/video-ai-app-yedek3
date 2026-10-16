@@ -1,4 +1,18 @@
-## 2026-10-16 — Medya hazırlama performansı (geliştirme dalı)
+## 2026-10-16 — Performans devam çalışması: eşzamanlı kota beklemesi
+
+- **Son kodla 188/188 ilgili regresyon testi geçti** (342,98 sn): kalite, coğrafya, kilit/resume, sağlayıcılar, kota sıfırlaması ve model zinciri sonrası seçim koruması dahil. Tam taramanın eski/ortam başarısızlıkları ayrıca belgeli; tüm testler yeşil iddiası yoktur.
+- Kullanıcı canlı/ücretli ve gerçek ölçüm testlerini onayladı; yeniden onay beklenmiyor. Windows'taki çalışan işi koruma şartı sürüyor.
+- PR #81 GitHub'da bu devam çalışması dışında birleştirilmiş olarak bulundu. Yeni `improve/media-preparation-followup` dalı güncel `main` (`94dd80a`) üzerinden açıldı; bu çalışmada main'e birleştirme yapılmaz.
+- Aynı sağlayıcıya paralel giden bir başarılı yanıtın 429 beklemesini silmesi ve geç gelen timeout'un Retry-After süresini kısaltması iki regresyon testiyle yeniden üretildi. Başarı yalnız başladığında gördüğü hata durumunu temizler; yeni hata mevcut daha uzun beklemeyi korur.
+- Geniş tarama, kota sonrası yeniden değerlendirmede eski sürümde de bulunan gerçek `KeyError` hatasını ortaya çıkardı: bütçe nedeniyle puanlanmayan aday sıralamaya giriyordu. Eksik/NaN/aralık dışı puan sıralamadan elenir; görsel onay veya puan uydurulmaz. Dört yeni regresyon eski kodda başarısızdı; son performans paketi ve kota/yeniden değerlendirme entegrasyonu **52/52 geçti** (57,61 sn).
+- Düzeltme sonrası performans/Magnific/Wikimedia paketi: **67 geçti** (106,76 sn). Çevrimdışı Windows hata örnekleri, medya kurtarma ve OpenMontage sözleşme paketi: **122 geçti, 2 atlandı** (216,73 sn); bu paket düzeltmeden önce başlatıldı, gerçek Windows/GPU testi değildir.
+- Geniş taramada eski `old egyptian temple` beklentisi, amaçlanan özel yer adı korumasının ürettiği `old Egypt temple` ile uyuşmuyordu. Test yeni coğrafya sözleşmesine uyarlandı; İngilizce sorgu ve yerel plan kontrolleri **8/8 geçti**. Uygulama filtresi veya kalite eşiği değiştirilmedi.
+- Modern testindeki nesne kimliği beklentisi dönem/coğrafya davranışına taşındı. Eski Gemini zinciri testinin koşulsuz motion yasağı, gerekçeli kart + yatay stok + kota sonrası seçim korumasıyla güncellendi; başlangıç sürümünde de eski assertion başarısızdı. Son iki kontrol **2/2 geçti** (41,54 sn).
+- Tam Python taraması **2.095 geçti, 20 başarısız, 7 atlandı** (2.122 test; 3.809,07 sn). Son düzeltmeler bu taramadan sonra yapıldı; bu ham sonuç gizlenmedi. Zaman aşımı kontrolleri ayrı **3/3** ve **5/5**, loopback izni verilen ayrı kopyada başlatıcı paketi **5/5** geçti. Dört eski stil/görünüm hatası başlangıç sürümünde de aynı; Node altyazı sarmalayıcısı ortam raporlaması nedeniyle başarısız, gerçek üç JS kontrolü geçti. Ayrıntılar devam raporunda.
+- Canlı Wikimedia denemesi sağlayıcıya ulaşmadan proxy CONNECT 403 ile engellendi. Yönetilen ağ politikası ilgili alan adlarını içermiyor; Magnific anahtar bağlantısı da yok. Bu yanıt Wikimedia API hatası olarak yorumlanmaz. Ortam Linux; GPU, torch ve kurulu harici OpenMontage test bağlantısı yok.
+- Resmî Freepik GitHub örneğinde `api.freepik.com` / `x-freepik-api-key` görülüyor; uygulamadaki Magnific sözleşmesiyle farkı, güncel hesap API'si doğrulanmadan otomatik değişiklik gerekçesi sayılmadı. Belgeler ve canlı test planı: [devam raporu](MEDIA_PREPARATION_FOLLOWUP_20261016.md).
+
+## 2026-10-16 — Medya hazırlama performansı (ilk geliştirme)
 
 - İş başına sınırlı arama/önizleme paylaşımı; aynı istek için eşzamanlı sonuç paylaşımı, sağlayıcı başına iki istek ve 429/Retry-After beklemesi eklendi.
 - CLIP kare embedding işlemleri 24 karelik paketlere alındı; mevcut model/hash önbelleği ve kalite eşikleri korundu.

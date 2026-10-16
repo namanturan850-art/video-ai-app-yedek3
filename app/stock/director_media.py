@@ -987,7 +987,8 @@ class MediaDirector:
                 pool = self.pool(slot, results, log, exclude, scene)
                 for media in pool[:CANDIDATES]:
                     verdict = self.judge(slot, scene, [media]).get(key(media))
-                    if verdict and verdict.get('approved') and verdict.get('score', 0) >= APPROVE_SCORE:
+                    if (verdict and verdict.get('approved') and verdict.get('score', 0) >= APPROVE_SCORE
+                            and (verdict.get('clip_approved') or not verdict.get('local'))):
                         if self.take(slot, media, verdict, 'stock_video', log):
                             return True
         return False

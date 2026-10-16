@@ -28,6 +28,7 @@ class ClipCheck:
         self.bridge = getattr(service, 'openmontage', None)
         self._ready = None
         self.model_version = ''
+        self.metrics = {}
 
     def ready(self):
         if self.broken: return False
@@ -63,6 +64,9 @@ class ClipCheck:
                     if paths: candidates.append({'key': key, 'frames': paths})
                 if not candidates: continue
                 result = self.bridge.call('frames', {'descriptor': descriptor[:300], 'candidates': candidates, 'penalties': list(penalties)[:60]}, work)
+                for metric, value in result.get('metrics', {}).items():
+                    if metric in ('text_vector_hits', 'text_vectors_encoded', 'image_vector_hits', 'image_vectors_encoded') and type(value) is int and value >= 0:
+                        self.metrics[metric] = self.metrics.get(metric, 0) + value
                 for item in result.get('results', []):
                     if item.get('verdict') in ('match', 'mismatch', 'uncertain') and isinstance(item.get('score'), int):
                         out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin', 'conflict', 'setting_margin', 'setting_closest') if k in item}

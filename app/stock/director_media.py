@@ -146,11 +146,11 @@ def clip_descriptor(slot, scene, language='de', setting=None):
     the slot's planned query and the sentence's filmable words (+ the video's
     period and place, e.g. “ancient Mesopotamia”)."""
     scene = bind_shot(scene, slot, language) if not scene.get('_shot_bound') and 'estimated_start' in slot else scene
-    from app.scripts.query_clean import english_query
+    from app.scripts.query_clean import english_query, scope_query
     hints = [h.get('value', '') for h in scene.get('owner_hints') or [] if h.get('type') == 'visual']
     narration = scene.get('narration_text', '')
     parts = [english_query(h, language, limit=6) for h in hints]
-    parts += [english_query(q, language, limit=5) for q in (slot.get('search_query'), scene.get('primary_stock_query')) if q]
+    parts += [scope_query(english_query(q, language, limit=5), narration) for q in (slot.get('search_query'), scene.get('primary_stock_query')) if q]
     parts.append(english_query(narration, language, strict=True, limit=6))
     seen, words = set(), []
     for part in parts:
@@ -236,7 +236,8 @@ class MediaDirector:
         self.local, self.requests = False, 0
         self.answered, self.ai_waited, self.skipped_looks, self.last_error, self.single = False, 0.0, 0, None, False
         self.clip, self.marker_error, self.marker_note = None, '', ''
-        self.unavailable = dict(self.progress.get('unavailable_providers', {}))
+        self.unavailable = {}  # resumed jobs retry providers after their cooldown
+        self.progress['unavailable_providers'] = {}
         self.rejected, self.rejected_keys, self.rejected_hashes = [], set(), set()
         self.filtered_keys, self.ai_rejected_keys, self.looks, self.scene_last = set(), set(), {}, {}
         self.scene_order, self.scene_text, self.topic, self.owner, self.language = [], {}, '', {}, 'de'
@@ -449,6 +450,16 @@ class MediaDirector:
                 f'Shot length: {used_seconds(slot):.1f} s. Mood: {scene.get("mood", "")}.')
 
     def frames(self, media):
+        from app.stock.preview_cache import PreviewCache
+        if not hasattr(self, 'preview_cache'): self.preview_cache = PreviewCache()
+        meta = media.get('source_metadata') or {}
+        fingerprint = (key_text(media), tuple(self.frame_urls(media)), meta.get('sample_url'), media.get('duration'))
+        blocks, cached = self.preview_cache.get(fingerprint, lambda: self._frames(media))
+        metric = 'preview_cache_hits' if cached else 'preview_reads'
+        self.progress[metric] = self.progress.get(metric, 0) + 1
+        return blocks
+
+    def _frames(self, media):
         """Start/middle/end frames of a video candidate (one picture for an
         image). Provider preview pictures first; a clip with fewer than three
         gets them from its smallest rendition."""
@@ -645,6 +656,7 @@ class MediaDirector:
         self.progress['message'] = f'Yuva {slot["order"]} · yerel görüntü modeli (CLIP) {len(items)} adayı karşılaştırıyor'
         self.service._checkpoint(self.job, self.progress, light=True)
         scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid), penalties(self.where(scene), descriptor))
+        self.progress['clip_metrics'] = dict(getattr(self.clip, 'metrics', {}))
         if not scores and self.clip.broken:
             self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; bu işte medya etiket/kelime eşleşmesiyle seçildi.'
         decided = {}
@@ -747,24 +759,46 @@ class MediaDirector:
         from app.scripts.query_clean import english_query, generic_queries
         language = self.language  # the narration language (German/Turkish words are translated)
         english = english_query(query, language, limit=6)
+        if scene:
+            from app.scripts.query_clean import scope_query
+            english = scope_query(english, scene.get('narration_text', ''))
         if not english:  # nothing English left (an older plan's German words): a topic query instead
             english = generic_queries(self.topic, language)[0]
         if english != query: log.setdefault('translated', {})[query] = english
         query = english
+        from app.stock.search_session import SearchSession, canonical_query
+        if not hasattr(self, 'search_session'): self.search_session = SearchSession()
+        self.search_pages = getattr(self, 'search_pages', {})
+        self.unique_queries = getattr(self, 'unique_queries', set())
+        self.unique_queries.add(' '.join(query.casefold().split()))
+        def read(name, kind):
+            config = self.service.settings.stock_config(name) if hasattr(self.service, 'settings') else {}
+            signature = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+            cache_key = (name, kind, canonical_query(query, name), page, signature)
+            page_key = (name, kind, canonical_query(query, name), signature)
+            if page > self.search_pages.get(page_key, 3): return [], {'raw_count': 0}, True
+            result = self.search_session.call(cache_key, lambda: self.service._cache_search(self.pid, name, kind, query, page=page))
+            counts = result[1]
+            if counts.get('raw_count') == 0 or type(counts.get('last_page')) is int and counts['last_page'] <= page:
+                self.search_pages[page_key] = page
+            return result
         found = []
+        names = [n for n in (provider_names if provider_names is not None else self.providers(scene)) if n not in getattr(self, 'unavailable', {})]
         executor = getattr(self.service, 'search_executor', None)
-        pending = {(kind, name): executor.submit(self.service._cache_search, self.pid, name, kind, query, page=page)
-                   for kind in kinds for name in (provider_names or self.providers(scene))} if executor else {}
+        pending = {(kind, name): executor.submit(read, name, kind)
+                   for kind in kinds for name in names} if executor else {}
         for kind in kinds:
-            for name in (provider_names or self.providers(scene)):
+            for name in names:
                 entry = {'provider': name, 'media_type': kind, 'query': query, 'page': page}
                 self.progress['message'] = f'Yuva {slot["order"]} · {name.title()} {"video" if kind == "video" else "görsel"} aranıyor: “{query}”'
                 self.service._checkpoint(self.job, self.progress, light=True)
                 try:
                     future = pending.get((kind, name))
-                    results, _, cached = future.result() if future else self.service._cache_search(self.pid, name, kind, query, page=page)
+                    results, counts, cached = future.result() if future else read(name, kind)
                 except StockError as error:
-                    entry.update(error=error.category, error_text=ERROR_TEXT.get(error.category, 'hata'))
+                    entry.update(error=error.category, error_text=ERROR_TEXT.get(error.category, 'hata'), normalization=getattr(error, 'search_diagnostic', {}))
+                    errors = self.progress.setdefault('api_errors', {})
+                    errors[name + ':' + error.category] = errors.get(name + ':' + error.category, 0) + 1
                     if error.category in PROVIDER_DOWN:
                         self.unavailable[name] = error.category
                         self.progress['unavailable_providers'] = self.unavailable
@@ -775,9 +809,12 @@ class MediaDirector:
                     entry.update(error='unexpected', error_text='beklenmeyen yanıt')
                     log['searches'].append(entry)
                     continue
-                entry.update(results=len(results), cached=cached)
+                metric = 'cached_search_reads' if cached else 'provider_searches'
+                self.progress[metric] = self.progress.get(metric, 0) + 1
+                entry.update(results=len(results), cached=cached, normalization=counts)
                 log['searches'].append(entry)
                 found.extend(results)
+        self.progress['search_metrics'] = {'unique_queries': len(self.unique_queries), 'unique_requests': self.search_session.misses, 'cache_hits': self.search_session.hits, 'shared_requests': self.search_session.shared}
         return found
 
     def segment(self, media, need, slot=None):
@@ -1006,9 +1043,13 @@ class MediaDirector:
             inspector = getattr(self.service, 'quality_inspector', inspect_media)
             if not hasattr(self, 'quality_tools'): self.quality_tools = discover()
             self.quality_cache = getattr(self, 'quality_cache', {})
-            quality_key = (saved.get('sha256'), round(start,3))
+            path = asset_path(self.service.projects, self.pid, saved)
+            stat = path.stat()
+            quality_key = (str(path), stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns, saved.get('sha256'), saved['media_type'], start, 1)
             if quality_key not in self.quality_cache:
                 self.quality_cache[quality_key] = inspector(self.service.projects, self.pid, saved, self.quality_tools, start)
+            else:
+                self.progress['quality_cache_hits'] = self.progress.get('quality_cache_hits', 0) + 1
             quality = self.quality_cache[quality_key]
             if not quality.get('accepted'):
                 log['steps'][-1].setdefault('quality_rejections', []).append(quality.get('reason','quality_unverified'))
@@ -2361,7 +2402,7 @@ def diagnostics(service, project_id):
                       'missing_reasons': s.get('missing_reason_messages', [])})
     with closing(service.projects._connection()) as c:
         jobs = [{'id': r['id'], 'action': r['action'], 'status': r['status'], 'error': r['error_message'], 'created_at': r['created_at'],
-                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'timings', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
+                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'timings', 'performance', 'search_metrics', 'api_errors', 'preview_cache_hits', 'preview_reads', 'clip_metrics', 'quality_cache_hits', 'provider_searches', 'cached_search_reads', 'motion_cache_hits', 'motion_renders', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
                                                                                     'ai_attempts', 'ai_requests', 'ai_cached', 'ai_requests_total', 'local_mode', 'local_reason')}}
                 for r in c.execute('SELECT * FROM stock_jobs WHERE project_id=? ORDER BY created_at DESC LIMIT 10', (project_id,))]
     from app.providers.gemini_chain import ATTEMPTS

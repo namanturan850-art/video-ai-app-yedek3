@@ -51,14 +51,21 @@ def normalized_media(value):
         raise StockError('invalid_response', 'Stok sağlayıcısı geçerli medya bilgisi döndürmedi.', 502) from None
 
 
-def make_slots(scene):
+def make_slots(scene, *, adaptive=False):
     """Keep semantic scenes intact; choose visual beats near narration boundaries."""
     start, end = float(scene['start_estimate']), float(scene['end_estimate'])
     duration = end-start
     importance=scene.get('importance',50)
     target=4.5 if importance>=85 else 3.1 if importance<40 else 3.7
-    count = max(1, min(max(1,math.floor(duration/2.5)),max(round(duration/target),math.ceil(duration/4.5))))
-    longest = 5.5
+    if adaptive:
+        words = word_count(scene['narration_text'])
+        rate = words / max(.001, duration)
+        units = narration_units(scene['narration_text'])
+        facts = len(re.findall(r'\d+(?:[.,]\d+)?', scene['narration_text'])) + len(scene.get('entities') or [])
+        dense = rate > 3.1 or len(units) / max(.001, duration) > .32 or facts / max(.001, duration) > .3
+        target = 3.5 if dense else 4.2 if importance < 40 else 5.0 if importance >= 85 else 4.6
+    count = max(1, min(max(1,math.floor(duration/2.5)),max(round(duration/target),math.ceil(duration/(5.5 if adaptive else 4.5)))))
+    longest = 6.0 if adaptive else 5.5
     hint = scene.get('shot_count')
     if type(hint) is int and hint >= 1:
         # The director plans fewer, longer shots for niche topics (little stock
@@ -99,7 +106,7 @@ def make_slots(scene):
         query = queries[min(index, len(queries)-1)]
         slots.append({'slot_id': uuid4().hex, 'scene_id': scene['scene_id'], 'order': index+1,
                       'estimated_start': round(a, 3), 'estimated_end': round(b, 3),
-                      'duration': round(round(b,3)-round(a,3), 3), 'pacing_version':1, 'visual_goal': scene['visual_intent'],
+                      'duration': round(round(b,3)-round(a,3), 3), 'pacing_version':1, **({'adaptive_pacing_version': 1} if adaptive else {}), 'visual_goal': scene['visual_intent'],
                       'search_query': query, 'fallback_queries': [q for q in queries if q != query],
                       'preferred_type': scene['preferred_media_type'], 'composition': scene['composition'],
                       'selected_media': None, 'locked': False, 'status': 'pending',

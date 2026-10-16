@@ -32,7 +32,9 @@ def normalization_counts(value, normalized_count):
     """Legacy cache has no raw counts. Never invent numbers for that case."""
     value = value if isinstance(value,dict) else {}
     rejected = value.get('rejected',{})
-    return {'raw_count':count(value.get('raw_count')), 'normalized_count':normalized_count,
+    extra = {k: value[k] for k in ('filtered', 'missing_preview', 'result_category', 'response_category', 'http_status', 'current_page', 'last_page')
+             if k in value and isinstance(value[k], (int, str))}
+    return {**extra, 'raw_count':count(value.get('raw_count')), 'normalized_count':normalized_count,
             'rejected':{reason:count(rejected.get(reason)) for reason in ('malformed_result','unsafe_url')}}
 
 

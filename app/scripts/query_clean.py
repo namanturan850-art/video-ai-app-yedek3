@@ -71,6 +71,8 @@ TOPICS = [  # (words in a topic, English fallback queries)
     (('stadt', 'city', 'şehir', 'land', 'country', 'ülke', 'geograf', 'coğrafya', 'karte', 'harita', 'map'),
      ['aerial city view', 'world map', 'mountain landscape', 'river valley', 'country road']),
 ]
+SPANISH_FUNCTION = set('pero aunque porque mientras entonces tambien también solo sólo para desde hasta hacia entre sobre durante donde cuando como cómo sino sus su es son fue fueron hay muy más mas cada este esta estos estas ese esa eso se lo nos les ya sin con por una uno unos unas el la los las del al que y o en de'.split())
+
 GENERIC = ['documentary landscape', 'cinematic landscape', 'clouds sky timelapse']
 
 
@@ -119,6 +121,7 @@ def place_english(word, exact=False):
     """English name of a place written in any language, or ''."""
     from app.motion.places import find, index, notable, plain
     key = plain(word)
+    if key in {'america', 'amerika', 'solo', 'para'}: return ''  # ambiguous continent/function-word aliases
     place = index().get(key) if exact else find(word)
     if not place or not notable(place, key): return ''  # never a small town that happens to share a common word
     return place.get('en') or ''
@@ -193,6 +196,8 @@ def english_query(query, language='de', *, strict=False, limit=5):
     while i < len(words):
         word = words[i]
         low = fold(word)
+        if language == 'es' and low in SPANISH_FUNCTION:
+            i += 1; continue
         two = f'{word} {words[i + 1]}' if i + 1 < len(words) else ''
         if two and word[:1].isupper() and place_english(two, exact=True):
             out.append(place_english(two, exact=True)); i += 2; continue
@@ -201,7 +206,7 @@ def english_query(query, language='de', *, strict=False, limit=5):
         if strict:
             if low in english_vocabulary() and low.isascii():  # already an English word of the lists (“ship”, “ruins”)
                 out.append(low); continue
-            value = translate(word, language) or place_english(word)
+            value = place_english(word, exact=True) or translate(word, language)
             if value: out.append(value)
             continue
         if not foreign(word) and len(low) >= 2: out.append(word.strip("’'-.,;:!?()\"“”„«»"))  # English words stay as written
@@ -237,3 +242,28 @@ def clean_block(block, language='de', *, strict=False, topic=''):
     block['stock_query'] = cleaned[0][:300]
     block['alternative_stock_queries'] = [c[:300] for c in cleaned[1:6]] or [q for q in generic_queries(topic, language) if q != cleaned[0]][:2]
     return block
+
+
+def scope_query(query, narration):
+    """Remove foreign places from a query when this shot names its own place.
+
+    Country labels come only from the bundled GeoNames data. No guessed
+    country is appended, and a sentence explicitly comparing places keeps both.
+    """
+    from app.motion.places import spoken_places, find, country_name, plain
+    spoken = spoken_places(narration)
+    from app.stock.setting import places as regions, REGION_RE
+    own_regions = set(regions(narration))
+    if not spoken and not own_regions: return query
+    allowed = set()
+    for name, _, _ in spoken:
+        place = find(name)
+        allowed.add(plain(name))
+        if place:
+            allowed.update(plain(a) for a in place.get('aliases', []))
+            allowed.update(plain(country_name(place, lang)) for lang in ('en', 'de', 'es', 'tr', 'fr'))
+    result = query
+    for name, _, _ in spoken_places(query):
+        if plain(name) not in allowed and not any(REGION_RE[r].search(name) for r in own_regions):
+            result = re.sub(r'(?<!\w)' + re.escape(name) + r'(?!\w)', ' ', result, flags=re.I)
+    return ' '.join(result.split())

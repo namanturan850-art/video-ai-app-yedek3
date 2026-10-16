@@ -1,0 +1,122 @@
+{
+  "environment": {
+    "python": "3.12.14",
+    "numpy": "2.3.4",
+    "baseline_commit": "cab809cea55aaca59556af7ed730f25e05181176",
+    "development_tree": "35bd63341278f14d208dcae1ddbfde444f7ea9eb",
+    "benchmark_script_sha256": "c82e8f0b99ba32f7b31cb2aefc1ca9d9f3563a90513d85eed879bbf3f54ad532"
+  },
+  "before": {
+    "runs": [
+      {
+        "synthetic_video_seconds": 900,
+        "legacy_workload_slots": 280,
+        "search_invocations": 834,
+        "unique_normalized_queries": 40,
+        "wall_seconds": 2.869,
+        "search_reads": 834,
+        "provider_searches": 80,
+        "preview_reads": 3702,
+        "clip_evaluations": 617,
+        "image_model_batches": 240,
+        "text_model_batches": 140,
+        "quality_validations": 61,
+        "selected_suitable": 617,
+        "new_plan_slots_for_30_repeated_scenes": 240,
+        "limitations": "Fake provider (2 ms), fake embedding model (2 ms/batch), no real video/CLIP/API/render; quality is deterministic fixture agreement only."
+      },
+      {
+        "synthetic_video_seconds": 900,
+        "legacy_workload_slots": 280,
+        "search_invocations": 834,
+        "unique_normalized_queries": 40,
+        "wall_seconds": 2.7378,
+        "search_reads": 834,
+        "provider_searches": 80,
+        "preview_reads": 3702,
+        "clip_evaluations": 617,
+        "image_model_batches": 240,
+        "text_model_batches": 140,
+        "quality_validations": 61,
+        "selected_suitable": 617,
+        "new_plan_slots_for_30_repeated_scenes": 240,
+        "limitations": "Fake provider (2 ms), fake embedding model (2 ms/batch), no real video/CLIP/API/render; quality is deterministic fixture agreement only."
+      },
+      {
+        "synthetic_video_seconds": 900,
+        "legacy_workload_slots": 280,
+        "search_invocations": 834,
+        "unique_normalized_queries": 40,
+        "wall_seconds": 2.8531,
+        "search_reads": 834,
+        "provider_searches": 80,
+        "preview_reads": 3702,
+        "clip_evaluations": 617,
+        "image_model_batches": 240,
+        "text_model_batches": 140,
+        "quality_validations": 61,
+        "selected_suitable": 617,
+        "new_plan_slots_for_30_repeated_scenes": 240,
+        "limitations": "Fake provider (2 ms), fake embedding model (2 ms/batch), no real video/CLIP/API/render; quality is deterministic fixture agreement only."
+      }
+    ],
+    "median_wall_seconds": 2.8531
+  },
+  "after": {
+    "runs": [
+      {
+        "synthetic_video_seconds": 900,
+        "legacy_workload_slots": 280,
+        "search_invocations": 834,
+        "unique_normalized_queries": 40,
+        "wall_seconds": 1.6717,
+        "search_reads": 40,
+        "provider_searches": 40,
+        "preview_reads": 240,
+        "clip_evaluations": 617,
+        "image_model_batches": 40,
+        "text_model_batches": 140,
+        "quality_validations": 61,
+        "selected_suitable": 617,
+        "new_plan_slots_for_30_repeated_scenes": 210,
+        "limitations": "Fake provider (2 ms), fake embedding model (2 ms/batch), no real video/CLIP/API/render; quality is deterministic fixture agreement only."
+      },
+      {
+        "synthetic_video_seconds": 900,
+        "legacy_workload_slots": 280,
+        "search_invocations": 834,
+        "unique_normalized_queries": 40,
+        "wall_seconds": 1.5925,
+        "search_reads": 40,
+        "provider_searches": 40,
+        "preview_reads": 240,
+        "clip_evaluations": 617,
+        "image_model_batches": 40,
+        "text_model_batches": 140,
+        "quality_validations": 61,
+        "selected_suitable": 617,
+        "new_plan_slots_for_30_repeated_scenes": 210,
+        "limitations": "Fake provider (2 ms), fake embedding model (2 ms/batch), no real video/CLIP/API/render; quality is deterministic fixture agreement only."
+      },
+      {
+        "synthetic_video_seconds": 900,
+        "legacy_workload_slots": 280,
+        "search_invocations": 834,
+        "unique_normalized_queries": 40,
+        "wall_seconds": 1.6734,
+        "search_reads": 40,
+        "provider_searches": 40,
+        "preview_reads": 240,
+        "clip_evaluations": 617,
+        "image_model_batches": 40,
+        "text_model_batches": 140,
+        "quality_validations": 61,
+        "selected_suitable": 617,
+        "new_plan_slots_for_30_repeated_scenes": 210,
+        "limitations": "Fake provider (2 ms), fake embedding model (2 ms/batch), no real video/CLIP/API/render; quality is deterministic fixture agreement only."
+      }
+    ],
+    "median_wall_seconds": 1.6717
+  },
+  "synthetic_wall_reduction_percent": 41.4
+}

@@ -53,6 +53,9 @@ class StockService:
         # Only independent provider reads run concurrently. Selection/checkpoints
         # stay on the job thread, preserving deterministic ownership and locks.
         self.search_executor = ThreadPoolExecutor(max_workers=2,thread_name_prefix='stock-search')
+        from app.stock.search_session import SearchSession, ProviderGate
+        self.search_reads = SearchSession(limit=0)  # share only in-flight reads; SQLite owns the 24 h cache
+        self.provider_gate = ProviderGate()
         self.futures = {}
         self.closed = False
 
@@ -151,7 +154,7 @@ class StockService:
                         slots.extend(make_slots({**scene,'start_estimate':cursor,'end_estimate':anchor['estimated_start']}))
                     slots.append(anchor);cursor=anchor['estimated_end']
                 if scene['end_estimate']>cursor+.001:
-                    slots.extend(make_slots({**scene,'start_estimate':cursor,'end_estimate':scene['end_estimate']}))
+                    slots.extend(make_slots({**scene,'start_estimate':cursor,'end_estimate':scene['end_estimate']}, adaptive=previous is None))
                 for index,slot in enumerate(slots): slot['order']=index+1
             state['slots'].extend(slots)
         if previous and any(s['locked'] and s['slot_id'] not in {n['slot_id'] for n in state['slots']} for s in previous['slots']):
@@ -436,6 +439,8 @@ class StockService:
         # authoritative, always-written record; the expensive active-plan
         # revalidation runs at most every PLAN_CHECK_SECONDS and the JSON
         # mirror is deferred to the next full checkpoint or job end.
+        from app.stock.performance import update_wall
+        update_wall(job, progress)
         project_id = job['project_id']
         if light and status=='running' and time.monotonic()-job.get('_written_at',-PROGRESS_WRITE_SECONDS)<PROGRESS_WRITE_SECONDS:
             # In-memory slot/progress are carried into the next full write.
@@ -463,6 +468,16 @@ class StockService:
         job['_written_at'] = time.monotonic()
 
     def _cache_search(self, project_id, name, kind, query, *, page=1):
+        from app.stock.search_session import canonical_query
+        self._guard(query)  # validate before case folding can change a secret's spelling
+        query = canonical_query(query, name)
+        # Keys include configuration identity, never the raw secret.
+        config = self.settings.stock_config(name) if name != 'openmontage' else {}
+        signature = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+        key = (project_id, name, kind, query, page, signature)
+        return self.search_reads.call(key, lambda: self._read_search(project_id, name, kind, query, page=page))
+
+    def _read_search(self, project_id, name, kind, query, *, page=1):
         magnific_config = None
         if name == 'magnific':
             magnific_config = self.settings.stock_config('magnific')
@@ -473,6 +488,19 @@ class StockService:
         with self.projects.lock, closing(self.projects._connection()) as connection:
             row = connection.execute('SELECT result_json,created_at FROM stock_search_cache WHERE project_id=? AND provider=? AND media_type=? AND query=?',
                                      (project_id,name,kind,cache_key)).fetchone()
+            if not row:
+                from app.stock.search_session import canonical_query
+                rows = connection.execute('SELECT query FROM stock_search_cache WHERE project_id=? AND provider=? AND media_type=? AND created_at>?',
+                                          (project_id, name, kind, (datetime.now(timezone.utc)-timedelta(hours=24)).isoformat())).fetchall()
+                for old in rows:
+                    old_query = old['query']
+                    prefix = f'page:{page}:' if page > 1 else ''
+                    if page > 1 and not old_query.startswith(prefix): continue
+                    if page == 1 and old_query.startswith('page:'): continue
+                    if canonical_query(old_query[len(prefix):], name) == canonical:
+                        row = connection.execute('SELECT result_json,created_at FROM stock_search_cache WHERE project_id=? AND provider=? AND media_type=? AND query=?',
+                                                 (project_id, name, kind, old_query)).fetchone()
+                        break
             if row and datetime.fromisoformat(row['created_at']) > datetime.now(timezone.utc)-timedelta(hours=24):
                 saved = json.loads(row['result_json'])
                 results = saved if isinstance(saved,list) else saved['results']
@@ -486,11 +514,15 @@ class StockService:
             provider = self.magnific_factory(magnific_config['api_key'])
         else:
             provider = self.factory(name,self.settings) if name != 'openmontage' else None
-        try:
-            if name=='openmontage':
+        def remote_search():
+            if name == 'openmontage':
                 from app.integrations.openmontage.media import search
-                results=search(self.openmontage,project_id,canonical)
-            else:results = provider.search(canonical,kind) if page==1 else provider.search(canonical,kind,page=page)
+                return search(self.openmontage, project_id, canonical)
+            return provider.search(canonical, kind) if page == 1 else provider.search(canonical, kind, page=page)
+        config = self.settings.stock_config(name) if name != 'openmontage' else {}
+        signature = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
+        try:
+            results = self.provider_gate.call((name, signature), remote_search)
         except StockError as error:
             error.search_diagnostic = normalization_counts(getattr(provider,'last_diagnostic',None),0)
             raise

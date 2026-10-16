@@ -53,6 +53,7 @@ def clock():  # replaced in tests
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
+          'premium_video': '5 · Magnific / Freepik Premium stok video',
           'merged': '6 · Komşu çekimin devamı (çok kısa yuva)', 'card': '5 · Üretilmiş kart',
           'neutral': '5 · Nötr görüntü (manzara / gökyüzü / doku)',
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
@@ -742,7 +743,7 @@ class MediaDirector:
         return [n for n in names if n not in self.unavailable]
 
     @timed('search')
-    def search(self, slot, kinds, query, log, scene=None):
+    def search(self, slot, kinds, query, log, scene=None, page=1, provider_names=None):
         from app.scripts.query_clean import english_query, generic_queries
         language = self.language  # the narration language (German/Turkish words are translated)
         english = english_query(query, language, limit=6)
@@ -752,16 +753,16 @@ class MediaDirector:
         query = english
         found = []
         executor = getattr(self.service, 'search_executor', None)
-        pending = {(kind, name): executor.submit(self.service._cache_search, self.pid, name, kind, query)
-                   for kind in kinds for name in self.providers(scene)} if executor else {}
+        pending = {(kind, name): executor.submit(self.service._cache_search, self.pid, name, kind, query, page=page)
+                   for kind in kinds for name in (provider_names or self.providers(scene))} if executor else {}
         for kind in kinds:
-            for name in self.providers(scene):
-                entry = {'provider': name, 'media_type': kind, 'query': query}
+            for name in (provider_names or self.providers(scene)):
+                entry = {'provider': name, 'media_type': kind, 'query': query, 'page': page}
                 self.progress['message'] = f'Yuva {slot["order"]} · {name.title()} {"video" if kind == "video" else "görsel"} aranıyor: “{query}”'
                 self.service._checkpoint(self.job, self.progress, light=True)
                 try:
                     future = pending.get((kind, name))
-                    results, _, cached = future.result() if future else self.service._cache_search(self.pid, name, kind, query)
+                    results, _, cached = future.result() if future else self.service._cache_search(self.pid, name, kind, query, page=page)
                 except StockError as error:
                     entry.update(error=error.category, error_text=ERROR_TEXT.get(error.category, 'hata'))
                     if error.category in PROVIDER_DOWN:
@@ -774,12 +775,6 @@ class MediaDirector:
                     entry.update(error='unexpected', error_text='beklenmeyen yanıt')
                     log['searches'].append(entry)
                     continue
-                if len(results) < 15:  # thin first page: one more page (cached the same way)
-                    try:
-                        more, _, _ = self.service._cache_search(self.pid, name, kind, query, page=2)
-                        results = list(results) + [m for m in more if key(m) not in {key(r) for r in results}]
-                    except Exception:
-                        pass
                 entry.update(results=len(results), cached=cached)
                 log['searches'].append(entry)
                 found.extend(results)
@@ -961,6 +956,43 @@ class MediaDirector:
                 if chosen: return chosen
         step['result'] = step.get('result') or 'no_approved_candidate'
         return None
+
+    def extended_search(self, slot, scene, queries, log, exclude):
+        """Extra pages, then optional Premium source; stop as soon as a candidate passes checks."""
+        config = self.service.settings.stock_config('magnific')
+        sources = self.providers(scene)
+        free = [name for name in sources if name in ('pixabay', 'wikimedia')]
+
+        def checked(results, stage, *, premium=False):
+            candidates = self.pool(slot, results, log, exclude, scene)[:CANDIDATES]
+            if not candidates:
+                return False
+            verdicts = self.judge(slot, scene, candidates)
+            for media in self.order(slot, candidates, verdicts):
+                verdict = verdicts.get(key(media)) or {}
+                if not verdict.get('approved') or verdict.get('score', 0) < APPROVE_SCORE:
+                    continue
+                # Premium is paid and therefore requires an actual preview verdict.
+                # A local metadata/tag fallback must never authorize a download.
+                if premium and verdict.get('local') and not verdict.get('clip_approved'):
+                    continue
+                if self.take(slot, media, verdict, stage, log):
+                    return True
+            return False
+
+        for query in list(dict.fromkeys(queries))[:2]:
+            for page in (2, 3):
+                results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=free)
+                if checked(results, 'stock_video'):
+                    return True
+        if not (config.get('enabled') and config.get('api_key')):
+            return False
+        for query in list(dict.fromkeys(queries))[:2]:
+            for page in (1, 2):
+                results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=['magnific'])
+                if checked(results, 'premium_video', premium=True):
+                    return True
+        return False
 
     @timed('download_validation')
     def take(self, slot, media, verdict, stage, log):
@@ -1466,6 +1498,8 @@ class MediaDirector:
             broader = memo['broader']
             log['broader_queries'] = broader
             if broader: chosen = self.try_step(slot, scene, 'broader', ['video', 'image'], broader, log, exclude)
+        if not chosen:
+            chosen = self.extended_search(slot, scene, planned + rewritten, log, exclude)
         if not chosen and keep_if_only_card:
             log['steps'].append({'stage': 'kept', 'label': STAGES['kept'], 'result': 'kept_no_better_option'})
             return log

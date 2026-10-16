@@ -33,7 +33,7 @@ class PrivateHTTPFilter(logging.Filter):
     def filter(self, record):
         text = record.getMessage().lower()
         return not (any(key.lower() in text for key in tuple(PRIVATE_KEYS) if key)
-                    or any(domain in text for domain in ('pixabay.com', 'pexels.com', 'vimeo.com', 'vimeocdn.com')))
+                    or any(domain in text for domain in ('pixabay.com', 'pexels.com', 'vimeo.com', 'vimeocdn.com', 'videvo.net', 'freepik.com', 'magnific.com')))
 
 
 for name in ('httpx', 'httpcore', 'httpcore.connection', 'httpcore.http11', 'httpcore.http2', 'httpcore.proxy'):

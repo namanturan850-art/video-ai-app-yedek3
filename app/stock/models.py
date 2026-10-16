@@ -19,7 +19,7 @@ class StockError(ScriptError):
 
 class Media(BaseModel):
     model_config = ConfigDict(extra='forbid', allow_inf_nan=False)
-    provider: Literal['pexels', 'pixabay', 'wikimedia', 'openmontage', 'generated']
+    provider: Literal['pexels', 'pixabay', 'wikimedia', 'magnific', 'openmontage', 'generated']
     media_id: str = Field(min_length=1, max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
     media_type: Literal['video', 'image']
     source_url: str = Field(max_length=2000)

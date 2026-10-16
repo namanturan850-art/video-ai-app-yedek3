@@ -8,6 +8,7 @@
 - Seçilen MOV/MP4, FFmpeg ile sessiz H.264/yuv420p/30 FPS MP4'e çevrilir. Günlük yerel güvenlik sınırı başarısız denemeleri ve tamamlanan indirmeleri ayrı sayar; tamamlanmış dosya yeniden kullanılır.
 - Sentetik entegrasyon paketi **12 geçti**. Arama/sayfalama, hatalı şema, 401/403/429, zaman aşımı, gizli anahtar, yönlendirme, kota, önbellek ve gerçek yerel MOV dönüşümü kapsandı.
 - Canlı veya ücretli istek yapılmadı. Resmî Magnific belge adresi bu bulut ortamında 403 verdiği için mevcut PR'daki endpoint/header sözleşmesi değiştirilmedi; gerçek hesap erişimi, güncel canlı yanıt şeması, lisans/kota davranışı ve Windows doğrulaması açık kalır.
+- Ayarlar ekranındaki bağlantı testi etkinleştirildi. Test yalnız birinci sayfada küçük stok video araması yapar; özgün video indirmez ve AI üretim uç noktası çağırmaz. Etkinleştirme kutusu değiştirildikten sonra önce **Kaydet**, sonra **Bağlantıyı Test Et** kullanılmalıdır.
 
 ## 2026-10-16 — Motion güvenli alanı, ses zinciri ve rota düzeni
 

@@ -16,6 +16,7 @@ from app.stock.director_media import MediaDirector
 from test_stock_media import stock_studio
 from test_production import production_studio
 from test_scripts import studio
+from test_settings import settings_client
 
 
 def test_magnific_setting_defaults_disabled_and_does_not_echo_key(tmp_path):
@@ -30,9 +31,33 @@ def test_magnific_setting_defaults_disabled_and_does_not_echo_key(tmp_path):
     service.save('magnific', {'enabled': False})
     disabled = service.safe_view()['magnific']
     assert disabled['status'] == 'Kapalı'
-    assert disabled['connection_test_available'] is False
+    assert disabled['connection_test_available'] is True
     service.clear('magnific')
     assert service.safe_view()['magnific']['enabled'] is False
+
+
+def test_magnific_connection_test_uses_search_only(settings_client, monkeypatch):
+    calls=[]
+    def search(self, query, media_type, *, page=1):
+        calls.append((query,media_type,page,self.key));return []
+    monkeypatch.setattr(MagnificStockProvider,'search',search)
+    saved=settings_client.put('/api/settings/magnific',json={
+        'api_key':'synthetic-magnific-key-12345','enabled':True})
+    assert saved.status_code==200
+    assert saved.json()['magnific']['status']=='Hazır'
+    response=settings_client.post('/api/settings/magnific/test')
+    assert response.status_code==200
+    assert response.json()['result']['status']=='Hazır'
+    assert calls==[('nature landscape','video',1,'synthetic-magnific-key-12345')]
+    assert 'synthetic-magnific-key-12345' not in response.text
+
+
+def test_magnific_connection_test_requires_saved_enabled_switch(settings_client, monkeypatch):
+    settings_client.put('/api/settings/magnific',json={
+        'api_key':'synthetic-magnific-key-12345','enabled':False})
+    monkeypatch.setattr(MagnificStockProvider,'search',lambda *args,**kwargs:pytest.fail('disabled test must not call API'))
+    result=settings_client.post('/api/settings/magnific/test').json()['result']
+    assert result['status']=='Hata' and result['category']=='provider_disabled'
 
 
 def test_magnific_search_is_stock_only_and_header_is_private():

@@ -3,7 +3,7 @@ async function settingsRequest(url, method = 'GET', body) {
   const gemini = /^\/api\/settings\/(gemini|images\/gemini)\/(models|test)$/.test(url);
   const openai = ['/api/settings/openai/test', '/api/settings/images/openai/test'].includes(url);
   const ai33=['/api/settings/ai33/test','/api/settings/ai33/voices','/api/settings/ai33/tasks/diagnose','/api/settings/ai33/task/diagnose'].includes(url);
-  const stock = ['/api/settings/pexels/test','/api/settings/pixabay/test'].includes(url);
+  const stock = ['/api/settings/pexels/test','/api/settings/pixabay/test','/api/settings/magnific/test'].includes(url);
   const mapbox = url === '/api/settings/mapbox/test';
   const diagnostics = url.startsWith('/api/settings/ai-diagnostics');
   const timeoutMessage = 'Gemini API zamanında yanıt vermedi. İnternet bağlantınızı kontrol edip tekrar deneyin.';

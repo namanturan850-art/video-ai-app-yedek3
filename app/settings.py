@@ -356,7 +356,7 @@ class SettingsService:
                     message = f'{message} · {usage_text()}'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','magnific','ai33','claude','youtube','wikimedia')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result['images'] = self.image_view()

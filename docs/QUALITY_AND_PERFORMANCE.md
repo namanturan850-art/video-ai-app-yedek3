@@ -11,6 +11,16 @@ Bu geliştirme `improve/video-quality-performance` dalındadır. Ana dala gönde
 | Karışık görüntü kalitesi | Portre kaynaklar bulanık arka planla kabul edilebiliyor, gerçek indirilen dosyanın netliği kontrol edilmiyordu. | Yeni otomatik videolarda yatay oran ve en az 720p aranır; indirilen dosyanın gerçek boyutu, süresi ve örnek kareleri kontrol edilir. Fotoğraflarda kaliteli 3:2 yatay kaynak da korunur. |
 | Çok uzun hazırlık | Tekrarlanan model başlatma, kare/metin kodlama, sorgu yeniden yazma, seri sağlayıcı araması ve aynı kararları yeniden hesaplama vardı. | Kalıcı CLIP işçisi, sınırlı embedding önbelleği, paylaşılan karar önbelleği, iki işçili arama ve önce yerel sorgu üretimi eklendi. Yeni adayların ücretli görsel değerlendirmesi cümle/koşul başına bir grupla sınırlanır; önceden seçili medyanın açık yeniden kontrolü ayrıdır. |
 
+## 2026-10-16 tamamlayıcı düzeltmeler
+
+- Motion sahnesinin son halinde bütün metinler, sayaçların animasyon tepe ölçeği ve alternatif düzen dönüşümleri hesaba katılarak 80 piksel yatay / 64 piksel dikey güvenli alana alınır. Uzun sayılar, `#`/`%` işaretleri, harita adları, karşılaştırma ve liste başlıkları ölçülerek küçültülür veya satırlara ayrılır.
+- Yan şerit `#`/`%` simgesi küçültüldü. Rota relief grafiğinde üç düzen artık gerçekten farklı kamera yerleşimi üretir.
+- Motion önbellek sürümü `motion-v6` oldu. Önceki MP4 dosyaları silinmez; yeni sahneler eski hatalı anahtarı kullanmaz ve gerektiğinde doğru sürüm yanına üretilir.
+- Ses zincirinde anlatım/müzik önce hedef yüksekliğe getirilir, düşük seviyeli motion efekti sonra eklenir. Böylece son loudness filtresi sessiz aralıklardaki efekti tekrar yükseltmez. Eski varsayılan `%18` efekt seviyesi güvenli `%10` varsayılanına taşınır; sahibin farklı seçtiği değer korunur.
+- Hazırlık tanılaması motion önbellek isabetlerini, gerçek çizimleri ve kullanılan motorları ayrı sayaçlarda gösterir (`motion_cache_hits`, `motion_renders`, `motion_engines`). Aşama süreleri mevcut `timings` alanında kalır.
+
+Yerel gerçek FFmpeg doğrulamasında `#123.456.789` ve uzun açıklama içeren üç ayrı 1920×1080 motion MP4 üretildi; animasyonun en büyük sayı karesi görsel olarak incelendi ve güvenli alanda kaldı. Canlı 238 medya çalışması yapılmadığı için gerçek toplam süre veya hızlanma yüzdesi iddia edilmez.
+
 Görsel değerlendirme bütçesinin dolması görsel onay sayılmaz. CLIP/önbellekten doğrulanamayan ek adaylar bu nedenle otomatik kabul edilmez. Yapay zekâ kapalıyken mevcut etiket tabanlı yerel mod kalır ve görsel doğrulama iddia etmez.
 
 Görsel istek sınırı cümle, sahne ve koşullar birlikte değerlendirilerek uygulanır. Farklı sahnelerde geçen aynı cümle tüm film boyunca tek bir aday grubuna mahkûm edilmez. Pozitif bulut yanıtının da cümlenin konusunu destekleyen kaynak etiketleri olması gerekir. Bu ihtiyatlı seçim, yeterli ilgili kaynak olmayan konularda daha çok motion üretebilir; yüzdeyi düşürmek için filtreler gevşetilmez.
@@ -37,5 +47,6 @@ OpenMontage ve FFmpeg motor seçimi korunur. Pixabay, Wikimedia, motion, elle se
 - Zamanlama mevcut yaklaşık konuşma zamanlamasına dayanır; kesin kelime hizalaması değildir. CLIP tarih, kimlik veya olay doğruluğunun kanıtı değildir.
 - Bulanıklık ölçümü örnek karelerden elde edilen bir sezgiseldir; her sahne için kusursuz sınıflandırma garantisi yoktur. Çok uzun metin en küçük güvenli boyutta da sığmıyorsa sessizce kesilmek yerine açıklayıcı hata üretilir.
 - Gerçek 338 işlemin önceki 2–2,5 saatlik çalışmasının ölçüm kaydı bulunmadığından yüzde hızlanma iddia edilmez. Yeni tanılama kayıtlarındaki `timings` alanı arama, değerlendirme, CLIP, indirme/kalite ve motion sürelerini ayırır; iç içe süreler toplanarak toplam süre hesaplanmamalıdır.
+- Motion sayaçları sayesinde yeni bir gerçek proje çalışmasında eski dosya tekrar kullanımı ile gerçek çizim sayısı birbirinden ayrılabilir. Bu ortamda OpenMontage/Remotion kurulumu bulunmadığından aynı örneklerin tarayıcı motoru çıktısı doğrulanmadı.
 
 Gerçek bir proje üzerinde canlı sağlayıcı ve ücretli deneme yapılması için ayrıca kullanıcı onayı gerekir. İlk deneme mevcut projelerin kopyasında yapılmalıdır.

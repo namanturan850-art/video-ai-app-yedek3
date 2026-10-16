@@ -58,7 +58,7 @@ class StyleKit(BaseModel):
     motion_duration: float = Field(default=.6, ge=.2, le=2.0)
     easing: Literal['smooth', 'snappy', 'bounce', 'linear'] = 'smooth'
     sfx: dict[str, str] = Field(default_factory=lambda: {name: 'default:' + name for name in SFX_NAMES})
-    sfx_volume: float = Field(default=.18, ge=0, le=.5)
+    sfx_volume: float = Field(default=.10, ge=0, le=.5)
     subtitle: SubtitleStyle = Field(default_factory=SubtitleStyle)
     feeling: str = Field(default='', max_length=40)
     map_style: Literal['relief', 'dark', 'satellite'] = 'dark'

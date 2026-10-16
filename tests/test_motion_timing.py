@@ -72,11 +72,24 @@ def inside_frame(scene):
     problems = []
     for index, element in enumerate(scene['elements'][1:], 1):
         p = element['props']
-        if element['type'] == 'text' and p.get('anchor', 'mm') == 'mm':
-            half = measure(str(p['text']), p.get('font'), p['size'], p.get('bold', True)) / 2
-            if p['x'] - half < -1 or p['x'] + half > 1921:
-                problems.append(f'#{index} text leaves the frame')
+        if element['type'] in ('text', 'counter'):
+            text = str(p.get('text') or p.get('target') or '')
+            scale = max([p.get('scale', 1)] + [v for _, v in element.get('tracks', {}).get('scale', [])])
+            width = measure(text, p.get('font'), round(p['size'] * scale), p.get('bold', True))
+            anchor = p.get('anchor', 'mm')
+            left = p['x'] if anchor == 'lm' else p['x'] - width if anchor == 'rm' else p['x'] - width / 2
+            dys = [p.get('dy', 0)] + [v for _, v in element.get('tracks', {}).get('dy', [])]
+            top, bottom = p['y'] + min(dys) - p['size'] * scale * .72, p['y'] + max(dys) + p['size'] * scale * .72
+            if left < 79 or left + width > 1841 or top < 63 or bottom > 1017:
+                problems.append(f'#{index} animated text leaves the safe area')
     return problems
+
+
+def test_long_number_with_hash_and_peak_scale_stays_inside_safe_area():
+    spec = {'template': 'stat', 'data': {'value': '#123.456.789', 'label': 'Çok uzun açıklama metni'}, 'emphasis': ''}
+    for layout in range(COUNT):
+        scene = build({**spec, 'layout': layout}, KIT, DURATION, 3.6, 'tr')
+        assert inside_frame(scene) == [], layout
 
 
 def all_specs():

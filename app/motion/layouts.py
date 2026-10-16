@@ -108,7 +108,7 @@ def _card(scene, spec, kit, layout):
         glyph = GLYPH.get(spec['template'])
         if glyph:
             from app.channels import FONTS
-            deco.append({'type': 'text', 'props': {'text': glyph, 'x': band / 2, 'y': H / 2, 'size': 260, 'font': FONTS[kit.get('heading_font', 'montserrat')][1],
+            deco.append({'type': 'text', 'props': {'text': glyph, 'x': band / 2, 'y': H / 2, 'size': 190, 'font': FONTS[kit.get('heading_font', 'montserrat')][1],
                                                    'fill': pal['accent'], 'anchor': 'mm', 'bold': True, 'opacity': 0, 'dy': 0}, 'tracks': _appear(.15)})
         else:  # three accent dots
             deco += [{'type': 'circle', 'props': {'cx': band / 2, 'cy': H / 2 + (i - 1) * 90, 'r': 0, 'fill': pal['accent'], 'opacity': 1},

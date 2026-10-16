@@ -1358,6 +1358,10 @@ class MediaDirector:
             LOG.warning('stock operation=motion category=render_failed')
             return self.card(slot, scene, log)  # extreme fallback (e.g. FFmpeg missing): still a picture
         media = media_record(path, spec, scene_data, engine)
+        counter = 'motion_cache_hits' if engine == 'cache' else 'motion_renders'
+        self.progress[counter] = self.progress.get(counter, 0) + 1
+        engines = self.progress.setdefault('motion_engines', {})
+        engines[engine] = engines.get(engine, 0) + 1
         from app.motion import relief as relief_module
         if relief_module.LAST_WARNING:  # satellite tiles failed: drawn map used, the reason in Turkish
             self.progress.setdefault('marker_warnings', []).append(relief_module.LAST_WARNING)

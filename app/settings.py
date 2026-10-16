@@ -213,15 +213,20 @@ class AI33Settings(KeySettings):
         return web_url(value)
 
 
+class MagnificSettings(KeySettings):
+    # Stock-video API only. AI generation is not enabled.
+    enabled: bool = False
+
+
 class OpenSourceSettings(BaseModel):
     """A source that needs no key (Wikimedia Commons): nothing to save, only a test."""
     model_config = ConfigDict(extra='forbid')
 
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
-          "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings,
+          "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "magnific": MagnificSettings, "ai33": AI33Settings,
           "claude": ClaudeSettings, "youtube": KeySettings, "wikimedia": OpenSourceSettings, "mapbox": MapboxSettings}
-PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia", "mapbox")
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "magnific", "ai33", "claude", "youtube", "wikimedia", "mapbox")
 
 
 def stored_secrets(values):
@@ -320,6 +325,8 @@ class SettingsService:
                     public['models'] = [{'id': key, 'label': label} for key, label in CLAUDE_MODELS.items()]
                 status = "Hazır" if configured else "Yapılandırılmadı"
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
+                if name == 'magnific':
+                    configured = bool(key) and bool(config.get('enabled', False))
                 if name == 'wikimedia':
                     message = 'Anahtar gerekmez; Medyayı Tamamla Wikimedia Commons’u kendiliğinden kullanır. İsterseniz Bağlantıyı Test Et ile kontrol edin.'
                 if name == 'pexels' and public.get('disabled'):
@@ -347,7 +354,7 @@ class SettingsService:
                     message = f'{message} · {usage_text()}'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','magnific','ai33','claude','youtube','wikimedia')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result['images'] = self.image_view()
@@ -510,7 +517,7 @@ class SettingsService:
             return self._values()['youtube'].get('api_key', '')
 
     def stock_config(self, provider):
-        if provider not in ('pexels','pixabay','youtube','wikimedia'):
+        if provider not in ('pexels','pixabay','magnific','youtube','wikimedia'):
             raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
         with self.store.lock:
             return dict(self._values()[provider])

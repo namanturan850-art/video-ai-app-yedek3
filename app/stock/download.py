@@ -15,7 +15,7 @@ from app.stock.models import StockError
 
 # Hosts in official examples. Unrecognized redirect hosts are refused, not guessed.
 HOSTS = {'pexels': {'images.pexels.com','videos.pexels.com','static-videos.pexels.com','player.vimeo.com'},
-         'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'magnific': {'cdn.freepik.com','videos.freepik.com','assets.magnific.com','cdn.magnific.com'}, 'wikimedia': {'upload.wikimedia.org'}}
+         'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'magnific': {'cdn.freepik.com','videos.freepik.com','assets.magnific.com','cdn.magnific.com','joy1.videvo.net'}, 'wikimedia': {'upload.wikimedia.org'}}
 PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'}, 'magnific': set(), 'wikimedia': {'commons.wikimedia.org'}}
 TYPES = {'video/mp4':('.mp4','video'), 'image/jpeg':('.jpg','image'),
          'image/png':('.png','image'), 'image/webp':('.webp','image'),

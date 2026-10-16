@@ -145,8 +145,15 @@ def test_model_switch_mid_job_continues_and_all_used_up_goes_local_keeping_finis
         kept = {s['slot_id']: s['selected_media']['media_id'] for s in view['slots'] if s.get('selected_media') and s['selected_media']['provider'] != 'generated'}
         assert kept and not any(s['status'] == 'error' for s in view['slots'])
         assert view['media_summary']['unchecked'] > 0, (view['media_summary'], job['progress'].get('local_reason'), [(a['model'], a['result']) for a in job['progress']['ai_attempts']])  # the rest was chosen locally and waits for an AI look
-        assert all((s.get('director') or {}).get('stage') in (None, 'motion_planned') or s['selected_media']['provider'] != 'generated'
-                   for s in view['slots'] if s.get('selected_media'))  # nothing fell to motion
+        # Quality takes precedence over a motion quota: missing approved stock
+        # may use a relevant card, but an unavailable AI is never the reason.
+        assert T.ai_never_blamed(view)
+        fallback = [s for s in view['slots'] if s.get('selected_media')
+                    and s['selected_media']['provider'] == 'generated' and not s.get('continuation_of')
+                    and (s.get('director') or {}).get('stage') not in (None, 'motion_planned')]
+        assert all('onaylanan stok medya bulunamadı' in (s.get('director') or {}).get('reason', '') for s in fallback)
+        assert all(s['selected_media']['width'] > s['selected_media']['height']
+                   for s in view['slots'] if s.get('selected_media') and s['selected_media']['provider'] != 'generated')
         # Next day (or after clearing the marks in Settings) the job continues where it stopped.
         dead.clear(); monkeypatch.setattr(factory, 'GeminiScriptProvider', original)
         assert client.post('/api/settings/gemini/quota-reset', headers=SETTINGS).status_code == 200

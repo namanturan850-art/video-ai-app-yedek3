@@ -16,6 +16,7 @@ from app.scripts.engine import SecretGuard
 from app.scripts.models import ScriptError
 from app.stock.download import Downloader, asset_path, mirror, archive_selection
 from app.stock import relevance
+from app.stock.magnific import MagnificStockProvider
 from app.stock.models import (StockError, identity, make_slots, normalized_media, score,
                               DEFAULT_VIDEO_TOLERANCE, rejection_reason, coverage_warning)
 from app.stock.diagnostics import REASONS, CATEGORIES, normalization_counts, safe_query, search_summary, log_search
@@ -473,7 +474,7 @@ class StockService:
                     intact=cached_assets_valid(self.projects,project_id,connection,results)
                 else:intact=True
                 if intact:return results,counts,True
-        provider = self.factory(name,self.settings) if name!='openmontage' else None
+        provider = (MagnificStockProvider(self.settings.stock_config('magnific').get('api_key', '')) if name == 'magnific' else self.factory(name,self.settings) if name != 'openmontage' else None)
         try:
             if name=='openmontage':
                 from app.integrations.openmontage.media import search

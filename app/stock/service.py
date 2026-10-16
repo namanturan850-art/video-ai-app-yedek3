@@ -46,6 +46,7 @@ class StockService:
         self.projects = production.projects
         self.factory = make_stock_provider
         self.downloader = Downloader(self.projects)
+        self.downloader.settings = settings
         self.executor = ThreadPoolExecutor(max_workers=2,thread_name_prefix='stock-media')
         # Only independent provider reads run concurrently. Selection/checkpoints
         # stay on the job thread, preserving deterministic ownership and locks.

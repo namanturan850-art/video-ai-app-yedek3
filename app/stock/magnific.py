@@ -45,7 +45,7 @@ class MagnificStockProvider:
                         'width':width,'height':height,'duration':duration,'preview_url':url(thumbs),
                         'download_url':'','query_used':query,'provider_query':query,
                         'description':(str(item.get('name') or '')+' '+desc)[:1000],
-                        'source_metadata':{'stock_api_id':ident,'preview_video_url':url(previews),'premium':bool(item.get('premium'))}}))
+                        'source_metadata':{'stock_api_id':ident,'premium':bool(item.get('premium'))}}))
                 except (KeyError,TypeError,ValueError,StockError): continue
             return out
         except StockError:raise

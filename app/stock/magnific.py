@@ -51,3 +51,22 @@ class MagnificStockProvider:
         except StockError:raise
         except (httpx.HTTPError,ValueError,TypeError,KeyError):
             raise StockError('invalid_response','Magnific stok araması şu anda kullanılamıyor.') from None
+
+    def download_link(self, ident):
+        """Resolve a temporary URL at selection time, never during discovery."""
+        if not str(ident).isalnum(): raise StockError('invalid_query','Geçersiz Magnific medya kimliği.')
+        try:
+            with httpx.Client(base_url=API, timeout=20, follow_redirects=False, transport=self.transport) as client:
+                r=client.get('/v1/videos/'+str(ident)+'/download',headers={'x-magnific-api-key':self.key})
+            if r.status_code in (401,403,429):
+                raise StockError('rate_limit','Magnific indirme yetkisi veya kotası kullanılamıyor.')
+            if r.status_code != 200: raise StockError('download_http','Magnific indirme bağlantısı alınamadı.')
+            data=r.json()
+            if not isinstance(data,dict): raise ValueError()
+            data=data.get('data',data)
+            url=data.get('url') or data.get('download_url') if isinstance(data,dict) else None
+            if not isinstance(url,str): raise ValueError()
+            return url
+        except StockError:raise
+        except (httpx.HTTPError,ValueError,TypeError):
+            raise StockError('invalid_response','Magnific indirme bağlantısı okunamadı.') from None

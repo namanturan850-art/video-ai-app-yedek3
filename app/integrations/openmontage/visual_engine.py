@@ -41,8 +41,11 @@ def embedded(values, keys, fn, clip, torch):
     missing = list(dict.fromkeys(key for key in keys if key not in _EMBEDDINGS))
     if missing:
         first = {key: value for key, value in zip(keys, values)}
-        rows = inference(fn, [first[key] for key in missing], clip, torch)
-        for key, row in zip(missing, rows):_EMBEDDINGS[key] = row.copy()
+        # Bound inference memory independently of caller batch size.
+        for start in range(0, len(missing), 24):
+            batch = missing[start:start + 24]
+            rows = inference(fn, [first[key] for key in batch], clip, torch)
+            for key, row in zip(batch, rows): _EMBEDDINGS[key] = row.copy()
     result = np.stack([_EMBEDDINGS[key] for key in keys])
     for key in keys:_EMBEDDINGS.move_to_end(key)
     while len(_EMBEDDINGS)>EMBEDDING_LIMIT:_EMBEDDINGS.popitem(last=False)
@@ -109,7 +112,7 @@ def score_frames(root,inputs):
         clip_embedder._MODEL = clip_embedder._PROCESSOR = None
         _LOADED_VERSION = status['version']
     clip_embedder._MODEL_ID=str(status['folder'])
-    descriptor=str(inputs['descriptor'])[:300]
+    descriptor=' '.join(str(inputs['descriptor']).split())[:300]
     words=set(re.findall(r'[a-z]+',descriptor.casefold()))-{'a','an','the','of','in','on','with'}
     negatives=[n for n in FRAME_NEGATIVES+NEGATIVES if not set(re.findall(r'[a-z]+',n))&words] or ['unrelated footage']
     penalties=setting_penalties(inputs.get('penalties'),descriptor)
@@ -117,10 +120,18 @@ def score_frames(root,inputs):
     texts=embedded(labels,[('text',status['version'],t) for t in labels],embed_texts,clip_embedder,torch)
     split=1+len(negatives)
     results=[]
+    grouped = []
     for item in inputs['candidates'][:32]:
         frames=[Path(p) for p in item['frames'][:3]]
         if not frames or any(not f.is_file() or f.is_symlink() or not f.is_absolute() for f in frames):raise ValueError('source_missing')
-        images=embedded(frames,[('image',status['version'],sha(f)) for f in frames],embed_images,clip_embedder,torch)
+        grouped.append((item, frames))
+    all_frames = [f for _, frames in grouped for f in frames]
+    if not all_frames: return {'results': []}
+    vectors = embedded(all_frames, [('image', status['version'], sha(f)) for f in all_frames], embed_images, clip_embedder, torch)
+    cursor = 0
+    for item, frames in grouped:
+        images = vectors[cursor:cursor + len(frames)]
+        cursor += len(frames)
         scores=images@texts.T;target=float(scores[:,0].mean());other=float(scores[:,1:split].mean(axis=0).max())
         margin=target-other
         votes=int((scores[:,0]>scores[:,1:split].max(axis=1)+.01).sum())

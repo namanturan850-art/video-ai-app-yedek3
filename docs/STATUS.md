@@ -1,3 +1,11 @@
+## 2026-10-16 — Medya hazırlama performansı (geliştirme dalı)
+
+- İş başına sınırlı arama/önizleme paylaşımı; aynı istek için eşzamanlı sonuç paylaşımı, sağlayıcı başına iki istek ve 429/Retry-After beklemesi eklendi.
+- CLIP kare embedding işlemleri 24 karelik paketlere alındı; mevcut model/hash önbelleği ve kalite eşikleri korundu.
+- Dosya hash doğrulaması, dosya kimliği/boyut/mtime/ctime değişmedikçe yeniden kullanılır. İlk okumadan sonra atime değişmesi yeniden indirmeye yol açmaz.
+- Yalnız bulut kodu ve geçici test verileri kullanılıyor; mevcut Windows işi/veritabanı/projeleri değiştirilmedi. Canlı veya ücretli API testi yapılmadı.
+- Ayrıntılı test ve sentetik ölçüm raporu bu dalın son doğrulama commit’inde eklenecek. Gerçek 30–45 dakika hedefi henüz ölçülmedi.
+
 # AI Video Studio — Durum
 
 ## 2026-10-16 — Freepik / Magnific Premium stok yedeği

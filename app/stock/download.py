@@ -115,7 +115,31 @@ def archive_selection(projects,project_id,state):
 class Downloader:
     def __init__(self, projects, *, transport=None):
         self.projects, self.transport = projects, transport
+        from collections import OrderedDict
+        from threading import RLock
+        self.verified, self.verify_lock = OrderedDict(), RLock()
+        self.hash_cache_hits = 0
 
+
+    def verified_hash(self, path, expected):
+        # Re-stat before every use. Replacements and same-size edits invalidate
+        # by inode/mtime/ctime, including Windows file identity where available.
+        stat = path.stat()
+        key = (str(path.resolve()), stat.st_dev, stat.st_ino, stat.st_size,
+               stat.st_mtime_ns, stat.st_ctime_ns, expected)
+        with self.verify_lock:
+            if key in self.verified:
+                self.verified.move_to_end(key)
+                self.hash_cache_hits += 1
+                return expected
+            with path.open('rb') as stream: digest = hashlib.file_digest(stream, 'sha256').hexdigest()
+            after = path.stat()
+            if (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns) != (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns):
+                return None
+            if digest == expected:
+                self.verified[key] = True
+                while len(self.verified) > 512: self.verified.popitem(last=False)
+            return digest
 
     def _download_magnific(self, project_id, media, folder):
         """Download only the selected original; never persist signed URLs."""
@@ -228,7 +252,7 @@ class Downloader:
                 cached = json.loads(row[0])
                 try:
                     path = asset_path(self.projects,project_id,cached)
-                    with path.open('rb') as stream: digest=hashlib.file_digest(stream,'sha256').hexdigest()
+                    digest = self.verified_hash(path, cached['sha256'])
                     if digest==cached['sha256']:
                         return {**media,**{k:cached[k] for k in ('local_path','file_size','sha256','downloaded_at','content_type')}}
                 except (StockError, OSError, KeyError):

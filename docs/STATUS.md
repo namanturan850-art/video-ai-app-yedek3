@@ -6,7 +6,10 @@
 - Yalnız bulut kodu ve geçici test verileri kullanılıyor; mevcut Windows işi/veritabanı/projeleri değiştirilmedi. Canlı veya ücretli API testi yapılmadı.
 - Sahne coğrafyası, İspanyolca işlev kelimeleri, yalnız yeni projelerde uyarlanabilir tempo, içerik değişiminde karar önbelleği iptali ve ekrandaki ayrı süre/önbellek sayaçları eklendi.
 - Son cache/parse paketi: **48 geçti** (45 yeni regresyon + 3 mevcut karar önbelleği testi).
-- Ayrıntılı test ve sentetik ölçüm raporu bu dalın son doğrulama commit’inde eklenecek. Gerçek 30–45 dakika hedefi henüz ölçülmedi.
+- Hedefli Python paketi **176 geçti**; son cache/parse paketi **48 geçti** (örtüşen paketlerde 179 benzersiz kontrol). İlgili JavaScript paketi **45 geçti**. Kısa FFmpeg/kamera/layout kontrollerinden 43 geçti; tam 2100+ test taraması tamamlandı denmez.
+- Geniş frontend paketindeki 16 başarısızlık değişikliksiz `main` üzerinde de var (`document.createTextNode` eksik test sahtesi); ilgili 45 JavaScript kontrolü geçti.
+- Son kodla üç sentetik koşumun medyanı 2,8531 → 1,6717 sn (**%41,4**). Gerçek 30–45 dakika hedefi henüz ölçülmedi; gerçek model veya API sonucu değildir.
+- Ayrıntılar ve açık işler: [Türkçe test/sonuç raporu](MEDIA_PREPARATION_PERFORMANCE_20261016.md), [ham mikro ölçüm](MEDIA_PREPARATION_BENCHMARK_20261016.json). Canlı Freepik/Wikimedia kök nedeni, gerçek GPU ve Windows/OpenMontage uçtan uca ölçümü onay bekleyen doğrulamalardır.
 
 # AI Video Studio — Durum
 

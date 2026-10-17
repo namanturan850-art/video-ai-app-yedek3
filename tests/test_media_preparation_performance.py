@@ -110,10 +110,10 @@ def test_inflight_response_cannot_clear_or_shorten_retry_after(monkeypatch, late
         error.retry_after = 120
         raise error
     with ThreadPoolExecutor(1) as pool:
-        pending = pool.submit(gate.call, 'magnific', slow)
+        pending = pool.submit(gate.call, 'wikimedia', slow)
         try:
             assert entered.wait(3)
-            with pytest.raises(StockError): gate.call('magnific', limited)
+            with pytest.raises(StockError): gate.call('wikimedia', limited)
         finally:
             release.set()
         if late_failure:
@@ -123,10 +123,10 @@ def test_inflight_response_cannot_clear_or_shorten_retry_after(monkeypatch, late
     now[0] = 119
     calls = []
     with pytest.raises(StockError) as caught:
-        gate.call('magnific', lambda: calls.append(1))
+        gate.call('wikimedia', lambda: calls.append(1))
     assert caught.value.category == 'rate_limit' and calls == []
     now[0] = 121
-    assert gate.call('magnific', lambda: 'recovered') == 'recovered'
+    assert gate.call('wikimedia', lambda: 'recovered') == 'recovered'
 
 
 @pytest.mark.parametrize('word', ['Pero', 'solo', 'Sólo', 'para', 'aunque', 'mientras'])
@@ -223,22 +223,6 @@ def test_embedding_batches_bounded_and_model_and_frame_invalidate():
     finally: v._EMBEDDINGS.clear()
 
 
-@pytest.mark.parametrize('body,category,raw', [
-    ({'data': []}, 'empty', 0),
-    ({'data': [{'id': 1, 'duration': 8, 'width': 1920, 'height': 1080}]}, 'filtered', 1),
-    ({'data': [{'unexpected': 'shape'}]}, 'parse_error', 1),
-])
-def test_magnific_empty_filtered_and_parse_failures_are_distinct(body, category, raw):
-    from app.stock.magnific import MagnificStockProvider
-    provider = MagnificStockProvider('synthetic-only', transport=httpx.MockTransport(lambda r: httpx.Response(200, json=body)))
-    if category == 'parse_error':
-        with pytest.raises(StockError): provider.search('ocean', 'video')
-    else: assert provider.search('ocean', 'video') == []
-    assert provider.last_diagnostic['result_category'] == category
-    assert provider.last_diagnostic['raw_count'] == raw
-    assert 'synthetic-only' not in str(provider.last_diagnostic)
-
-
 def test_wall_time_is_separate_from_nested_totals(monkeypatch):
     import app.stock.performance as p
     tick = [0.]; monkeypatch.setattr(p, 'monotonic', lambda: tick[0])
@@ -253,20 +237,6 @@ def test_explicit_empty_provider_list_never_falls_back():
     director = MediaDirector(SimpleNamespace(_cache_search=lambda *a, **k: pytest.fail('No provider should run')),
                              {'project_id': 'p', 'progress': {}})
     assert director.search({'order': 1}, ['video'], 'ocean waves', {'searches': []}, provider_names=[]) == []
-
-
-def test_failed_premium_provider_is_not_forced_on_every_slot():
-    from app.stock.director_media import MediaDirector
-    calls = []
-    def failed(*args, **kwargs):
-        calls.append(1); raise StockError('rate_limit', 'Bekleyin')
-    service = SimpleNamespace(_cache_search=failed, _checkpoint=lambda *a, **k: None)
-    director = MediaDirector(service, {'project_id': 'p', 'progress': {}})
-    for _ in range(3):
-        assert director.search({'order': 1}, ['video'], 'ocean waves', {'searches': []}, provider_names=['magnific']) == []
-    assert calls == [1] and director.progress['api_errors'] == {'magnific:rate_limit': 1}
-    resumed = MediaDirector(service, {'project_id': 'p', 'progress': director.progress})
-    assert resumed.unavailable == {}  # transient failures do not survive resume
 
 
 def test_motion_identical_parallel_renders_share_completed_output(tmp_path, monkeypatch):

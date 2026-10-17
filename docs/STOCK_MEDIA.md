@@ -157,15 +157,13 @@ Aşağıdaki iki resmî belge **2026-10-08** tarihinde doğrudan açılarak doğ
 
 Pexels'in güncel belgesi eski `/videos/` adreslerini kullanım dışı bırakılacak olarak işaretler; uygulama **`/v1/videos/`** kullanır. [Resmî Pexels JavaScript SDK](https://github.com/pexels/pexels-javascript) da kimlik doğrulama ve kaynak şemasının ek doğrulamasında incelendi; eski SDK adresi uygulanmadı.
 
-### İsteğe bağlı Freepik / Magnific Premium yedeği
+### Kaynak sırası
 
-Ayarlar'daki **Freepik / Magnific (Premium stok)** varsayılan olarak kapalıdır. Açılıp anahtar kaydedildiğinde yalnız stok video kullanır; AI video üretimi veya kredi tüketen üretim uç noktaları çağrılmaz. Akış Pixabay/Wikimedia birinci sayfasını değerlendirir, uygun aday yoksa ikinci ve üçüncü sayfaya ilerler, ardından Premium aramaya geçer. Her sorgu/sayfa sonucu mevcut 24 saatlik proje önbelleğine girer ve ilk onaylı adayda tarama durur.
-
-Premium adayın etiketi tek başına yeterli değildir. İndirmenin başlaması için önizleme karelerinde CLIP onayı veya etkin görsel modelin 7/10 ve üzeri kararı gerekir. Görsel kontrol çalışmıyorsa aday elenir ve ilgili motion akışı devam eder. Kilitli seçimler bu aramadan etkilenmez.
-
-Özgün indirme bağlantısı yalnız seçilen aday için alınır, geçici imza proje JSON'una veya stok veritabanına yazılmaz. İzinli Magnific/Freepik CDN yönlendirmeleri, 250 MB sınırı ve dosya imzası kontrol edilir. MOV/MP4, mevcut render hattı için H.264/yuv420p/30 FPS MP4'e dönüştürülür. Lisans ve kaynak metni medya kaydında kalır. Yerel günlük güvenlik sınırı 50 indirme denemesidir; tamamlanan proje dosyası hash doğrulamasından geçerse yeniden indirilmez.
-
-Resmî referans: https://docs.magnific.com/api-reference/videos/videos-api. Bu adres 2026-10-16 tarihinde geliştirme ortamından 403 döndürdü. Bu nedenle canlı sözleşme doğrulaması yapılmadı ve mevcut PR'daki `GET /v1/videos`, `GET /v1/videos/{id}/download`, `x-magnific-api-key` sözleşmesi korunarak yalnız sentetik yanıtlarla test edildi. Gerçek hesap, lisans ve kota doğrulaması kullanıcı onayıyla Windows'ta yapılmalıdır.
+Yeni medya hazırlama sırası yerel arşiv, Pixabay, Wikimedia Commons ve son olarak
+motion/harita/infografiktir. Freepik ve Magnific kaldırılmıştır; yeni arama,
+indirme, bağlantı testi veya otomatik yedek isteği yapılmaz. Önceden indirilmiş
+yerel dosyalar ve tarihsel kaynak/lisans kayıtları eski projelerin okunması ve
+renderı için korunur.
 
 Pexels `video_files` içinden MP4 çözünürlük varyantı; fotoğraflarda `src.large2x` (belgelenmiş 1880×1300 sınıfı), `src.medium`, `alt`, fotoğrafçı ve sayfa bilgileri okunur. Orijinal çözünürlük ayrıca saklanır. Pixabay `hits`, `videos` varyantlarının `url/width/height/thumbnail`, `duration`, `tags`, `pageURL`, `user/user_id`; görsellerde `largeImageURL`, varsa yetkili hesaba verilen `fullHDURL`, `previewURL` ve orijinal boyutlar kullanılır. `fullHDURL` zorunlu varsayılmaz. Pixabay fotoğrafının ölçekli boyutu orijinal en-boy oranıyla hesaplanır. Bunlar sağlayıcı metadata değerleridir; render veya FFmpeg ile doğrulama yapıldığı iddia edilmez.
 

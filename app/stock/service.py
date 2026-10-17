@@ -16,7 +16,6 @@ from app.scripts.engine import SecretGuard
 from app.scripts.models import ScriptError
 from app.stock.download import Downloader, asset_path, mirror, archive_selection
 from app.stock import relevance
-from app.stock.magnific import MagnificStockProvider
 from app.stock.models import (StockError, identity, make_slots, normalized_media, score,
                               DEFAULT_VIDEO_TOLERANCE, rejection_reason, coverage_warning)
 from app.stock.diagnostics import REASONS, CATEGORIES, normalization_counts, safe_query, search_summary, log_search
@@ -45,10 +44,8 @@ class StockService:
         self.production, self.settings = production, settings
         self.projects = production.projects
         self.factory = make_stock_provider
-        self.magnific_factory = MagnificStockProvider
         self.downloader = Downloader(self.projects)
         self.downloader.settings = settings
-        self.downloader.magnific_factory = self.magnific_factory
         self.executor = ThreadPoolExecutor(max_workers=2,thread_name_prefix='stock-media')
         # Only independent provider reads run concurrently. Selection/checkpoints
         # stay on the job thread, preserving deterministic ownership and locks.
@@ -478,11 +475,6 @@ class StockService:
         return self.search_reads.call(key, lambda: self._read_search(project_id, name, kind, query, page=page))
 
     def _read_search(self, project_id, name, kind, query, *, page=1):
-        magnific_config = None
-        if name == 'magnific':
-            magnific_config = self.settings.stock_config('magnific')
-            if not magnific_config.get('enabled') or not magnific_config.get('api_key'):
-                raise StockError('missing_key', 'Magnific Premium ayarı kapalı.')
         canonical = query[:100] if name=='pixabay' else query
         cache_key=canonical if page==1 else f'page:{page}:{canonical}'
         with self.projects.lock, closing(self.projects._connection()) as connection:
@@ -510,10 +502,7 @@ class StockService:
                     intact=cached_assets_valid(self.projects,project_id,connection,results)
                 else:intact=True
                 if intact:return results,counts,True
-        if name == 'magnific':
-            provider = self.magnific_factory(magnific_config['api_key'])
-        else:
-            provider = self.factory(name,self.settings) if name != 'openmontage' else None
+        provider = self.factory(name,self.settings) if name != 'openmontage' else None
         def remote_search():
             if name == 'openmontage':
                 from app.integrations.openmontage.media import search

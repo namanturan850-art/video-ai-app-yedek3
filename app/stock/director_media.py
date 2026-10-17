@@ -51,9 +51,9 @@ def clock():  # replaced in tests
     import time
     return time.monotonic()
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
+          'local_archive': '1 · Yerel medya arşivi',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
-          'premium_video': '5 · Magnific / Freepik Premium stok video',
           'merged': '6 · Komşu çekimin devamı (çok kısa yuva)', 'card': '5 · Üretilmiş kart',
           'neutral': '5 · Nötr görüntü (manzara / gökyüzü / doku)',
           'motion': '5 · Motion grafik (anlatımdan)', 'motion_planned': 'Motion grafik (yönetmen planı)',
@@ -1001,12 +1001,11 @@ class MediaDirector:
         return None
 
     def extended_search(self, slot, scene, queries, log, exclude):
-        """Extra pages, then optional Premium source; stop as soon as a candidate passes checks."""
-        config = self.service.settings.stock_config('magnific')
+        """Try extra free-source pages; motion remains the final fallback."""
         sources = self.providers(scene)
         free = [name for name in sources if name in ('pixabay', 'wikimedia')]
 
-        def checked(results, stage, *, premium=False):
+        def checked(results, stage):
             candidates = self.pool(slot, results, log, exclude, scene)[:CANDIDATES]
             if not candidates:
                 return False
@@ -1014,10 +1013,6 @@ class MediaDirector:
             for media in self.order(slot, candidates, verdicts):
                 verdict = verdicts.get(key(media)) or {}
                 if not verdict.get('approved') or verdict.get('score', 0) < APPROVE_SCORE:
-                    continue
-                # Premium is paid and therefore requires an actual preview verdict.
-                # A local metadata/tag fallback must never authorize a download.
-                if premium and verdict.get('local') and not verdict.get('clip_approved'):
                     continue
                 if self.take(slot, media, verdict, stage, log):
                     return True
@@ -1027,13 +1022,6 @@ class MediaDirector:
             for page in (2, 3):
                 results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=free)
                 if checked(results, 'stock_video'):
-                    return True
-        if not (config.get('enabled') and config.get('api_key')):
-            return False
-        for query in list(dict.fromkeys(queries))[:2]:
-            for page in (1, 2):
-                results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=['magnific'])
-                if checked(results, 'premium_video', premium=True):
                     return True
         return False
 
@@ -1531,7 +1519,8 @@ class MediaDirector:
         planned = list(dict.fromkeys(q for q in [scene.get('primary_stock_query'), slot.get('search_query'), *slot.get('fallback_queries', []),
                                                  *scene.get('alternative_stock_queries', [])] if q))[:4]
         video_first = ['video'] if slot.get('preferred_type') != 'stock_image' else ['image', 'video']
-        chosen = self.try_step(slot, scene, 'stock_video', video_first, planned, log, exclude)
+        chosen = self.try_local_archive(slot, scene, log, exclude)
+        if not chosen: chosen = self.try_step(slot, scene, 'stock_video', video_first, planned, log, exclude)
         rewritten = []
         if not chosen:
             if 'rewritten' not in memo: memo['rewritten'] = self.rewrite(slot, scene, planned)
@@ -1564,6 +1553,28 @@ class MediaDirector:
                 # A relevant graphic is preferable to generic scenery or another sentence's facts.
             self.motion(slot, scene, log, spec)
         return log
+
+    def try_local_archive(self, slot, scene, log, exclude):
+        """Reuse only intact project-local assets; Downloader performs no network on a cache hit."""
+        from contextlib import closing
+        with self.service.projects.lock, closing(self.service.projects._connection()) as connection:
+            rows=connection.execute('SELECT metadata_json FROM stock_assets WHERE project_id=?',(self.pid,)).fetchall()
+        candidates=[]
+        for row in rows:
+            try:
+                media=json.loads(row['metadata_json'])
+                asset_path(self.service.projects,self.pid,media)
+            except (ValueError,KeyError,OSError,StockError):
+                continue
+            candidates.append(media)
+        pool=self.pool(slot,candidates,log,exclude,scene)[:CANDIDATES]
+        if not pool:return None
+        verdicts=self.judge(slot,scene,pool)
+        for media in self.order(slot,pool,verdicts):
+            verdict=verdicts.get(key(media)) or {}
+            if verdict.get('approved') and verdict.get('score',0)>=APPROVE_SCORE and self.take(slot,media,verdict,'local_archive',log):
+                return True
+        return None
 
     # ---- motion share: looser period/place rules before (or instead of) a graphic ----
     def motion_count(self):

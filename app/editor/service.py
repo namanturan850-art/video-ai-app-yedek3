@@ -67,7 +67,7 @@ class EditorService:
         for scene in scenes:
             base = {'scene_id': scene['scene_id'], 'start': scene['start'], 'end': scene['end']}
             tracks['visuals'].extend([{**base, 'slot_id': s['slot_id'], 'media': s.get('selected_media'),
-                                       'clip_start': s.get('clip_start', 0)} for s in scene['slots']])
+                                       'locked':s.get('locked',False), 'clip_start': s.get('clip_start', 0)} for s in scene['slots']])
             motion = scene.get('motion') or ''
             if motion in ('map', 'route', 'schema'): tracks['maps'].append({**base, 'type': motion})
             if motion in ('number', 'compare', 'card', 'chart', 'infographic'): tracks['infographics'].append({**base, 'type': motion})
@@ -87,7 +87,8 @@ class EditorService:
         if audio: tracks['audio'].append({'start': 0, 'end': float(audio.get('duration') or duration),
                                           'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio'})
         return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],
-                'revision': plan['revision'], 'duration': duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
+                'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
+                'duration': duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
                 'track_order': list(TRACKS), 'audio_ready': bool(audio), 'subtitle_timing': subtitle_state.get('timing_source'),
                 'warnings': stock.get('warnings', []) + ([subtitle_state['message']] if subtitle_state.get('message') else [])}
 

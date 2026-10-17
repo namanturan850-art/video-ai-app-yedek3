@@ -1012,6 +1012,15 @@ Doğrulama:
 Aşama 1 tamamlandıktan sonra proje Aşama 2 geliştirmesine hazırdır. Aşama 2 başlatılmadı.
 # NAMAN editör entegrasyonu
 
+## 2026-10-17 — ZADIAQ ana kabuk ve premium sağlayıcı kaldırma
+
+- Açılış arayüzü koyu NAMAN kabuğu, proje seçici ve Üretim / Kurgu / Ayarlar navigasyonuna geçirildi.
+- Kurgu paneline gerçek ses oynatma, ortak saat, ileri/geri sarma, sığdırma, sahne düzenleme, medya yeniden seçme ve klip aralığı kontrolleri eklendi.
+- Freepik/Magnific istemcisi, ayarları, test endpoint'i, arama/indirme ve otomatik fallback yolları kaldırıldı.
+- Tarihsel yerel medya ve lisans kayıtları okunabilir; eksik eski dosya için yeni sağlayıcı isteği yasaktır.
+- Otomatik sıra yerel arşiv → Pixabay → Wikimedia → motion olarak uygulanır.
+- Ayrıntılı durum: [NAMAN ZADIAQ arayüzü ve sağlayıcı kaldırma raporu](NAMAN_ZADIAQ_UI_AND_PROVIDER_RETIREMENT.md).
+
 - NAMAN marka ve kullanıcı tarafından sağlanan logo eklendi.
 - Yedi izli Kurgu ekranı; zoom, seek, playhead, seçili öğe paneli ve ses/video/altyazı önizlemesi eklendi.
 - Yerel medya arşivi, hash/hak bilgileri ve sürümlü klip aralıkları eklendi.

@@ -3,7 +3,7 @@ from contextlib import closing
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = "12"
+SCHEMA_VERSION = "13"
 PROJECT_SCHEMA = """
 CREATE TABLE projects (
     id TEXT PRIMARY KEY,
@@ -105,6 +105,11 @@ def initialize_database(data_dir: Path) -> Path:
                 from app.channels import migrate
                 migrate(connection)
                 version = '12'
+            if version == '12':
+                from app.editor.schema import STATEMENTS
+                for statement in STATEMENTS:
+                    connection.execute(statement)
+                version = '13'
             if version != SCHEMA_VERSION:
                 raise sqlite3.DatabaseError("Bu veritabanı sürümü desteklenmiyor; mevcut dosyalar değiştirilmedi.")
             connection.execute("UPDATE app_metadata SET value = ? WHERE key = 'schema_version'", (SCHEMA_VERSION,))

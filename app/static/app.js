@@ -13,12 +13,13 @@ if (/^\/projects\/[^/]+\/narration$/.test(path)) pages[path]=['Seslendirme','Ona
 if (/^\/projects\/[^/]+\/subtitles$/.test(path)) pages[path]=['Altyazı ve Zamanlama','Yerel sesinizin süresine göre yaklaşık altyazı zamanlarını oluşturun, dinleyin ve düzenleyin.'];
 if (/^\/projects\/[^/]+\/youtube$/.test(path)) pages[path]=['YouTube','Başlık, açıklama ve etiket hazırlığı. Otomatik yükleme yapılmaz.'];
 if (/^\/projects\/[^/]+\/render$/.test(path)) pages[path]=['Video Oluştur / Render','Mevcut yerel ses, altyazı ve medyayı tek videoda birleştirin. API kredisi kullanılmaz.'];
+if (/^\/projects\/[^/]+\/editor$/.test(path)) pages[path]=['NAMAN Kurgu','Yedi izli zaman çizelgesinde ses, görüntü, altyazı ve animasyonları birlikte kontrol edin.'];
 if (pages[path]) {
   document.querySelector('#dashboard').hidden = true;
   document.querySelector('#detail').hidden = false;
   document.querySelector('#page-title').textContent = pages[path][0];
   document.querySelector('#page-description').textContent = pages[path][1];
-  document.title = `${pages[path][0]} · AI Video Studio`;
+  document.title = `${pages[path][0]} · NAMAN`;
 }
 async function refreshDiagnostics() {
   const status = document.querySelector('#diagnostic-status');

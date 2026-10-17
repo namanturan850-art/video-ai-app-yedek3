@@ -229,7 +229,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
     function render(project) {
       detail.replaceChildren();
       document.querySelector('#page-title').textContent = project.name;
-      document.title = `${project.name} · AI Video Studio`;
+      document.title = `${project.name} · NAMAN`;
       detail.append(information([
         ...(GEN ? [['Konu', project.topic], ['Referans YouTube URL’si', project.reference_url || 'Eklenmedi']] : []),
 ['Dil', project.language_label], ...(GEN ? [['Hedef video süresi', `${project.target_duration_minutes} dakika`]] : []),
@@ -240,6 +240,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       ]));
       const edit = make('details', '', 'settings-panel');
       const planning = make('a', 'Görsel / Kurgu Planı ve Kalite Kontrolü', 'back'); planning.href = `/projects/${project.id}/production`; detail.append(planning);
+      const editor = make('a', 'NAMAN Kurgu ve Önizleme', 'action-link'); editor.href = `/projects/${project.id}/editor`; detail.append(editor);
       edit.append(make('summary', 'Proje bilgilerini düzenle'));
       const form = make('form'); form.id = 'edit-project-form'; form.noValidate = true;
       field(form, 'name', 'Proje adı', 'text', project.name, {maxLength: 120, required: true});

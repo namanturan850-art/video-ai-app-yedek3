@@ -76,7 +76,7 @@ def run_server(port: int, open_browser: bool = True) -> None:
         try:
             probe.bind(("127.0.0.1", port))
         except OSError as error:
-            raise StartupError("Uygulama adresi kullanımda. Daha önce açtığınız AI Video Studio penceresini kapatıp tekrar deneyin.") from error
+            raise StartupError("Uygulama adresi kullanımda. Daha önce açtığınız NAMAN penceresini kapatıp tekrar deneyin.") from error
     say("2/3 · Uygulama başlatılıyor…")
     if shutil.which("ffmpeg") is None:
         say("Bilgi: FFmpeg bulunamadı. Uygulama açılabilir; video oluşturmak için ileride FFmpeg kurulması gerekir.")
@@ -124,7 +124,7 @@ def run_server(port: int, open_browser: bool = True) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="AI Video Studio")
+    parser = argparse.ArgumentParser(description="NAMAN")
     parser.add_argument("--no-browser", action="store_true")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()

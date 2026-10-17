@@ -1041,3 +1041,16 @@ Doğrulanamayanlar: Windows gerçek render, GPU, ücretli Gemini analizi ve 8–
 - Freepik, Magnific, Pexels, senaryo üretimi, avatar ve AI görsel üretimi açılmadı.
 
 Doğrulama: hedefli backend/başlatıcı paketi **21 geçti**; tam paket sonucu bu bölümün son commitinden önce yeniden kaydedilecektir. JavaScript sözdizimi ve Git whitespace kontrolü geçti. pywebview 6.1 temiz yeniden indirmede kuruldu; gerçek FastAPI uygulaması rastgele loopback portunda başlatılıp sahte pencere kapanışıyla temiz durduruldu. Grafik ekranı olmayan bu Linux oturumunda gerçek WebView gösterilemedi. Bu nedenle Windows WebView2 penceresi, GPU ve 8–10 dakikalık gerçek render doğrulanmış sayılmaz. Klip sürükle-bırak eklenmedi; atama ve kesit düzenleme panel üzerinden çalışır.
+## 2026-10-17 — NAMAN profesyonel kurgu etkileşimleri
+
+- PR #85 `main` dalına birleşmiş bulundu; bu devam çalışması güncel `main` (`f75eeda`) üzerinden `feature/naman-professional-editor` dalında yapıldı.
+- Cetvel tıklaması ve playhead sürükleme gerçek ses/video seek işlemi yapar. `HH:MM:SS.mmm` zaman kodu, ±5 saniye ve ±1 kare kontrolleri eklendi; süre proje sınırında tutulur.
+- Görüntü ve üretilmiş motion kliplerine sol/sağ kesme tutamakları ve taşıma eklendi. Değişiklikler 30 fps kare sınırına yuvarlanır; komşu klipler boşluksuz kalır, sahne ses aralığı korunur, kilitli klipler reddedilir ve stok plan revizyonuna yazılır.
+- Timeline süresi ile kaynak videonun `source_start/source_end` aralığı ayrı tutulur. Kaynak dosya süresi ve gösterim süresi backend'de doğrulanır; `segment_start` final render handoff'una ulaşır.
+- `selected_media.source_metadata.motion.template` sınıflandırıldı: map/route/empire/zoom/relief/region/arrow Harita; stat/timeline/compare/list/beforeafter/icons/ratio/dynasty/fact İnfografik; mark Vurgu; diğer motion şablonları Katman izine gider. Ana motion klibi Görüntü izinde ikinci kez gösterilmez veya render edilmez.
+- Sağ panelde motion şablonu ve doğrulanan veri JSON'u düzenlenebilir. Mevcut `motion_edit` işi yalnız seçilen grafiği yeniden üretir; stok aramasını tekrar başlatmaz. Hazır motion video dosyası aynı slot önizleme endpoint'inden gösterilir; final MP4 için ayrıca render gerektiği açıkça yazılır.
+- Sağ panel 340–420 px aralığına genişletildi; zaman kodu belirginleştirildi, boş iz durumu, kilit görünümü, responsive 1366/1920 düzenleri ve kaydedilmemiş değişiklik uyarısı eklendi.
+
+Doğrulama: ilgili Python paketi **11 geçti**; DOM olaylarıyla çalışan iki frontend testi geçti. Testler cetvelde 23. saniyeye tıklamada ses ve videonun 23'e gitmesini, playhead sürüklemeyle 25'e geçmesini ve sağ kesme tutamacının 30→31 saniye sınırını komşu kliple birlikte gerçek `PUT /editor/timeline` isteğine yazmasını doğrular. Render/motion geniş paketinde **69 test geçti**, ardından bu değişikliklerden bağımsız eski `tests/test_rendering.py::test_schema9_upgrade_preserves_sources` testi şema 12 beklerken güncel uygulama şema 13 döndürdüğü için durdu.
+
+Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/Mapbox kamera alanları uydurulmadı; desteklenen şablon verileri düzenlenebilir. Gerçek Mapbox ağ isteği, ücretli Gemini, Windows WebView2, GPU ve 8–10 dakikalık final render çalıştırılmadı. Örnek proje testlerde bellek/geçici SQLite verisiyle kuruldu; gerçek kullanıcı projelerine dokunulmadı.

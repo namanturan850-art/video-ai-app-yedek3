@@ -11,6 +11,17 @@ def editor_router(service):
     @router.get('/archive')
     def archive(project_id:str): return service.archive(project_id)
 
+    @router.get('/archive/{provider}/{media_id}/preview')
+    def archive_preview(project_id:str,provider:str,media_id:str):
+        path, _ = service.archive_file(project_id,provider,media_id)
+        return FileResponse(path)
+
+    @router.put('/slots/{slot_id}/media')
+    def assign(project_id:str,slot_id:str,payload:dict): return service.assign(project_id,slot_id,payload)
+
+    @router.get('/revisions')
+    def revisions(project_id:str): return service.revisions(project_id)
+
     @router.put('/archive/{provider}/{media_id}/range')
     def clip_range(project_id:str,provider:str,media_id:str,payload:dict): return service.set_range(project_id,provider,media_id,payload)
 

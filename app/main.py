@@ -40,6 +40,7 @@ from app.subtitles.models import SubtitleError
 from app.rendering.service import RenderService
 from app.rendering.routes import render_router
 from app.rendering.models import RenderError
+from app.editor.models import EditorError
 
 ROOT = Path(__file__).resolve().parent.parent
 STATIC = Path(__file__).resolve().parent / "static"
@@ -91,7 +92,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             director.close()
             scripts.close()
 
-    application = FastAPI(title="AI Video Studio", version=__version__, lifespan=lifespan)
+    application = FastAPI(title="NAMAN", version=__version__, lifespan=lifespan)
     settings = SettingsService(SettingsStore(storage / "secrets"))
     from app.providers import satellite as satellite_tiles
     # Harita stili → Uydu görüntüsü: the key comes from Settings at drawing time (never .env).
@@ -152,6 +153,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     from app.integrations.openmontage.routes import router as openmontage_router
     application.include_router(openmontage_router(rendering.openmontage))
     application.include_router(render_router(rendering))
+    from app.editor.service import EditorService
+    from app.editor.routes import editor_router
+    editor = EditorService(production, stock, subtitles, settings)
+    application.state.editor = editor
+    application.include_router(editor_router(editor))
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])
     application.mount("/static", StaticFiles(directory=STATIC), name="static")
 
@@ -278,6 +284,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     async def render_error(request:Request,error:RenderError):
         from app.scripts.engine import SecretGuard
         return JSONResponse(status_code=error.status_code,content=SecretGuard(settings.secret_values()).clean({'message':str(error),'category':error.category}))
+
+    @application.exception_handler(EditorError)
+    async def editor_error(request:Request,error:EditorError):
+        return JSONResponse(status_code=error.status_code,content={'message':str(error),'category':error.category,'details':error.details})
 
     def director_options():
         """Claude as default director when chosen; configured backups to offer on failure."""
@@ -776,6 +786,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.get('/projects/{project_id}/narration')
     @application.get('/projects/{project_id}/subtitles')
     @application.get('/projects/{project_id}/render')
+    @application.get('/projects/{project_id}/editor')
     @application.get('/projects/{project_id}/youtube')
     @application.get("/settings")
     @application.get('/settings/ai-diagnostics')

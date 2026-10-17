@@ -2,7 +2,7 @@
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-echo AI Video Studio aciliyor...
+echo NAMAN aciliyor...
 py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" >nul 2>&1
 if not errorlevel 1 (
     py -3 start.py

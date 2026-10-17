@@ -155,7 +155,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     application.include_router(render_router(rendering))
     from app.editor.service import EditorService
     from app.editor.routes import editor_router
-    editor = EditorService(production, stock, subtitles, settings)
+    editor = EditorService(production, stock, subtitles, settings, rendering)
     application.state.editor = editor
     application.include_router(editor_router(editor))
     application.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "[::1]", "testserver"])

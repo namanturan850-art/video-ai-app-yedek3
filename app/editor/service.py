@@ -20,6 +20,7 @@ from app.stock.download import asset_path
 
 TRACKS = ('emphasis', 'layers', 'maps', 'infographics', 'visuals', 'audio', 'subtitles')
 ANALYZER_VERSION = 'naman-frames-v2'
+VIDEO_REVIEW_VERSION = 'naman-final-video-review-v1'
 MAP_TEMPLATES = {'map','route','empire','zoom','relief','region','arrow'}
 INFOGRAPHIC_TEMPLATES = {'stat','timeline','compare','list','beforeafter','icons','ratio','dynasty','fact'}
 EMPHASIS_TEMPLATES = {'mark'}
@@ -51,8 +52,9 @@ def sha256_file(path: Path):
 
 class EditorService:
     """Adapter over authoritative production/stock/subtitle records."""
-    def __init__(self, production, stock, subtitles, settings):
+    def __init__(self, production, stock, subtitles, settings, rendering=None):
         self.production, self.stock, self.subtitles, self.settings = production, stock, subtitles, settings
+        self.rendering = rendering
         self.projects = production.projects
         self._waveforms = {}
 
@@ -592,6 +594,48 @@ class EditorService:
             result.update(self._gemini_descriptions(project_id,provider,media_id,clips))
         with self.projects.lock,closing(self.projects._connection()) as connection,connection:
             connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,media['sha256'],ANALYZER_VERSION,json.dumps(result,ensure_ascii=False),now()))
+        return result
+
+    def video_review(self,project_id,payload):
+        if payload!={'confirm':True} or type(payload.get('confirm')) is not bool:
+            raise EditorError('confirmation_required','Gemini incelemesi için açık onay gereklidir.')
+        if not self.rendering: raise EditorError('render_required','Render servisi kullanılamıyor.',409)
+        if not self.settings or not self.settings.ai_visual_check():
+            raise EditorError('gemini_disabled','Önce Ayarlar bölümünde Gemini görsel kontrolünü açın.',409)
+        view=self.rendering.view(project_id);version=view.get('active')
+        if not version or version.get('status')!='completed' or version.get('video_missing'):
+            raise EditorError('render_required','Önce tamamlanmış videoyu aktif seçin.',409)
+        path=self.rendering.export(project_id,version['id']);identity=sha256_file(path)
+        with self.projects.lock,closing(self.projects._connection()) as connection:
+            cached=connection.execute('SELECT result_json FROM archive_analysis_cache WHERE project_id=? AND sha256=? AND analyzer_version=?',(project_id,identity,VIDEO_REVIEW_VERSION)).fetchone()
+        if cached:return {**json.loads(cached[0]),'cached':True}
+        duration=float(version.get('metadata',{}).get('duration') or self.view(project_id)['duration'] or 0)
+        samples=[round(duration*i/9,3) for i in range(1,9)] if duration>0 else []
+        images=[]
+        for at in samples:
+            try:
+                frame=subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-ss',str(at),'-i',str(path),'-frames:v','1','-vf','scale=640:-2','-q:v','6','-f','image2pipe','-vcodec','mjpeg','-'],capture_output=True,timeout=20,check=False).stdout
+            except (OSError,subprocess.TimeoutExpired):frame=b''
+            if frame and len(frame)<=2_000_000:images.append({'type':'image','source':{'type':'base64','media_type':'image/jpeg','data':base64.b64encode(frame).decode()},'timecode':at})
+        if not images: raise EditorError('frame_error','Bitmiş videodan örnek kare çıkarılamadı.',409)
+        editor=self.view(project_id);context={'sampling_notice':f'Videonun tamamı değil, {len(images)} örnek kare inceleniyor.',
+                 'samples':[x['timecode'] for x in images],'subtitles':editor['tracks']['subtitles'],
+                 'scenes':[{k:s[k] for k in ('scene_id','start','end','narration')} for s in editor['scenes']]}
+        schema={'type':'object','required':['summary','issues'],'properties':{'summary':{'type':'string'},'issues':{'type':'array','items':{'type':'object','required':['timecode','category','message','severity'],'properties':{'timecode':{'type':'number'},'category':{'type':'string'},'message':{'type':'string'},'severity':{'type':'string'}}}}}}
+        try:
+            from app.providers.factory import make_script_provider
+            ai=make_script_provider('gemini',self.settings,chain=False)
+            answer=ai.complete_json('finished_video_sample_review','Yalnız verilen örnek kareleri ve zaman verisini değerlendir. Her karenin incelendiğini iddia etme. Yanlış medya, harita, taşan yazı, altyazı zamanı, tekrar ve aşırı motion sorunlarını Türkçe raporla.\n'+json.dumps(context,ensure_ascii=False),schema,images=[{k:v for k,v in image.items() if k!='timecode'} for image in images],max_tokens=900,timeout=45)
+            if not isinstance(answer.get('summary'),str) or not isinstance(answer.get('issues'),list):raise ValueError('review')
+        except Exception as error:
+            from app.providers.base import ScriptProviderError
+            if isinstance(error,(ScriptProviderError,ValueError,OSError)):
+                raise EditorError('gemini_unavailable','Gemini video incelemesi tamamlanamadı; video ve render korunuyor.',503) from None
+            raise
+        result={'cached':False,'basis':context['sampling_notice'],'sample_timecodes':context['samples'],'summary':' '.join(answer['summary'].split())[:1000],
+                'issues':answer['issues'][:100],'render_version_id':version['id']}
+        with self.projects.lock,closing(self.projects._connection()) as connection,connection:
+            connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,identity,VIDEO_REVIEW_VERSION,json.dumps(result,ensure_ascii=False),now()))
         return result
 
     def _gemini_descriptions(self, project_id, provider, media_id, clips):

@@ -67,6 +67,9 @@ def editor_router(service):
     @router.post('/archive/{provider}/{media_id}/analyze')
     def analyze(project_id:str,provider:str,media_id:str,payload:dict): return service.analyze(project_id,provider,media_id,payload)
 
+    @router.post('/quality/video-review')
+    def video_review(project_id:str,payload:dict): return service.video_review(project_id,payload)
+
     @router.get('/manual/package')
     def task_package(project_id:str): return service.task_package(project_id)
 

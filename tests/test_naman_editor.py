@@ -142,6 +142,24 @@ def test_gemini_frame_analysis_is_bounded_and_maps_descriptions(monkeypatch):
     assert [x['description'] for x in result['clips'][:3]]==['bir','iki','üç']
 
 
+def test_finished_video_review_is_opt_in_sampled_and_cached(tmp_path,monkeypatch):
+    initialize_database(tmp_path);projects=ProjectService(tmp_path)
+    project=projects.create({'name':'Kalite','topic':'Test','language':'tr'});pid=project['id']
+    video=tmp_path/'finished.mp4';video.write_bytes(b'finished-video')
+    production=Production();production.projects=projects
+    stock=Stock();subtitles=Subtitles();settings=SimpleNamespace(ai_visual_check=lambda:True)
+    rendering=SimpleNamespace(view=lambda _:{'active':{'id':'r1','status':'completed','video_missing':False,'metadata':{'duration':4}}},export=lambda *_:video)
+    editor=EditorService(production,stock,subtitles,settings,rendering)
+    monkeypatch.setattr('app.editor.service.subprocess.run',lambda *a,**k:SimpleNamespace(stdout=b'jpeg'))
+    calls=[]
+    class AI:
+        def complete_json(self,*args,**kwargs):calls.append((args,kwargs));return {'summary':'Örnekler temiz.','issues':[]}
+    monkeypatch.setattr('app.providers.factory.make_script_provider',lambda *a,**k:AI())
+    result=editor.video_review(pid,{'confirm':True})
+    assert result['basis']=='Videonun tamamı değil, 8 örnek kare inceleniyor.' and len(result['sample_timecodes'])==8
+    assert editor.video_review(pid,{'confirm':True})['cached'] is True and len(calls)==1
+
+
 def test_generated_motion_is_projected_once_to_its_semantic_track():
     class MotionStock(Stock):
         def view(self, _):

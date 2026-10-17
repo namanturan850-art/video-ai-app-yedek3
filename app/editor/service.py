@@ -310,7 +310,10 @@ class EditorService:
     def edit_motion(self, project_id, slot_id, payload):
         if not isinstance(payload,dict) or set(payload)!={'plan_id','revision','motion'}:
             raise EditorError('invalid_input','Animasyon düzenleme alanlarını kontrol edin.')
-        return self.stock.start(project_id,{**payload,'action':'motion_edit'},slot_id=slot_id)
+        # Editor redraws are deliberately local/free. Persisting this flag in
+        # the motion spec also prevents a later final render from turning the
+        # same edit into a paid Mapbox request.
+        return self.stock.start(project_id,{**payload,'action':'motion_edit','local_only':True},slot_id=slot_id)
 
     @serialized
     def edit_clip(self,project_id,slot_id,payload):
@@ -605,7 +608,7 @@ class EditorService:
             target=by_id[scene_id];target['naman_overlays']=overlays
             motion=next((o for o in overlays if o['kind'] in ('map','infographic') and o.get('template') and isinstance(o.get('data'),dict)),None)
             if motion:
-                try: target['motion_spec']=validate_motion({'template':motion['template'],'data':motion['data'],'emphasis':motion.get('emphasis','')},target['narration'],target.get('entities') or [])
+                try: target['motion_spec']={**validate_motion({'template':motion['template'],'data':motion['data'],'emphasis':motion.get('emphasis','')},target['narration'],target.get('entities') or []),'local_only':True}
                 except MotionError as error: raise EditorError('invalid_import',f'{scene_id} animasyonu anlatımla doğrulanamadı: {error}. Hiçbir değişiklik kaydedilmedi.') from None
             layer=next((o for o in overlays if o['kind']=='layer' and o.get('text')),None)
             if layer: target['overlay_text']=str(layer['text'])[:100]

@@ -328,7 +328,7 @@ class StockService:
         with self.projects.lock, closing(self.projects._connection()) as connection, connection:
             handoff = self._handoff(project_id);state = self._ensure(connection,handoff)
             self._stamp(state,payload);self._idle(connection,project_id)
-            if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds','motion','reason'}:
+            if set(payload)-{'plan_id','revision','action','candidate_id','allow_duplicate','video_duration_tolerance_seconds','motion','reason','local_only'}:
                 raise StockError('invalid_input','Medya işlemini kontrol edin.',422)
             action = payload.get('action')
             if action not in ('auto','missing','search','select','search_videos','replace_images','relevance_research','smart_recovery','complete_media','reselect','to_motion','to_stock','motion_edit'): raise StockError('invalid_action','Bu medya işlemi kullanılamıyor.',422)
@@ -368,6 +368,7 @@ class StockService:
                     if motion.get('layout') is not None:  # the owner's own layout choice; none = chosen automatically
                         from app.motion.layouts import layout_of
                         progress['motion']={**progress['motion'],'layout':layout_of(motion)}
+                    progress['motion']['local_only']=True
                 if action=='reselect' and slot.get('selected_media') and slot['selected_media'].get('provider') in ('pexels','pixabay'):
                     # The owner rejected this pick: never offer it again in this project; the reason guides the next choice.
                     reason=' '.join(str(payload.get('reason') or '').split())[:200]

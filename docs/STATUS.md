@@ -1,3 +1,10 @@
+## 2026-10-17 — Manuel kurgu arayüzü ve uçtan uca doğrulama
+
+- Beyaz müzik paneli tema değişkenlerine bağlandı; kontroller Program'ın altına ve 10 timeline aracı sola taşındı. Manuel mod, taslaklar/JSON, harita/infografik, gerçek altyazı ve müzik/SFX panelleri mevcut editöre bağlandı.
+- Anlatım ve ek müzik aynı Ses izinde ayrı dikey alanlarda seçilebilir. Eski medya kaydında MIME alanı eksikse güvenli dosya türü çıkarımıyla önizleme açılır. Başarılı Program karesi kaynak önizleme hata mesajının arkasında kalmaz.
+- Gerçek API/SQLite/Chromium paketi geçti: sil/undo/redo/refill, stil/keyframe, temiz harita/stat, altyazı/müzik, yeniden açma, otomatik ve JSON taslak onay/undo, kaydetmeden gerçek taslak karesi, kayıtlı Gemini bulgusunun durum/zaman kodu akışı, beş viewport ve **4 saniyelik gerçek native MP4**. Gemini raporu bu UI testinde sentetiktir; canlı çağrı yoktur.
+- PR #91 gelişmiş kurgu tarayıcı testi ve önceki çalışma alanı etkileşim/menü/yerleşim testi geçti. DOM testleri **7 geçti**. Son hedefli backend testleri **13 geçti**, eski MIME önizlemesi **1 geçti**. Son geniş regresyon sürüyor; Windows/NVENC/canlı sağlayıcı test edilmedi.
+
 ## 2026-10-18 — Manuel kurgu: ortak geçmiş ve gerçek önizleme
 
 - Ortak Undo/Redo; temel yuva atama/kaldırma, ek belge, kurgu politikası, gerçek altyazı sürümü ve ses miksini proje/plan/revizyon kontrolüyle birleştirir. Taslak onayını geri almak modu da geri getirir.

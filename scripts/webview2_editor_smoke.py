@@ -47,15 +47,21 @@ def main():
                   const status=root?.querySelector('.provider-status')?.textContent||'';
                   const timeline=root?.querySelector('.naman-timeline')?.getBoundingClientRect();
                   const tracks=[...root?.querySelectorAll('.naman-track')||[]];
+                  const deck=root?.querySelector('.workspace-monitor-deck')?.getBoundingClientRect();
+                  const surface=root?.querySelector('.workspace-program-surface')?.getBoundingClientRect();
                   return {status,tracks:tracks.length,
                           viewport:{width:innerWidth,height:innerHeight},
                           noPageScroll:document.documentElement.scrollHeight<=innerHeight,
                           menuCount:document.querySelectorAll('.workspace-menubar>details').length,
+                          manualControls:!!root?.querySelector('.manual-mode-strip'),
+                          timelineTools:root?.querySelectorAll('.workspace-tool-rail button').length||0,
+                          playbackBelow:!!deck&&!!surface&&deck.top>=surface.bottom-1,
                           allTracksVisible:!!timeline&&tracks.every(n=>n.getBoundingClientRect().bottom<=timeline.bottom),
                           retry:[...document.querySelectorAll('button')].some(x=>x.textContent.includes('Yeniden Dene'))};
                 })()""")
                 if state and state.get('tracks')==7 and 'yükleniyor' not in state.get('status','').lower():
-                    ready=state.get('noPageScroll') and state.get('allTracksVisible') and state.get('menuCount')==9
+                    ready=(state.get('noPageScroll') and state.get('allTracksVisible') and state.get('menuCount')==9
+                           and state.get('manualControls') and state.get('timelineTools')==10 and state.get('playbackBelow'))
                     result.update(ok=bool(ready),message='Kurgu WebView2 içinde açıldı; menüler ve yedi iz kontrol edildi.',state=state);break
                 if state and state.get('retry'):
                     result.update(message='Kurgu hata ekranına düştü.',state=state);break

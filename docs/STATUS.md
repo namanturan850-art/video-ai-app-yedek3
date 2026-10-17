@@ -1,3 +1,12 @@
+## 2026-10-17 — NAMAN 2 kurgu çalışma alanı (devam ediyor)
+
+- Kurgu ekranı sol yerel arşiv, orta 16:9 önizleme, sağ özellik paneli ve altta tam genişlikte yeniden boyutlanabilir yedi izli zaman çizelgesi düzenine geçirildi. Masaüstü daralmaları için 1200/980/700 px kırılımları eklendi.
+- Varsayılan koyu turkuaz tema (`#101318`, `#1B2029`, `#242A35`, `#F4F7FA`, `#24D3C5`) ile mor, mavi, turuncu, açık ve özel vurgu seçenekleri kalıcı Ayarlar verisine bağlandı. Tema yalnız uygulama kabuğunu etkiler; video renkleri değişmez.
+- MP4/JPG/PNG/WebP/MP3/WAV yerel dosyaları proje arşivine yüklenebilir. İçerik imzası, 512 MB sınırı, proje kapsamı ve SHA-256 kimliği doğrulanır. NAMAN ekran kaydı üretmez; haricî kayıt MP4 olarak yüklenebilir.
+- Zaman çizelgesi sürükleme/kesme kayıtları artık önce/sonra anlık görüntüsü taşır; Geri al/Yinele düğmeleri ve Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z kalıcı revizyon geçmişini uygular. Kilitli veya değişmiş kliplerde işlem güvenle reddedilir.
+- Veritabanı yükseltme testindeki eski `12` beklentisi mevcut şema sürümü `13` ile düzeltildi. Editör paketi **11/11 geçti**; Python/JavaScript sözdizimi ve `git diff --check` geçti. Ayar servisinin doğrudan tema kalıcılık/doğrulama kontrolü geçti. TestClient kullanan iki hedef test, bu ortamda uygulama yaşam döngüsü kapanışında çıktı vermeden beklediği için tam paket yeşil iddia edilmez.
+- Bu dilimde tam klip bölme/çoğaltma, gerçek genlikten ses dalga biçimi, bitmiş videoya Gemini zaman kodlu inceleme ve Windows/pywebview görsel doğrulaması tamamlanmadı; arayüzde çalışıyormuş gibi gösterilmez. Freepik/Magnific/Pexels/avatar/senaryo üretimi/görsel üretimi kapalı kalır.
+
 ## 2026-10-16 — Performans devam çalışması: eşzamanlı kota beklemesi
 
 - **Son kodla 188/188 ilgili regresyon testi geçti** (342,98 sn): kalite, coğrafya, kilit/resume, sağlayıcılar, kota sıfırlaması ve model zinciri sonrası seçim koruması dahil. Tam taramanın eski/ortam başarısızlıkları ayrıca belgeli; tüm testler yeşil iddiası yoktur.

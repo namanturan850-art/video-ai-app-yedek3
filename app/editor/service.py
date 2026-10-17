@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import subprocess
 import re
+import os
 from uuid import uuid4
 from functools import wraps
 
@@ -157,6 +158,7 @@ class EditorService:
             plan=self._active(project_id);scene=next((b for b in plan['blocks'] if b['id']==payload['scene_id']),None)
             if not scene or scene.get('locked'): raise EditorError('locked','Kilitli sahnenin zamanlaması değiştirilemez.',409)
             current=[s for s in state['slots'] if s['scene_id']==payload['scene_id']]
+            before=[deepcopy(s) for s in current]
             incoming=payload['slots']
             ids=[x.get('slot_id') for x in incoming]
             if len(ids)!=len(set(ids)) or set(ids)!={s['slot_id'] for s in current}:
@@ -189,8 +191,44 @@ class EditorService:
                 slot.update(order=index,duration=round(b-a,6),estimated_start=round(a,6),estimated_end=round(b,6),
                             segment_start=source_start,segment_end=source_end)
             self.stock._save(connection,state)
+            after=[deepcopy(s) for s in state['slots'] if s['scene_id']==payload['scene_id']]
             connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
-                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',json.dumps(payload,ensure_ascii=False),now()))
+                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',json.dumps({'request':payload,'before':before,'after':after},ensure_ascii=False),now()))
+        self.stock._mirror(state)
+        return self.view(project_id)
+
+    @serialized
+    def timeline_history(self,project_id,direction,payload):
+        if direction not in ('undo','redo') or not isinstance(payload,dict) or set(payload)!={'plan_id','revision'}:
+            raise EditorError('invalid_timeline','Geri alma isteğini kontrol edin.')
+        handoff=self.stock._handoff(project_id)
+        with closing(self.projects._connection()) as connection,connection:
+            state=self.stock._ensure(connection,handoff);self.stock._stamp(state,payload);self.stock._idle(connection,project_id)
+            rows=connection.execute("SELECT id,kind,payload_json FROM editor_revisions WHERE project_id=? AND kind IN ('timeline_edit','timeline_undo','timeline_redo') ORDER BY created_at,id",(project_id,)).fetchall()
+            done=[];undone=[];records={}
+            for row in rows:
+                try: record=json.loads(row['payload_json'])
+                except (ValueError,TypeError): continue
+                if row['kind']=='timeline_edit' and isinstance(record,dict) and 'before' in record and 'after' in record:
+                    records[row['id']]=record;done.append(row['id']);undone.clear()
+                elif row['kind']=='timeline_undo' and record.get('target') in done:
+                    done.remove(record['target']);undone.append(record['target'])
+                elif row['kind']=='timeline_redo' and record.get('target') in undone:
+                    undone.remove(record['target']);done.append(record['target'])
+            target=(done[-1] if direction=='undo' and done else undone[-1] if direction=='redo' and undone else None)
+            if not target: raise EditorError('nothing_to_'+direction,'Bu yönde uygulanabilecek zaman çizelgesi değişikliği yok.',409)
+            snapshot=records[target]['before' if direction=='undo' else 'after'];ids={s.get('slot_id') for s in snapshot}
+            current={s['slot_id']:s for s in state['slots'] if s['slot_id'] in ids}
+            if set(current)!=ids or any(s.get('locked') for s in current.values()):
+                raise EditorError('stale_timeline','Klipler değişti veya kilitlendi; geçmiş uygulanamadı.',409)
+            for saved in snapshot:
+                slot=current[saved['slot_id']]
+                for key in ('order','duration','estimated_start','estimated_end','segment_start','segment_end'):
+                    if key in saved: slot[key]=deepcopy(saved[key])
+                    else: slot.pop(key,None)
+            self.stock._save(connection,state)
+            connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
+                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_'+direction,json.dumps({'target':target},ensure_ascii=False),now()))
         self.stock._mirror(state)
         return self.view(project_id)
 
@@ -218,9 +256,52 @@ class EditorService:
             saved=ranges.get((row['provider'],row['media_id']))
             result.append({'provider':row['provider'],'media_id':row['media_id'],'media_type':row['media_type'],
                            'sha256':identity,'duration':item.get('duration'),'source_url':item.get('source_url',''),
+                           'title':item.get('title') or item.get('description') or row['media_id'],
+                           'preview_url':f'/api/projects/{project_id}/editor/archive/{row["provider"]}/{row["media_id"]}/preview',
                            'rights':{k:rights.get(k) for k in ('license','license_url','author','page_url') if rights.get(k)},
                            'clip_range': {'start':saved['start_seconds'],'end':saved['end_seconds'],'revision':saved['revision']} if saved else None})
         return {'project_id':project_id,'items':result,'count':len(result),'reuse_policy':'Yerel hash eşleşirse yeniden indirilmez.'}
+
+    @serialized
+    def import_local(self, project_id, temporary, original_name):
+        """Adopt a validated user-selected file into this project's immutable archive."""
+        extension=Path(original_name).suffix.lower()
+        formats={'.mp4':('video','video/mp4'),'.jpg':('image','image/jpeg'),'.jpeg':('image','image/jpeg'),
+                 '.png':('image','image/png'),'.webp':('image','image/webp'),'.mp3':('audio','audio/mpeg'),
+                 '.wav':('audio','audio/wav')}
+        if extension not in formats:
+            raise EditorError('unsupported_upload','MP4, JPG, PNG, WebP, MP3 veya WAV dosyası seçin.')
+        media_type,mime=formats[extension]
+        head=Path(temporary).read_bytes()[:16]
+        valid=(mime=='video/mp4' and len(head)>=12 and head[4:8]==b'ftyp') or \
+              (mime=='image/jpeg' and head.startswith(b'\xff\xd8\xff')) or \
+              (mime=='image/png' and head.startswith(b'\x89PNG\r\n\x1a\n')) or \
+              (mime=='image/webp' and head.startswith(b'RIFF') and head[8:12]==b'WEBP') or \
+              (mime=='audio/wav' and head.startswith(b'RIFF') and head[8:12]==b'WAVE') or \
+              (mime=='audio/mpeg' and (head.startswith(b'ID3') or (len(head)>1 and head[0]==0xff and head[1]&0xe0==0xe0)))
+        if not valid: raise EditorError('invalid_upload','Dosya içeriği uzantısıyla eşleşmiyor.')
+        digest=sha256_file(Path(temporary));media_id=digest[:32];canonical='.jpg' if extension=='.jpeg' else extension
+        folder=Path(temporary).parent;target=folder/(media_id+canonical)
+        if target.exists():
+            if sha256_file(target)!=digest: raise EditorError('local_storage','Aynı adlı arşiv dosyası değişmiş.',409)
+        else: os.replace(temporary,target)
+        duration=None
+        if media_type in ('video','audio'):
+            try:
+                from app.rendering.tools import discover
+                probe=discover().get('ffprobe')
+                done=subprocess.run([probe,'-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',str(target)],capture_output=True,text=True,timeout=20,stdin=subprocess.DEVNULL) if probe else None
+                duration=float(done.stdout.strip()) if done and done.returncode==0 else None
+            except (OSError,ValueError,subprocess.SubprocessError): duration=None
+        metadata={'provider':'local','media_id':media_id,'media_type':media_type,'title':Path(original_name).stem[:160],
+                  'description':Path(original_name).stem[:160],'local_path':'stock/'+target.name,'file_size':target.stat().st_size,
+                  'sha256':digest,'content_type':mime,'duration':duration,'downloaded_at':now(),
+                  'source_metadata':{'license':'Kullanıcı tarafından sağlandı','author':'Proje sahibi'}}
+        with closing(self.projects._connection()) as connection,connection:
+            self.projects._row(connection,project_id)
+            connection.execute('INSERT OR REPLACE INTO stock_assets VALUES (?,?,?,?,?)',
+                (project_id,'local',media_id,media_type,json.dumps(metadata,ensure_ascii=False)))
+        return {'item':next(x for x in self.archive(project_id)['items'] if x['provider']=='local' and x['media_id']==media_id)}
 
     def set_range(self, project_id, provider, media_id, payload):
         if set(payload) != {'sha256','start','end','revision'} or not all(finite(payload[k]) for k in ('start','end','revision')):

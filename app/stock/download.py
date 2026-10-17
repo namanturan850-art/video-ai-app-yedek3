@@ -51,7 +51,7 @@ def directory(projects, project_id):
 
 def asset_path(projects, project_id, media):
     name = media.get('local_path','')
-    if not re.fullmatch(r'stock/[a-f0-9]{32}\.(mp4|jpg|png|webp)', name):
+    if not re.fullmatch(r'stock/[a-f0-9]{32}\.(mp4|jpg|png|webp|mp3|wav)', name):
         raise StockError('unsafe_path','Yerel medya dosyası doğrulanamadı.',409)
     target = directory(projects,project_id)/Path(name).name
     if linked(target) or not target.is_file() or target.stat().st_size != media.get('file_size'):

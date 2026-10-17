@@ -6,7 +6,7 @@ if (window.location.pathname === '/settings') {
   const reload = document.querySelector('#settings-reload');
   root.hidden = false;
   const definitions = [
-    {id: 'general', title: 'Genel', description: 'Yeni projeler için varsayılan içerik dilini seçin.', fields: [{name: 'content_language', label: 'Varsayılan içerik dili', type: 'select'}, {name: 'era_mode', label: 'Video dönemi. Otomatik: metnin ağırlıklı dönemine bakılır, belirsizse modern sayılır. Modern: dönem filtresi hiç uygulanmaz (güncel coğrafya/belgesel). Tarihsel: metindeki dönem sert uygulanır (modern araba, telefon, çizim/3D elenir).', type: 'select', choices: [['auto', 'Otomatik'], ['modern', 'Modern'], ['historic', 'Tarihsel']]}, {name: 'ai_visual_check', label: 'Gemini görsel kontrolü (varsayılan kapalı). Açıksa Gemini yalnızca yerel görüntü modelinin (CLIP) kararsız kaldığı adaylara bakar; 60 sn içinde yanıt yoksa atlanır. Kapalıyken Medyayı Tamamla hiç Gemini isteği atmaz.', type: 'checkbox'}, {name: 'intro_card', label: 'Açılış kartı (video başlığı + kanal adı). Kapalıyken video doğrudan ilk sahneyle başlar; [GİRİŞ] işareti bir şey eklemez.', type: 'checkbox'}, {name: 'outro_card', label: 'Kapanış kartı (“Abone ol” düğmesi + zil). Kapalıyken [KAPANIŞ] işareti ve “abone ol” cümleleri normal sahne gibi işlenir.', type: 'checkbox'}, {name: 'end_screen', label: 'YouTube bitiş ekranı (videonun sonuna 20 sn). Kapalıyken video son sahneyle, sesle birlikte biter.', type: 'checkbox'}]},
+    {id:'general',title:'Görünüm / Tema ve Genel',description:'NAMAN görünümünü seçin. Tema yalnız uygulamayı değiştirir; üretilen videoya uygulanmaz.',fields:[{name:'appearance_theme',label:'Tema',type:'select',choices:[['turquoise','NAMAN Dark Turquoise'],['purple','Koyu Mor'],['blue','Gece Mavisi'],['orange','Koyu Turuncu'],['light','Açık']]},{name:'accent_color',label:'Özel vurgu rengi',type:'color'},{name:'content_language',label:'Varsayılan içerik dili',type:'select'},{name:'era_mode',label:'Video dönemi',type:'select',choices:[['auto','Otomatik'],['modern','Modern'],['historic','Tarihsel']]},{name:'ai_visual_check',label:'Gemini görsel kontrolü (varsayılan kapalı)',type:'checkbox'},{name:'intro_card',label:'Açılış kartı',type:'checkbox'},{name:'outro_card',label:'Kapanış kartı',type:'checkbox'},{name:'end_screen',label:'YouTube bitiş ekranı',type:'checkbox'}]},
     {id: 'claude', title: 'Claude (Anthropic)', description: 'İsteğe bağlı ve ÜCRETLİ. Varsayılan olarak sahne planı ve medya seçimi Gemini’nin ücretsiz kotasıyla çalışır; Claude yalnızca aşağıdaki kutuyu işaretlerseniz kullanılır. Claude API, claude.ai aboneliğinden ayrı ücretlendirilir (console.anthropic.com). “Bağlantıyı Test Et” ücretsizdir.', fields: [{name: 'model', label: 'Model', type: 'select', choices: [['claude-opus-5-5', 'Claude Opus 5.5 — en iyi kalite (önerilen)'], ['claude-sonnet-5-5', 'Claude Sonnet 5.5 — daha ucuz, hızlı'], ['claude-haiku-5-5', 'Claude Haiku 5.5 — en ucuz, basit işler']]}, {name: 'default_engine', label: 'Gemini yerine Claude kullan (ücretli)', type: 'checkbox'}], secret: true, test: true},
     {id: 'ollama', title: 'Ollama', description: 'İsteğe bağlı yerel yapay zekâ (sahne planı için yedek). Kullanmayacaksanız model adını boş bırakın. Testten önce ayarları kaydedin.', fields: [{name: 'base_url', label: 'Yerel adres (Base URL)', type: 'url'}, {name: 'model', label: 'Bilgisayarınızda kurulu modelin adı', type: 'text'}], test: true},
     {id: 'openai', title: 'OpenAI (isteğe bağlı)', description: 'Etkinleştir seçimini açın, anahtarınızı ve Chat Completions modelini Kaydet deyin. Bağlantı testi resmi API’den model erişimini kontrol eder; metin üretmez. Üretim kota/bakiye kontrolü ayrıca yapılır.', fields: [{name: 'enabled', label: 'Etkinleştir', type: 'checkbox'}, {name: 'model', label: 'Model adı', type: 'text'}], secret: true, test: true},
@@ -69,6 +69,11 @@ if (window.location.pathname === '/settings') {
     status.setAttribute('aria-live', 'polite');
     form.append(status);
     for (const field of definition.fields) addField(form, definition.id, field);
+    if(definition.id==='general')form.addEventListener('input',event=>{
+      const theme=form.elements.namedItem('appearance_theme'),accent=form.elements.namedItem('accent_color');
+      if(event.target===theme)accent.value=window.NAMANTheme?.defaultAccent(theme.value)||'#24D3C5';
+      window.NAMANTheme?.preview(theme.value,accent.value);
+    });
     if (definition.secret) {
       addField(form, definition.id, {name: 'api_key', label: 'API anahtarı', type: 'password'});
       const keyInfo = element('p', '', 'note');
@@ -86,6 +91,18 @@ if (window.location.pathname === '/settings') {
       }
     });
     actions.append(save, clear);
+    if (definition.id === 'general') {
+      clear.textContent = 'Varsayılana dön';
+      clear.replaceWith(clear.cloneNode(true));
+      const reset = actions.lastElementChild;
+      reset.addEventListener('click', () => {
+        form.elements.namedItem('appearance_theme').value='turquoise';
+        form.elements.namedItem('accent_color').value='#24D3C5';
+        window.NAMANTheme?.reset();
+        form.dataset.dirty='true';
+        status.textContent='Varsayılan tema seçildi. Kalıcı yapmak için Kaydet düğmesine basın.';
+      });
+    }
     if (definition.id !== 'general') {
       const test = element('button', 'Bağlantıyı Test Et', 'secondary');
       test.type = 'button';

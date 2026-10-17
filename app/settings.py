@@ -20,6 +20,8 @@ class StrictModel(BaseModel):
 
 class GeneralSettings(StrictModel):
     content_language: str = 'de'
+    appearance_theme: Literal['turquoise','purple','blue','orange','light'] = 'turquoise'
+    accent_color: str = '#24D3C5'
     # AI script writing (Senaryo oluştur, AI Yönetmen purpose/script, source
     # analysis) is kept in the code but OFF: the owner pastes their own text.
     script_generation: bool = False
@@ -37,6 +39,14 @@ class GeneralSettings(StrictModel):
     # unsure); modern = no period filter at all; historic = the period found in the text, strict.
     era_mode: Literal['auto', 'modern', 'historic'] = 'auto'
     _language = field_validator('content_language')(validate_language)
+
+    @field_validator('accent_color')
+    @classmethod
+    def colour(cls,value):
+        import re
+        value=value.upper()
+        if not re.fullmatch(r'#[0-9A-F]{6}',value): raise ValueError('Vurgu rengi #24D3C5 biçiminde olmalıdır.')
+        return value
 
 
 def web_url(value: str) -> str:
@@ -294,6 +304,8 @@ class SettingsService:
             secrets = stored_secrets(values)
             guard = SecretGuard(secrets)
             result = {"general": {"content_language": values["general"]["content_language"],
+                                  "appearance_theme": values["general"].get("appearance_theme", "turquoise"),
+                                  "accent_color": values["general"].get("accent_color", "#24D3C5"),
                                   "ai_visual_check": bool(values["general"].get("gemini_visual_check", False)),
                                   **{k: bool(values["general"].get(k, False)) for k in ('intro_card', 'outro_card', 'end_screen')}}}
             for name in PROVIDERS:

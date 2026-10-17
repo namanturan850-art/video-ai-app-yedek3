@@ -257,7 +257,14 @@ class FFmpegRenderProvider:
         vf='[0:v]null'
         if has_text:
             vf+=','+assf(caption_name)
-        graph=vf+'[v];\n'+f'[1:a]aresample=48000,apad,atrim=duration={duration:.6f},asetpts=PTS-STARTPTS[nar]'
+        mix=plan.get('audio_settings') or {}
+        narration_volume=min(2.,max(0.,float(mix.get('narration_volume',1.))))
+        narration_fade_in=min(duration/2,max(0.,float(mix.get('narration_fade_in',0.))))
+        narration_fade_out=min(duration/2,max(0.,float(mix.get('narration_fade_out',0.))))
+        graph=vf+'[v];\n'+f'[1:a]aresample=48000,apad,atrim=duration={duration:.6f},asetpts=PTS-STARTPTS,volume={narration_volume:.6f}'
+        if narration_fade_in:graph+=f',afade=t=in:st=0:d={narration_fade_in:.6f}'
+        if narration_fade_out:graph+=f',afade=t=out:st={duration-narration_fade_out:.6f}:d={narration_fade_out:.6f}'
+        graph+='[nar]'
         if opts['music_enabled']:
             args+=['-stream_loop','-1','-i',str(plan['music'])]
             fi=min(opts['music_fade_in'],duration/2);fo=min(opts['music_fade_out'],duration/2)
@@ -280,8 +287,8 @@ class FFmpegRenderProvider:
             graph=master(graph,self.tools['filters'])
             graph=graph[::-1].replace(']a[',']0a[',1)[::-1]
             first=len([a for a in args if a=='-i'])
-            volume=min(.5,max(0.,float(plan['sfx'].get('volume',.18))))
             for k,e in enumerate(events):
+                volume=min(.5,max(0.,float(e.get('level',plan['sfx'].get('volume',.18)))))
                 args+=['-i',e['path']];delay=int(round(e['t']*1000))
                 graph+=f';\n[{first+k}:a]aresample=48000,aformat=channel_layouts=stereo,volume={volume:.3f},adelay={delay}|{delay}[fx{k}]'
             graph+=';\n'+''.join(f'[fx{k}]' for k in range(len(events)))+(f'amix=inputs={len(events)}:duration=longest:normalize=0' if len(events)>1 else 'anull')+'[fxall]'

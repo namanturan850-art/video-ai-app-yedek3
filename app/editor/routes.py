@@ -21,6 +21,12 @@ def editor_router(service):
     @router.get('/waveform')
     def waveform(project_id:str): return service.waveform(project_id)
 
+    @router.get('/audio-settings')
+    def audio_settings(project_id:str): return service.audio_settings(project_id)
+
+    @router.put('/audio-settings')
+    def save_audio_settings(project_id:str,payload:dict): return service.save_audio_settings(project_id,payload)
+
     @router.post('/archive/upload',status_code=201)
     async def archive_upload(project_id:str,request:Request):
         name=unquote(request.headers.get('x-file-name',''))

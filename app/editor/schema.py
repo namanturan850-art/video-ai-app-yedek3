@@ -14,4 +14,9 @@ STATEMENTS = (
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         sha256 TEXT NOT NULL, analyzer_version TEXT NOT NULL, result_json TEXT NOT NULL,
         created_at TEXT NOT NULL, PRIMARY KEY(project_id,sha256,analyzer_version))''',
+    '''CREATE TABLE IF NOT EXISTS editor_audio_settings (
+        project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+        narration_volume REAL NOT NULL, narration_fade_in REAL NOT NULL,
+        narration_fade_out REAL NOT NULL, sfx_volume REAL NOT NULL,
+        sfx_levels_json TEXT NOT NULL, updated_at TEXT NOT NULL)''',
 )

@@ -328,6 +328,21 @@ def test_real_media_normalization_loop_trim_transitions(tmp_path,kind,motion,tra
         assert len(raw)==3 and max(raw)>70
 
 
+def test_editor_audio_mix_controls_reach_local_ffmpeg_graph(tmp_path):
+    folder=tmp_path/'mix';folder.mkdir()
+    clip=synthetic(folder,'clip.mp4',['-f','lavfi','-i','color=c=blue:s=320x240:d=3.14','-c:v','libx264'])
+    voice=folder/'voice.wav';voice.write_bytes(wav(3.14));h,p=contract();job=folder/'job';job.mkdir()
+    runner=ProcessRunner();engine=FFmpegRenderProvider(tools.discover(),runner)
+    engine.render({'temporary':job,'timeline':timeline.build(h,p),'handoff':h,
+        'options':options({'encoder':'cpu','subtitle_burned':False}),
+        'media':{'1':{'path':clip,'type':'video'},'2':{'path':clip,'type':'video'}},
+        'audio':voice,'music':None,'audio_settings':{'narration_volume':1.25,
+        'narration_fade_in':.2,'narration_fade_out':.3,'sfx_volume':.1,'sfx_levels':{}}})
+    graph='\n'.join(path.read_text() for path in job.glob('filter-*.txt'))
+    assert 'volume=1.250000,afade=t=in:st=0:d=0.200000' in graph
+    assert 'afade=t=out:st=2.840000:d=0.300000[nar]' in graph
+
+
 def test_real_subtitle_on_off_pixels(tmp_path):
     clip=synthetic(tmp_path,'clip.mp4',['-f','lavfi','-i','color=c=blue:s=320x240:d=2','-c:v','libx264'])
     voice=tmp_path/'voice.wav';voice.write_bytes(wav(3.14));h,p=contract()
@@ -396,7 +411,7 @@ def test_schema9_upgrade_preserves_sources(ready):
         c.execute("UPDATE app_metadata SET value='9' WHERE key='schema_version'")
     initialize_database(ready['storage'])
     with closing(p._connection()) as c:
-        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='13'
+        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='14'
         assert c.execute('SELECT COUNT(*) FROM narration_versions').fetchone()[0]==1
         assert c.execute('SELECT COUNT(*) FROM subtitle_versions').fetchone()[0]>=1
     for name,data in ready['originals'].items():assert (ready['root']/name).read_bytes()==data

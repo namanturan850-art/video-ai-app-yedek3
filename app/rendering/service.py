@@ -122,7 +122,7 @@ class RenderService:
             for item in scene['sfx']:
                 path=channels.sfx_path(channel['id'],kit['sfx'].get(item['sound'],'none')) if channel else None
                 if path and 0<=start+item['t']<h.get('audio_duration',1e9):
-                    events.append({'t':round(start+item['t'],3),'sound':item['sound'],'path':str(path)})
+                    events.append({'t':round(start+item['t'],3),'sound':item['sound'],'path':str(path),'slot_id':owner})
         out={'events':sorted(events,key=lambda e:e['t'])[:80],'volume':volume}
         if notes:out['notes']=list(dict.fromkeys(notes))
         return out
@@ -201,6 +201,19 @@ class RenderService:
                 row=c.execute('SELECT state_json FROM stock_plans WHERE project_id=? AND plan_id=?',(pid,h['scene_plan_id'])).fetchone()
                 if not row:raise RenderError('source_stale',SOURCE_MESSAGE)
                 stock=json.loads(row[0]);music=self._music(c,pid)
+                mix_row=c.execute('SELECT * FROM editor_audio_settings WHERE project_id=?',(pid,)).fetchone()
+                audio_settings_saved=bool(mix_row)
+                if mix_row:
+                    try:levels=json.loads(mix_row['sfx_levels_json'])
+                    except (TypeError,ValueError):levels={}
+                    audio_settings={'narration_volume':float(mix_row['narration_volume']),
+                        'narration_fade_in':float(mix_row['narration_fade_in']),
+                        'narration_fade_out':float(mix_row['narration_fade_out']),
+                        'sfx_volume':float(mix_row['sfx_volume']),
+                        'sfx_levels':levels if isinstance(levels,dict) else {}}
+                else:
+                    audio_settings={'narration_volume':1.,'narration_fade_in':0.,'narration_fade_out':0.,
+                                    'sfx_volume':.10,'sfx_levels':{}}
             from app.rendering import reflow
             h,recovery=reflow.project(h,p,stock,self.projects,lambda path:self._hash(path,force))
             t=timeline.build(h,p)
@@ -239,12 +252,14 @@ class RenderService:
             channels=getattr(self,'channels',None)
             kit=channels.for_project(pid)['style'] if channels else None
             pending=[];sfx=self._motion(pid,t,h,selected,media,originals,kit,force,draw,pending,cancelled)
+            sfx['volume']=audio_settings['sfx_volume']
             endscreen=self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals,cancelled)
             fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
+            if audio_settings_saved:fingerprint_data['editor_audio_settings']=audio_settings
             from app.channels import DEFAULT_STYLE
             if endscreen:fingerprint_data['endscreen']={'key':endscreen['key'],'seconds':endscreen['seconds']}  # absent without a closing moment: old fingerprints kept
             if sfx['events']:  # absent for videos without motion: old fingerprints kept
-                fingerprint_data['motion_sfx']={'events':[{k:e[k] for k in ('t','sound')} for e in sfx['events']],'volume':sfx['volume'],'sources':kit['sfx']}
+                fingerprint_data['motion_sfx']={'events':[{k:e[k] for k in ('t','sound','slot_id','level') if k in e} for e in sfx['events']],'volume':sfx['volume'],'sources':kit['sfx']}
             if kit and kit['subtitle']!=DEFAULT_STYLE['subtitle']:
                 fingerprint_data['subtitle_style']=kit['subtitle']  # default kit keeps old fingerprints
             if kit and (kit['palette'],kit['heading_font'])!=(DEFAULT_STYLE['palette'],DEFAULT_STYLE['heading_font']):
@@ -272,7 +287,9 @@ class RenderService:
                 self._guard(plan)
                 fingerprint=smart_edit.digest({'source':fingerprint,'smart_edit_plan':plan})
                 sfx=self._transition_sfx(plan,sfx,kit,h)
-            inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit,'sfx':sfx}
+            for event in sfx['events']:
+                event['level']=audio_settings['sfx_levels'].get(event.get('slot_id'),audio_settings['sfx_volume'])
+            inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit,'sfx':sfx,'audio_settings':audio_settings}
             inputs['motion_pending']=len(pending)  # motion clips the render job still has to draw (not part of the fingerprint)
             reflow.apply_graphics(inputs)
             if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})

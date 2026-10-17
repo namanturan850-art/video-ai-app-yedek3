@@ -42,8 +42,8 @@ def test_database_adds_editor_tables_without_removing_core(tmp_path):
     with sqlite3.connect(database) as connection:
         names={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version=connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]
-    assert {'projects','editor_revisions','media_clip_ranges','archive_analysis_cache'} <= names
-    assert version == '13'
+    assert {'projects','editor_revisions','media_clip_ranges','archive_analysis_cache','editor_audio_settings'} <= names
+    assert version == '14'
 
 
 def test_editor_projection_has_seven_ordered_tracks_and_sync_data():
@@ -188,6 +188,7 @@ def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
     database=tmp_path/'state.sqlite3'
     with sqlite3.connect(database) as c:
         c.execute('CREATE TABLE editor_revisions(id,project_id,plan_id,parent_plan_id,kind,payload_json,created_at)')
+        c.execute('CREATE TABLE editor_audio_settings(project_id PRIMARY KEY,narration_volume,narration_fade_in,narration_fade_out,sfx_volume,sfx_levels_json,updated_at)')
     class Projects:
         lock=threading.RLock()
         def _connection(self):
@@ -235,3 +236,29 @@ def test_motion_edit_uses_existing_single_slot_regeneration_pipeline():
         'plan_id':'stock-plan','revision':4,'motion':{'template':'map','data':{'place':'Ankara'},'emphasis':'Ankara'}})
     assert result=={'job_id':'j1'}
     assert calls[0][1]['action']=='motion_edit' and calls[0][2]=='slot'
+
+
+def test_audio_mix_settings_are_validated_and_persisted(tmp_path):
+    database=initialize_database(tmp_path)
+    projects=ProjectService(tmp_path)
+    project=projects.create({'name':'Ses','topic':'Yerel miks'})
+    production=Production();production.projects=projects
+    editor=EditorService(production,Stock(),Subtitles(),None)
+    saved=editor.save_audio_settings(project['id'],{'narration_volume':1.2,'narration_fade_in':.4,
+        'narration_fade_out':.8,'sfx_volume':.16,'sfx_levels':{'clip_1':.07}})
+    assert saved['narration_volume']==1.2 and saved['sfx_levels']=={'clip_1':.07}
+    assert EditorService(production,Stock(),Subtitles(),None).audio_settings(project['id'])==saved
+    from app.editor.models import EditorError
+    import pytest
+    with pytest.raises(EditorError):
+        editor.save_audio_settings(project['id'],{**{k:saved[k] for k in ('narration_volume','narration_fade_in','narration_fade_out','sfx_volume','sfx_levels')},'sfx_volume':.8})
+
+
+def test_missing_narration_and_subtitle_handoff_do_not_block_editor():
+    from app.subtitles.models import SubtitleError
+    class Missing(Subtitles):
+        def view(self,_):return {'active':None,'narration':None,'timing_source':None,'message':'Seslendirme ve altyazı henüz hazır değil.'}
+        def handoff(self,_):raise SubtitleError('not_ready','Hazır değil.',409)
+    result=EditorService(Production(),Stock(),Missing(),None).view('a'*32)
+    assert result['audio_ready'] is False and result['tracks']['audio']==[] and result['tracks']['subtitles']==[]
+    assert len(result['tracks'])==7 and result['duration']==4

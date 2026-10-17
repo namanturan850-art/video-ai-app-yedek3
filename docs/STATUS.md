@@ -1030,3 +1030,14 @@ Aşama 1 tamamlandıktan sonra proje Aşama 2 geliştirmesine hazırdır. Aşama
 - Kelime vurguları altyazı zamanlarından türetilir; zaman kaynağı tahminiyse arayüz bunu işaretler.
 
 Doğrulanamayanlar: Windows gerçek render, GPU, ücretli Gemini analizi ve 8–10 dakikalık tam çıktı bu Linux ortamında çalıştırılmadı.
+## 2026-10-17 — NAMAN masaüstü ve kurgu tamamlama
+
+- `START_AI_VIDEO_STUDIO.bat` ve yeni `START_NAMAN.bat`, pywebview içinde **NAMAN** başlıklı ayrı pencereyi açacak şekilde bağlandı. Yerel FastAPI aynı süreçte rastgele loopback portunda çalışır; pencere kapanınca uygulama yaşam döngüsü ve arka plan servisleri kapatılır. Tarayıcı modu yalnız komut satırında geriye dönük seçenek olarak kaldı.
+- Kurgu zamanları hazır olduğunda tahmini plan saniyeleri yerine ses/altyazı handoff'undaki sahne ve medya yuvası saniyelerini kullanır. Görüntü yuvaları artık tüm sahne üst üste binmek yerine kendi gerçek aralıklarında görünür.
+- Sol Arşiv / Görseller / Ekran / Sesler paneli, güvenli yerel önizleme ve seçili yerel medyayı görüntü yuvasına atama eklendi. Atama; dosya SHA-256'sını, medya/sahne kilidini, stok plan revizyonunu, video süresini ve seçilen kesitin sahneye yetmesini kontrol eder. `segment_start` render handoff'una ulaşır; eski dosya silinmez veya yeniden indirilmez.
+- Önizleme ortak ses saatini kullanır; video veya görsel, altyazı, kelime pulse/glitch ve harita/infografik/katman metni aynı zaman konumunda gösterilir. Bu, motion grafiklerinin tarayıcıda final piksel render'ı değildir; final raster/Remotion zinciri mevcut `motion_spec` üzerinden çalışmaya devam eder.
+- Manuel JSON doğrulaması alan/enum/metin sınırı ve anlatımla uyumlu motion şeması kontrolü yapar; doğrulanmamış içerik içe aktarılamaz. Farkta önce/sonra görünür. Arayüze açık onaylı geri alma eklendi; güncel revizyon, metin sürümü, çalışan iş ve kilitler korunur.
+- Gemini arşiv analizi yalnız Ayarlar'daki görsel kontrol açıkken çalışır. En fazla üç sıkıştırılmış örnek kare tek model/tek istekle gönderilir; tam video gönderilmez. Sonuç dosya hash'i ve analiz sürümüyle önbelleğe alınır. Kapalı, kota/ağ/model hatalı veya FFmpeg karesi yoksa yerel çekim sınırlarıyla devam eder. Canlı/ücretli çağrı yapılmadı.
+- Freepik, Magnific, Pexels, senaryo üretimi, avatar ve AI görsel üretimi açılmadı.
+
+Doğrulama: hedefli backend/başlatıcı paketi **21 geçti**; tam paket sonucu bu bölümün son commitinden önce yeniden kaydedilecektir. JavaScript sözdizimi ve Git whitespace kontrolü geçti. pywebview 6.1 temiz yeniden indirmede kuruldu; gerçek FastAPI uygulaması rastgele loopback portunda başlatılıp sahte pencere kapanışıyla temiz durduruldu. Grafik ekranı olmayan bu Linux oturumunda gerçek WebView gösterilemedi. Bu nedenle Windows WebView2 penceresi, GPU ve 8–10 dakikalık gerçek render doğrulanmış sayılmaz. Klip sürükle-bırak eklenmedi; atama ve kesit düzenleme panel üzerinden çalışır.

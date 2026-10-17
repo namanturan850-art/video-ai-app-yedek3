@@ -126,6 +126,7 @@ def run_server(port: int, open_browser: bool = True) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description="NAMAN")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--desktop", action="store_true")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
     if sys.version_info < (3, 12):
@@ -138,7 +139,20 @@ def main() -> int:
         if Path(sys.prefix).resolve() != VENV.resolve():
             interpreter = prepare_environment()
             return subprocess.call([str(interpreter), str(ROOT / "start.py"), *sys.argv[1:]], cwd=ROOT)
-        run_server(args.port, not args.no_browser)
+        if args.desktop:
+            try:
+                import webview
+            except ImportError:
+                result = subprocess.run([sys.executable, '-m', 'pip', 'install', '-r', str(ROOT / 'requirements-desktop.txt')], cwd=ROOT)
+                if result.returncode:
+                    raise StartupError('Masaüstü bileşenleri kurulamadı. İnternet bağlantınızı kontrol edip START_NAMAN.bat ile yeniden deneyin.')
+            from desktop import run_desktop
+            try:
+                run_desktop()
+            except Exception as error:
+                raise StartupError('NAMAN penceresi açılamadı. Windows üzerinde Microsoft Edge WebView2 Runtime kurulumunu kontrol edin.') from error
+        else:
+            run_server(args.port, not args.no_browser)
         return 0
     except KeyboardInterrupt:
         say("Uygulama kapatıldı.")

@@ -25,6 +25,10 @@ class Subtitles:
         return {'active':{'cues':[{'index':1,'start':0,'end':4,'text':'Anlatılan kırk kilometrelik rota.'}]},
                 'narration':{'id':'n1','metadata':{'audio':{'duration':4}}},'timing_source':'estimated','message':''}
 
+    def handoff(self, _):
+        return {'audio_duration':4,'scenes':[{'scene_id':'s1','start':0,'end':4}],
+                'stock_slots':[{'slot_id':'v1','start':0,'end':4,'duration':4}]}
+
 
 def service():
     return EditorService(Production(),Stock(),Subtitles(),None)
@@ -78,3 +82,30 @@ def test_existing_motion_engine_validates_naman_map_and_infographic_specs():
     card_spec=validate({'template':'stat','data':{'value':'40 km','label':'rota uzunluğu'},'emphasis':'40'},'Rota uzunluğu 40 km olarak açıklandı.')
     assert map_spec['template']=='map'
     assert card_spec['data']['value']=='40 km'
+
+
+def test_manual_import_rejects_unknown_fields_and_unspoken_motion_data():
+    editor=service()
+    payload={'schema':'naman.manual-plan.v1','base':{'plan_id':'p1','revision':3},
+             'sahneler':[{'scene_id':'s1','motion':'map'}], 'infografikler':[],
+             'harita_sahneleri':[{'scene_id':'s1','template':'map','data':{'place':'Paris','label':'x','lat':48.8,'lon':2.3}}],
+             'vurgular':[],'katmanlar':[]}
+    result=editor.validate_import('a'*32,payload)
+    assert not result['valid']
+    assert any('transition' not in error and 'animasyon' in error for error in result['errors'])
+
+
+def test_gemini_frame_analysis_is_bounded_and_maps_descriptions(monkeypatch):
+    editor=service(); editor.settings=SimpleNamespace(ai_visual_check=lambda:True)
+    editor.archive_file=lambda *args:(Path('/tmp/sample.mp4'),{})
+    monkeypatch.setattr('app.editor.service.subprocess.run',lambda *a,**k:SimpleNamespace(stdout=b'jpeg'))
+    calls=[]
+    class AI:
+        def complete_json(self,*args,**kwargs):
+            calls.append(kwargs); return {'descriptions':['bir','iki','üç']}
+    monkeypatch.setattr('app.providers.factory.make_script_provider',lambda *a,**k:AI())
+    clips=[{'sample_at':n,'description':'bekliyor'} for n in range(8)]
+    result=editor._gemini_descriptions('p','local','m',clips)
+    assert result['gemini_status']=='complete'
+    assert len(calls)==1 and len(calls[0]['images'])==3
+    assert [x['description'] for x in result['clips'][:3]]==['bir','iki','üç']

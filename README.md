@@ -34,9 +34,9 @@ Kalite ve uzun video geliştirme dalı: [Neler değişti, mevcut kayıtlar nası
 2. Proje ZIP dosyasını indirdiyseniz sağ tıklayıp **Tümünü ayıkla** seçin. Çıkarılan klasörü açın.
 3. **START_AI_VIDEO_STUDIO.bat** dosyasına çift tıklayın.
 
-İlk açılışta internet bağlantısı gerekir. Gerekli bileşenler otomatik kurulur; pencere durum mesajları gösterir. Kurulum bitince tarayıcı kendiliğinden açılır. **Siyah pencereyi açık bırakın.** Sonraki açılışlarda da aynı dosyaya çift tıklamanız yeterlidir.
+İlk açılışta internet bağlantısı gerekir. Gerekli bileşenler otomatik kurulur; ardından **NAMAN** başlıklı ayrı masaüstü penceresi açılır. Tarayıcı sekmesi açılmaz. Sonraki açılışlarda da aynı dosyaya çift tıklamanız yeterlidir. Alternatif kısa yol olarak `START_NAMAN.bat` da kullanılabilir.
 
-Uygulamayı kapatmak için siyah pencereyi kapatın veya pencerenin içinde **Ctrl+C** tuşlarına basın. Sonra tarayıcı sekmesini kapatabilirsiniz.
+Uygulamayı kapatmak için NAMAN penceresini kapatın. Arka plandaki yerel sunucu da düzenli biçimde durdurulur.
 
 ### Bir sorun olursa
 

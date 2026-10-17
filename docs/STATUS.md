@@ -1,3 +1,9 @@
+## 2026-10-18 — Gelişmiş kurgu, aşama 1
+
+- Güncel `main` (`bfb5144`) üzerinden `feature/naman-advanced-editing` açıldı. Anlatım tabanlı slotlara dokunmayan sürümlü ek kurgu belgesi ve plan/proje kapsamlı geçmiş eklendi; SQLite 14→15 yükseltmesi eklemelidir.
+- Belge doğrulaması ek medya/metin/motion klipleri, dönüşüm/efekt/keyframe verileri, komşu geçişleri ve işaretleyicileri sınırlar. Kaynak kimliği/süresi, kilit ve eski revizyon reddi var. Ses ve altyazı verileri değiştirilmez.
+- Aşama 1 doğrulaması: yeni belge/geçmiş/yükseltme testleri ve mevcut editör paketi birlikte **30 geçti**. Bu aşamada yeni render/arayüz kontrolleri henüz tamamlanmadı; sonraki aşamalar aşağıdaki teslim kaydında raporlanacak.
+
 ## 2026-10-18 — Premiere Dark profesyonel çalışma alanı
 
 - `7975d61` güncel uzak `main` olarak doğrulandı; değişiklikler `feature/naman-premiere-professional-workspace` dalında hazırlanıyor. Önceki yalnız CSS yerleşimi, ayrı `workspace.js`/`workspace.css` ile gerçek menü ve viewport uygulama kabuğuna dönüştürüldü.

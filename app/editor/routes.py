@@ -11,6 +11,17 @@ from app.stock.download import directory
 
 def editor_router(service):
     router=APIRouter(prefix='/api/projects/{project_id}/editor')
+    from app.editor.advanced import AdvancedEditor
+    advanced=AdvancedEditor(service)
+
+    @router.get('/advanced')
+    def advanced_view(project_id:str):return advanced.get(project_id)
+
+    @router.put('/advanced')
+    def advanced_save(project_id:str,payload:dict):return advanced.save(project_id,payload)
+
+    @router.post('/advanced/history/{direction}')
+    def advanced_history(project_id:str,direction:str,payload:dict):return advanced.history(project_id,direction,payload)
 
     @router.get('')
     def view(project_id:str): return service.view(project_id)

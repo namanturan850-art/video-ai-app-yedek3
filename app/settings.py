@@ -4,7 +4,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError, field_validator
 
-from app.secret_store import SettingsStore
+from app.secret_store import SettingsStore, SettingsStorageError
 from app.providers.gemini import normalize_model, MODEL_UNAVAILABLE_MESSAGE
 from app.languages import validate_language
 from app.narration.models import OFFICIAL_BASE
@@ -20,8 +20,8 @@ class StrictModel(BaseModel):
 
 class GeneralSettings(StrictModel):
     content_language: str = 'de'
-    appearance_theme: Literal['turquoise','purple','blue','orange','light'] = 'turquoise'
-    accent_color: str = '#24D3C5'
+    appearance_theme: Literal['premiere','turquoise','purple','blue','orange','light'] = 'premiere'
+    accent_color: str = '#8065E8'
     # AI script writing (Senaryo oluştur, AI Yönetmen purpose/script, source
     # analysis) is kept in the code but OFF: the owner pastes their own text.
     script_generation: bool = False
@@ -262,7 +262,12 @@ class SettingsService:
         self.store = store
         # One-way credential retirement. Other settings remain byte-for-byte values.
         with self.store.lock:
-            values = self.store.read()
+            try:
+                values = self.store.read()
+            except SettingsStorageError:
+                # Keep health/diagnostics available. Requests that use settings still
+                # raise the safe 503 handler; never replace or rewrite a damaged vault.
+                return
             if 'magnific' in values:
                 values.pop('magnific', None)
                 self.store.write(values)
@@ -304,8 +309,8 @@ class SettingsService:
             secrets = stored_secrets(values)
             guard = SecretGuard(secrets)
             result = {"general": {"content_language": values["general"]["content_language"],
-                                  "appearance_theme": values["general"].get("appearance_theme", "turquoise"),
-                                  "accent_color": values["general"].get("accent_color", "#24D3C5"),
+                                  "appearance_theme": values["general"].get("appearance_theme", "premiere"),
+                                  "accent_color": values["general"].get("accent_color", "#8065E8"),
                                   "ai_visual_check": bool(values["general"].get("gemini_visual_check", False)),
                                   **{k: bool(values["general"].get(k, False)) for k in ('intro_card', 'outro_card', 'end_screen')}}}
             for name in PROVIDERS:

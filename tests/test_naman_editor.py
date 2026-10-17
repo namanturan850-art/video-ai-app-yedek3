@@ -70,3 +70,11 @@ def test_frontend_contains_brand_logo_timeline_and_preview_contract():
         assert label in js
     for behavior in ('currentTime','requestAnimationFrame','Oynat','Saniyeye git','manual/validate'):
         assert behavior in js
+
+
+def test_existing_motion_engine_validates_naman_map_and_infographic_specs():
+    from app.motion.templates import validate
+    map_spec=validate({'template':'map','data':{'place':'Ankara','label':'Başkent','lat':39.933,'lon':32.86},'emphasis':'Ankara'},'Ankara rotanın başlangıcıdır.')
+    card_spec=validate({'template':'stat','data':{'value':'40 km','label':'rota uzunluğu'},'emphasis':'40'},'Rota uzunluğu 40 km olarak açıklandı.')
+    assert map_spec['template']=='map'
+    assert card_spec['data']['value']=='40 km'

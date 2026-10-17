@@ -839,7 +839,7 @@ class ProductionService:
                 'source_script_version_id':current['id'],'language':plan['language'],'width':plan['width'],'height':plan['height'],
                 'timing_source':plan['timing_source'],'media_priority':MEDIA_PRIORITY,
                 'scenes':[{**{key:b[key] for key in fields},**{key:b[key] for key in ('search_anchor','search_context','search_alternatives','provider_query','semantic_descriptor',
-                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec','motion_suggested','owner_hints') if b.get(key)}} for b in plan['blocks']]}
+                                                                                         'must_show','must_not_show','shot_count','card_kind','card_text','motion_spec','motion_suggested','owner_hints','naman_overlays') if b.get(key)}} for b in plan['blocks']]}
 
     @editable
     def update(self, project_id, payload):

@@ -61,7 +61,8 @@ class EditorService:
             scenes.append({'scene_id': scene_id, 'start': start, 'end': end, 'locked': bool(block.get('locked')),
                            'narration': block.get('narration', ''), 'transition': block.get('transition', ''),
                            'motion': block.get('motion', ''), 'overlay_text': block.get('overlay_text', ''),
-                           'composition': block.get('composition', ''), 'slots': [self._public_slot(s) for s in scene_slots]})
+                           'composition': block.get('composition', ''), 'naman_overlays':deepcopy(block.get('naman_overlays') or []),
+                           'slots': [self._public_slot(s) for s in scene_slots]})
         tracks = {name: [] for name in TRACKS}
         for scene in scenes:
             base = {'scene_id': scene['scene_id'], 'start': scene['start'], 'end': scene['end']}
@@ -71,6 +72,12 @@ class EditorService:
             if motion in ('map', 'route', 'schema'): tracks['maps'].append({**base, 'type': motion})
             if motion in ('number', 'compare', 'card', 'chart', 'infographic'): tracks['infographics'].append({**base, 'type': motion})
             if scene.get('overlay_text'): tracks['layers'].append({**base, 'text': scene['overlay_text']})
+            for overlay in scene['naman_overlays']:
+                item={**base,**overlay}
+                if overlay['kind']=='map': tracks['maps'].append(item)
+                elif overlay['kind']=='infographic': tracks['infographics'].append(item)
+                elif overlay['kind']=='emphasis': tracks['emphasis'].append(item)
+                elif overlay['kind']=='layer': tracks['layers'].append(item)
         for cue in cues:
             tracks['subtitles'].append({'start': cue['start'], 'end': cue['end'], 'text': cue['text'], 'index': cue['index']})
             words = cue['text'].split()
@@ -184,7 +191,15 @@ class EditorService:
         overlay_map={}
         for section,kind in (('infografikler','infographic'),('harita_sahneleri','map'),('vurgular','emphasis'),('katmanlar','layer')):
             for item in payload[section]: overlay_map.setdefault(item['scene_id'],[]).append({'kind':kind,**{k:v for k,v in item.items() if k!='scene_id'}})
-        for scene_id,overlays in overlay_map.items(): by_id[scene_id]['naman_overlays']=overlays
+        from app.motion.templates import validate as validate_motion, MotionError
+        for scene_id,overlays in overlay_map.items():
+            target=by_id[scene_id];target['naman_overlays']=overlays
+            motion=next((o for o in overlays if o['kind'] in ('map','infographic') and o.get('template') and isinstance(o.get('data'),dict)),None)
+            if motion:
+                try: target['motion_spec']=validate_motion({'template':motion['template'],'data':motion['data'],'emphasis':motion.get('emphasis','')},target['narration'],target.get('entities') or [])
+                except MotionError as error: raise EditorError('invalid_import',f'{scene_id} animasyonu anlatımla doğrulanamadı: {error}. Hiçbir değişiklik kaydedilmedi.') from None
+            layer=next((o for o in overlays if o['kind']=='layer' and o.get('text')),None)
+            if layer: target['overlay_text']=str(layer['text'])[:100]
         parent=plan['plan_id']; self.production._save(project_id,plan,new_version=True)
         with self.projects.lock,closing(self.projects._connection()) as connection,connection:
             connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',(uuid4().hex,project_id,plan['plan_id'],parent,'manual_import',json.dumps(payload,ensure_ascii=False),now()))

@@ -5,12 +5,12 @@ cd /d "%~dp0"
 echo NAMAN aciliyor...
 py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" >nul 2>&1
 if not errorlevel 1 (
-    py -3 start.py
+    py -3 start.py --desktop
     goto finished
 )
 python -c "import sys; sys.exit(0 if sys.version_info >= (3,12) else 1)" >nul 2>&1
 if not errorlevel 1 (
-    python start.py
+    python start.py --desktop
     goto finished
 )
 echo Python 3.12 veya daha yeni bir surum bulunamadi.

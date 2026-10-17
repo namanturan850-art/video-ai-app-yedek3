@@ -48,5 +48,5 @@ def test_zadiaq_shell_and_real_editor_controls_are_present():
     editor=(root/'app/static/editor.js').read_text(encoding='utf-8')
     for label in ('Üretim','Kurgu','Ayarlar','shell-project','naman-logo.png'):
         assert label in html
-    for behavior in ('Medyayı yeniden seç','Klip başlangıcı','Değişiklikleri kaydet','audio.play','Sığdır','↶ 5 sn'):
+    for behavior in ('Seçili arşiv medyasını ata','Kaynak başlangıcı','Süreleri kaydet','audio.play','Sığdır','↶ 5 sn'):
         assert behavior in editor

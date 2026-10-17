@@ -1,5 +1,8 @@
 ## 2026-10-18 — Gelişmiş kurgu, motor ve arayüz aşamaları
 
+- **Son teslim doğrulaması:** seçili Python paketi **192 geçti** (229,66 sn), ayrıca eski kanal/render uyumluluğu **2 geçti**, DOM paketi **7 geçti**. Gerçek API/SQLite Chromium paketi; yeni klip boş-iz drop, trim/taşı/böl/sil/undo, keyframe ve marker CRUD, bağımsız monitör, OS upload, thumbnail ve son revizyon kare çözümüyle geçti. Dört viewportta dış scroll yok/yedi iz görünür; mevcut menü/resize/görünürlük regresyonu da geçti.
+- Dal GitHub'a gönderildi. Draft PR açma `api.github.com/graphql` erişiminde **403 Forbidden** ile engellendi; PR açıldı diye raporlanmaz. Main'e merge yapılmadı. Hazır PR metni ve karşılaştırma bağlantısı [teslim raporunda](ADVANCED_EDITING.md#github-teslimi).
+
 - Ortak FFmpeg graph ile dönüşüm, keyframe, efekt, ek metin/medya/motion ve kaynak sesi final montaja bağlandı. Program görüntüsü açıkça en fazla 5 fps örnek kare olarak sunulur. Kaynak/Program/yan yana monitörler, kalıcı işaretleyiciler, görünür videolarda gerçek thumbnail ve güvenli OS dosya bırakma eklendi.
 - Yalnız uygun türdeki kaynaklarda hız/ses alanları açılır. Anlatım ve altyazı saati değişmez. İşaretleyici notları final render parmak izini değiştirmez. Kesinti sonrası aynı kaynak/plan/ayar kimliğiyle yeni sürüm oluşturulur; kareden devam iddiası yoktur.
 - Son hedefli backend/gerçek kısa render paketi **23 geçti**. İlk/orta/son kare karşılaştırması ölçek/döndürme, saydamlık, efekt ve farklı iki kaynakla Wipe geçişini kapsar. 48 kHz ses uzunluğu 0,5× / 1× / 2× hızlarda doğrulandı. DOM paketi **7 geçti**. Gerçek API/SQLite kullanan Chromium etkileşim paketi geçti; son genişletilmiş ve regresyon sonuçları teslim kaydında güncellenecek.

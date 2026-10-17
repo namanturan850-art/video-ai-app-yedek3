@@ -11,6 +11,8 @@ def render_router(service):
     def start(project_id:str,payload:dict):return service.start(project_id,payload)
     @router.post('/jobs/{job_id}/cancel')
     def cancel(project_id:str,job_id:str):return service.cancel(project_id,job_id)
+    @router.post('/jobs/{job_id}/restart',status_code=202)
+    def restart(project_id:str,job_id:str,payload:dict):return service.restart(project_id,job_id,payload)
     @router.post('/versions/{version_id}/activate')
     def activate(project_id:str,version_id:str):return service.activate(project_id,version_id)
     @router.get('/versions/{version_id}/video')

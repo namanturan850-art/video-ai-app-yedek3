@@ -17,14 +17,14 @@ from app.editor.models import EditorError
 from app.projects import now
 
 STATEMENTS = (
-    '''CREATE TABLE editor_documents (
+    '''CREATE TABLE IF NOT EXISTS editor_documents (
         project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         plan_id TEXT NOT NULL, revision INTEGER NOT NULL, payload_json TEXT NOT NULL,
         updated_at TEXT NOT NULL, PRIMARY KEY(project_id,plan_id))''',
-    '''CREATE TABLE editor_document_events (
+    '''CREATE TABLE IF NOT EXISTS editor_document_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         plan_id TEXT NOT NULL, kind TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL)''',
-    'CREATE INDEX editor_document_events_scope ON editor_document_events(project_id,plan_id,id)',
+    'CREATE INDEX IF NOT EXISTS editor_document_events_scope ON editor_document_events(project_id,plan_id,id)',
 )
 
 
@@ -84,6 +84,11 @@ class Editable(Strict):
     fade_in: float=Field(default=0,ge=0,le=3)
     fade_out: float=Field(default=0,ge=0,le=3)
 
+    @model_validator(mode='after')
+    def unique_points(self):
+        if len({(k.property,k.time) for k in self.keyframes})!=len(self.keyframes):raise ValueError('Aynı özellik/zamanda iki keyframe olamaz.')
+        return self
+
 
 class Clip(Editable):
     id: str=Field(pattern=r'^[a-f0-9]{32}$')
@@ -100,6 +105,7 @@ class Clip(Editable):
     visible: bool=True
     locked: bool=False
     order: int=Field(default=0,ge=0,le=1000)
+    legacy_key: str|None=Field(default=None,max_length=160)
 
     @model_validator(mode='after')
     def valid(self):
@@ -138,6 +144,8 @@ class Document(Strict):
     adjustments: list[Adjustment]=Field(default_factory=list,max_length=500)
     markers: list[Marker]=Field(default_factory=list,max_length=500)
     transitions: list[Transition]=Field(default_factory=list,max_length=500)
+    suppressed_scenes: list[str]=Field(default_factory=list,max_length=500)
+    suppressed_layers: list[str]=Field(default_factory=list,max_length=500)
 
     @model_validator(mode='after')
     def unique(self):
@@ -168,6 +176,13 @@ class AdvancedEditor:
             detail='; '.join('.'.join(map(str,e['loc']))+': '+e['msg'] for e in error.errors(include_input=False)[:6])
             raise EditorError('invalid_document','Kurgu verisi geçersiz: '+detail) from None
         view=self.editor.view(pid);duration=view['duration']
+        for scene_id in set(old.get('suppressed_scenes',[]))^set(validated['suppressed_scenes']):
+            scene=next((s for s in view['scenes'] if s['scene_id']==scene_id),None)
+            if not scene or scene['locked']:raise EditorError('locked','Plan katmanı eksik veya sahne kilitli.',409)
+        legacy={x['legacy_key']:x for items in view['tracks'].values() for x in items if x.get('legacy_key')}
+        for key in set(old.get('suppressed_layers',[]))^set(validated['suppressed_layers']):
+            item=legacy.get(key);scene=next((s for s in view['scenes'] if item and s['scene_id']==item['scene_id']),None)
+            if not scene or scene['locked']:raise EditorError('locked','Kaynak plan katmanı eksik veya kilitli.',409)
         slots={x['slot_id']:x for track in view['tracks'].values() for x in track if x.get('slot_id')}
         old_clips={c['id']:c for c in old['clips']}
         for clip in validated['clips']:
@@ -181,8 +196,17 @@ class AdvancedEditor:
             if clip['kind']=='media':
                 from app.editor.service import sha256_file
                 path,asset=self.editor.archive_file(pid,clip['media']['provider'],clip['media']['media_id'])
-                if sha256_file(path)!=clip['media']['sha256']:raise EditorError('stale_media','Kaynak dosya değişmiş; arşivi yenileyin.',409)
+                verifier=getattr(getattr(self.editor.stock,'downloader',None),'verified_hash',None)
+                actual=verifier(path,clip['media']['sha256']) if verifier else sha256_file(path)
+                if actual!=clip['media']['sha256']:raise EditorError('stale_media','Kaynak dosya değişmiş; arşivi yenileyin.',409)
                 if (asset['media_type']=='audio')!=(clip['track']=='audio'):raise EditorError('invalid_media_type','Ses dosyası Ses izine; video/görsel görsel izlere eklenir.')
+                if clip['track']=='audio':
+                    visual_values={k:v for k,v in clip['transform'].items() if k not in ('volume','speed')}
+                    defaults={k:v for k,v in Transform().model_dump().items() if k not in ('volume','speed')}
+                    if visual_values!=defaults or clip['effects']!=Effects().model_dump() or any(k['property']!='volume' for k in clip['keyframes']):
+                        raise EditorError('audio_controls','Ses klibinde yalnız ses seviyesi/keyframe, hız, kesit ve fade düzenlenir.')
+                if (clip['transform']['volume'] or any(k['property']=='volume' for k in clip['keyframes'])) and not (asset.get('has_audio') or asset['media_type']=='audio'):
+                    raise EditorError('no_source_audio','Kaynakta doğrulanmış ses akışı yok. Kaynak ses seviyesi sıfır kalmalıdır.')
                 if asset['media_type'] in ('audio','video'):
                     needed=clip['source_start']+(clip['end']-clip['start'])*clip['transform']['speed']
                     if not asset.get('duration') or needed>asset['duration']+.04:raise EditorError('short_source','Kaynak süresi, kesit ve hız için yetersiz.')
@@ -203,9 +227,12 @@ class AdvancedEditor:
             item=after.get(sid)
             if item:
                 duration=slot['end']-slot['start']
+                if item['fade_in']+item['fade_out']>duration:raise EditorError('invalid_fade','Fade süreleri ana klibi aşıyor.')
                 if any(k['time']>duration+.001 for k in item['keyframes']):raise EditorError('invalid_keyframe','Keyframe ana klip süresini aşıyor.')
                 # Main-clock speed is applied only with enough actual source coverage.
                 asset=slot.get('media') or {}
+                if (item['transform']['volume'] or any(k['property']=='volume' for k in item['keyframes'])) and not asset.get('has_audio'):
+                    raise EditorError('no_source_audio','Kaynakta doğrulanmış ses akışı yok. Kaynak ses seviyesi sıfır kalmalıdır.')
                 if asset.get('media_type')=='video' and item['transform']['speed']!=1:
                     if not asset.get('duration') or (slot.get('clip_start') or 0)+duration*item['transform']['speed']>asset['duration']+.04:
                         raise EditorError('short_source','Ana klibin hız değişikliği için kaynak süresi yetersiz.')
@@ -219,6 +246,11 @@ class AdvancedEditor:
             if first['locked'] or second['locked']:raise EditorError('locked','Kilitli klibin geçişi değiştirilemez.',409)
             if transition['kind']!='cut' and (transition['duration']<2/30 or transition['duration']>min(first['end']-first['start'],second['end']-second['start'])/4):
                 raise EditorError('invalid_transition','Geçiş süresi komşu kliplerin dörtte birini aşamaz.')
+            if transition['kind'] in ('cross_dissolve','wipe'):
+                source=first.get('media') or {}
+                speed=next((a['transform']['speed'] for a in validated['adjustments'] if a['slot_id']==first['slot_id']),1)
+                if source.get('media_type')=='video' and (not source.get('duration') or (first.get('clip_start') or 0)+(first['end']-first['start']+transition['duration'])*speed>source['duration']+.001):
+                    raise EditorError('short_transition','Geçiş kuyruğu için ilk kaynak videoda yeterli ek süre yok.')
         return validated
 
     def save(self,pid,payload,kind='edit'):
@@ -229,6 +261,9 @@ class AdvancedEditor:
             if (payload['plan_id'],payload['revision'])!=(current['plan_id'],current['revision']):raise EditorError('stale_revision','Kurgu revizyonu değişti. Yenileyin.',409)
             # Do not change advanced state while a render/stock process owns the project.
             with closing(self.projects._connection()) as c:self.editor.stock._idle(c,pid)
+            with closing(self.projects._connection()) as c:
+                if c.execute("SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('queued','preparing','rendering','validating')",(pid,)).fetchone():
+                    raise EditorError('render_busy','Render sürüyor. Kurgu değişikliğinden önce tamamlanmasını bekleyin veya iptal edin.',409)
             document=self.validate(pid,payload['document'],current['document'])
             with closing(self.projects._connection()) as c,c:
                 c.execute('INSERT INTO editor_documents VALUES (?,?,?,?,?) ON CONFLICT(project_id,plan_id) DO UPDATE SET revision=excluded.revision,payload_json=excluded.payload_json,updated_at=excluded.updated_at',

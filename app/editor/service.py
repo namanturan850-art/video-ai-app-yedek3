@@ -9,6 +9,9 @@ from pathlib import Path
 import subprocess
 import re
 import os
+import array
+import io
+import zipfile
 from uuid import uuid4
 from functools import wraps
 
@@ -17,6 +20,7 @@ from app.stock.download import asset_path
 
 TRACKS = ('emphasis', 'layers', 'maps', 'infographics', 'visuals', 'audio', 'subtitles')
 ANALYZER_VERSION = 'naman-frames-v2'
+VIDEO_REVIEW_VERSION = 'naman-final-video-review-v1'
 MAP_TEMPLATES = {'map','route','empire','zoom','relief','region','arrow'}
 INFOGRAPHIC_TEMPLATES = {'stat','timeline','compare','list','beforeafter','icons','ratio','dynasty','fact'}
 EMPHASIS_TEMPLATES = {'mark'}
@@ -48,9 +52,30 @@ def sha256_file(path: Path):
 
 class EditorService:
     """Adapter over authoritative production/stock/subtitle records."""
-    def __init__(self, production, stock, subtitles, settings):
+    def __init__(self, production, stock, subtitles, settings, rendering=None):
         self.production, self.stock, self.subtitles, self.settings = production, stock, subtitles, settings
+        self.rendering = rendering
         self.projects = production.projects
+        self._waveforms = {}
+
+    def _waveform(self,project_id,audio):
+        """Return bounded peaks from the actual narration PCM; never synthesize a waveform."""
+        identity=audio.get('sha256')
+        if not identity:return None
+        if identity in self._waveforms:return self._waveforms[identity]
+        try:
+            from app.narration.audio import audio_path
+            from app.rendering.tools import discover
+            path=audio_path(self.projects,project_id,audio);ffmpeg=discover().get('ffmpeg')
+            if not ffmpeg:return None
+            done=subprocess.run([ffmpeg,'-v','error','-i',str(path),'-ac','1','-ar','100','-f','s16le','pipe:1'],capture_output=True,timeout=45,stdin=subprocess.DEVNULL)
+            if done.returncode or not done.stdout:return None
+            samples=array.array('h');samples.frombytes(done.stdout);bins=160;step=max(1,math.ceil(len(samples)/bins))
+            peaks=[round(max((abs(v) for v in samples[i:i+step]),default=0)/32768,3) for i in range(0,len(samples),step)][:bins]
+            self._waveforms[identity]=peaks
+            if len(self._waveforms)>32:self._waveforms.pop(next(iter(self._waveforms)))
+            return peaks
+        except (OSError,subprocess.SubprocessError,ValueError):return None
 
     def _active(self, project_id):
         production = self.production.view(project_id)
@@ -115,12 +140,13 @@ class EditorService:
             tracks['emphasis'].extend({'start': cue['start'] + i * step, 'end': cue['start'] + (i + 1) * step,
                                        'text': word, 'timing': 'estimated'} for i, word in enumerate(words))
         if audio: tracks['audio'].append({'start': 0, 'end': float(audio.get('duration') or duration),
-                                          'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio'})
+                                          'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio',
+                                          'waveform':self._waveform(project_id,audio)})
         return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],
                 'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
                 'duration': timing.get('audio_duration') or duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
                 'track_order': list(TRACKS), 'audio_ready': bool(audio), 'subtitle_timing': subtitle_state.get('timing_source'),
-                'stock_job':stock.get('job'),
+                'stock_job':stock.get('job'),'subtitle_version_id':active_subtitles.get('id') or active_subtitles.get('version_id'),
                 'warnings': stock.get('warnings', []) + ([subtitle_state['message']] if subtitle_state.get('message') else [])}
 
     @staticmethod
@@ -236,6 +262,57 @@ class EditorService:
         if not isinstance(payload,dict) or set(payload)!={'plan_id','revision','motion'}:
             raise EditorError('invalid_input','Animasyon düzenleme alanlarını kontrol edin.')
         return self.stock.start(project_id,{**payload,'action':'motion_edit'},slot_id=slot_id)
+
+    @serialized
+    def edit_clip(self,project_id,slot_id,payload):
+        if not isinstance(payload,dict) or set(payload)-{'plan_id','revision','action','at','locked'} or set(payload)<{'plan_id','revision','action'}:
+            raise EditorError('invalid_clip_edit','Klip işlemini kontrol edin.')
+        action=payload['action']
+        if action not in ('split','duplicate','lock'):
+            raise EditorError('invalid_clip_edit','Desteklenmeyen klip işlemi.')
+        handoff=self.stock._handoff(project_id);timing=self.subtitles.handoff(project_id)
+        with closing(self.projects._connection()) as connection,connection:
+            state=self.stock._ensure(connection,handoff);self.stock._stamp(state,payload);self.stock._idle(connection,project_id)
+            slot=next((s for s in state['slots'] if s['slot_id']==slot_id),None)
+            if not slot: raise EditorError('stale_timeline','Klip değişti. Sayfayı yenileyin.',409)
+            plan=self._active(project_id);scene=next((s for s in plan['blocks'] if s['id']==slot['scene_id']),None)
+            if not scene or scene.get('locked'): raise EditorError('locked','Kilitli sahne değiştirilemez.',409)
+            before=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
+            if action=='lock':
+                if type(payload.get('locked')) is not bool: raise EditorError('invalid_clip_edit','Kilit seçimini kontrol edin.')
+                slot['locked']=payload['locked']
+            else:
+                if slot.get('locked'): raise EditorError('locked','Kilitli klip bölünemez veya çoğaltılamaz.',409)
+                estimate_start=float(slot.get('estimated_start',0));estimate_end=float(slot.get('estimated_end',estimate_start+slot.get('duration',0)))
+                if estimate_end-estimate_start<2/30: raise EditorError('clip_too_short','Klip bölmek için çok kısa.',409)
+                scene_source=next((s for s in handoff['scenes'] if s['scene_id']==slot['scene_id']),None)
+                scene_time=next((s for s in timing.get('scenes',[]) if s['scene_id']==slot['scene_id']),None)
+                if not scene_source or not scene_time: raise EditorError('stale_timing','Ses zamanlaması değişti. Sayfayı yenileyin.',409)
+                source_span=float(scene_source['end_estimate'])-float(scene_source['start_estimate']);actual_span=float(scene_time['end'])-float(scene_time['start'])
+                actual_start=float(scene_time['start'])+(estimate_start-float(scene_source['start_estimate']))/source_span*actual_span
+                actual_end=float(scene_time['start'])+(estimate_end-float(scene_source['start_estimate']))/source_span*actual_span
+                if action=='split':
+                    at=payload.get('at')
+                    if not finite(at) or at<=actual_start+1/30-.001 or at>=actual_end-1/30+.001:
+                        raise EditorError('invalid_split','Oynatma imleci seçili klibin içinde olmalıdır.')
+                    fraction=(at-actual_start)/(actual_end-actual_start)
+                else: fraction=.5
+                boundary=estimate_start+(estimate_end-estimate_start)*fraction;copy=deepcopy(slot);copy['slot_id']=uuid4().hex
+                old_source_start=float(slot.get('segment_start') or 0);old_source_end=slot.get('segment_end')
+                if action=='split' and finite(old_source_end):
+                    source_boundary=old_source_start+(float(old_source_end)-old_source_start)*fraction
+                    slot['segment_end']=source_boundary;copy['segment_start']=source_boundary
+                slot.update(duration=boundary-estimate_start,estimated_end=boundary)
+                copy.update(duration=estimate_end-boundary,estimated_start=boundary,estimated_end=estimate_end,locked=False)
+                index=state['slots'].index(slot);state['slots'].insert(index+1,copy)
+                ordered=sorted((s for s in state['slots'] if s['scene_id']==slot['scene_id']),key=lambda s:(s.get('estimated_start',0),s.get('order',0)))
+                for number,item in enumerate(ordered,1): item['order']=number
+            self.stock._save(connection,state)
+            after=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
+            connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
+                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',json.dumps({'request':payload,'before':before,'after':after},ensure_ascii=False),now()))
+        self.stock._mirror(state)
+        return self.view(project_id)
 
     def archive(self, project_id):
         self.projects.get(project_id)
@@ -384,6 +461,14 @@ class EditorService:
                 'output_template':{'schema':'naman.manual-plan.v1','base':{'plan_id':plan['plan_id'],'revision':plan['revision']},
                                    'sahneler':[],'infografikler':[],'harita_sahneleri':[],'vurgular':[],'katmanlar':[]}}
 
+    def task_package_zip(self,project_id):
+        package=self.task_package(project_id);stream=io.BytesIO()
+        with zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('NAMAN_GOREV_PAKETI.json',json.dumps(package,ensure_ascii=False,indent=2))
+            archive.writestr('NAMAN_CIKTI_SABLONU.json',json.dumps(package['output_template'],ensure_ascii=False,indent=2))
+            archive.writestr('OKU.txt','Görev paketini yapay zekâya verin. Dönen JSON yalnız NAMAN_CIKTI_SABLONU yapısında olmalıdır. NAMAN içinde Doğrula demeden plan uygulanmaz.\n')
+        return stream.getvalue()
+
     def validate_import(self, project_id, payload):
         plan=self._active(project_id); errors=[]
         required={'schema','base','sahneler','infografikler','harita_sahneleri','vurgular','katmanlar'}
@@ -509,6 +594,48 @@ class EditorService:
             result.update(self._gemini_descriptions(project_id,provider,media_id,clips))
         with self.projects.lock,closing(self.projects._connection()) as connection,connection:
             connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,media['sha256'],ANALYZER_VERSION,json.dumps(result,ensure_ascii=False),now()))
+        return result
+
+    def video_review(self,project_id,payload):
+        if payload!={'confirm':True} or type(payload.get('confirm')) is not bool:
+            raise EditorError('confirmation_required','Gemini incelemesi için açık onay gereklidir.')
+        if not self.rendering: raise EditorError('render_required','Render servisi kullanılamıyor.',409)
+        if not self.settings or not self.settings.ai_visual_check():
+            raise EditorError('gemini_disabled','Önce Ayarlar bölümünde Gemini görsel kontrolünü açın.',409)
+        view=self.rendering.view(project_id);version=view.get('active')
+        if not version or version.get('status')!='completed' or version.get('video_missing'):
+            raise EditorError('render_required','Önce tamamlanmış videoyu aktif seçin.',409)
+        path=self.rendering.export(project_id,version['id']);identity=sha256_file(path)
+        with self.projects.lock,closing(self.projects._connection()) as connection:
+            cached=connection.execute('SELECT result_json FROM archive_analysis_cache WHERE project_id=? AND sha256=? AND analyzer_version=?',(project_id,identity,VIDEO_REVIEW_VERSION)).fetchone()
+        if cached:return {**json.loads(cached[0]),'cached':True}
+        duration=float(version.get('metadata',{}).get('duration') or self.view(project_id)['duration'] or 0)
+        samples=[round(duration*i/9,3) for i in range(1,9)] if duration>0 else []
+        images=[]
+        for at in samples:
+            try:
+                frame=subprocess.run(['ffmpeg','-hide_banner','-loglevel','error','-nostdin','-ss',str(at),'-i',str(path),'-frames:v','1','-vf','scale=640:-2','-q:v','6','-f','image2pipe','-vcodec','mjpeg','-'],capture_output=True,timeout=20,check=False).stdout
+            except (OSError,subprocess.TimeoutExpired):frame=b''
+            if frame and len(frame)<=2_000_000:images.append({'type':'image','source':{'type':'base64','media_type':'image/jpeg','data':base64.b64encode(frame).decode()},'timecode':at})
+        if not images: raise EditorError('frame_error','Bitmiş videodan örnek kare çıkarılamadı.',409)
+        editor=self.view(project_id);context={'sampling_notice':f'Videonun tamamı değil, {len(images)} örnek kare inceleniyor.',
+                 'samples':[x['timecode'] for x in images],'subtitles':editor['tracks']['subtitles'],
+                 'scenes':[{k:s[k] for k in ('scene_id','start','end','narration')} for s in editor['scenes']]}
+        schema={'type':'object','required':['summary','issues'],'properties':{'summary':{'type':'string'},'issues':{'type':'array','items':{'type':'object','required':['timecode','category','message','severity'],'properties':{'timecode':{'type':'number'},'category':{'type':'string'},'message':{'type':'string'},'severity':{'type':'string'}}}}}}
+        try:
+            from app.providers.factory import make_script_provider
+            ai=make_script_provider('gemini',self.settings,chain=False)
+            answer=ai.complete_json('finished_video_sample_review','Yalnız verilen örnek kareleri ve zaman verisini değerlendir. Her karenin incelendiğini iddia etme. Yanlış medya, harita, taşan yazı, altyazı zamanı, tekrar ve aşırı motion sorunlarını Türkçe raporla.\n'+json.dumps(context,ensure_ascii=False),schema,images=[{k:v for k,v in image.items() if k!='timecode'} for image in images],max_tokens=900,timeout=45)
+            if not isinstance(answer.get('summary'),str) or not isinstance(answer.get('issues'),list):raise ValueError('review')
+        except Exception as error:
+            from app.providers.base import ScriptProviderError
+            if isinstance(error,(ScriptProviderError,ValueError,OSError)):
+                raise EditorError('gemini_unavailable','Gemini video incelemesi tamamlanamadı; video ve render korunuyor.',503) from None
+            raise
+        result={'cached':False,'basis':context['sampling_notice'],'sample_timecodes':context['samples'],'summary':' '.join(answer['summary'].split())[:1000],
+                'issues':answer['issues'][:100],'render_version_id':version['id']}
+        with self.projects.lock,closing(self.projects._connection()) as connection,connection:
+            connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,identity,VIDEO_REVIEW_VERSION,json.dumps(result,ensure_ascii=False),now()))
         return result
 
     def _gemini_descriptions(self, project_id, provider, media_id, clips):

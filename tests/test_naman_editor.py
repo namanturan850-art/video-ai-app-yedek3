@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+import array
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -67,6 +68,16 @@ def test_manual_import_validation_rejects_stale_and_locked_changes():
     assert 'güncel görev paketini' in result['correction_message']
 
 
+def test_manual_task_zip_contains_full_package_and_output_template():
+    editor=service()
+    editor.projects.get=lambda _: {'name':'Belgesel','topic':'Konu','language':'tr'}
+    import io, json, zipfile
+    with zipfile.ZipFile(io.BytesIO(editor.task_package_zip('a'*32))) as archive:
+        assert {'NAMAN_GOREV_PAKETI.json','NAMAN_CIKTI_SABLONU.json','OKU.txt'}==set(archive.namelist())
+        package=json.loads(archive.read('NAMAN_GOREV_PAKETI.json'))
+        assert package['required_sections']==['sahneler','infografikler','harita_sahneleri','vurgular','katmanlar']
+
+
 def test_frontend_contains_brand_logo_timeline_and_preview_contract():
     root=Path(__file__).parents[1]
     html=(root/'app/static/index.html').read_text(encoding='utf-8')
@@ -77,6 +88,9 @@ def test_frontend_contains_brand_logo_timeline_and_preview_contract():
     for behavior in ('currentTime','requestAnimationFrame','Oynat','Saniyeye git','manual/validate'):
         assert behavior in js
     assert 'archive/upload' in js and 'MP4, JPG, PNG, WebP, MP3, WAV' in js
+    for tool in ('Görsel düzenleme','JSON ile düzenle','JSON’u kopyala','Dosyaya aktar',
+                 'Sözdizimini ve yapıyı kontrol et','Değişiklikleri karşılaştır','AI ile yeniden planla'):
+        assert tool in js
 
 
 def test_local_image_upload_is_content_validated_and_project_scoped(tmp_path):
@@ -128,6 +142,24 @@ def test_gemini_frame_analysis_is_bounded_and_maps_descriptions(monkeypatch):
     assert [x['description'] for x in result['clips'][:3]]==['bir','iki','üç']
 
 
+def test_finished_video_review_is_opt_in_sampled_and_cached(tmp_path,monkeypatch):
+    initialize_database(tmp_path);projects=ProjectService(tmp_path)
+    project=projects.create({'name':'Kalite','topic':'Test','language':'tr'});pid=project['id']
+    video=tmp_path/'finished.mp4';video.write_bytes(b'finished-video')
+    production=Production();production.projects=projects
+    stock=Stock();subtitles=Subtitles();settings=SimpleNamespace(ai_visual_check=lambda:True)
+    rendering=SimpleNamespace(view=lambda _:{'active':{'id':'r1','status':'completed','video_missing':False,'metadata':{'duration':4}}},export=lambda *_:video)
+    editor=EditorService(production,stock,subtitles,settings,rendering)
+    monkeypatch.setattr('app.editor.service.subprocess.run',lambda *a,**k:SimpleNamespace(stdout=b'jpeg'))
+    calls=[]
+    class AI:
+        def complete_json(self,*args,**kwargs):calls.append((args,kwargs));return {'summary':'Örnekler temiz.','issues':[]}
+    monkeypatch.setattr('app.providers.factory.make_script_provider',lambda *a,**k:AI())
+    result=editor.video_review(pid,{'confirm':True})
+    assert result['basis']=='Videonun tamamı değil, 8 örnek kare inceleniyor.' and len(result['sample_timecodes'])==8
+    assert editor.video_review(pid,{'confirm':True})['cached'] is True and len(calls)==1
+
+
 def test_generated_motion_is_projected_once_to_its_semantic_track():
     class MotionStock(Stock):
         def view(self, _):
@@ -140,6 +172,16 @@ def test_generated_motion_is_projected_once_to_its_semantic_track():
     assert result['tracks']['maps'][0]['label']=='Harita + işaret'
     assert result['tracks']['maps'][0]['preview_url'].endswith('/v1/preview')
     assert result['tracks']['visuals']==[]  # ana motion klibi ikinci kez katman olarak çizilmez
+
+
+def test_waveform_peaks_come_from_decoded_audio_samples(monkeypatch):
+    editor=service()
+    monkeypatch.setattr('app.narration.audio.audio_path',lambda *args:Path('/tmp/synthetic.wav'))
+    monkeypatch.setattr('app.rendering.tools.discover',lambda:{'ffmpeg':'ffmpeg'})
+    pcm=array.array('h',[0,1000,-2000,8000,-16000,32767]).tobytes()
+    monkeypatch.setattr('app.editor.service.subprocess.run',lambda *args,**kwargs:SimpleNamespace(returncode=0,stdout=pcm))
+    peaks=editor._waveform('a'*32,{'sha256':'wave-identity'})
+    assert peaks and peaks[-1]==1.0 and max(peaks[:-1])<1
 
 
 def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
@@ -178,7 +220,11 @@ def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
     assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',1,0,2),('b',2,1,2)]
     editor.timeline_history('x','redo',{'plan_id':'p1','revision':3})
     assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',2,3,2.5),('b',1,2,1.5)]
-    with sqlite3.connect(database) as c: assert [r[0] for r in c.execute("SELECT kind FROM editor_revisions ORDER BY created_at")] == ['timeline_edit','timeline_undo','timeline_redo']
+    editor.edit_clip('x','a',{'plan_id':'p1','revision':4,'action':'split','at':3})
+    pieces=[s for s in state['slots'] if (s.get('selected_media') or {}).get('media_id')=='a']
+    assert len(pieces)==2 and pieces[0]['segment_end']==pieces[1]['segment_start']==4.5
+    assert pieces[0]['selected_media']==pieces[1]['selected_media']
+    with sqlite3.connect(database) as c: assert [r[0] for r in c.execute("SELECT kind FROM editor_revisions ORDER BY created_at")] == ['timeline_edit','timeline_undo','timeline_redo','timeline_edit']
 
 
 def test_motion_edit_uses_existing_single_slot_regeneration_pipeline():

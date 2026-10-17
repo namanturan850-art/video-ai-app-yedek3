@@ -237,6 +237,57 @@ class EditorService:
             raise EditorError('invalid_input','Animasyon düzenleme alanlarını kontrol edin.')
         return self.stock.start(project_id,{**payload,'action':'motion_edit'},slot_id=slot_id)
 
+    @serialized
+    def edit_clip(self,project_id,slot_id,payload):
+        if not isinstance(payload,dict) or set(payload)-{'plan_id','revision','action','at','locked'} or set(payload)<{'plan_id','revision','action'}:
+            raise EditorError('invalid_clip_edit','Klip işlemini kontrol edin.')
+        action=payload['action']
+        if action not in ('split','duplicate','lock'):
+            raise EditorError('invalid_clip_edit','Desteklenmeyen klip işlemi.')
+        handoff=self.stock._handoff(project_id);timing=self.subtitles.handoff(project_id)
+        with closing(self.projects._connection()) as connection,connection:
+            state=self.stock._ensure(connection,handoff);self.stock._stamp(state,payload);self.stock._idle(connection,project_id)
+            slot=next((s for s in state['slots'] if s['slot_id']==slot_id),None)
+            if not slot: raise EditorError('stale_timeline','Klip değişti. Sayfayı yenileyin.',409)
+            plan=self._active(project_id);scene=next((s for s in plan['blocks'] if s['id']==slot['scene_id']),None)
+            if not scene or scene.get('locked'): raise EditorError('locked','Kilitli sahne değiştirilemez.',409)
+            before=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
+            if action=='lock':
+                if type(payload.get('locked')) is not bool: raise EditorError('invalid_clip_edit','Kilit seçimini kontrol edin.')
+                slot['locked']=payload['locked']
+            else:
+                if slot.get('locked'): raise EditorError('locked','Kilitli klip bölünemez veya çoğaltılamaz.',409)
+                estimate_start=float(slot.get('estimated_start',0));estimate_end=float(slot.get('estimated_end',estimate_start+slot.get('duration',0)))
+                if estimate_end-estimate_start<2/30: raise EditorError('clip_too_short','Klip bölmek için çok kısa.',409)
+                scene_source=next((s for s in handoff['scenes'] if s['scene_id']==slot['scene_id']),None)
+                scene_time=next((s for s in timing.get('scenes',[]) if s['scene_id']==slot['scene_id']),None)
+                if not scene_source or not scene_time: raise EditorError('stale_timing','Ses zamanlaması değişti. Sayfayı yenileyin.',409)
+                source_span=float(scene_source['end_estimate'])-float(scene_source['start_estimate']);actual_span=float(scene_time['end'])-float(scene_time['start'])
+                actual_start=float(scene_time['start'])+(estimate_start-float(scene_source['start_estimate']))/source_span*actual_span
+                actual_end=float(scene_time['start'])+(estimate_end-float(scene_source['start_estimate']))/source_span*actual_span
+                if action=='split':
+                    at=payload.get('at')
+                    if not finite(at) or at<=actual_start+1/30-.001 or at>=actual_end-1/30+.001:
+                        raise EditorError('invalid_split','Oynatma imleci seçili klibin içinde olmalıdır.')
+                    fraction=(at-actual_start)/(actual_end-actual_start)
+                else: fraction=.5
+                boundary=estimate_start+(estimate_end-estimate_start)*fraction;copy=deepcopy(slot);copy['slot_id']=uuid4().hex
+                old_source_start=float(slot.get('segment_start') or 0);old_source_end=slot.get('segment_end')
+                if action=='split' and finite(old_source_end):
+                    source_boundary=old_source_start+(float(old_source_end)-old_source_start)*fraction
+                    slot['segment_end']=source_boundary;copy['segment_start']=source_boundary
+                slot.update(duration=boundary-estimate_start,estimated_end=boundary)
+                copy.update(duration=estimate_end-boundary,estimated_start=boundary,estimated_end=estimate_end,locked=False)
+                index=state['slots'].index(slot);state['slots'].insert(index+1,copy)
+                ordered=sorted((s for s in state['slots'] if s['scene_id']==slot['scene_id']),key=lambda s:(s.get('estimated_start',0),s.get('order',0)))
+                for number,item in enumerate(ordered,1): item['order']=number
+            self.stock._save(connection,state)
+            after=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
+            connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
+                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',json.dumps({'request':payload,'before':before,'after':after},ensure_ascii=False),now()))
+        self.stock._mirror(state)
+        return self.view(project_id)
+
     def archive(self, project_id):
         self.projects.get(project_id)
         with self.projects.lock, closing(self.projects._connection()) as connection:

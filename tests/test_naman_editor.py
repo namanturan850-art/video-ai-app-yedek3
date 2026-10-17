@@ -178,7 +178,11 @@ def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
     assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',1,0,2),('b',2,1,2)]
     editor.timeline_history('x','redo',{'plan_id':'p1','revision':3})
     assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',2,3,2.5),('b',1,2,1.5)]
-    with sqlite3.connect(database) as c: assert [r[0] for r in c.execute("SELECT kind FROM editor_revisions ORDER BY created_at")] == ['timeline_edit','timeline_undo','timeline_redo']
+    editor.edit_clip('x','a',{'plan_id':'p1','revision':4,'action':'split','at':3})
+    pieces=[s for s in state['slots'] if (s.get('selected_media') or {}).get('media_id')=='a']
+    assert len(pieces)==2 and pieces[0]['segment_end']==pieces[1]['segment_start']==4.5
+    assert pieces[0]['selected_media']==pieces[1]['selected_media']
+    with sqlite3.connect(database) as c: assert [r[0] for r in c.execute("SELECT kind FROM editor_revisions ORDER BY created_at")] == ['timeline_edit','timeline_undo','timeline_redo','timeline_edit']
 
 
 def test_motion_edit_uses_existing_single_slot_regeneration_pipeline():

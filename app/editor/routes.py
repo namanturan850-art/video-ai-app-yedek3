@@ -45,6 +45,9 @@ def editor_router(service):
     @router.put('/slots/{slot_id}/media')
     def assign(project_id:str,slot_id:str,payload:dict): return service.assign(project_id,slot_id,payload)
 
+    @router.post('/slots/{slot_id}/edit')
+    def edit_clip(project_id:str,slot_id:str,payload:dict): return service.edit_clip(project_id,slot_id,payload)
+
     @router.put('/timeline')
     def timeline(project_id:str,payload:dict): return service.update_timeline(project_id,payload)
 

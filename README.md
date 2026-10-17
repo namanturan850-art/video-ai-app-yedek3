@@ -10,6 +10,8 @@ Yerel kare analizi isteğe bağlıdır: **INSTALL_OPENMONTAGE_SEMANTIC.bat** aç
 
 # AI Video Studio
 
+NAMAN gelişmiş kurgu: [yeni araçlar, test kapsamı, sınırlar ve basit kontrol adımları](docs/ADVANCED_EDITING.md).
+
 Bilgisayarınızda çalışan, Türkçe arayüzlü video üretim çalışma alanı.
 
 Kalite ve uzun video geliştirme dalı: [Neler değişti, mevcut kayıtlar nasıl korunuyor, hangi kontroller henüz yapılmadı?](docs/QUALITY_AND_PERFORMANCE.md)

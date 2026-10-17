@@ -1,3 +1,19 @@
+## 2026-10-18 — Gelişmiş kurgu, motor ve arayüz aşamaları
+
+- **Son teslim doğrulaması:** seçili Python paketi **192 geçti** (229,66 sn), ayrıca eski kanal/render uyumluluğu **2 geçti**, DOM paketi **7 geçti**. Gerçek API/SQLite Chromium paketi; yeni klip boş-iz drop, trim/taşı/böl/sil/undo, keyframe ve marker CRUD, bağımsız monitör, OS upload, thumbnail ve son revizyon kare çözümüyle geçti. Dört viewportta dış scroll yok/yedi iz görünür; mevcut menü/resize/görünürlük regresyonu da geçti.
+- Dal GitHub'a gönderildi. Draft PR açma `api.github.com/graphql` erişiminde **403 Forbidden** ile engellendi; PR açıldı diye raporlanmaz. Main'e merge yapılmadı. Hazır PR metni ve karşılaştırma bağlantısı [teslim raporunda](ADVANCED_EDITING.md#github-teslimi).
+
+- Ortak FFmpeg graph ile dönüşüm, keyframe, efekt, ek metin/medya/motion ve kaynak sesi final montaja bağlandı. Program görüntüsü açıkça en fazla 5 fps örnek kare olarak sunulur. Kaynak/Program/yan yana monitörler, kalıcı işaretleyiciler, görünür videolarda gerçek thumbnail ve güvenli OS dosya bırakma eklendi.
+- Yalnız uygun türdeki kaynaklarda hız/ses alanları açılır. Anlatım ve altyazı saati değişmez. İşaretleyici notları final render parmak izini değiştirmez. Kesinti sonrası aynı kaynak/plan/ayar kimliğiyle yeni sürüm oluşturulur; kareden devam iddiası yoktur.
+- Son hedefli backend/gerçek kısa render paketi **23 geçti**. İlk/orta/son kare karşılaştırması ölçek/döndürme, saydamlık, efekt ve farklı iki kaynakla Wipe geçişini kapsar. 48 kHz ses uzunluğu 0,5× / 1× / 2× hızlarda doğrulandı. DOM paketi **7 geçti**. Gerçek API/SQLite kullanan Chromium etkileşim paketi geçti; son genişletilmiş ve regresyon sonuçları teslim kaydında güncellenecek.
+- Ayrıntılı denetim, desteklenen kapsam, açık sınırlar ve kullanıcı adımları: [ADVANCED_EDITING.md](ADVANCED_EDITING.md). Windows/GPU/kurulu harici motor doğrulanmış sayılmaz; ücretli API ve uzun render yapılmadı.
+
+## 2026-10-18 — Gelişmiş kurgu, aşama 1
+
+- Güncel `main` (`bfb5144`) üzerinden `feature/naman-advanced-editing` açıldı. Anlatım tabanlı slotlara dokunmayan sürümlü ek kurgu belgesi ve plan/proje kapsamlı geçmiş eklendi; SQLite 14→15 yükseltmesi eklemelidir.
+- Belge doğrulaması ek medya/metin/motion klipleri, dönüşüm/efekt/keyframe verileri, komşu geçişleri ve işaretleyicileri sınırlar. Kaynak kimliği/süresi, kilit ve eski revizyon reddi var. Ses ve altyazı verileri değiştirilmez.
+- Aşama 1 doğrulaması: yeni belge/geçmiş/yükseltme testleri ve mevcut editör paketi birlikte **30 geçti**. Bu aşamada yeni render/arayüz kontrolleri henüz tamamlanmadı; sonraki aşamalar aşağıdaki teslim kaydında raporlanacak.
+
 ## 2026-10-18 — Premiere Dark profesyonel çalışma alanı
 
 - `7975d61` güncel uzak `main` olarak doğrulandı; değişiklikler `feature/naman-premiere-professional-workspace` dalında hazırlanıyor. Önceki yalnız CSS yerleşimi, ayrı `workspace.js`/`workspace.css` ile gerçek menü ve viewport uygulama kabuğuna dönüştürüldü.

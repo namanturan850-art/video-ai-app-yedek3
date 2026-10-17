@@ -8,6 +8,7 @@ import subprocess
 import pytest
 from fastapi.testclient import TestClient
 from app.main import create_app
+from app.database import SCHEMA_VERSION
 from app.rendering.diagnostics import classify,diagnostic,safe_diagnostic
 from app.rendering.models import RenderError,options
 from app.rendering.runner import ProcessRunner
@@ -113,7 +114,7 @@ def test_corrupt_real_slot_has_safe_persistent_diagnostic(ready):
     with TestClient(create_app(st['storage']),headers=HEADERS) as other:
         assert other.get(url(st)).json()['job']['progress']['diagnostic']==safe
     with closing(c.app.state.projects._connection()) as db:
-        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='12'
+        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]==SCHEMA_VERSION
 
 
 @pytest.mark.parametrize('phase,text,code',[

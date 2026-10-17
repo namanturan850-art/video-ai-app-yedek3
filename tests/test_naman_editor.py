@@ -45,7 +45,8 @@ def test_database_adds_editor_tables_without_removing_core(tmp_path):
         names={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version=connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]
     assert {'projects','editor_revisions','media_clip_ranges','archive_analysis_cache','editor_audio_settings'} <= names
-    assert version == '14'
+    from app.database import SCHEMA_VERSION
+    assert version == SCHEMA_VERSION
 
 
 def test_editor_projection_has_seven_ordered_tracks_and_sync_data():

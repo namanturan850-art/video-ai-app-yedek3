@@ -11,6 +11,27 @@ from app.stock.download import directory
 
 def editor_router(service):
     router=APIRouter(prefix='/api/projects/{project_id}/editor')
+    from app.editor.advanced import AdvancedEditor
+    advanced=AdvancedEditor(service)
+
+    @router.get('/advanced')
+    def advanced_view(project_id:str):return advanced.get(project_id)
+
+    @router.put('/advanced')
+    def advanced_save(project_id:str,payload:dict):return advanced.save(project_id,payload)
+
+    @router.post('/advanced/history/{direction}')
+    def advanced_history(project_id:str,direction:str,payload:dict):return advanced.history(project_id,direction,payload)
+
+    @router.get('/advanced/program-frame')
+    def advanced_frame(project_id:str,time:float=0):
+        from app.editor.previews import program_frame
+        return FileResponse(program_frame(service,advanced,project_id,time),media_type='image/jpeg')
+
+    @router.get('/archive/{provider}/{media_id}/thumbnail')
+    def archive_thumbnail(project_id:str,provider:str,media_id:str):
+        from app.editor.previews import thumbnail
+        return FileResponse(thumbnail(service,project_id,provider,media_id),media_type='image/jpeg')
 
     @router.get('')
     def view(project_id:str): return service.view(project_id)

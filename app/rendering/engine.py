@@ -69,6 +69,9 @@ class FFmpegRenderProvider:
         mode=opts.get('subtitle_display') or 'full'  # full subtitles (every sentence, bottom centre) unless the owner chose otherwise
         opts['subtitle_burned']=mode=='full'
         edits={item['slot_id']:item for item in edit['slots']} if edit else {}
+        advanced=plan.get('advanced_document') or {}
+        custom_transitions={item['slot_id']:item for item in advanced.get('transitions',[])}
+        custom_adjustments={item['slot_id']:item for item in advanced.get('adjustments',[])}
         emphasis=list(edit['emphasis']) if smart else None
         applied={'motion_effects':0,'scene_transitions':0,'emphasis_texts':0,'internal_edits':0};transitions=set()
         if style=='adaptive':
@@ -92,6 +95,14 @@ class FFmpegRenderProvider:
         assf=lambda name:f'ass=filename={name}{fontsdir}'
         timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]
         for scene,original in zip(timed,timeline['scenes']):scene.update(start=original['start'],end=original['end'])
+        replaced_texts=[(s['start'],s['end'],s.get('overlay_text')) for s in timed if s['scene_id']+':overlay_text' in advanced.get('suppressed_layers',[])]
+        for scene in timed:
+            if scene['scene_id'] in advanced.get('suppressed_scenes',[]) or scene['scene_id']+':overlay_text' in advanced.get('suppressed_layers',[]):scene['overlay_text']=''
+        if emphasis and advanced.get('suppressed_scenes'):
+            hidden=[s for s in timed if s['scene_id'] in advanced['suppressed_scenes']]
+            emphasis=[item for item in emphasis if not any(s['start']<=item.get('start',-1)<s['end'] for s in hidden)]
+        if emphasis and replaced_texts:
+            emphasis=[item for item in emphasis if not any(a<=item.get('start',-1)<b and item.get('text')==text for a,b,text in replaced_texts)]
         try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,subtitle_style=sub_style,graphic_style=graphic_style,emphasis=emphasis)
         except RenderError as error:
             raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
@@ -113,16 +124,19 @@ class FFmpegRenderProvider:
         incoming=[0]*len(slots);outgoing=[0]*len(slots);fades=[0.]*len(slots)
         for i,slot in enumerate(slots[:-1]):
             # Same scene: hard cut, except a motion graphic sliding in/out.
-            if slot['scene_id']==slots[i+1]['scene_id'] and not (smart and edits[slot['slot_id']].get('transition_style') in ('smoothleft','smoothright')):continue
+            custom=custom_transitions.get(slot['slot_id'])
+            if slot['scene_id']==slots[i+1]['scene_id'] and not custom and not (smart and edits[slot['slot_id']].get('transition_style') in ('smoothleft','smoothright')):continue
             transition=edits[slot['slot_id']]['transition_out'] if smart else slot['editing']['transition']
+            if custom:transition={'cut':'hard_cut','cross_dissolve':'crossfade','dip_black':'dip_black','wipe':'crossfade'}[custom['kind']]
             if transition=='crossfade':
                 desired=round(edits[slot['slot_id']]['transition_duration']*30) if smart else 10
+                if custom:desired=round(custom['duration']*30)
                 frames=min(desired,slot['frames']//4,slots[i+1]['frames']//4)
                 if frames>=2 and 'xfade' in self.tools['filters']:outgoing[i]=incoming[i+1]=frames
                 else:self.warnings.append('Kısa veya desteklenmeyen sahne geçişi temiz kesmeye dönüştürüldü.')
             elif transition in ('fade','fade_dark','dip_black'):
                 if 'fade' in self.tools['filters'] and min(slot['frames'],slots[i+1]['frames'])>=4:
-                    fades[i]=edits[slot['slot_id']]['transition_duration']/2 if smart else .15;transitions.add(i)
+                    fades[i]=custom['duration']/2 if custom else edits[slot['slot_id']]['transition_duration']/2 if smart else .15;transitions.add(i)
                 else:self.warnings.append('Desteklenmeyen kısa fade geçişi temiz kesmeye dönüştürüldü.')
         done=[0.]*len(slots);gate=Lock()
         def report(i,frames):
@@ -135,6 +149,7 @@ class FFmpegRenderProvider:
         def slot_job(i,slot,runner):
             count=slot['frames'];total=count+outgoing[i];length=total/30
             media=plan['media'][slot['slot_id']];args=self.command()
+            speed=custom_adjustments.get(slot['slot_id'],{}).get('transform',{}).get('speed',1)
             context={'slot_index':i,'slot_id':slot['slot_id'],'slot_count':len(slots),'media_type':media['type'],'encoder':encoder}
             actual=probe.stock(self.tools['ffprobe'],media['path'],media['type'],**{k:v for k,v in context.items() if k!='media_type'})
             if actual is None:
@@ -144,11 +159,15 @@ class FFmpegRenderProvider:
             if media['type']=='video':
                 source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
                 planned=edits.get(slot['slot_id'],{})
-                seek=min(max(0,planned.get('source_in',media.get('segment_start',max(0,(source_duration-length)/2)))),max(0,source_duration-length))
+                seek=min(max(0,planned.get('source_in',media.get('segment_start',max(0,(source_duration-length*speed)/2)))),max(0,source_duration-length*speed))
+                if slot['slot_id'] in custom_adjustments:
+                    seek=max(0,media.get('segment_start',0.))
+                # The final source-audio mixer must use the identical decoded cut.
+                media['segment_start']=seek
                 # Legacy short assets remain playable; newly acquired normal
                 # B-roll has strict coverage and is never sped up or looped.
                 loop=['-stream_loop','-1'] if source_duration<count/30-.04 else []
-                decode_length=length+.1 if not loop else length
+                decode_length=length*speed+.1 if not loop else length*speed
                 args+=loop+['-ss',f'{seek:.6f}','-t',f'{decode_length:.6f}','-i',str(media['path'])]
             else:args+=['-loop','1','-framerate','30','-t',f'{length:.6f}','-i',str(media['path'])]
             normalize='scale=1920:1080:force_original_aspect_ratio=increase:out_range=tv,crop=1920:1080,setsar=1,fps=30,format=yuv420p'
@@ -165,6 +184,7 @@ class FFmpegRenderProvider:
                 # overlay ends one frame early at EOF; clone the last frame so
                 # frame-exact trims below still get every frame.
                 normalize+=f',tpad=stop_mode=clone:stop_duration={(outgoing[i]/30 if media["type"]=="video" and not loop else 0)+.1:.6f}'
+            if speed!=1:normalize=f'setpts=(PTS-STARTPTS)/{speed},'+normalize
             motion=slot['editing']['motion']
             if not smart and media['type']=='image' and motion in ('slow_zoom','ken_burns','pan'):
                 if 'zoompan' not in self.tools['filters']:self.warnings.append('Görsel hareketi desteklenmiyor; durağan görsel kullanıldı.')
@@ -237,8 +257,9 @@ class FFmpegRenderProvider:
                 args=self.command()+['-i',f'tail-{i-1}.mp4','-i',f'head-{i}.mp4']
                 # N frames occur at 0 .. (N-1)/30. Reach the second clip on the
                 # final handle frame, not one frame after the handle ends.
-                blend=(incoming[i]-1)/30 if smart else d
+                blend=(incoming[i]-1)/30 if smart or slots[i-1]['slot_id'] in custom_transitions else d
                 xstyle=edits[slots[i-1]['slot_id']].get('transition_style','fade') if smart else 'fade'
+                if custom_transitions.get(slots[i-1]['slot_id'],{}).get('kind')=='wipe':xstyle='wipeleft'
                 if xstyle not in XFADE_STYLES:xstyle='fade'
                 graph=f'[0:v]settb=1/30,setpts=N/(30*TB),fps=30[a];[1:v]settb=1/30,setpts=N/(30*TB),fps=30[b];[a][b]xfade=transition={xstyle}:duration={blend:.6f}:offset=0,format=yuv420p,settb=1/30,setpts=N/(30*TB),fps=30[v]'
                 args+=self.graph(folder,graph)+['-map','[v]','-an',*self.codec(encoder),'-frames:v',str(incoming[i]),transition]
@@ -296,6 +317,19 @@ class FFmpegRenderProvider:
             applied['sound_effects']=len(events)
         else:
             graph=master(graph,self.tools['filters'])
+        if advanced:
+            from app.editor.compositor import compile_graph
+            assets={**plan['media'],**dict(plan.get('advanced_assets') or {})}
+            for clip in advanced.get('clips',[]):
+                if clip['visible'] and clip['kind']=='motion':
+                    from app.motion.clips import render_clip
+                    path,_,_=render_clip(plan['advanced_stock'],{**clip['motion'],'local_only':True},plan.get('style_kit') or {},clip['end']-clip['start'],0,prefer_openmontage=False,cancelled=self.runner.event.is_set if hasattr(self.runner,'event') else None)
+                    assets[clip['id']]={'path':path,'type':'video','has_audio':False}
+            prefix,video_label,extra_audio=compile_graph(args,advanced,assets,folder=folder,duration=duration,adjustment_slots=plan.get('advanced_slots'))
+            if prefix:graph=prefix+';\n'+graph.replace('[0:v]null',f'[{video_label}]null',1)
+            if extra_audio:
+                graph=graph.replace('[a]','[adv_master]',1)
+                graph+=';\n[adv_master]'+''.join(f'[{a}]' for a in extra_audio)+f'amix=inputs={len(extra_audio)+1}:duration=first:normalize=0,alimiter=limit=0.84:level=false[a]'
         args+=self.graph(folder,graph)+['-map','[v]','-map','[a]',*self.codec(encoder),'-frames:v',str(timeline['frames']),
             '-c:a','aac','-b:a','192k','-ar','48000','-ac','2','-t',f'{duration:.6f}','-movflags','+faststart','output.mp4']
         final_started=time.monotonic();self.progress('rendering',75,encoder,self.warnings)
@@ -330,6 +364,10 @@ class FFmpegRenderProvider:
             validated={'duration':duration,'width':1920,'height':1080,'fps':30,'video_codec':'h264','audio_codec':'aac','validation_method':'ffmpeg_decode_configured_format'}
             self.warnings.append('ffprobe bulunamadı; akışlar ve süre FFmpeg dekoduyla kontrol edildi. Biçim alanları render ayarlarından alınmıştır.')
         applied['scene_transitions']=len(transitions)
+        if advanced:
+            validated['advanced_editor']={'schema_version':advanced['schema_version'],'clips':len(advanced['clips']),
+                'adjustments':len(advanced['adjustments']),'transitions':len(advanced['transitions']),
+                'keyframes':sum(len(x['keyframes']) for x in advanced['clips']+advanced['adjustments'])}
         applied['emphasis_texts']=len(emphasis or ()) if smart and 'ass' in self.tools['filters'] else len(edit['emphasis']) if edit and 'ass' in self.tools['filters'] else sum(bool(x.get('overlay_text')) for x in timed) if mode!='none' and 'ass' in self.tools['filters'] else 0
         if style=='adaptive':
             applied['emphasis_texts']=applied['adaptive_texts'];applied['graphic_seconds']=round(applied['graphic_seconds'],3)

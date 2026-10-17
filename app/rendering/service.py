@@ -234,7 +234,7 @@ class RenderService:
                 if (selected[owner].get('local_validation') or {}).get('accepted') is False:
                     raise RenderError('input_invalid','Bir medya kalite kontrolünü geçemedi. Medya ekranında ilgili yuvayı kontrol edin; mevcut dosyalar korundu.')
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
-                originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest}
+                originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest,'has_audio':bool(m.get('has_audio'))}
                 if selected.get(owner,{}).get('segment_start') is not None:media[slot['slot_id']]['segment_start']=float(selected[owner]['segment_start'])
                 if recovery:
                     proof=selected[owner].get('local_validation',{})
@@ -256,6 +256,16 @@ class RenderService:
             endscreen=self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals,cancelled)
             fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
             if audio_settings_saved:fingerprint_data['editor_audio_settings']=audio_settings
+            from app.editor.advanced import read_document
+            from app.editor.compositor import resolve,archive_file
+            advanced=read_document(self.projects,pid,h['scene_plan_id'])['document']
+            advanced_render={**advanced,'markers':[]}
+            advanced_active=bool(advanced['clips'] or advanced['adjustments'] or advanced['transitions'] or advanced.get('suppressed_scenes') or advanced.get('suppressed_layers'))
+            if advanced_active and (any(a['slot_id'] not in {s['slot_id'] for s in t['slots']} for a in advanced['adjustments']) or any(c['end']>h['audio_duration']+.001 for c in advanced['clips'])):
+                raise RenderError('advanced_stale','Ek kurgu, güncel ana klip veya anlatım süresiyle eşleşmiyor. Kurgu ekranında düzeltin.')
+            advanced_assets=resolve(self.projects,pid,advanced,lambda pid,p,m:archive_file(self.projects,pid,p,m),verify=lambda path,expected:self._hash(path,force)) if advanced_active else {}
+            for asset in advanced_assets.values():originals[str(asset['path'])]=self._hash(asset['path'],force)
+            if advanced_active:fingerprint_data['advanced_editor']=advanced_render
             from app.channels import DEFAULT_STYLE
             if endscreen:fingerprint_data['endscreen']={'key':endscreen['key'],'seconds':endscreen['seconds']}  # absent without a closing moment: old fingerprints kept
             if sfx['events']:  # absent for videos without motion: old fingerprints kept
@@ -290,6 +300,9 @@ class RenderService:
             for event in sfx['events']:
                 event['level']=audio_settings['sfx_levels'].get(event.get('slot_id'),audio_settings['sfx_volume'])
             inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit,'sfx':sfx,'audio_settings':audio_settings}
+            if advanced_active:
+                inputs.update(advanced_document=advanced_render,advanced_assets=advanced_assets,advanced_stock=self.projects._path(pid)/'stock',
+                              advanced_slots={s['slot_id']:{'start':s['start'],'end':s['end']} for s in t['slots']})
             inputs['motion_pending']=len(pending)  # motion clips the render job still has to draw (not part of the fingerprint)
             reflow.apply_graphics(inputs)
             if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})
@@ -309,11 +322,11 @@ class RenderService:
         if c.execute("SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('queued','preparing','rendering','validating')",(pid,)).fetchone():
             raise RenderError('render_busy','Bu proje için video zaten oluşturuluyor. Tamamlanmasını bekleyin veya iptal edin.')
 
-    def start(self,pid,payload):
+    def start(self,pid,payload,*,stored_edit_plan=None):
         opts=options(payload);self.projects.get(pid)
         with self.projects.lock:
             with closing(self.projects._connection()) as c:self._idle(c,pid)
-            inputs=self._inputs(pid,opts,True);tool=self._tools(True)
+            inputs=self._inputs(pid,opts,True,stored_edit_plan=stored_edit_plan);tool=self._tools(True)
             if opts.get('montage_engine')=='openmontage' and not self.openmontage.status(True)['ready']:raise RenderError('openmontage_unavailable',self.openmontage.status()['message'])
             if not tool['found']:raise RenderError('ffmpeg_missing','Video oluşturmak için FFmpeg gerekli.')
             tools.select_encoder(opts['encoder'],tool)
@@ -331,6 +344,22 @@ class RenderService:
                 runner=ProcessRunner();self.runners[jid]=runner
                 self.executor.submit(self._run,pid,jid,vid,version,inputs,tool,runner)
         return {'job_id':jid,'render_version_id':vid,'version':version,'status':'queued'}
+
+    def restart(self,pid,jid,payload):
+        if payload!={'confirmed':True}:raise RenderError('restart_confirmation','Güvenli yeniden başlatmayı açıkça onaylayın.',422)
+        with self.projects.lock:
+            with closing(self.projects._connection()) as c:
+                row=c.execute('SELECT * FROM render_jobs WHERE project_id=? AND id=?',(pid,jid)).fetchone()
+                if not row:raise RenderError('input_missing','Render görevi bulunamadı.',404)
+                if row['status'] not in ('error','cancelled'):raise RenderError('restart_invalid','Yalnız kesilmiş veya iptal edilmiş bir görev yeniden başlatılır.')
+                version=self._version(c,pid,row['render_version_id'])
+            meta=version['metadata'];saved=meta.get('smart_edit_plan')
+            current=self._inputs(pid,meta['options'],True,stored_edit_plan=saved)
+            if current['fingerprint']!=version['source_fingerprint']:
+                raise RenderError('source_stale','Plan, kurgu veya kaynak değişmiş. Güncel ayarlarla yeni bir render başlatın; eski çıktı korundu.')
+            result=self.start(pid,meta['options'],stored_edit_plan=saved)
+            result.update(restarted_from=jid,resume_mode='verified_restart',message='Kaynaklar doğrulandı. Aynı ayarlarla yeni video sürümü başlatıldı; önbellekteki medya/animasyonlar kullanılır. Kaldığı kareden devam değildir.')
+            return result
 
     def _log(self,pid,version,event,*,encoder="",elapsed=0,diagnostic=None):
         # Caller supplies controlled event/category tokens only; never stderr/commands/text.
@@ -387,7 +416,7 @@ class RenderService:
             # Reject activation if a source changed during the job. No source is modified here.
             with self.projects.lock,self.lock:
                 if runner.event.is_set():raise RenderError('render_cancelled','Render iptal edildi.')
-                current=self._inputs(pid,inputs['options'],True)
+                current=self._inputs(pid,inputs['options'],True,stored_edit_plan=inputs.get('smart_edit_plan'))
                 if current['fingerprint']!=inputs['fingerprint']:raise RenderError('source_stale',SOURCE_MESSAGE)
                 final=files.directory(self.projects,pid)/f'video-v{version}.mp4'
                 if final.exists() or linked(final):raise RenderError('local_storage','Video sürüm dosyası zaten var. Önceki video korundu.')

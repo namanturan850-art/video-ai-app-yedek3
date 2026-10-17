@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
+from app.database import SCHEMA_VERSION
 from app.production import narration_units,visual_blocks,scene_metadata
 from app.scripts.quality import QualityService
 from app.stock import relevance
@@ -243,7 +244,7 @@ def test_read_only_existing_stock_unchanged_until_explicit_research_and_sources_
     for name,digest in originals.items():assert hashlib.sha256((st['root']/name).read_bytes()).hexdigest()==digest
     with closing(st['stock'].projects._connection()) as c:
         assert all([dict(r) for r in c.execute('SELECT * FROM '+t+' WHERE project_id=?',(st['pid'],))]==records for t,records in before.items())
-        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='12'
+        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]==SCHEMA_VERSION
     with TestClient(create_app(st['storage']),headers=HEADERS) as restarted:
         assert restarted.get(endpoint(st)).json()['slots']==result['slots']
 

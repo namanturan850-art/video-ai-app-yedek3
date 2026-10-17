@@ -41,7 +41,7 @@ def test_migration_puts_every_existing_project_in_a_default_channel(tmp_path):
         c.execute("UPDATE app_metadata SET value='11' WHERE key='schema_version'")
     initialize_database(tmp_path / 'data')
     with closing(sqlite3.connect(db)) as c:
-        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION == '14'
+        assert c.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0] == SCHEMA_VERSION
         default = c.execute('SELECT id,name FROM channels WHERE is_default=1').fetchall()
         assert len(default) == 1 and default[0][1] == 'Varsayılan kanal'
         assert {r[0] for r in c.execute('SELECT channel_id FROM projects')} == {default[0][0]}

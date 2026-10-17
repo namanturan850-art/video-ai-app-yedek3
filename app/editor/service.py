@@ -170,9 +170,9 @@ class EditorService:
             motion = scene.get('motion') or ''
             if motion in ('map', 'route', 'schema') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['maps']): tracks['maps'].append({**base, 'type': motion})
             if motion in ('number', 'compare', 'card', 'chart', 'infographic') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['infographics']): tracks['infographics'].append({**base, 'type': motion})
-            if scene.get('overlay_text'): tracks['layers'].append({**base, 'text': scene['overlay_text']})
-            for overlay in scene['naman_overlays']:
-                item={**base,**overlay}
+            if scene.get('overlay_text'): tracks['layers'].append({**base, 'text': scene['overlay_text'],'legacy_key':scene['scene_id']+':overlay_text'})
+            for index,overlay in enumerate(scene['naman_overlays']):
+                item={**base,**overlay,'legacy_key':scene['scene_id']+':overlay:'+str(index)}
                 if overlay['kind']=='map': tracks['maps'].append(item)
                 elif overlay['kind']=='infographic': tracks['infographics'].append(item)
                 elif overlay['kind']=='emphasis': tracks['emphasis'].append(item)
@@ -186,7 +186,15 @@ class EditorService:
         if audio: tracks['audio'].append({'start': 0, 'end': float(audio.get('duration') or duration),
                                           'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio',
                                           'waveform_url':f'/api/projects/{project_id}/editor/waveform'})
+        base_media=[item for values in tracks.values() for item in values if item.get('slot_id') and item.get('media')]
+        motion_media=[item for item in base_media if item.get('motion_spec')]
+        media_metrics={'definition':'Ana kurguda seçili medya klipleri; ek overlay katmanları bu orana dahil değildir.',
+                       'clips':len(base_media),'motion_clips':len(motion_media),
+                       'clip_ratio':round(100*len(motion_media)/len(base_media)) if base_media else 0,
+                       'scene_ratio':round(100*len({m['scene_id'] for m in motion_media})/len(scenes)) if scenes else 0,
+                       'duration_ratio':round(100*sum(m['end']-m['start'] for m in motion_media)/max(.001,float(timing.get('audio_duration') or duration)))}
         return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],
+                'media_metrics':media_metrics,
                 'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
                 'duration': timing.get('audio_duration') or duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
                 'track_order': list(TRACKS), 'audio_ready': bool(audio), 'subtitle_timing': subtitle_state.get('timing_source'),
@@ -392,6 +400,8 @@ class EditorService:
             saved=ranges.get((row['provider'],row['media_id']))
             result.append({'provider':row['provider'],'media_id':row['media_id'],'media_type':row['media_type'],
                            'sha256':identity,'duration':item.get('duration'),'source_url':item.get('source_url',''),
+                           'width':item.get('width',0),'height':item.get('height',0),'has_audio':bool(item.get('has_audio')),
+                           'thumbnail_url':f'/api/projects/{project_id}/editor/archive/{row["provider"]}/{row["media_id"]}/thumbnail' if row['media_type']!='audio' else None,
                            'title':item.get('title') or item.get('description') or row['media_id'],
                            'preview_url':f'/api/projects/{project_id}/editor/archive/{row["provider"]}/{row["media_id"]}/preview',
                            'rights':{k:rights.get(k) for k in ('license','license_url','author','page_url') if rights.get(k)},
@@ -423,7 +433,7 @@ class EditorService:
         if target.exists():
             if sha256_file(target)!=digest: raise EditorError('local_storage','Aynı adlı arşiv dosyası değişmiş.',409)
         else: os.replace(temporary,target)
-        duration=None;width=height=0
+        duration=None;width=height=0;has_audio=False
         if media_type=='image':
             try:
                 from PIL import Image
@@ -433,15 +443,16 @@ class EditorService:
             try:
                 from app.rendering.tools import discover
                 probe=discover().get('ffprobe')
-                done=subprocess.run([probe,'-v','error','-show_entries','format=duration:stream=width,height','-of','json',str(target)],capture_output=True,text=True,timeout=20,stdin=subprocess.DEVNULL) if probe else None
+                done=subprocess.run([probe,'-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',str(target)],capture_output=True,text=True,timeout=20,stdin=subprocess.DEVNULL) if probe else None
                 details=json.loads(done.stdout) if done and done.returncode==0 else {}
                 duration=float(details.get('format',{}).get('duration',0)) or None
                 stream=next((s for s in details.get('streams',[]) if s.get('width') and s.get('height')), {})
                 width,height=int(stream.get('width',0)),int(stream.get('height',0))
+                has_audio=any(s.get('codec_type')=='audio' for s in details.get('streams',[]))
             except (OSError,ValueError,subprocess.SubprocessError): duration=None
         metadata={'provider':'local','media_id':media_id,'media_type':media_type,'title':Path(original_name).stem[:160],
                   'description':Path(original_name).stem[:160],'local_path':'stock/'+target.name,'file_size':target.stat().st_size,
-                  'sha256':digest,'content_type':mime,'duration':duration,'width':width,'height':height,'downloaded_at':now(),
+                  'sha256':digest,'content_type':mime,'duration':duration,'width':width,'height':height,'has_audio':has_audio,'downloaded_at':now(),
                   'source_metadata':{'license':'Kullanıcı tarafından sağlandı','author':'Proje sahibi'}}
         with closing(self.projects._connection()) as connection,connection:
             self.projects._row(connection,project_id)

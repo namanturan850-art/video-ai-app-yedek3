@@ -160,7 +160,7 @@ class EditorService:
                 media=slot.get('selected_media') or {}; spec=((media.get('source_metadata') or {}).get('motion') or {})
                 template=spec.get('template')
                 item={**base,'start':slot['start'],'end':slot['end'],'slot_id':slot['slot_id'],'media':media or None,
-                      'locked':slot.get('locked',False),'clip_start':slot.get('clip_start',0),'clip_end':slot.get('clip_end'),
+                      'locked':bool(slot.get('locked',False) or scene.get('locked')),'clip_start':slot.get('clip_start',0),'clip_end':slot.get('clip_end'),
                       'label':self._clip_label(media,template),'preview_url':f'/api/projects/{project_id}/production/stock/slots/{slot["slot_id"]}/preview'}
                 if template in MAP_TEMPLATES: tracks['maps'].append({**item,'kind':'map','type':template,'motion_spec':spec})
                 elif template in INFOGRAPHIC_TEMPLATES: tracks['infographics'].append({**item,'kind':'infographic','type':template,'motion_spec':spec})
@@ -279,7 +279,7 @@ class EditorService:
         handoff=self.stock._handoff(project_id)
         with closing(self.projects._connection()) as connection,connection:
             state=self.stock._ensure(connection,handoff);self.stock._stamp(state,payload);self.stock._idle(connection,project_id)
-            rows=connection.execute("SELECT id,kind,payload_json FROM editor_revisions WHERE project_id=? AND kind IN ('timeline_edit','timeline_undo','timeline_redo') ORDER BY created_at,id",(project_id,)).fetchall()
+            rows=connection.execute("SELECT id,kind,payload_json FROM editor_revisions WHERE project_id=? AND plan_id=? AND kind IN ('timeline_edit','timeline_undo','timeline_redo') ORDER BY created_at,rowid",(project_id,state['plan_id'])).fetchall()
             done=[];undone=[];records={}
             for row in rows:
                 try: record=json.loads(row['payload_json'])
@@ -292,15 +292,20 @@ class EditorService:
                     undone.remove(record['target']);done.append(record['target'])
             target=(done[-1] if direction=='undo' and done else undone[-1] if direction=='redo' and undone else None)
             if not target: raise EditorError('nothing_to_'+direction,'Bu yönde uygulanabilecek zaman çizelgesi değişikliği yok.',409)
-            snapshot=records[target]['before' if direction=='undo' else 'after'];ids={s.get('slot_id') for s in snapshot}
-            current={s['slot_id']:s for s in state['slots'] if s['slot_id'] in ids}
-            if set(current)!=ids or any(s.get('locked') for s in current.values()):
+            snapshot=records[target]['before' if direction=='undo' else 'after']
+            expected=records[target]['after' if direction=='undo' else 'before']
+            scenes={s.get('scene_id') for s in snapshot+expected}
+            plan=self._active(project_id)
+            current=[s for s in state['slots'] if s.get('scene_id') in scenes]
+            # Restore only the recorded scene, including split slot membership and media.
+            # An unrelated operation or later lock invalidates history instead of being overwritten.
+            if (sorted(current,key=lambda s:s['slot_id'])!=sorted(expected,key=lambda s:s['slot_id'])
+                    or any(b.get('locked') for b in plan['blocks'] if b['id'] in scenes)):
                 raise EditorError('stale_timeline','Klipler değişti veya kilitlendi; geçmiş uygulanamadı.',409)
-            for saved in snapshot:
-                slot=current[saved['slot_id']]
-                for key in ('order','duration','estimated_start','estimated_end','segment_start','segment_end'):
-                    if key in saved: slot[key]=deepcopy(saved[key])
-                    else: slot.pop(key,None)
+            first=next((i for i,s in enumerate(state['slots']) if s.get('scene_id') in scenes),len(state['slots']))
+            remaining=[s for s in state['slots'] if s.get('scene_id') not in scenes]
+            remaining[first:first]=deepcopy(snapshot)
+            state['slots']=remaining
             self.stock._save(connection,state)
             connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
                 (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_'+direction,json.dumps({'target':target},ensure_ascii=False),now()))
@@ -418,17 +423,25 @@ class EditorService:
         if target.exists():
             if sha256_file(target)!=digest: raise EditorError('local_storage','Aynı adlı arşiv dosyası değişmiş.',409)
         else: os.replace(temporary,target)
-        duration=None
+        duration=None;width=height=0
+        if media_type=='image':
+            try:
+                from PIL import Image
+                with Image.open(target) as image: width,height=image.size
+            except (OSError,ValueError): pass
         if media_type in ('video','audio'):
             try:
                 from app.rendering.tools import discover
                 probe=discover().get('ffprobe')
-                done=subprocess.run([probe,'-v','error','-show_entries','format=duration','-of','default=nw=1:nk=1',str(target)],capture_output=True,text=True,timeout=20,stdin=subprocess.DEVNULL) if probe else None
-                duration=float(done.stdout.strip()) if done and done.returncode==0 else None
+                done=subprocess.run([probe,'-v','error','-show_entries','format=duration:stream=width,height','-of','json',str(target)],capture_output=True,text=True,timeout=20,stdin=subprocess.DEVNULL) if probe else None
+                details=json.loads(done.stdout) if done and done.returncode==0 else {}
+                duration=float(details.get('format',{}).get('duration',0)) or None
+                stream=next((s for s in details.get('streams',[]) if s.get('width') and s.get('height')), {})
+                width,height=int(stream.get('width',0)),int(stream.get('height',0))
             except (OSError,ValueError,subprocess.SubprocessError): duration=None
         metadata={'provider':'local','media_id':media_id,'media_type':media_type,'title':Path(original_name).stem[:160],
                   'description':Path(original_name).stem[:160],'local_path':'stock/'+target.name,'file_size':target.stat().st_size,
-                  'sha256':digest,'content_type':mime,'duration':duration,'downloaded_at':now(),
+                  'sha256':digest,'content_type':mime,'duration':duration,'width':width,'height':height,'downloaded_at':now(),
                   'source_metadata':{'license':'Kullanıcı tarafından sağlandı','author':'Proje sahibi'}}
         with closing(self.projects._connection()) as connection,connection:
             self.projects._row(connection,project_id)
@@ -472,6 +485,7 @@ class EditorService:
             item = {**json.loads(row['metadata_json']), 'provider':provider, 'media_id':media_id, 'media_type':row['media_type']}
             return asset_path(self.projects, project_id, item), item
 
+    @serialized
     def assign(self, project_id, slot_id, payload):
         required = {'plan_id','revision','provider','media_id','sha256','start','end'}
         if set(payload) != required or not all(finite(payload[k]) for k in ('start','end')):
@@ -487,7 +501,10 @@ class EditorService:
             scene = next(b for b in plan['blocks'] if b['id']==slot['scene_id'])
             if slot['locked'] or scene.get('locked'):
                 raise EditorError('locked','Kilitli sahne veya medya değiştirilemez. Önce kilidi açın.',409)
+            before=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
             path, item = self.archive_file(project_id,payload['provider'],payload['media_id'])
+            if item.get('media_type') not in ('video','image'):
+                raise EditorError('invalid_media_type','Görüntü yuvasına yalnız video veya görsel atanabilir.')
             if sha256_file(path) != payload['sha256']:
                 raise EditorError('stale_media','Yerel medya değişti. Arşivi yenileyin.',409)
             times = self.subtitles.handoff(project_id).get('stock_slots',[]) if hasattr(self.subtitles,'handoff') else []
@@ -501,6 +518,10 @@ class EditorService:
                         segment_end=payload['end'],message='Yerel arşivden atandı.',warnings=[])
             slot.pop('continuation_of',None)
             self.stock._save(connection,state)
+            after=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
+            connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
+                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',
+                 json.dumps({'request':payload,'before':before,'after':after},ensure_ascii=False),now()))
         self.stock._mirror(state)
         return self.view(project_id)
 

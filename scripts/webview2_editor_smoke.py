@@ -36,7 +36,7 @@ def main():
     if not server.started:raise SystemExit('NAMAN yerel sunucusu başlatılamadı.')
     result={'ok':False,'message':'WebView2 kontrolü tamamlanamadı.'}
     window=webview.create_window('NAMAN WebView2 Smoke',f'http://127.0.0.1:{port}/projects/{project_id}/editor',
-                                 width=1280,height=820,hidden=True)
+                                 width=1366,height=768,hidden=True)
 
     def check():
         try:
@@ -45,11 +45,18 @@ def main():
                 state=window.evaluate_js("""(() => {
                   const root=document.querySelector('#editor-content');
                   const status=root?.querySelector('.provider-status')?.textContent||'';
-                  return {status,tracks:root?.querySelectorAll('.naman-track').length||0,
+                  const timeline=root?.querySelector('.naman-timeline')?.getBoundingClientRect();
+                  const tracks=[...root?.querySelectorAll('.naman-track')||[]];
+                  return {status,tracks:tracks.length,
+                          viewport:{width:innerWidth,height:innerHeight},
+                          noPageScroll:document.documentElement.scrollHeight<=innerHeight,
+                          menuCount:document.querySelectorAll('.workspace-menubar>details').length,
+                          allTracksVisible:!!timeline&&tracks.every(n=>n.getBoundingClientRect().bottom<=timeline.bottom),
                           retry:[...document.querySelectorAll('button')].some(x=>x.textContent.includes('Yeniden Dene'))};
                 })()""")
                 if state and state.get('tracks')==7 and 'yükleniyor' not in state.get('status','').lower():
-                    result.update(ok=True,message='Kurgu WebView2 içinde açıldı; yedi iz hazır.',state=state);break
+                    ready=state.get('noPageScroll') and state.get('allTracksVisible') and state.get('menuCount')==9
+                    result.update(ok=bool(ready),message='Kurgu WebView2 içinde açıldı; menüler ve yedi iz kontrol edildi.',state=state);break
                 if state and state.get('retry'):
                     result.update(message='Kurgu hata ekranına düştü.',state=state);break
                 time.sleep(.25)

@@ -74,8 +74,8 @@ def test_general_and_optional_provider_fields(settings_client):
 
 def test_application_theme_defaults_validate_and_persist(settings_client):
     general = settings_client.get('/api/settings').json()['general']
-    assert general['appearance_theme'] == 'turquoise'
-    assert general['accent_color'] == '#24D3C5'
+    assert general['appearance_theme'] == 'premiere'
+    assert general['accent_color'] == '#8065E8'
     saved = settings_client.put('/api/settings/general', json={
         'appearance_theme': 'purple', 'accent_color': '#a78bfa'
     })

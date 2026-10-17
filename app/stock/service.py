@@ -235,7 +235,8 @@ class StockService:
                 slot['used_duration']=used.get(slot['slot_id'],slot.get('actual_duration_hint',slot['duration']))
                 slot['trim_needed']=bool(slot['selected_media'] and slot['selected_media']['media_type']=='video' and slot['selected_media']['duration']>slot['used_duration']+.05)
                 slot['source_duration']=slot['selected_media'].get('duration') if slot['selected_media'] else None
-                slot['portrait_warning']=bool(slot['selected_media'] and slot['selected_media']['width']<=slot['selected_media']['height'])
+                selected=slot.get('selected_media') or {}
+                slot['portrait_warning']=bool(selected.get('width') and selected.get('height') and selected['width']<=selected['height'])
             rows = connection.execute('SELECT * FROM stock_jobs WHERE project_id=? AND plan_id=? ORDER BY created_at DESC,rowid DESC LIMIT 1',
                                       (project_id,handoff['plan_id'])).fetchone()
             public['job'] = self._job(rows)

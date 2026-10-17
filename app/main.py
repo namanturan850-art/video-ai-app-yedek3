@@ -287,6 +287,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     @application.exception_handler(EditorError)
     async def editor_error(request:Request,error:EditorError):
+        logging.getLogger('uvicorn.error.editor').warning('editor operation=request result=failure category=%s',error.category)
         return JSONResponse(status_code=error.status_code,content={'message':str(error),'category':error.category,'details':error.details})
 
     def director_options():

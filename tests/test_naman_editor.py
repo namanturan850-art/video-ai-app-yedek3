@@ -1,6 +1,8 @@
 import sqlite3
 import threading
 import array
+import json
+from copy import deepcopy
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -42,8 +44,8 @@ def test_database_adds_editor_tables_without_removing_core(tmp_path):
     with sqlite3.connect(database) as connection:
         names={r[0] for r in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         version=connection.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]
-    assert {'projects','editor_revisions','media_clip_ranges','archive_analysis_cache'} <= names
-    assert version == '13'
+    assert {'projects','editor_revisions','media_clip_ranges','archive_analysis_cache','editor_audio_settings'} <= names
+    assert version == '14'
 
 
 def test_editor_projection_has_seven_ordered_tracks_and_sync_data():
@@ -105,6 +107,22 @@ def test_local_image_upload_is_content_validated_and_project_scoped(tmp_path):
     assert result['provider']=='local' and result['media_type']=='image'
     assert result['title']=='ornek' and len(result['sha256'])==64
     assert Path(editor.archive_file(project['id'],'local',result['media_id'])[0]).is_file()
+
+
+def test_all_six_local_archive_formats_are_accepted_independently(tmp_path,monkeypatch):
+    initialize_database(tmp_path);projects=ProjectService(tmp_path)
+    project=projects.create({'name':'Arşiv biçimleri','topic':'Yerel','language':'tr'})
+    editor=EditorService(SimpleNamespace(projects=projects),None,None,None)
+    monkeypatch.setattr('app.rendering.tools.discover',lambda:{'ffprobe':None})
+    samples={'.mp4':b'\x00\x00\x00\x18ftypmp42xxxx','.jpg':b'\xff\xd8\xffxxxx',
+             '.png':b'\x89PNG\r\n\x1a\nxxxx','.webp':b'RIFFxxxxWEBPxxxx',
+             '.mp3':b'ID3xxxx','.wav':b'RIFFxxxxWAVExxxx'}
+    found=[]
+    for number,(suffix,content) in enumerate(samples.items()):
+        source=projects._path(project['id'])/'stock'/f'.upload-{number}.part';source.write_bytes(content)
+        found.append(editor.import_local(project['id'],source,'sample'+suffix)['item']['media_type'])
+    assert found==['video','image','image','image','audio','audio']
+    assert editor.archive(project['id'])['count']==6
 
 
 def test_existing_motion_engine_validates_naman_map_and_infographic_specs():
@@ -188,6 +206,7 @@ def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
     database=tmp_path/'state.sqlite3'
     with sqlite3.connect(database) as c:
         c.execute('CREATE TABLE editor_revisions(id,project_id,plan_id,parent_plan_id,kind,payload_json,created_at)')
+        c.execute('CREATE TABLE editor_audio_settings(project_id PRIMARY KEY,narration_volume,narration_fade_in,narration_fade_out,sfx_volume,sfx_levels_json,updated_at)')
     class Projects:
         lock=threading.RLock()
         def _connection(self):
@@ -234,4 +253,84 @@ def test_motion_edit_uses_existing_single_slot_regeneration_pipeline():
     result=EditorService(Production(),MotionStock(),Subtitles(),None).edit_motion('p','slot',{
         'plan_id':'stock-plan','revision':4,'motion':{'template':'map','data':{'place':'Ankara'},'emphasis':'Ankara'}})
     assert result=={'job_id':'j1'}
-    assert calls[0][1]['action']=='motion_edit' and calls[0][2]=='slot'
+    assert calls[0][1]['action']=='motion_edit' and calls[0][1]['local_only'] is True and calls[0][2]=='slot'
+
+
+def test_editor_map_motion_forces_local_renderer_even_with_satellite_kit(monkeypatch):
+    from copy import deepcopy
+    from app.channels import DEFAULT_STYLE
+    from app.motion.templates import build
+    from app.providers import satellite
+    monkeypatch.setattr(satellite,'FACTORY',lambda:(_ for _ in ()).throw(AssertionError('Mapbox çağrılmamalı')))
+    kit=deepcopy(DEFAULT_STYLE);kit.update(map_style='satellite',map_style_chosen=True)
+    scene=build({'template':'map','data':{'place':'Ankara','label':'Başkent','lat':39.933,'lon':32.86},
+                 'emphasis':'Ankara','local_only':True},kit,2,.8,'tr')
+    assert any(item['type']=='map' for item in scene['elements'])
+    assert not any(item['type']=='relief' for item in scene['elements'])
+
+
+def test_audio_mix_settings_are_validated_and_persisted(tmp_path):
+    database=initialize_database(tmp_path)
+    projects=ProjectService(tmp_path)
+    project=projects.create({'name':'Ses','topic':'Yerel miks'})
+    production=Production();production.projects=projects
+    editor=EditorService(production,Stock(),Subtitles(),None)
+    saved=editor.save_audio_settings(project['id'],{'narration_volume':1.2,'narration_fade_in':.4,
+        'narration_fade_out':.8,'sfx_volume':.16,'sfx_levels':{'clip_1':.07}})
+    assert saved['narration_volume']==1.2 and saved['sfx_levels']=={'clip_1':.07}
+    assert EditorService(production,Stock(),Subtitles(),None).audio_settings(project['id'])==saved
+    from app.editor.models import EditorError
+    import pytest
+    with pytest.raises(EditorError):
+        editor.save_audio_settings(project['id'],{**{k:saved[k] for k in ('narration_volume','narration_fade_in','narration_fade_out','sfx_volume','sfx_levels')},'sfx_volume':.8})
+
+
+def test_missing_narration_and_subtitle_handoff_do_not_block_editor():
+    from app.subtitles.models import SubtitleError
+    class Missing(Subtitles):
+        def view(self,_):return {'active':None,'narration':None,'timing_source':None,'message':'Seslendirme ve altyazı henüz hazır değil.'}
+        def handoff(self,_):raise SubtitleError('not_ready','Hazır değil.',409)
+    result=EditorService(Production(),Stock(),Missing(),None).view('a'*32)
+    assert result['audio_ready'] is False and result['tracks']['audio']==[] and result['tracks']['subtitles']==[]
+    assert len(result['tracks'])==7 and result['duration']==4
+
+
+def test_all_five_manual_sections_import_and_rollback(tmp_path):
+    database=tmp_path/'manual.sqlite3';pid='a'*32
+    with sqlite3.connect(database) as connection:
+        connection.execute('CREATE TABLE editor_revisions(id,project_id,plan_id,parent_plan_id,kind,payload_json,created_at)')
+        connection.execute('CREATE TABLE scene_plan_versions(id,project_id,plan_json)')
+    projects=SimpleNamespace(lock=threading.RLock(),get=lambda _: {'name':'P','topic':'K','language':'tr'})
+    def connect():
+        value=sqlite3.connect(database);value.row_factory=sqlite3.Row;return value
+    projects._connection=connect
+    original={'plan_id':'p1','revision':3,'version_id':'script1','blocks':[{
+        'id':'s1','start':0,'end':5,'narration':'Ankara rotası 40 km boyunca önemli katman oluşturur.',
+        'locked':False,'transition':'none','motion':'none','overlay_text':'','composition':'wide'}]}
+    current={'plan':deepcopy(original)}
+    class ManualProduction:
+        def __init__(self):self.projects=projects
+        def view(self,_):return current
+        def editable_plan(self,_,stamp):
+            assert {k:stamp[k] for k in ('plan_id','revision')}=={'plan_id':current['plan']['plan_id'],'revision':current['plan']['revision']}
+            return current['plan'],None
+        def _save(self,_,plan,new_version=False):
+            saved=deepcopy(plan);saved['plan_id']='p'+str(int(current['plan']['plan_id'][1:])+1);saved['revision']=current['plan']['revision']+1
+            current['plan']=saved;plan.update(saved)
+    class ManualStock:
+        def _idle(self,*_):pass
+        def view(self,_):return {'slots':[]}
+    with sqlite3.connect(database) as connection:
+        connection.execute('INSERT INTO scene_plan_versions VALUES (?,?,?)',('p1',pid,json.dumps(original)))
+    editor=EditorService(ManualProduction(),ManualStock(),Subtitles(),None)
+    payload={'schema':'naman.manual-plan.v1','base':{'plan_id':'p1','revision':3},
+        'sahneler':[{'scene_id':'s1','transition':'fade','motion':'slow_zoom','composition':'medium'}],
+        'infografikler':[{'scene_id':'s1','template':'stat','data':{'value':'40 km','label':'rota'},'emphasis':'40'}],
+        'harita_sahneleri':[{'scene_id':'s1','template':'map','data':{'place':'Ankara','label':'Ankara','lat':39.933,'lon':32.86},'emphasis':'Ankara'}],
+        'vurgular':[{'scene_id':'s1','text':'önemli','effect':'pulse'}],
+        'katmanlar':[{'scene_id':'s1','text':'katman','effect':'none'}]}
+    assert editor.validate_import(pid,payload)['valid'] is True
+    imported=editor.import_plan(pid,payload);assert imported['imported'] is True
+    assert {item['kind'] for item in current['plan']['blocks'][0]['naman_overlays']}=={'infographic','map','emphasis','layer'}
+    rolled=editor.rollback(pid,'p1',{'confirm':True,'plan_id':'p2','revision':4})
+    assert rolled['rolled_back'] is True and current['plan']['blocks'][0]['transition']=='none'

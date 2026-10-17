@@ -109,6 +109,13 @@ python -m venv .venv
 .venv/bin/python start.py
 ```
 
+Windows WebView2 üzerinde mevcut bir projenin Kurgu açılışını salt okunur
+doğrulamak için:
+
+```bat
+.venv\Scripts\python scripts\webview2_editor_smoke.py PROJE_KIMLIGI VERI_KLASORU
+```
+
 Başlatıcı, sunucuyu yalnızca `127.0.0.1` adresinde açar. `/api/health` başarılı olduktan sonra tarayıcı açılır. Tanılama verisi `/api/diagnostics` adresindedir. Testlerde geçici veritabanları kullanılır; gerçek HTTP başlangıç testi yerel, Git tarafından yok sayılan veritabanını da doğrular.
 
 Geliştirme makinesinde Node.js varsa pytest, Settings HTTP yardımcısının 24 zaman aşımı/hata sınıflandırma testini de çalıştırır. Node yoksa yalnızca bu ek kontrol atlanır; Windows başlatıcısı Node gerektirmez.

@@ -351,7 +351,7 @@ def build_extra(s, spec, language='de'):
     lang = language if language in FACT_TITLE else 'en'
     if t == 'relief':  # drawn whole by app/motion/relief.py (terrain, highlight, arrow, camera)
         from app.channels import map_style
-        style = map_style(s.kit)
+        style = 'relief' if spec.get('local_only') else map_style(s.kit)
         extra = {'theme': 'dark'} if style == 'dark' else satellite_props(language) if style == 'satellite' else {}
         s.add('relief', spec=spec, **extra)  # the relief look keeps its old scene key
         return s
@@ -363,7 +363,7 @@ def build_extra(s, spec, language='de'):
         return {'intro': lambda: draw.draw_intro(s, d), 'outro': lambda: draw.draw_outro(s, d, language), 'endscreen': lambda: draw.draw_endscreen(s, d)}[t]()
     if t in ('zoom', 'empire'):
         from app.channels import map_style
-        if map_style(s.kit) == 'satellite':  # Uydu görüntüsü: no drawn (dark) map at all — the place / the extent on satellite
+        if not spec.get('local_only') and map_style(s.kit) == 'satellite':  # Uydu görüntüsü: no drawn (dark) map at all — the place / the extent on satellite
             if t == 'zoom':
                 data = {'mode': 'zoom', 'target': d['place'], 'lat': d['lat'], 'lon': d['lon'], 'title': d['place'], 'source': d.get('source', '')}
             else:
@@ -375,7 +375,7 @@ def build_extra(s, spec, language='de'):
         from app.channels import map_style
         # Every map style draws a route like [OK] (relief renderer): the camera keeps every stop on screen
         # and the names stay inside the safe area, also for places only a few km apart.
-        style = map_style(s.kit)
+        style = 'relief' if spec.get('local_only') else map_style(s.kit)
         extra = satellite_props(language) if style == 'satellite' else {'theme': 'dark'} if style == 'dark' else {}
         nested = {'template': 'relief', 'data': {'mode': 'arrow', 'stops': d['stops'], 'source': d.get('source', '')}, 'emphasis': ''}
         if 'layout' in spec: nested['layout'] = spec['layout']

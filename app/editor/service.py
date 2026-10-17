@@ -16,9 +16,12 @@ from uuid import uuid4
 from functools import wraps
 
 from app.editor.models import EditorError
+from app.subtitles.models import SubtitleError
 from app.stock.download import asset_path
 
 TRACKS = ('emphasis', 'layers', 'maps', 'infographics', 'visuals', 'audio', 'subtitles')
+DEFAULT_AUDIO_SETTINGS = {'narration_volume': 1.0, 'narration_fade_in': 0.0,
+                          'narration_fade_out': 0.0, 'sfx_volume': 0.10, 'sfx_levels': {}}
 ANALYZER_VERSION = 'naman-frames-v2'
 VIDEO_REVIEW_VERSION = 'naman-final-video-review-v1'
 MAP_TEMPLATES = {'map','route','empire','zoom','relief','region','arrow'}
@@ -83,6 +86,44 @@ class EditorService:
             raise EditorError('plan_required', 'Önce Görsel ve Kurgu Hazırlığı ekranında bir sahne planı oluşturun.', 409)
         return production['plan']
 
+    def audio_settings(self, project_id):
+        if not hasattr(self.projects,'_connection'):
+            return {'project_id':project_id,**deepcopy(DEFAULT_AUDIO_SETTINGS)}
+        self.projects.get(project_id)
+        with self.projects.lock, closing(self.projects._connection()) as connection:
+            row=connection.execute('SELECT * FROM editor_audio_settings WHERE project_id=?',(project_id,)).fetchone()
+        if not row:return {'project_id':project_id,**deepcopy(DEFAULT_AUDIO_SETTINGS)}
+        try:levels=json.loads(row['sfx_levels_json'])
+        except (TypeError,ValueError):levels={}
+        return {'project_id':project_id,'narration_volume':row['narration_volume'],
+                'narration_fade_in':row['narration_fade_in'],'narration_fade_out':row['narration_fade_out'],
+                'sfx_volume':row['sfx_volume'],'sfx_levels':levels if isinstance(levels,dict) else {}}
+
+    @serialized
+    def save_audio_settings(self,project_id,payload):
+        expected=set(DEFAULT_AUDIO_SETTINGS)
+        if not isinstance(payload,dict) or set(payload)!=expected:
+            raise EditorError('invalid_audio_settings','Ses ayarı alanlarını kontrol edin.')
+        values={key:payload.get(key) for key in expected-{'sfx_levels'}}
+        limits={'narration_volume':(0,2),'narration_fade_in':(0,30),
+                'narration_fade_out':(0,30),'sfx_volume':(0,.5)}
+        if any(not finite(values[key]) or not limits[key][0]<=values[key]<=limits[key][1] for key in values):
+            raise EditorError('invalid_audio_settings','Ses seviyesi veya fade süresi izin verilen aralıkta değil.')
+        levels=payload['sfx_levels']
+        if not isinstance(levels,dict) or len(levels)>200 or any(
+                not isinstance(key,str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,64}',key)
+                or not finite(value) or not 0<=value<=.5 for key,value in levels.items()):
+            raise EditorError('invalid_audio_settings','Klip başına SFX seviyelerini kontrol edin.')
+        self.projects.get(project_id)
+        with closing(self.projects._connection()) as connection,connection:
+            connection.execute('''INSERT INTO editor_audio_settings VALUES (?,?,?,?,?,?,?)
+                ON CONFLICT(project_id) DO UPDATE SET narration_volume=excluded.narration_volume,
+                narration_fade_in=excluded.narration_fade_in,narration_fade_out=excluded.narration_fade_out,
+                sfx_volume=excluded.sfx_volume,sfx_levels_json=excluded.sfx_levels_json,updated_at=excluded.updated_at''',
+                (project_id,values['narration_volume'],values['narration_fade_in'],values['narration_fade_out'],
+                 values['sfx_volume'],json.dumps(levels,sort_keys=True,separators=(',',':')),now()))
+        return self.audio_settings(project_id)
+
     def view(self, project_id):
         plan = self._active(project_id)
         stock = self.stock.view(project_id)
@@ -91,7 +132,10 @@ class EditorService:
         cues = active_subtitles.get('cues') or []
         audio = (subtitle_state.get('narration') or {}).get('metadata', {}).get('audio') or {}
         slots = stock.get('slots') or []
-        timing = self.subtitles.handoff(project_id) if hasattr(self.subtitles,'handoff') else {}
+        try:
+            timing = self.subtitles.handoff(project_id) if hasattr(self.subtitles,'handoff') else {}
+        except (EditorError,SubtitleError):
+            timing = {}
         scene_times = {s['scene_id']: s for s in timing.get('scenes', [])}
         slot_times = {s['slot_id']: s for s in timing.get('stock_slots', [])}
         slots = [dict(s, estimated_start=slot_times[s['slot_id']]['start'],
@@ -141,13 +185,18 @@ class EditorService:
                                        'text': word, 'timing': 'estimated'} for i, word in enumerate(words))
         if audio: tracks['audio'].append({'start': 0, 'end': float(audio.get('duration') or duration),
                                           'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio',
-                                          'waveform':self._waveform(project_id,audio)})
+                                          'waveform_url':f'/api/projects/{project_id}/editor/waveform'})
         return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],
                 'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
                 'duration': timing.get('audio_duration') or duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
                 'track_order': list(TRACKS), 'audio_ready': bool(audio), 'subtitle_timing': subtitle_state.get('timing_source'),
                 'stock_job':stock.get('job'),'subtitle_version_id':active_subtitles.get('id') or active_subtitles.get('version_id'),
+                'audio_settings':self.audio_settings(project_id),
                 'warnings': stock.get('warnings', []) + ([subtitle_state['message']] if subtitle_state.get('message') else [])}
+
+    def waveform(self,project_id):
+        subtitle_state=self.subtitles.view(project_id);audio=((subtitle_state.get('narration') or {}).get('metadata') or {}).get('audio') or {}
+        return {'peaks':self._waveform(project_id,audio) or [],'source':'decoded_narration_pcm' if audio else 'no_active_narration'}
 
     @staticmethod
     def _public_slot(slot):
@@ -261,7 +310,10 @@ class EditorService:
     def edit_motion(self, project_id, slot_id, payload):
         if not isinstance(payload,dict) or set(payload)!={'plan_id','revision','motion'}:
             raise EditorError('invalid_input','Animasyon düzenleme alanlarını kontrol edin.')
-        return self.stock.start(project_id,{**payload,'action':'motion_edit'},slot_id=slot_id)
+        # Editor redraws are deliberately local/free. Persisting this flag in
+        # the motion spec also prevents a later final render from turning the
+        # same edit into a paid Mapbox request.
+        return self.stock.start(project_id,{**payload,'action':'motion_edit','local_only':True},slot_id=slot_id)
 
     @serialized
     def edit_clip(self,project_id,slot_id,payload):
@@ -319,15 +371,17 @@ class EditorService:
         with self.projects.lock, closing(self.projects._connection()) as connection:
             rows = connection.execute('SELECT * FROM stock_assets WHERE project_id=? ORDER BY provider,media_id',(project_id,)).fetchall()
             ranges = {(r['provider'], r['media_id']): dict(r) for r in connection.execute('SELECT * FROM media_clip_ranges WHERE project_id=?',(project_id,))}
-        result=[]
+        result=[];skipped=0
         for row in rows:
-            meta=json.loads(row['metadata_json']); item={'provider':row['provider'],'media_id':row['media_id'],'media_type':row['media_type'],**meta}
             try:
+                meta=json.loads(row['metadata_json'])
+                if not isinstance(meta,dict):raise ValueError('metadata')
+                item={'provider':row['provider'],'media_id':row['media_id'],'media_type':row['media_type'],**meta}
                 path=asset_path(self.projects,project_id,item)
-                identity=sha256_file(path)
-                if item.get('sha256') and item['sha256'] != identity:
-                    continue
+                identity=item.get('sha256')
+                if not isinstance(identity,str) or not re.fullmatch(r'[a-f0-9]{64}',identity):raise ValueError('identity')
             except Exception:
+                skipped+=1
                 continue
             rights=item.get('source_metadata') or {}
             saved=ranges.get((row['provider'],row['media_id']))
@@ -337,7 +391,9 @@ class EditorService:
                            'preview_url':f'/api/projects/{project_id}/editor/archive/{row["provider"]}/{row["media_id"]}/preview',
                            'rights':{k:rights.get(k) for k in ('license','license_url','author','page_url') if rights.get(k)},
                            'clip_range': {'start':saved['start_seconds'],'end':saved['end_seconds'],'revision':saved['revision']} if saved else None})
-        return {'project_id':project_id,'items':result,'count':len(result),'reuse_policy':'Yerel hash eşleşirse yeniden indirilmez.'}
+        return {'project_id':project_id,'items':result,'count':len(result),'skipped_count':skipped,
+                'warning':f'{skipped} bozuk veya eksik arşiv kaydı atlandı.' if skipped else '',
+                'reuse_policy':'Yerel hash eşleşirse yeniden indirilmez.'}
 
     @serialized
     def import_local(self, project_id, temporary, original_name):
@@ -387,6 +443,9 @@ class EditorService:
             raise EditorError('invalid_range','Klip bitişi başlangıçtan sonra olmalıdır.')
         archive=next((x for x in self.archive(project_id)['items'] if x['provider']==provider and x['media_id']==media_id),None)
         if not archive or archive['sha256'] != payload['sha256']:
+            raise EditorError('stale_media','Yerel medya değişti. Arşivi yenileyip tekrar deneyin.',409)
+        path,_=self.archive_file(project_id,provider,media_id)
+        if sha256_file(path)!=payload['sha256']:
             raise EditorError('stale_media','Yerel medya değişti. Arşivi yenileyip tekrar deneyin.',409)
         if finite(archive.get('duration')) and payload['end'] > archive['duration'] + .001:
             raise EditorError('invalid_range','Klip aralığı medya süresini aşamaz.')
@@ -549,7 +608,7 @@ class EditorService:
             target=by_id[scene_id];target['naman_overlays']=overlays
             motion=next((o for o in overlays if o['kind'] in ('map','infographic') and o.get('template') and isinstance(o.get('data'),dict)),None)
             if motion:
-                try: target['motion_spec']=validate_motion({'template':motion['template'],'data':motion['data'],'emphasis':motion.get('emphasis','')},target['narration'],target.get('entities') or [])
+                try: target['motion_spec']={**validate_motion({'template':motion['template'],'data':motion['data'],'emphasis':motion.get('emphasis','')},target['narration'],target.get('entities') or []),'local_only':True}
                 except MotionError as error: raise EditorError('invalid_import',f'{scene_id} animasyonu anlatımla doğrulanamadı: {error}. Hiçbir değişiklik kaydedilmedi.') from None
             layer=next((o for o in overlays if o['kind']=='layer' and o.get('text')),None)
             if layer: target['overlay_text']=str(layer['text'])[:100]

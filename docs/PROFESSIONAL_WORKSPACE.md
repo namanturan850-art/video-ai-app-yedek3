@@ -17,6 +17,8 @@ Uygulanan zamanlama, medya atama, bölme/çoğaltma ve kilit işlemleri proje re
 
 Kısayollar: Space oynat/duraklat; J geri sar; K duraklat; L oynat; sol/sağ ok bir kare; Ctrl+K böl; Ctrl+Z geri al; Ctrl+Shift+Z yinele. Metin, JSON ve form alanlarında yazarken bu kısayollar devreye girmez. Serbest silme ve kalıcı işaretleyiciler desteklenmez; işaretleyici menüsü bunu açıkça belirtir. Menüler Enter, oklar ve Escape ile kullanılabilir.
 
+Bağımsız medya yuvası olmayan plan katmanları sağ panelde açıklamayla salt okunur gösterilir. Bu katmanların metin/hareket değişikliği mevcut Manuel AI/JSON plan revizyonu üzerinden yapılır; çalışan bir slot düzenleyicisi varmış gibi kaydetme formu sunulmaz.
+
 ## Doğrulama ve sınırlar
 
 - `scripts/workspace_browser_smoke.py` gerçek Chromium üzerinde 1366×768, 1600×900, 1920×1080, 1650×900 ve %125 ölçeklemeye yakın **1093×614 CSS piksel** boyutlarını kontrol eder. HTTP cevapları izole test verileridir; gerçek kullanıcı projesi veya canlı API kullanılmaz. Dış sayfa kaydırması, yedi izin görünürlüğü, 16:9 monitör yüzeyi, menü sınırları, sekmeler, arşiv arama, kaynak önizleme, medya bırakma isteği, resize ve panel tercihleri ölçülür. Ekran görüntüleri belirtilen çıktı klasörüne yazılır.

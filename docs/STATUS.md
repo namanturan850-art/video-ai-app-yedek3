@@ -1010,3 +1010,14 @@ Doğrulama:
 - Linux bulut makinesinde çalıştırıldı. Windows `.bat` dosyasının gerçek çift tıklama testi Windows makinesi gerektirir; bu makinede yapılamaz.
 
 Aşama 1 tamamlandıktan sonra proje Aşama 2 geliştirmesine hazırdır. Aşama 2 başlatılmadı.
+# NAMAN editör entegrasyonu
+
+- NAMAN marka ve kullanıcı tarafından sağlanan logo eklendi.
+- Yedi izli Kurgu ekranı; zoom, seek, playhead, seçili öğe paneli ve ses/video/altyazı önizlemesi eklendi.
+- Yerel medya arşivi, hash/hak bilgileri ve sürümlü klip aralıkları eklendi.
+- Beş bölümlü manuel AI JSON görev paketi, doğrulama, fark, yeni plan sürümü ve geri alma eklendi.
+- Gemini kapalıyken çalışan FFmpeg çekim geçişi/örnek zaman analizi ve hash önbelleği eklendi. Ücretli Gemini çağrısı otomatik yapılmaz.
+- Mevcut harita, route, infographic, kart ve motion şablonları korunup NAMAN izlerine yansıtıldı.
+- Kelime vurguları altyazı zamanlarından türetilir; zaman kaynağı tahminiyse arayüz bunu işaretler.
+
+Doğrulanamayanlar: Windows gerçek render, GPU, ücretli Gemini analizi ve 8–10 dakikalık tam çıktı bu Linux ortamında çalıştırılmadı.

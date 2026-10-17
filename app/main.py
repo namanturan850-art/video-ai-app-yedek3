@@ -663,22 +663,6 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             except StockError as error:
                 outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test(section,config,outcome)}
-        if section == 'magnific':
-            # One stock-video search validates authentication and response shape.
-            # It never requests an original download or invokes a generative API.
-            from app.stock.magnific import MagnificStockProvider
-            config = settings.stock_config('magnific')
-            if not config.get('enabled'):
-                outcome = {'status':'Hata','message':'Önce Premium stok video yedeğini etkinleştirip Kaydet deyin.',
-                           'category':'provider_disabled'}
-            else:
-                try:
-                    MagnificStockProvider(config.get('api_key','')).search('nature landscape','video',page=1)
-                    outcome = {'status':'Hazır','message':'Freepik / Magnific stok video API bağlantısı başarılı. İndirme veya AI üretimi yapılmadı.',
-                               'category':'none'}
-                except StockError as error:
-                    outcome = {'status':'Hata','message':str(error),'category':error.category}
-            return {'result':outcome,'settings':settings.record_stock_test('magnific',config,outcome)}
         if section == 'mapbox':  # one small tile (z=0) with a hard 15 s limit: never waits longer
             from app.providers.satellite import mapbox_check
             return {'result': mapbox_check(settings.mapbox_config()), 'settings': settings.safe_view()}

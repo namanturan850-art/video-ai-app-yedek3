@@ -11,7 +11,7 @@ from app.stock.models import StockError
 
 def canonical_query(query, provider):
     text = ' '.join(unicodedata.normalize('NFC', str(query)).split()).casefold()
-    return text[:100] if provider in ('pixabay', 'magnific') else text
+    return text[:100] if provider == 'pixabay' else text
 
 
 class SearchSession:

@@ -10,6 +10,7 @@ import subprocess
 import pytest
 from fastapi.testclient import TestClient
 from app.main import create_app
+from app.database import SCHEMA_VERSION
 from app.rendering import smart_edit,timeline,ass,tools,probe
 from app.rendering.models import options,RenderError
 from app.rendering.engine import FFmpegRenderProvider
@@ -224,7 +225,7 @@ def test_preview_styles_new_versions_and_legacy_fingerprint_survive(ready):
     with TestClient(create_app(st['storage']),headers=HEADERS) as other:
         assert other.get(url(st)).json()['active']['metadata']['editing_style']=='balanced'
     with closing(service.projects._connection()) as db:
-        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]=='12'
+        assert db.execute("SELECT value FROM app_metadata WHERE key='schema_version'").fetchone()[0]==SCHEMA_VERSION
 
 
 @pytest.mark.parametrize('effect',list(smart_edit.MOTIONS.keys())[1:])

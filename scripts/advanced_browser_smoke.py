@@ -159,6 +159,7 @@ def main():
             page.locator('.advanced-clip').click();revision=document()['revision'];page.get_by_role('button',name='İmleçte böl · Ctrl+K',exact=True).click();saved_after(revision)
             split=document()['document']['clips'];assert len(split)==2 and split[0]['end']==split[1]['start'],split
             page.locator('.workspace-overflow summary').click();revision=document()['revision'];page.get_by_role('button',name='Ek kurgu geri al',exact=True).click();saved_after(revision);page.locator('.workspace-overflow summary').click()
+            page.wait_for_function("rev=>{const image=document.querySelector('.advanced-program-frame');return image?.naturalWidth===640&&+image.dataset.revision===rev;}",arg=document()['revision'],timeout=30000)
             for width,height in [(1366,768),(1600,900),(1920,1080),(1093,614)]:
                 page.set_viewport_size({'width':width,'height':height})
                 metrics=page.evaluate("""()=>({scroll:document.documentElement.scrollHeight,height:innerHeight,tracks:[...document.querySelectorAll('.naman-track')].map(n=>n.getBoundingClientRect().bottom),bottom:document.querySelector('.naman-timeline').getBoundingClientRect().bottom})""")
@@ -166,7 +167,7 @@ def main():
                 page.screenshot(path=str(output/f'advanced-{width}x{height}.png'))
             assert not errors,errors
             browser.close()
-        print(json.dumps({'passed':True,'project':pid,'isolated_storage':details['storage'],'checks':['real save/reload','effect','keyframe add/edit/delete/undo','marker add/edit/delete/undo','clip trim/move/delete/undo','independent source/program/dual monitors','OS file drop secure upload','FFmpeg program frame','FFmpeg thumbnail','four viewport layouts'],'artifacts':str(output)},ensure_ascii=False))
+        print(json.dumps({'passed':True,'project':pid,'isolated_storage':details['storage'],'checks':['real save/reload','effect','keyframe add/edit/delete/undo','marker add/edit/delete/undo','clip trim/move/split/delete/undo','blank-lane media drop','independent source/program/dual monitors','OS file drop secure upload','decoded FFmpeg frame at latest revision','FFmpeg thumbnail','four viewport layouts'],'artifacts':str(output)},ensure_ascii=False))
     finally:
         process.terminate()
         try:process.wait(timeout=10)

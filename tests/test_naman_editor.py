@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from app.database import initialize_database
 from app.editor.service import EditorService, TRACKS
+from app.projects import ProjectService
 
 
 class Production:
@@ -75,6 +76,21 @@ def test_frontend_contains_brand_logo_timeline_and_preview_contract():
         assert label in js
     for behavior in ('currentTime','requestAnimationFrame','Oynat','Saniyeye git','manual/validate'):
         assert behavior in js
+    assert 'archive/upload' in js and 'MP4, JPG, PNG, WebP, MP3, WAV' in js
+
+
+def test_local_image_upload_is_content_validated_and_project_scoped(tmp_path):
+    initialize_database(tmp_path)
+    projects=ProjectService(tmp_path)
+    project=projects.create({'name':'Yerel medya','topic':'Test','language':'tr'})
+    production=SimpleNamespace(projects=projects)
+    editor=EditorService(production,None,None,None)
+    source=projects._path(project['id'])/'stock/.upload-test.part'
+    source.write_bytes(b'\x89PNG\r\n\x1a\n'+b'synthetic-image-bytes')
+    result=editor.import_local(project['id'],source,'ornek.png')['item']
+    assert result['provider']=='local' and result['media_type']=='image'
+    assert result['title']=='ornek' and len(result['sha256'])==64
+    assert Path(editor.archive_file(project['id'],'local',result['media_id'])[0]).is_file()
 
 
 def test_existing_motion_engine_validates_naman_map_and_infographic_specs():
@@ -146,7 +162,7 @@ def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
     class S:
         def _handoff(self,_):return {'project_id':'x','plan_id':'p1','scenes':[{'scene_id':'s1','start_estimate':0,'end_estimate':4}]}
         def _ensure(self,c,h):return state
-        def _stamp(self,s,p):assert (p['plan_id'],p['revision'])==('p1',1)
+        def _stamp(self,s,p):assert (p['plan_id'],p['revision'])==('p1',s['revision'])
         def _idle(self,c,p):pass
         def _save(self,c,s):s['revision']+=1
         def _mirror(self,s):pass
@@ -158,7 +174,11 @@ def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
         {'slot_id':'b','start':0,'end':1.5,'source_start':2,'source_end':3.5},
         {'slot_id':'a','start':1.5,'end':4,'source_start':3,'source_end':5.5}]})
     assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',2,3,2.5),('b',1,2,1.5)]
-    with sqlite3.connect(database) as c: assert c.execute("SELECT kind FROM editor_revisions").fetchone()==('timeline_edit',)
+    editor.timeline_history('x','undo',{'plan_id':'p1','revision':2})
+    assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',1,0,2),('b',2,1,2)]
+    editor.timeline_history('x','redo',{'plan_id':'p1','revision':3})
+    assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',2,3,2.5),('b',1,2,1.5)]
+    with sqlite3.connect(database) as c: assert [r[0] for r in c.execute("SELECT kind FROM editor_revisions ORDER BY created_at")] == ['timeline_edit','timeline_undo','timeline_redo']
 
 
 def test_motion_edit_uses_existing_single_slot_regeneration_pipeline():

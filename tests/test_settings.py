@@ -72,6 +72,20 @@ def test_general_and_optional_provider_fields(settings_client):
     assert data['ai33']['masked_api_key']=='••••••••••1234'
 
 
+def test_application_theme_defaults_validate_and_persist(settings_client):
+    general = settings_client.get('/api/settings').json()['general']
+    assert general['appearance_theme'] == 'turquoise'
+    assert general['accent_color'] == '#24D3C5'
+    saved = settings_client.put('/api/settings/general', json={
+        'appearance_theme': 'purple', 'accent_color': '#a78bfa'
+    })
+    assert saved.status_code == 200
+    assert saved.json()['general']['appearance_theme'] == 'purple'
+    assert saved.json()['general']['accent_color'] == '#A78BFA'
+    assert settings_client.get('/api/settings').json()['general']['accent_color'] == '#A78BFA'
+    assert settings_client.put('/api/settings/general', json={'accent_color': 'red'}).status_code == 422
+
+
 
 def test_blank_or_omitted_key_preserves_existing(settings_client):
     settings_client.put('/api/settings/openai', json={'api_key': SECRET, 'enabled': True})

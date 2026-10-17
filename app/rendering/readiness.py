@@ -14,6 +14,11 @@ def inspect(service,pid,tool,source,error,engine_status=None):
        'stock_ready':False,'unresolved_stock_slots':0,'stale_stock_slots':0,'missing_files':0,'blockers':[],'quality_warnings':[]}
     def block(code,message,screen):r['blockers'].append({'code':code,'message':message,'screen':screen})
     h=service.subtitles.handoff(pid)
+    from app.editor.advanced import read_document
+    try:plan=service.production.handoff(pid)
+    except ScriptError:plan=None
+    edits=read_document(service.projects,pid,plan['plan_id'])['document'] if plan else {}
+    empty=set(edits.get('empty_slots',[]))|set(edits.get('disabled_slots',[]))
     with closing(service.projects._connection()) as c:
         row=c.execute('SELECT active_version_id FROM narration_state WHERE project_id=?',(pid,)).fetchone()
         if row and row[0]:
@@ -36,6 +41,7 @@ def inspect(service,pid,tool,source,error,engine_status=None):
             slots=state['slots'];stale=not p or row['source_version_id']!=p['source_script_version_id'] or bool(state.get('handoff_fingerprint') and state['handoff_fingerprint']!=fingerprint(p))
             if stale:r['stale_stock_slots']=len(slots)
             for slot in slots:
+                if slot['slot_id'] in empty:continue
                 m=slot.get('selected_media')
                 if not m or slot['status']!='complete':r['unresolved_stock_slots']+=1;continue
                 proof=slot.get('local_validation') or {}

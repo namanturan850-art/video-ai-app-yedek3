@@ -174,9 +174,9 @@ def test_finished_video_review_is_opt_in_sampled_and_cached(tmp_path,monkeypatch
     class AI:
         def complete_json(self,*args,**kwargs):calls.append((args,kwargs));return {'summary':'Örnekler temiz.','issues':[]}
     monkeypatch.setattr('app.providers.factory.make_script_provider',lambda *a,**k:AI())
-    result=editor.video_review(pid,{'confirm':True})
+    result=editor.video_review(pid,{'confirm':True,'data_sharing_confirmed':True,'cost_confirmed':True})
     assert result['basis']=='Videonun tamamı değil, 8 örnek kare inceleniyor.' and len(result['sample_timecodes'])==8
-    assert editor.video_review(pid,{'confirm':True})['cached'] is True and len(calls)==1
+    assert editor.video_review(pid,{'confirm':True,'data_sharing_confirmed':True,'cost_confirmed':True})['cached'] is True and len(calls)==1
 
 
 def test_generated_motion_is_projected_once_to_its_semantic_track():

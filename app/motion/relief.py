@@ -417,7 +417,7 @@ def render(scene, output, ffmpeg):
     sat = theme == 'satellite'  # Harita stili → Uydu görüntüsü: every map marker, the size comparison too
     dark = theme == 'dark' or (info['mode'] == 'compare' and not sat)  # without satellite a size comparison is on the plain dark map
     info['dark'] = dark
-    duration = scene['duration']; frames = max(1, round(duration * FPS))
+    duration = scene['duration']; frames = 1 if '_sample_time' in scene else max(1, round(duration * FPS))
     view = info['view']
     cx, cy = (view[0] + view[2]) / 2, (view[1] + view[3]) / 2
     hw, hh = (view[2] - view[0]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1), (view[3] - view[1]) / 2 * MARGIN * (1.6 if info['mode'] == 'zoom' else 1)
@@ -545,7 +545,7 @@ def render(scene, output, ffmpeg):
     with guard(process):
         for i in range(frames):
             check()
-            process.stdin.write(frame(base, info, i / FPS, duration, path).tobytes())
+            process.stdin.write(frame(base, info, scene.get('_sample_time',i / FPS), duration, path).tobytes())
         process.stdin.close()
         error = process.stderr.read()
         if process.wait(timeout=600): raise RuntimeError(error.decode('utf-8', 'replace')[-300:] or 'ffmpeg failed')

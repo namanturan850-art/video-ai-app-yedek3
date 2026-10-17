@@ -293,6 +293,8 @@ class StockService:
             return public
 
     def _idle(self, connection, project_id):
+        if connection.execute("SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('queued','preparing','rendering','validating')",(project_id,)).fetchone():
+            raise StockError('render_busy','Render sırasında medya değiştirilemez. İşlemin tamamlanmasını bekleyin.',409)
         if connection.execute("SELECT 1 FROM stock_jobs WHERE project_id=? AND status IN ('queued','running')",(project_id,)).fetchone():
             raise StockError('busy','Medya işlemi sürüyor. Tamamlanmasını bekleyin.',409)
 

@@ -526,6 +526,9 @@ class RenderService:
         if source:
             t=source['timeline'];summary={'duration':t['duration'],'scenes':len(t['scenes']),'slots':len(t['slots']),'videos':sum(m['type']=='video' for m in source['media'].values()),'images':sum(m['type']=='image' for m in source['media'].values()),'subtitles':len(source['handoff']['subtitles']),'overlays':sum(bool(s.get('overlay_text')) for s in t['editing_scenes'])}
         with self.projects.lock,closing(self.projects._connection()) as c:
+            # State, versions and job status must describe the same SQLite snapshot.
+            # A worker may otherwise finish between these SELECTs.
+            c.execute('BEGIN')
             state=c.execute('SELECT active_version_id FROM render_state WHERE project_id=?',(pid,)).fetchone();active_id=state[0] if state else None
             versions=[];fingerprints={}
             for row in c.execute('SELECT id FROM render_versions WHERE project_id=? ORDER BY version DESC',(pid,)).fetchall():

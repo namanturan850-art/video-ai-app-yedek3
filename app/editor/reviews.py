@@ -33,7 +33,7 @@ class Reviews:
     def request(self,pid,payload):
         if set(payload)!={'confirmed','data_sharing_confirmed','cost_confirmed'} or any(payload[k] is not True for k in payload):
             raise EditorError('confirmation_required','Örnek kare paylaşımı ve olası maliyeti ayrı ayrı onaylayın.')
-        return self.editor.video_review(pid,{'confirm':True})
+        return self.editor.video_review(pid,{'confirm':True,'data_sharing_confirmed':True,'cost_confirmed':True})
 
     def status(self,pid,rid,fid,payload):
         if set(payload)!={'status'} or payload['status'] not in ('open','ignored','resolved'):raise EditorError('invalid_status','Bulgu durumu geçersiz.')

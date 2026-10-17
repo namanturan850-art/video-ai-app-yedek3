@@ -79,8 +79,11 @@ def program_frame(editor,advanced,pid,time):
         if expected and expected!=digest:raise EditorError('stale_media','Ana kaynak dosyası değişmiş; medya arşivini kontrol edin.',409)
         hashes.append(digest)
     active={**document,'clips':[c for c in document['clips'] if c['visible'] and c['start']<=frame<c['end']]}
-    assets=resolve(editor.projects,pid,active,editor.archive_file,draw=True,verify=verifier)
-    hashes.extend(str(a.get('sha256') or sha256_file(a['path'])) for a in assets.values())
+    channels=getattr(getattr(editor,'rendering',None),'channels',None)
+    kit=channels.for_project(pid)['style'] if channels else None
+    project=editor.projects.get(pid) if hasattr(editor.projects,'get') else {}
+    assets=resolve(editor.projects,pid,active,editor.archive_file,draw=True,verify=verifier,kit=kit,language=project.get('language','de'),frame_time=frame)
+    hashes.extend(str(a.get('sha256') or (verifier(a['path'],None) if verifier else sha256_file(a['path']))) for a in assets.values())
     for transition in document['transitions']:
         if item and transition['next_slot_id']==item['slot_id'] and frame-item['start']<transition['duration']:
             previous=next((x for x in media if x['slot_id']==transition['slot_id']),None)
@@ -89,7 +92,7 @@ def program_frame(editor,advanced,pid,time):
                 digest=verifier(previous_path,expected) if verifier and expected else sha256_file(previous_path)
                 if expected and digest!=expected:raise EditorError('stale_media','Geçiş kaynağı değişmiş. Arşivi kontrol edin.',409)
                 hashes.append(digest)
-    key=hashlib.sha256(json.dumps([document,view['stock_revision'],frame,hashes],sort_keys=True).encode()).hexdigest()
+    key=hashlib.sha256(json.dumps([document,view['stock_revision'],frame,hashes,kit],sort_keys=True).encode()).hexdigest()
     target=folder/f'frame-v1-{key}.jpg'
     if target.is_file() and not linked(target):return target
     ffmpeg=discover()['ffmpeg'];temp=folder/(uuid4().hex+'.jpg')

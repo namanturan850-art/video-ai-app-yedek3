@@ -130,7 +130,7 @@ def shared_render(fn):
 
 @shared_render
 
-def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None):
+def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
     from app.rendering.tools import discover
@@ -139,6 +139,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         raise RuntimeError('ffmpeg_missing')
     spec = with_pictures(spec, folder)
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
+    if sample_time is not None:scene['_sample_time']=max(0,min(duration,float(sample_time)))
     target = folder / (scene_key(scene) + '.mp4')
     from app.motion import relief
     relief.LAST_WARNING = relief.LAST_INFO = ''  # only this clip's satellite problem / view is reported

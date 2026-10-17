@@ -56,7 +56,9 @@ BASIC = ('stat', 'map', 'quote', 'timeline', 'compare', 'list')  # also drawn by
 def validate(spec, narration, entities=(), *, trusted=False):
     """Clean spec (see _validate); the chosen layout (0-2, app/motion/layouts.py) is kept."""
     from app.motion.layouts import layout_of
-    result = _validate(spec, narration, entities, trusted=trusted)
+    from app.motion.places import offline
+    with offline(bool(spec.get('local_only')) if isinstance(spec,dict) else False):
+        result = _validate(spec, narration, entities, trusted=trusted)
     if layout_of(spec):
         result = {**result, 'layout': layout_of(spec)}
     return result

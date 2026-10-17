@@ -38,6 +38,12 @@ class SubtitleService:
 
     def _guard(self,value): SecretGuard(self.settings.secret_values()).validate(value)
 
+    def _idle(self,c,pid):
+        if c.execute("SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('queued','preparing','rendering','validating')",(pid,)).fetchone():
+            raise SubtitleError('render_busy','Render sırasında altyazı değiştirilemez.',409)
+        if c.execute("SELECT 1 FROM stock_jobs WHERE project_id=? AND status IN ('queued','running')",(pid,)).fetchone():
+            raise SubtitleError('media_busy','Medya hazırlanırken altyazı değiştirilemez.',409)
+
     def _source(self,c,pid,*,require_current=True):
         row=c.execute('SELECT active_version_id FROM narration_state WHERE project_id=?',(pid,)).fetchone()
         if not row or not row[0]: raise SubtitleError('narration_required','Önce tamamlanmış bir seslendirmeyi aktif seçin.',409)
@@ -149,6 +155,7 @@ class SubtitleService:
             self.refresh_duration(pid)
             with self.projects.lock,closing(self.projects._connection()) as c,c:
                 c.execute('BEGIN IMMEDIATE')
+                self._idle(c,pid)
                 voice,script,_=self._source(c,pid)
                 if c.execute('SELECT 1 FROM subtitle_versions WHERE project_id=?',(pid,)).fetchone() and not payload['regenerate_confirmed']:
                     raise SubtitleError('confirmation_required','Yeni bir altyazı sürümü oluşturulacak. Mevcut sürüm korunacak.',409)
@@ -174,6 +181,7 @@ class SubtitleService:
         try:
             with self.projects.lock,closing(self.projects._connection()) as c,c:
                 c.execute('BEGIN IMMEDIATE')
+                self._idle(c,pid)
                 old=self._version(c,pid,vid);source=self._source(c,pid)
                 if self._stale(old,source): raise SubtitleError('stale_source','Eski altyazı sürümünü düzenlemek için eşleşen güncel seslendirmeyi seçin.',409)
                 voice,script,_=source;metadata=deepcopy(old['metadata'])
@@ -191,6 +199,7 @@ class SubtitleService:
             raise SubtitleError('confirmation_required','Aktif altyazı seçimini onaylayın.')
         with self.projects.lock,closing(self.projects._connection()) as c,c:
             self.projects._row(c,pid);item=self._version(c,pid,vid)
+            self._idle(c,pid)
             for ext in ('srt','vtt'): files.file_path(self.projects,pid,item['metadata'][f'{ext}_local_path'])
             c.execute('INSERT INTO subtitle_state VALUES (?,?,?) ON CONFLICT(project_id) DO UPDATE SET active_version_id=excluded.active_version_id,updated_at=excluded.updated_at',(pid,vid,now()))
         return self.view(pid)

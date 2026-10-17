@@ -17,6 +17,14 @@ def editor_router(service):
     editorial=Editorial(service)
     from app.editor.reviews import Reviews
     reviews=Reviews(service)
+    from app.editor.history import History
+    history=History(service)
+
+    @router.get('/history')
+    def history_snapshot(project_id:str):return history.snapshot(project_id)
+
+    @router.post('/history/{direction}')
+    def history_apply(project_id:str,direction:str,payload:dict):return history.apply(project_id,direction,payload)
 
     @router.get('/quality/reviews')
     def review_reports(project_id:str):return reviews.get(project_id)
@@ -47,6 +55,12 @@ def editor_router(service):
 
     @router.post('/editorial/drafts/{draft_id}/approve')
     def editorial_approve(project_id:str,draft_id:str,payload:dict):return editorial.approve(project_id,draft_id,payload)
+
+    @router.get('/editorial/drafts')
+    def editorial_drafts(project_id:str):return editorial.drafts(project_id)
+
+    @router.get('/editorial/drafts/{draft_id}/preview')
+    def editorial_preview(project_id:str,draft_id:str,time:float=0):return FileResponse(editorial.preview(project_id,draft_id,time),media_type='image/jpeg')
 
     @router.get('/advanced')
     def advanced_view(project_id:str):return advanced.get(project_id)

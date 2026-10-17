@@ -338,6 +338,19 @@ def distance(a, lat, lon):
     return math.hypot(a['lat'] - lat, (a['lon'] - lon) * math.cos(math.radians(lat)))
 
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
+_OFFLINE=ContextVar('places_offline',default=False)
+
+
+@contextmanager
+def offline(enabled=True):
+    token=_OFFLINE.set(enabled or _OFFLINE.get())
+    try:yield
+    finally:_OFFLINE.reset(token)
+
+
 def locate(name, near=None):
     """The place for a map marker: the lists above, then the town list, then
     Mapbox Geocoding (cached). near=(lat, lon) picks the closest namesake.
@@ -348,6 +361,7 @@ def locate(name, near=None):
     if towns:
         best = min(towns, key=lambda p: distance(p, *near)) if near else towns[0]
         return {**best, 'source': 'town'}
+    if _OFFLINE.get():return None
     from app.providers.geocoding import geocode
     found = geocode(name)
     if found:

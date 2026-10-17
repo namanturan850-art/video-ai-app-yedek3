@@ -116,6 +116,7 @@ class Clip(Editable):
     origin: Literal['manual','automatic','json']='manual'
     source_key: str|None=Field(default=None,max_length=64)
     motion: dict | None=None
+    motion_sources: list[Media]=Field(default_factory=list,max_length=2)
     visible: bool=True
     locked: bool=False
     order: int=Field(default=0,ge=0,le=1000)
@@ -242,6 +243,30 @@ class AdvancedEditor:
                 scene=next((s for s in view['scenes'] if s['start']<=clip['start']<s['end']),None)
                 try:clip['motion']=validate({**clip['motion'],'local_only':True},scene['narration'] if scene else '')
                 except (ValueError,RuntimeError) as e:raise EditorError('invalid_motion','Animasyon şeması/anlatımı geçersiz: '+str(e)) from None
+                if clip['motion']['template'] in ('mark','archive','beforeafter'):
+                    from pathlib import Path
+                    from app.editor.service import sha256_file
+                    data=clip['motion']['data'];names=data.get('images',[]) if clip['motion']['template']=='beforeafter' else [data.get('image')]
+                    archive=self.editor.archive(pid)['items'];refs=[]
+                    for name in names:
+                        asset=next((a for a in archive if a['media_type']=='image' and a['file_name']==name),None)
+                        if not asset or Path(str(name)).name!=name:raise EditorError('invalid_motion_image','Animasyon için bu projenin arşivindeki görsel dosya adını seçin.')
+                        path,_=self.editor.archive_file(pid,asset['provider'],asset['media_id'])
+                        ref={k:asset[k] for k in ('provider','media_id','sha256')}
+                        if sha256_file(path)!=ref['sha256']:raise EditorError('stale_media','Animasyonun görsel kaynağı değişmiş.',409)
+                        refs.append(ref)
+                    clip['motion_sources']=refs
+                # Catch incomplete extended-template fields before any save/job.
+                # Building a local scene does not render frames or contact providers.
+                from app.channels import DEFAULT_STYLE
+                from app.motion.templates import build
+                from app.motion.clips import with_pictures
+                from app.motion.places import offline
+                try:
+                    with offline():
+                        spec=with_pictures({**clip['motion'],'local_only':True},self.projects._path(pid)/'stock')
+                        build(spec,DEFAULT_STYLE,clip['end']-clip['start'],0,self.projects.get(pid)['language'])
+                except (ValueError,RuntimeError,KeyError,TypeError,IndexError):raise EditorError('invalid_motion','Animasyonun gerekli veri alanları veya yerel görseli eksik. Şablon örneğini ve arşivi kontrol edin.') from None
         for previous in old['clips']:
             if previous['id'] not in {c['id'] for c in validated['clips']} and (previous['locked'] or any(s['locked'] and previous['start']<s['end'] and previous['end']>s['start'] for s in view['scenes'])):
                 raise EditorError('locked','Kilitli ek klip silinemez.',409)

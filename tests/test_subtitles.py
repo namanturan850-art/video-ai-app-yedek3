@@ -35,9 +35,9 @@ def wav(seconds=13):
     return buffer.getvalue()
 
 
-def seed(app,text=TEXT,seconds=13):
+def seed(app,text=TEXT,seconds=13,language='de'):
     projects=app.state.projects
-    project=projects.create({'name':'Altyazı denemesi','topic':'Yerel zamanlama','language':'de'})
+    project=projects.create({'name':'Altyazı denemesi','topic':'Yerel zamanlama','language':language})
     pid=project['id'];repo=app.state.scripts.repository
     # This shared fixture represents pre-manual-first projects. New-default tests
     # create their own project or explicitly switch these saved legacy sources.
@@ -50,7 +50,7 @@ def seed(app,text=TEXT,seconds=13):
     audio={'local_path':'voice/'+audio_name,'format':'wav','content_type':'audio/wav','file_size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'duration':None,'duration_message':'Ses süresi daha sonra hesaplanacak.'}
     vid=uuid4().hex
     meta={'provider':'AI33 / OpenSpeaker','voice_provider':'elevenlabs','voice_id':'elevenlabs_fixture','voice_name':'Local Fixture',
-          'speed':1.0,'target_language':'de','source_script_version':1,'character_count':len(text),'script_fingerprint':script_fingerprint(text),
+          'speed':1.0,'target_language':language,'source_script_version':1,'character_count':len(text),'script_fingerprint':script_fingerprint(text),
           'text':text,'task_id':'fixture-existing-task','creation_attempted':True,'audio':audio,'status':'completed'}
     with closing(projects._connection()) as c,c:
         stamp=project['created_at']

@@ -104,6 +104,12 @@ class FFmpegRenderProvider:
             emphasis=[item for item in emphasis if not any(s['start']<=item.get('start',-1)<s['end'] for s in hidden)]
         if emphasis and replaced_texts:
             emphasis=[item for item in emphasis if not any(a<=item.get('start',-1)<b and item.get('text')==text for a,b,text in replaced_texts)]
+        if emphasis and advanced.get('suppressed_layers'):
+            hidden_words=[]
+            for cue_index,cue in enumerate(plan['handoff']['subtitles'],1):
+                for i,word in enumerate(cue['text'].split()):
+                    if f'word:{cue.get("index",cue_index)}:{i}' in advanced['suppressed_layers']:hidden_words.append((cue['start'],cue['end'],word))
+            emphasis=[item for item in emphasis if not any(a<=item.get('start',-1)<b and item.get('text','').casefold()==word.casefold() for a,b,word in hidden_words)]
         try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,subtitle_style=sub_style,graphic_style=graphic_style,emphasis=emphasis)
         except RenderError as error:
             raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
@@ -325,7 +331,7 @@ class FFmpegRenderProvider:
             for clip in advanced.get('clips',[]):
                 if clip['visible'] and clip['kind']=='motion':
                     from app.editor.compositor import motion_asset
-                    assets[clip['id']]=motion_asset(clip,plan['advanced_stock'],plan.get('style_kit'),self.runner.event.is_set if hasattr(self.runner,'event') else None)
+                    assets[clip['id']]=motion_asset(clip,plan['advanced_stock'],plan.get('style_kit'),self.runner.event.is_set if hasattr(self.runner,'event') else None,language=plan['handoff'].get('target_language','de'))
             prefix,video_label,extra_audio=compile_graph(args,advanced,assets,folder=folder,duration=duration,adjustment_slots=plan.get('advanced_slots'),narration=plan['audio'])
             if prefix:graph=prefix+';\n'+graph.replace('[0:v]null',f'[{video_label}]null',1)
             if extra_audio:

@@ -51,6 +51,7 @@ def clock():  # replaced in tests
     import time
     return time.monotonic()
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
+          'sources_only':'Kaynak hazırlanıyor — yaratıcı montaj yapılmaz',
           'local_archive': '1 · Yerel medya arşivi',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
@@ -246,8 +247,6 @@ class MediaDirector:
 
     # ---- AI engine---------------------------------------------------------
     def connect(self):
-        if getattr(self,'sources_only',False):self.local=True;return
-
         """The AI look is optional: switched off in Settings, no engine, or the
         engine cannot be reached → local scoring (tags/words), never a stop."""
         settings = self.service.settings
@@ -255,6 +254,8 @@ class MediaDirector:
         self.clip = ClipCheck(self.service)
         self.progress['clip_ready'] = self.clip.ready()
         if not self.progress['clip_ready']: self.progress['clip_warning'] = MISSING
+        if getattr(self,'sources_only',False):
+            self.local=True;self.progress['local_reason']='Yalnız kaynak hazırlama: ücretli AI ve yaratıcı montaj kapalı.';return
         else: self.progress.pop('clip_warning', None)
         engine = settings.ai_engine()
         self.engine = engine or 'gemini'
@@ -1405,6 +1406,7 @@ class MediaDirector:
         from app.motion.clips import render_clip, media_record
         from app.motion.layouts import pick
         spec = spec or self.motion_spec(slot, scene)
+        if getattr(self,'sources_only',False):spec={**spec,'local_only':True}
         if stage in ('motion', 'motion_planned') and self.opening_overlay(slot, scene, log, spec):
             return True
         marker = json.dumps({k: v for k, v in spec.items() if k != 'layout'}, sort_keys=True)
@@ -1712,6 +1714,7 @@ class MediaDirector:
 
     def finish_slot(self, slot, log):
         stage = next((s['stage'] for s in reversed(log['steps']) if s.get('result') in ('chosen', 'kept', 'kept_no_better_option')), 'motion')
+        if getattr(self,'sources_only',False) and not slot.get('selected_media'):stage='sources_only'
         slot['director'] = {'stage': stage, 'stage_label': STAGES[stage], 'reason': slot.get('message', ''),
                             'searches': log['searches'][-40:], 'steps': [{k: v for k, v in s.items()} for s in log['steps']],
                             'rejected': log.get('rejected', {}), 'rewritten_queries': log.get('rewritten_queries', []),

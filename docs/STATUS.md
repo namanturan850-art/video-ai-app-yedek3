@@ -1,3 +1,12 @@
+## 2026-10-18 — Manuel kurgu: ortak geçmiş ve gerçek önizleme
+
+- Ortak Undo/Redo; temel yuva atama/kaldırma, ek belge, kurgu politikası, gerçek altyazı sürümü ve ses miksini proje/plan/revizyon kontrolüyle birleştirir. Taslak onayını geri almak modu da geri getirir.
+- JSON/otomatik taslaklar kalıcıdır; yeniden açılabilir, ayrı partiler halinde onaylanabilir. Fark/çakışma listesi ve kaydetmeden ortak compositor üzerinden gerçek kare önizlemesi vardır. Eski taslaklar veya tekrar onaylanan nesneler reddedilir.
+- Harita doğrulama ve ek katman renderı yerel bağlamda kalır; bilinmeyen yer için Mapbox çağrısı yapılmaz. Görsel tabanlı şablonlar yalnız aynı projenin hash doğrulamalı arşiv görsellerini kabul eder.
+- Motion önizlemesi uzun klibi encode etmez: aynı sahneden yalnız istenen kare hazırlanır. Font/kalınlık/satır/kutu, temiz harita ve bağımsız işaretler gerçek raster/FFmpeg yolunu kullanır. Ducking yan zinciri müzik sonunu kesmemek için anlatım saatine pad edilir.
+- Aktif render sırasında medya/altyazı değişikliği engellenir; dışarıdan kaynak değişikliği yine işçi tarafından kontrol edilir. Render durumu/aktif sürüm tek SQLite snapshot'ından okunur. Bilinçli boşaltılmış yuvadaki eski bozuk kaynak renderı engellemez.
+- Doğrulama: hedefli backend/sürüm/render paketi **41 geçti**; beş fontun gerçek kalın pikseli + gerçek FFmpeg ducking **6 geçti**. Önceki geniş tur **320 geçti / 1 eski beklenti hatası / 1 ortam nedeniyle atlandı**; eski beklenti güncellendi ve ilgili test geçti. Son geniş tur sürüyor.
+
 ## 2026-10-18 — Manuel öncelikli editör: kalıcı altyapı
 
 - Başlangıç `main`: `f4fa91c` (PR #90/#91 korunuyor). Dal: `feature/naman-manual-first-editor-overhaul`.

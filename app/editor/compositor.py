@@ -37,15 +37,47 @@ def expression(edit,prop,var='t'):
 def text_image(clip,folder,width,height):
     from PIL import Image,ImageDraw,ImageFont
     from app.text_layout import fit_text
-    font_path=Path(__file__).resolve().parents[1]/'static/fonts/Inter.ttf'
+    from app.channels import FONTS
+    font_path=Path(__file__).resolve().parents[1]/'static/fonts'/FONTS[clip.get('font','inter')][1]
+    def make_font(size):
+        font=ImageFont.truetype(str(font_path),max(8,int(size)))
+        try:font.set_variation_by_axes([700 if b'Weight' in a['name'] and clip.get('font_weight')=='bold' else a['default'] for a in font.get_variation_axes()])
+        except (OSError,AttributeError):pass
+        return font
     size=max(8,round(clip['font_size']*width/1920))
-    def measure(text,size):return ImageFont.truetype(str(font_path),max(8,int(size))).getlength(text)
-    size,lines=fit_text(clip['text'],measure,width*.84,4,size,smallest=8)
-    font=ImageFont.truetype(str(font_path),max(8,int(size)))
+    def measure(text,size):return make_font(size).getlength(text)
+    size,lines=fit_text(clip['text'],measure,width*clip.get('text_width',.84),4,size,smallest=8)
+    font=make_font(size)
     image=Image.new('RGBA',(width,height));draw=ImageDraw.Draw(image)
-    content='\n'.join(lines);bounds=draw.multiline_textbbox((0,0),content,font=font,align='center')
-    draw.multiline_text(((width-(bounds[2]-bounds[0]))/2,(height-(bounds[3]-bounds[1]))/2),content,font=font,fill=clip['color'],align='center',stroke_width=max(1,width//960),stroke_fill='#111111')
+    align=clip.get('text_align','center');content='\n'.join(lines);bounds=draw.multiline_textbbox((0,0),content,font=font,align=align)
+    x=(width-(bounds[2]-bounds[0]))/2;y=(height-(bounds[3]-bounds[1]))/2
+    if clip.get('text_background'):
+        from PIL import ImageColor
+        draw.rounded_rectangle((x-12,y-8,x+bounds[2]+12,y+bounds[3]+8),radius=8,fill=(*ImageColor.getrgb(clip['text_background']),round(clip['background_opacity']*255)))
+    draw.multiline_text((x,y),content,font=font,fill=clip['color'],align=align,stroke_width=max(1,width//960),stroke_fill='#111111')
     path=Path(folder)/f'text-{clip["id"]}.png';image.save(path);return path
+
+
+def shape_image(clip,folder,width,height):
+    from PIL import Image,ImageDraw
+    image=Image.new('RGBA',(width,height));draw=ImageDraw.Draw(image);r=height*clip['shape_size'];x,y=width/2,height/2;color=clip['color']
+    if clip['shape']=='pin':
+        draw.polygon([(x-r,y-r/2),(x+r,y-r/2),(x,y+r*2)],fill=color)
+        draw.ellipse((x-r,y-r*1.5,x+r,y+r/2),fill=color)
+        draw.ellipse((x-r*.35,y-r*.85,x+r*.35,y-r*.15),fill='#18181B')
+    elif clip['shape']=='arrow':draw.polygon([(x-2*r,y-r/3),(x,y-r/3),(x,y-r),(x+2*r,y),(x,y+r),(x,y+r/3),(x-2*r,y+r/3)],fill=color)
+    else:draw.rectangle((x-2*r,y-r,x+2*r,y+r),fill=color)
+    path=Path(folder)/f'shape-{clip["id"]}.png';image.save(path);return path
+
+
+def motion_asset(clip,folder,kit=None,cancelled=None):
+    from app.motion.clips import render_clip
+    from app.channels import DEFAULT_STYLE
+    style=deepcopy(kit or DEFAULT_STYLE)
+    if clip.get('motion_color'):style['palette']['accent']=clip['motion_color']
+    spec={**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)}
+    path,_,_=render_clip(folder,spec,style,clip['end']-clip['start'],0,prefer_openmontage=False,cancelled=cancelled)
+    return {'path':path,'type':'video','has_audio':False}
 
 
 def resolve(projects,pid,document,archive_file,*,kit=None,draw=False,verify=None):
@@ -60,12 +92,7 @@ def resolve(projects,pid,document,archive_file,*,kit=None,draw=False,verify=None
             if digest!=ref['sha256']:raise RenderError('source_stale','Ek kurgu kaynak dosyası değişmiş.')
             assets[clip['id']]={'path':path,'type':asset['media_type'],'sha256':ref['sha256'],'has_audio':asset.get('has_audio',asset['media_type']=='audio')}
         elif clip['kind']=='motion' and draw:
-            from app.motion.clips import render_clip
-            from app.channels import DEFAULT_STYLE
-            spec={**clip['motion'],'local_only':True}
-            path,_,_=render_clip(projects._path(pid)/'stock',spec,kit or DEFAULT_STYLE,clip['end']-clip['start'],0,
-                                 prefer_openmontage=False)
-            assets[clip['id']]={'path':path,'type':'video','has_audio':False}
+            assets[clip['id']]=motion_asset(clip,projects._path(pid)/'stock',kit)
     return assets
 
 
@@ -80,7 +107,7 @@ def archive_file(projects,pid,provider,media_id):
     return asset_path(projects,pid,item),item
 
 
-def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,height=1080,adjustment_slots=None,frame_time=None):
+def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,height=1080,adjustment_slots=None,frame_time=None,narration=None):
     """Append local inputs and return graph, video label, supplemental audio labels.
 
     Base adjustments operate before supplementary layers and before subtitles.
@@ -108,7 +135,11 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
         # can carry a timestamp beyond its actual sample count.
         samples=round(duration*48000)
         chain+=f',adelay={round(start*48000)}S:all=1,apad=whole_len={samples},atrim=end_sample={samples},asetpts=N/SR/TB[{al}]'
-        graphs.append(chain);audio.append(al)
+        graphs.append(chain)
+        if edit.get('ducking') and narration:
+            side=input_file(narration,'audio',seconds=duration);out=label()
+            graphs.append(f'[{al}][{side}:a]sidechaincompress=threshold=0.03:ratio=8:attack=20:release=250[{out}]');al=out
+        audio.append(al)
     edits=[]
     for edit in doc['adjustments']:
         slot=(adjustment_slots or {}).get(edit['slot_id'])
@@ -130,6 +161,7 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
                 i=input_file(asset['path'],'video',asset.get('segment_start',0),speed,length);audio_chain(i,edit,length,speed,start)
         else:
             if edit['kind']=='text':asset={'path':text_image(edit,folder,width,height),'type':'image','has_audio':False}
+            if edit['kind']=='shape':asset={'path':shape_image(edit,folder,width,height),'type':'image','has_audio':False}
             if not asset:raise RenderError('advanced_missing','Ek animasyonun yerel önizleme dosyası hazırlanamadı.')
             source_start=edit.get('source_start',0)+(local*speed if local is not None else 0)
             i=input_file(asset['path'],asset['type'],source_start,speed,length if local is None else .04)

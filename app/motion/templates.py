@@ -293,6 +293,7 @@ class Scene:
 
 def build(spec, kit, duration, emphasis_offset, language='de'):
     from app.motion.layouts import arrange
+    if spec.get('clean_source'):return keep_text_safe(_build(spec,kit,duration,emphasis_offset,language))
     return keep_text_safe(arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit))
 
 
@@ -375,6 +376,7 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         at = min(E, max(.6, D - 2.6))
         s.add('map', {'zoom': [[0, 0], [at, 1]]}, lon=d['lon'], lat=d['lat'], span_from=span_from, span_to=span_to,
               land=mix(s.bg, s.primary, .28), coast=mix(s.bg, s.primary, .5), ocean=mix(s.bg, s.primary, .06))
+        if spec.get('clean_source'):return s.result()
         # The pin sits on the place itself (near the poles the view stops at ±85°, so it is not always the centre).
         left, top, span, height = map_view({'lon': d['lon'], 'lat': d['lat'], 'span_from': span_from, 'span_to': span_to}, 1)
         cx, cy = W / 2, (top - d['lat']) / height * H

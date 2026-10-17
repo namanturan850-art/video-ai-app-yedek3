@@ -168,7 +168,7 @@ class SubtitleService:
             category='unexpected_backend';raise
         finally:LOG.info('subtitles operation=create category=%s elapsed_ms=%.0f',category,(time.monotonic()-started)*1000)
 
-    def edit(self,pid,vid,payload):
+    def edit(self,pid,vid,payload,*,allow_empty=False,preserve_clock=False):
         if not isinstance(payload,dict) or set(payload)!={'cues'}:
             raise SubtitleError('invalid_request','Yalnız altyazı metni ve zamanları düzenlenebilir.')
         try:
@@ -177,9 +177,9 @@ class SubtitleService:
                 old=self._version(c,pid,vid);source=self._source(c,pid)
                 if self._stale(old,source): raise SubtitleError('stale_source','Eski altyazı sürümünü düzenlemek için eşleşen güncel seslendirmeyi seçin.',409)
                 voice,script,_=source;metadata=deepcopy(old['metadata'])
-                cues=validate_cues(payload['cues'],metadata['audio_duration'])
+                cues=validate_cues(payload['cues'],metadata['audio_duration'],allow_empty=allow_empty)
                 metadata.update(text_matches_narration=normalize(' '.join(q['text'] for q in cues))==normalize(script['text']),
-                                word_boundaries=edited_boundaries(script['text'],cues,metadata['word_boundaries']),
+                                word_boundaries=metadata['word_boundaries'] if preserve_clock else edited_boundaries(script['text'],cues,metadata['word_boundaries']),
                                 origin='manual',parent_version_id=vid)
                 self._commit(c,pid,voice,script,cues,metadata)
             return self.view(pid)

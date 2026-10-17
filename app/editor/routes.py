@@ -13,6 +13,40 @@ def editor_router(service):
     router=APIRouter(prefix='/api/projects/{project_id}/editor')
     from app.editor.advanced import AdvancedEditor
     advanced=AdvancedEditor(service)
+    from app.editor.editorial import Editorial
+    editorial=Editorial(service)
+    from app.editor.reviews import Reviews
+    reviews=Reviews(service)
+
+    @router.get('/quality/reviews')
+    def review_reports(project_id:str):return reviews.get(project_id)
+
+    @router.post('/quality/review-request')
+    def review_request(project_id:str,payload:dict):return reviews.request(project_id,payload)
+
+    @router.put('/quality/reviews/{render_id}/{finding_id}')
+    def review_status(project_id:str,render_id:str,finding_id:str,payload:dict):return reviews.status(project_id,render_id,finding_id,payload)
+
+    @router.put('/subtitles')
+    def edit_subtitles(project_id:str,payload:dict):return editorial.subtitles_edit(project_id,payload)
+
+    @router.post('/subtitles/history/{direction}')
+    def subtitle_history(project_id:str,direction:str,payload:dict):return editorial.subtitle_history(project_id,direction,payload)
+
+    @router.get('/editorial')
+    def editorial_view(project_id:str):return editorial.get(project_id)
+
+    @router.put('/editorial')
+    def editorial_save(project_id:str,payload:dict):return editorial.save(project_id,payload)
+
+    @router.post('/editorial/automatic')
+    def editorial_draft(project_id:str):return editorial.automatic(project_id)
+
+    @router.post('/editorial/import-draft')
+    def editorial_import(project_id:str,payload:dict):return editorial.import_draft(project_id,payload)
+
+    @router.post('/editorial/drafts/{draft_id}/approve')
+    def editorial_approve(project_id:str,draft_id:str,payload:dict):return editorial.approve(project_id,draft_id,payload)
 
     @router.get('/advanced')
     def advanced_view(project_id:str):return advanced.get(project_id)

@@ -34,8 +34,8 @@ class CueInput(BaseModel):
         return value
 
 
-def validate_cues(payload, duration):
-    if not isinstance(payload, list) or not 1 <= len(payload) <= 20000:
+def validate_cues(payload, duration, *, allow_empty=False):
+    if not isinstance(payload, list) or not (0 if allow_empty else 1) <= len(payload) <= 20000:
         raise SubtitleError('invalid_cues', 'En az bir altyazı gerekli; en fazla 20.000 altyazı kaydedilebilir.')
     result = []
     previous = 0.0

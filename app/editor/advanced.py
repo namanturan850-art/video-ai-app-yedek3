@@ -93,7 +93,7 @@ class Editable(Strict):
 class Clip(Editable):
     id: str=Field(pattern=r'^[a-f0-9]{32}$')
     track: Literal['emphasis','layers','maps','infographics','visuals','audio']
-    kind: Literal['media','text','motion']='media'
+    kind: Literal['media','text','motion','shape']='media'
     start: float=Field(ge=0)
     end: float=Field(gt=0)
     source_start: float=Field(default=0,ge=0)
@@ -101,6 +101,20 @@ class Clip(Editable):
     text: str=Field(default='',max_length=400)
     color: str=Field(default='#FFFFFF',pattern=r'^#[0-9A-Fa-f]{6}$')
     font_size: int=Field(default=64,ge=18,le=160)
+    font: Literal['inter','montserrat','oswald','bebas','lora']='inter'
+    font_weight: Literal['normal','bold']='normal'
+    text_align: Literal['left','center','right']='center'
+    text_width: float=Field(default=.84,ge=.1,le=.9)
+    text_background: str|None=Field(default=None,pattern=r'^#[0-9A-Fa-f]{6}$')
+    background_opacity: float=Field(default=.65,ge=0,le=1)
+    clean_map: bool=False
+    motion_color: str|None=Field(default=None,pattern=r'^#[0-9A-Fa-f]{6}$')
+    shape: Literal['pin','arrow','rectangle']='pin'
+    shape_size: float=Field(default=.1,ge=.02,le=.5)
+    audio_role: Literal['source','music','sfx']='source'
+    ducking: bool=False
+    origin: Literal['manual','automatic','json']='manual'
+    source_key: str|None=Field(default=None,max_length=64)
     motion: dict | None=None
     visible: bool=True
     locked: bool=False
@@ -113,6 +127,9 @@ class Clip(Editable):
         if self.kind=='media' and self.media is None:raise ValueError('Medya kimliği eksik.')
         if self.kind=='text' and (not self.text.strip() or self.track=='audio'):raise ValueError('Metin ve iz geçersiz.')
         if self.kind=='motion' and (not self.motion or self.track=='audio'):raise ValueError('Motion ve iz geçersiz.')
+        if self.kind=='shape' and self.track=='audio':raise ValueError('Görsel işaret Ses izine eklenemez.')
+        if self.ducking and self.track!='audio':raise ValueError('Ducking yalnız ek ses klibinde desteklenir.')
+        if self.clean_map and (self.kind!='motion' or self.motion.get('template')!='map'):raise ValueError('Temiz kaynak modu yalnız yerel map şablonunda desteklenir.')
         if any(k.time>self.end-self.start+.001 for k in self.keyframes):raise ValueError('Keyframe klip süresini aşıyor.')
         if len({(k.property,k.time) for k in self.keyframes})!=len(self.keyframes):raise ValueError('Aynı özellik/zamanda iki keyframe olamaz.')
         if self.fade_in+self.fade_out>self.end-self.start:raise ValueError('Fade süreleri klibi aşıyor.')
@@ -146,6 +163,8 @@ class Document(Strict):
     transitions: list[Transition]=Field(default_factory=list,max_length=500)
     suppressed_scenes: list[str]=Field(default_factory=list,max_length=500)
     suppressed_layers: list[str]=Field(default_factory=list,max_length=500)
+    empty_slots: list[str]=Field(default_factory=list,max_length=500)
+    disabled_slots: list[str]=Field(default_factory=list,max_length=500)
 
     @model_validator(mode='after')
     def unique(self):
@@ -156,6 +175,7 @@ class Document(Strict):
 
 
 def read_document(projects,pid,plan_id):
+    if not hasattr(projects,'_connection') or not hasattr(projects,'_row'):return {'plan_id':plan_id,'revision':0,'document':Document().model_dump()}
     with closing(projects._connection()) as c:
         row=c.execute('SELECT * FROM editor_documents WHERE project_id=? AND plan_id=?',(pid,plan_id)).fetchone()
     return {'plan_id':plan_id,'revision':row['revision'] if row else 0,
@@ -184,6 +204,10 @@ class AdvancedEditor:
             item=legacy.get(key);scene=next((s for s in view['scenes'] if item and s['scene_id']==item['scene_id']),None)
             if not scene or scene['locked']:raise EditorError('locked','Kaynak plan katmanı eksik veya kilitli.',409)
         slots={x['slot_id']:x for track in view['tracks'].values() for x in track if x.get('slot_id')}
+        for field in ('empty_slots','disabled_slots'):
+            for sid in set(old.get(field,[]))^set(validated[field]):
+                slot=slots.get(sid)
+                if not slot or slot['locked']:raise EditorError('locked','Bu yuva eksik veya kilitli. Önce kilidini açın.',409)
         old_clips={c['id']:c for c in old['clips']}
         for clip in validated['clips']:
             if clip['end']>duration+.001:raise EditorError('clip_outside','Ek klip anlatım süresinin dışına çıkamaz.')
@@ -296,6 +320,9 @@ class AdvancedEditor:
             stack=done if direction=='undo' else undone
             if not stack:raise EditorError('empty_history','Bu yönde geri alınabilecek ek kurgu işlemi yok.',409)
             record=records[stack[-1]];target=record['before' if direction=='undo' else 'after']
+            expected=record['after' if direction=='undo' else 'before']
+            if Document.model_validate(current['document']).model_dump()!=Document.model_validate(expected).model_dump():
+                raise EditorError('stale_history','Kurgu başka işlemde değişmiş. Önce ilgili yuva/altyazı işlemini geri alın.',409)
             return self.save(pid,{**payload,'document':target},kind=direction)
 
 

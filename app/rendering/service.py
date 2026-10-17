@@ -196,6 +196,27 @@ class RenderService:
     def _inputs(self,pid,opts,force=False,*,stored_edit_plan=None,draw=False,cancelled=None):
         try:
             h=self.subtitles.handoff(pid);p=self.production.handoff(pid)
+            from app.editor.editorial import read
+            from app.editor.advanced import read_document
+            editorial=read(self.projects,pid)['preferences'];manual_mode=editorial['editing_mode']!='legacy'
+            saved_edits=read_document(self.projects,pid,p['plan_id'])['document']
+            timeline_music=any(c['visible'] and c['track']=='audio' and c.get('audio_role')=='music' for c in saved_edits['clips'])
+            empty=set(saved_edits.get('empty_slots',[])+saved_edits.get('disabled_slots',[]))
+            if manual_mode:
+                opts={**opts,'editing_style':'basic','montage_engine':'native','subtitle_display':editorial['subtitle_display'],
+                      'subtitle_burned':editorial['subtitle_display']!='none'}
+                if timeline_music:opts['music_enabled']=False
+                h=deepcopy(h);p=deepcopy(p)
+                for scene in p['scenes']:
+                    scene.update(motion='none',transition='hard_cut')
+                    if not editorial['legacy_decorations']:scene['overlay_text']=''
+                if editorial['subtitle_display']=='emphasis':h['subtitles']=[q for q in h['subtitles'] if q['index'] in editorial['important_cues']]
+                if editorial['subtitle_display']=='none':h['subtitles']=[]
+            if empty:
+                h=deepcopy(h)
+                for slot in h.get('stock_slots',[]):
+                    if slot['slot_id'] in empty:slot.update(status='complete',selected_media_local_identity={'media_type':'empty'})
+                if h.get('scenes') and h.get('scene_plan_id')==p['plan_id'] and all(s['status']=='complete' for s in h['stock_slots']):h['ready']=True
             with closing(self.projects._connection()) as c:
                 voice=self.subtitles.narration._version(c,pid,h['narration_version_id'])
                 row=c.execute('SELECT state_json FROM stock_plans WHERE project_id=? AND plan_id=?',(pid,h['scene_plan_id'])).fetchone()
@@ -215,7 +236,7 @@ class RenderService:
                     audio_settings={'narration_volume':1.,'narration_fade_in':0.,'narration_fade_out':0.,
                                     'sfx_volume':.10,'sfx_levels':{}}
             from app.rendering import reflow
-            h,recovery=reflow.project(h,p,stock,self.projects,lambda path:self._hash(path,force))
+            h,recovery=(h,None) if manual_mode or empty else reflow.project(h,p,stock,self.projects,lambda path:self._hash(path,force))
             t=timeline.build(h,p)
             audio=audio_path(self.projects,pid,voice['metadata']['audio'])
             audio_hash=self._hash(audio,force)
@@ -223,6 +244,9 @@ class RenderService:
             originals={str(audio):audio_hash};media={};identities=[]
             selected={s['slot_id']:s for s in stock['slots']}
             for slot in t['slots']:
+                if slot['slot_id'] in empty:
+                    media[slot['slot_id']]={'path':None,'type':'empty'}
+                    identities.append({'slot_id':slot['slot_id'],'intentional_empty':True});continue
                 if slot.get('graphic_text'):
                     if opts.get('editing_style')!='adaptive':raise RenderError('recovery_style_required','Grafik içeren akıllı kurgu için Uyarlanabilir YouTube stilini seçin.')
                     media[slot['slot_id']]={'type':'graphic','path':None,'duration':None,'sha256':smart_edit.digest(slot['graphic_text'])}
@@ -251,21 +275,22 @@ class RenderService:
                 music_identity={'local_path':music['local_path'],'sha256':music_hash};originals[str(music_file)]=music_hash
             channels=getattr(self,'channels',None)
             kit=channels.for_project(pid)['style'] if channels else None
-            pending=[];sfx=self._motion(pid,t,h,selected,media,originals,kit,force,draw,pending,cancelled)
+            pending=[];sfx={'events':[]} if manual_mode else self._motion(pid,t,h,selected,media,originals,kit,force,draw,pending,cancelled)
             sfx['volume']=audio_settings['sfx_volume']
-            endscreen=self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals,cancelled)
+            endscreen=None if manual_mode else self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals,cancelled)
             fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
             if audio_settings_saved:fingerprint_data['editor_audio_settings']=audio_settings
             from app.editor.advanced import read_document
             from app.editor.compositor import resolve,archive_file
             advanced=read_document(self.projects,pid,h['scene_plan_id'])['document']
             advanced_render={**advanced,'markers':[]}
-            advanced_active=bool(advanced['clips'] or advanced['adjustments'] or advanced['transitions'] or advanced.get('suppressed_scenes') or advanced.get('suppressed_layers'))
+            advanced_active=bool(advanced['clips'] or advanced['adjustments'] or advanced['transitions'] or advanced.get('suppressed_scenes') or advanced.get('suppressed_layers') or empty)
             if advanced_active and (any(a['slot_id'] not in {s['slot_id'] for s in t['slots']} for a in advanced['adjustments']) or any(c['end']>h['audio_duration']+.001 for c in advanced['clips'])):
                 raise RenderError('advanced_stale','Ek kurgu, güncel ana klip veya anlatım süresiyle eşleşmiyor. Kurgu ekranında düzeltin.')
             advanced_assets=resolve(self.projects,pid,advanced,lambda pid,p,m:archive_file(self.projects,pid,p,m),verify=lambda path,expected:self._hash(path,force)) if advanced_active else {}
             for asset in advanced_assets.values():originals[str(asset['path'])]=self._hash(asset['path'],force)
             if advanced_active:fingerprint_data['advanced_editor']=advanced_render
+            if manual_mode:fingerprint_data['editorial']=editorial
             from app.channels import DEFAULT_STYLE
             if endscreen:fingerprint_data['endscreen']={'key':endscreen['key'],'seconds':endscreen['seconds']}  # absent without a closing moment: old fingerprints kept
             if sfx['events']:  # absent for videos without motion: old fingerprints kept
@@ -280,7 +305,7 @@ class RenderService:
             base_fingerprint=fingerprint
             plan=None
             # Pre-9.5 versions have no style key: retain their EXACT old fingerprint.
-            if 'editing_style' in opts:
+            if 'editing_style' in opts and not manual_mode:
                 # Existing completed versions keep their saved deterministic plan
                 # when its source is still exact; tuning a new algorithm cannot
                 # invalidate an owner's successful render.
@@ -300,6 +325,7 @@ class RenderService:
             for event in sfx['events']:
                 event['level']=audio_settings['sfx_levels'].get(event.get('slot_id'),audio_settings['sfx_volume'])
             inputs={'handoff':h,'timeline':t,'media':media,'audio':audio,'music':music_file,'options':opts,'fingerprint':fingerprint,'originals':originals,'smart_edit_plan':plan,'recovery':recovery,'style_kit':kit,'sfx':sfx,'audio_settings':audio_settings}
+            if manual_mode:inputs['editorial']=editorial
             if advanced_active:
                 inputs.update(advanced_document=advanced_render,advanced_assets=advanced_assets,advanced_stock=self.projects._path(pid)/'stock',
                               advanced_slots={s['slot_id']:{'start':s['start'],'end':s['end']} for s in t['slots']})
@@ -326,7 +352,7 @@ class RenderService:
         opts=options(payload);self.projects.get(pid)
         with self.projects.lock:
             with closing(self.projects._connection()) as c:self._idle(c,pid)
-            inputs=self._inputs(pid,opts,True,stored_edit_plan=stored_edit_plan);tool=self._tools(True)
+            inputs=self._inputs(pid,opts,True,stored_edit_plan=stored_edit_plan);opts=inputs['options'];tool=self._tools(True)
             if opts.get('montage_engine')=='openmontage' and not self.openmontage.status(True)['ready']:raise RenderError('openmontage_unavailable',self.openmontage.status()['message'])
             if not tool['found']:raise RenderError('ffmpeg_missing','Video oluşturmak için FFmpeg gerekli.')
             tools.select_encoder(opts['encoder'],tool)
@@ -491,6 +517,9 @@ class RenderService:
         self.projects.get(pid);source=None;source_error='';source_category='';error=None;opts=options({'editing_style':editing_style,'edit_variation_seed':edit_variation_seed,'subtitle_display':subtitle_display,'montage_engine':montage_engine})
         try:source=self._inputs(pid,opts)
         except RenderError as e:source_error=str(e);source_category=e.category;error=e
+        from app.editor.editorial import read
+        editorial=read(self.projects,pid)['preferences']
+        if editorial['editing_mode']!='legacy':montage_engine='native'
         try:tool=self._tools(True) if refresh_tools else self._tools()
         except RenderError as e:tool={'found':False,'status':'Hata','message':str(e),'encoders':[]};source_category=e.category
         summary=None
@@ -527,7 +556,7 @@ class RenderService:
             stock_row=c.execute('SELECT state_json FROM stock_plans WHERE project_id=? AND plan_id=?',(pid,p['plan_id'])).fetchone() if p else None
         raw=json.loads(stock_row[0]) if stock_row else None
         recovery=None
-        if raw and p:
+        if raw and p and editorial['editing_mode']=='legacy':
             from app.rendering.reflow import project
             _,recovery=project(h,p,raw,self.projects,self._hash)
         result['recovery']=recovery
@@ -539,7 +568,12 @@ class RenderService:
         if job and job['status'] in ACTIVE:
             r['blockers'].append({'code':'render_active','message':'Başka render işlemi devam ediyor.','screen':'render'});r['ready']=False
         result.update(ready=r['ready'],readiness=r,openmontage=om,montage_engine=montage_engine)
-        if not source:result['smart_edit_plan']=estimated_plan(h,p,opts)
+        result['editorial']=editorial
+        result['timeline_music']=bool(source and any(c['visible'] and c['track']=='audio' and c.get('audio_role')=='music' for c in source.get('advanced_document',{}).get('clips',[])))
+        if source and editorial['editing_mode']!='legacy' and tool['found']:
+            r['blockers']=[b for b in r['blockers'] if b['code'] not in ('stock_unresolved','media_file_missing')]
+            r['stock_ready']=True;r['ready']=not r['blockers'];result['ready']=r['ready']
+        if not source and editorial['editing_mode']=='legacy':result['smart_edit_plan']=estimated_plan(h,p,opts)
         return SecretGuard(self.settings.secret_values()).clean(result)
 
     def _output(self,pid,item):

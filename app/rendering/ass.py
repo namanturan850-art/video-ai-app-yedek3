@@ -148,7 +148,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     header=styled(header,subtitle_style)
     lines=[]
     if subtitles:
-        try:valid=validate_cues([{k:c[k] for k in ('start','end','text')} for c in cues],duration)
+        try:valid=validate_cues([{k:c[k] for k in ('start','end','text')} for c in cues],duration,allow_empty=True)
         except SubtitleError:raise RenderError('subtitle_invalid','Aktif altyazı metni veya zamanları geçersiz. Altyazı ve Zamanlama ekranını kontrol edin.') from None
         highlight=(graphic_style or {}).get('accent') or '#3D9BFF' if (subtitle_style or {}).get('word_highlight') else None
         for cue in valid:

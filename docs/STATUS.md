@@ -1,3 +1,12 @@
+## 2026-10-18 — Manuel öncelikli editör: kalıcı altyapı
+
+- Başlangıç `main`: `f4fa91c` (PR #90/#91 korunuyor). Dal: `feature/naman-manual-first-editor-overhaul`.
+- SQLite 15→16 eklemeli editorial politika/olay kayıtları; yeni projede Manuel + yalnız kaynak hazırlama, eski kayıt eksikse legacy davranışı ve salt okunur açılış korunur.
+- Ek belgeye boş/devre dışı temel yuva, güvenli font/metin kutusu, bağımsız işaret/ok, temiz yerel harita ve müzik/SFX rolleri eklendi. Kaynak hazırlama manuel modda otomatik metinli motion/kart üretmez; uygun kaynak yoksa açık eksik durum kalır.
+- Manuel renderda smart-edit, otomatik SFX/endscreen ve kaynak ikamesi kapalıdır. Seçilen altyazı modu ve bağımsız kullanıcı katmanları ortak gerçek FFmpeg zincirinden geçer. Kaldırılan görüntünün saati korunur, siyah aralık olur; kaynak arşivde kalır.
+- Otomatik/JSON taslak kaydı mevcut kurguyu değiştirmez; seçili nesneler ayrı onayla uygulanır. Kurgu altyazı API'si gerçek SRT/VTT sürümlerini ve ayrı geçmişi kullanır; anlatım/sahne saati korunur. Gemini için ayrı paylaşım/maliyet izin kapısı ve proje/render kapsamlı bulgu durumları eklendi; canlı çağrı yapılmadı.
+- İlk altyapı testi: **97 geçti** (proje + belge). Son hedefli çekirdek test: **49 geçti** (yeni manuel akış, gerçek kısa siyah çıktı, kaynak/saat/geçmiş, JSON onayı, Gemini izin/kapsam, temiz harita ve PR #91 regresyonları). Arayüz ve uçtan uca genişletme sürüyor; henüz tüm görev tamamlandı sayılmaz.
+
 ## 2026-10-18 — Gelişmiş kurgu, motor ve arayüz aşamaları
 
 - **Son teslim doğrulaması:** seçili Python paketi **192 geçti** (229,66 sn), ayrıca eski kanal/render uyumluluğu **2 geçti**, DOM paketi **7 geçti**. Gerçek API/SQLite Chromium paketi; yeni klip boş-iz drop, trim/taşı/böl/sil/undo, keyframe ve marker CRUD, bağımsız monitör, OS upload, thumbnail ve son revizyon kare çözümüyle geçti. Dört viewportta dış scroll yok/yedi iz görünür; mevcut menü/resize/görünürlük regresyonu da geçti.

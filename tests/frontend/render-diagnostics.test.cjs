@@ -18,7 +18,7 @@ async function render(diagnostic,status='error'){
   const root=new Element('main');
   const state={source_ready:true,ready:true,ffmpeg:{status:'Hazır',found:true},summary:null,music:null,versions:[],active:null,
     job:{status,status_label:status==='error'?'Hata':'Tamamlandı',encoder_label:'CPU / libx264',progress:{percent:8,elapsed_seconds:2,diagnostic}}};
-  const context=vm.createContext({location:{pathname:'/projects/abc/render'},document:{querySelector:()=>root,createElement:tag=>new Element(tag)},
+  const context=vm.createContext({location:{pathname:'/projects/abc/render'},document:{querySelector:()=>root,createElement:tag=>new Element(tag),createTextNode:text=>new Element('#text',text)},
     window:{addEventListener(){}},File:class{},AbortSignal:{timeout(){}},fetch:async()=>({ok:true,json:async()=>state}),setTimeout(){}});
   vm.runInContext(source,context);await new Promise(resolve=>setImmediate(resolve));return root;
 }

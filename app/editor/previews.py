@@ -22,7 +22,8 @@ def decoder():
 
 
 def cache_folder(editor,pid):
-    folder=editor.projects._path(pid)/'stock'/'editor-cache'
+    from app.stock.download import directory
+    folder=directory(editor.projects,pid)/'editor-cache'
     if linked(folder):raise EditorError('unsafe_cache','Önizleme önbelleği güvenli bir yerel klasör olmalıdır.')
     folder.mkdir(exist_ok=True)
     return folder
@@ -103,7 +104,7 @@ def program_frame(editor,advanced,pid,time):
             args+=['-ss',str(source_time)]
         args+=['-i',str(path)]
     else:args+=['-f','lavfi','-i','color=c=black:s=640x360:r=30:d=0.04']
-    normalize='scale=640:360:force_original_aspect_ratio=increase,crop=640:360,setsar=1'
+    normalize='scale=640:360:force_original_aspect_ratio=increase:out_range=tv,crop=640:360,setsar=1,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709'
     base=f'[0:v]{normalize}[base]'
     # Match the saved, frame-counted transition without requesting a whole proxy video.
     if item:
@@ -118,7 +119,7 @@ def program_frame(editor,advanced,pid,time):
                 args+=['-i',str(previous_path)]
                 blend_duration=max(1/30,(round(incoming['duration']*30)-1)/30)
                 u=min(1,max(0,(frame-item['start'])/blend_duration))
-                blend=f'A*{1-u}+B*{u}' if incoming['kind']=='cross_dissolve' else f'if(gte(X,{640*(1-u)}),B,A)'
+                blend=f'A*{1-u}+B*{u}' if incoming['kind']=='cross_dissolve' else f'if(gte(X,W*{1-u}),B,A)'
                 base=f'[0:v]{normalize}[next];[{index}:v]{normalize}[previous];[previous][next]blend=all_expr=\'{blend}\'[base]'
         dip=next((t for t in document['transitions'] if t['kind']=='dip_black' and (t['slot_id']==item['slot_id'] or t['next_slot_id']==item['slot_id'])),None)
         if dip:
@@ -129,7 +130,10 @@ def program_frame(editor,advanced,pid,time):
     doc={**document,'clips':[c for c in document['clips'] if c['track']!='audio']}
     graph,label,_=compile_graph(args,doc,assets,base='base',folder=folder,duration=.04,width=640,height=360,
         adjustment_slots={x['slot_id']:x for x in media},frame_time=frame)
-    args+=['-filter_complex',base+(';' +graph if graph else ''),'-map',f'[{label}]','-frames:v','1','-threads','1',str(temp)]
+    # JPEG readers assume BT.601; explicitly convert the tagged BT.709 program
+    # image rather than letting the encoder merely retag its YUV samples.
+    graph=base+(';' +graph if graph else '')+f';[{label}]scale=in_color_matrix=bt709:out_color_matrix=bt601:in_range=tv:out_range=pc,format=yuvj444p[preview]'
+    args+=['-filter_complex',graph,'-map','[preview]','-frames:v','1','-threads','1',str(temp)]
     try:
         run(args)
         if not temp.is_file() or not temp.stat().st_size:raise EditorError('preview_failed','Program karesi oluşturulamadı. Kaynak klibin kesitini kontrol edin.')

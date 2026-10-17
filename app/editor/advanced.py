@@ -191,8 +191,10 @@ class AdvancedEditor:
             changed=previous!=clip
             if previous and previous['locked'] and {**previous,'locked':clip['locked']}!=clip:
                 raise EditorError('locked','Bu ek klip kilitli. Önce kilidini açın.',409)
-            if changed and any(s['locked'] and clip['start']<s['end'] and clip['end']>s['start'] for s in view['scenes']):
+            if changed and any(s['locked'] and (clip['start']<s['end'] and clip['end']>s['start'] or previous and previous['start']<s['end'] and previous['end']>s['start']) for s in view['scenes']):
                 raise EditorError('locked','Kilitli sahnenin üzerine ek klip düzenlenemez.',409)
+            if clip['kind']!='media' and (clip['transform']['speed']!=1 or clip['transform']['volume'] or any(k['property']=='volume' for k in clip['keyframes'])):
+                raise EditorError('silent_layer','Metin ve ek motion katmanında kaynak sesi/hız değişikliği desteklenmiyor.')
             if clip['kind']=='media':
                 from app.editor.service import sha256_file
                 path,asset=self.editor.archive_file(pid,clip['media']['provider'],clip['media']['media_id'])
@@ -200,6 +202,7 @@ class AdvancedEditor:
                 actual=verifier(path,clip['media']['sha256']) if verifier else sha256_file(path)
                 if actual!=clip['media']['sha256']:raise EditorError('stale_media','Kaynak dosya değişmiş; arşivi yenileyin.',409)
                 if (asset['media_type']=='audio')!=(clip['track']=='audio'):raise EditorError('invalid_media_type','Ses dosyası Ses izine; video/görsel görsel izlere eklenir.')
+                if asset['media_type']=='image' and clip['transform']['speed']!=1:raise EditorError('still_speed','Durağan görselin oynatma hızı değiştirilemez.')
                 if clip['track']=='audio':
                     visual_values={k:v for k,v in clip['transform'].items() if k not in ('volume','speed')}
                     defaults={k:v for k,v in Transform().model_dump().items() if k not in ('volume','speed')}
@@ -231,6 +234,7 @@ class AdvancedEditor:
                 if any(k['time']>duration+.001 for k in item['keyframes']):raise EditorError('invalid_keyframe','Keyframe ana klip süresini aşıyor.')
                 # Main-clock speed is applied only with enough actual source coverage.
                 asset=slot.get('media') or {}
+                if asset.get('media_type')!='video' and item['transform']['speed']!=1:raise EditorError('still_speed','Yalnız kaynak videonun oynatma hızı değiştirilebilir.')
                 if (item['transform']['volume'] or any(k['property']=='volume' for k in item['keyframes'])) and not asset.get('has_audio'):
                     raise EditorError('no_source_audio','Kaynakta doğrulanmış ses akışı yok. Kaynak ses seviyesi sıfır kalmalıdır.')
                 if asset.get('media_type')=='video' and item['transform']['speed']!=1:
@@ -239,11 +243,15 @@ class AdvancedEditor:
         for marker in validated['markers']:
             if marker['time']>view['duration']:
                 raise EditorError('invalid_marker','İşaretleyici anlatım süresini aşıyor.')
-        ordered=sorted(slots.values(),key=lambda x:x['start'])
+        previous_transitions={t['slot_id']:t for t in old['transitions']}
+        next_transitions={t['slot_id']:t for t in validated['transitions']}
+        for sid in set(previous_transitions)|set(next_transitions):
+            previous=previous_transitions.get(sid);current=next_transitions.get(sid)
+            if previous!=current and any(slots.get(t.get(key),{}).get('locked') for t in (previous or {},current or {}) for key in ('slot_id','next_slot_id')):
+                raise EditorError('locked','Kilitli klibin geçişi değiştirilemez.',409)
         for transition in validated['transitions']:
             first=slots.get(transition['slot_id']);second=slots.get(transition['next_slot_id'])
             if not first or not second or abs(first['end']-second['start'])>.04:raise EditorError('invalid_transition','Geçiş bitişik iki ana klip arasında olmalıdır.')
-            if first['locked'] or second['locked']:raise EditorError('locked','Kilitli klibin geçişi değiştirilemez.',409)
             if transition['kind']!='cut' and (transition['duration']<2/30 or transition['duration']>min(first['end']-first['start'],second['end']-second['start'])/4):
                 raise EditorError('invalid_transition','Geçiş süresi komşu kliplerin dörtte birini aşamaz.')
             if transition['kind'] in ('cross_dissolve','wipe'):

@@ -95,11 +95,14 @@ class FFmpegRenderProvider:
         assf=lambda name:f'ass=filename={name}{fontsdir}'
         timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]
         for scene,original in zip(timed,timeline['scenes']):scene.update(start=original['start'],end=original['end'])
+        replaced_texts=[(s['start'],s['end'],s.get('overlay_text')) for s in timed if s['scene_id']+':overlay_text' in advanced.get('suppressed_layers',[])]
         for scene in timed:
             if scene['scene_id'] in advanced.get('suppressed_scenes',[]) or scene['scene_id']+':overlay_text' in advanced.get('suppressed_layers',[]):scene['overlay_text']=''
         if emphasis and advanced.get('suppressed_scenes'):
             hidden=[s for s in timed if s['scene_id'] in advanced['suppressed_scenes']]
             emphasis=[item for item in emphasis if not any(s['start']<=item.get('start',-1)<s['end'] for s in hidden)]
+        if emphasis and replaced_texts:
+            emphasis=[item for item in emphasis if not any(a<=item.get('start',-1)<b and item.get('text')==text for a,b,text in replaced_texts)]
         try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,subtitle_style=sub_style,graphic_style=graphic_style,emphasis=emphasis)
         except RenderError as error:
             raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
@@ -157,6 +160,10 @@ class FFmpegRenderProvider:
                 source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
                 planned=edits.get(slot['slot_id'],{})
                 seek=min(max(0,planned.get('source_in',media.get('segment_start',max(0,(source_duration-length*speed)/2)))),max(0,source_duration-length*speed))
+                if slot['slot_id'] in custom_adjustments:
+                    seek=max(0,media.get('segment_start',0.))
+                # The final source-audio mixer must use the identical decoded cut.
+                media['segment_start']=seek
                 # Legacy short assets remain playable; newly acquired normal
                 # B-roll has strict coverage and is never sped up or looped.
                 loop=['-stream_loop','-1'] if source_duration<count/30-.04 else []
@@ -357,6 +364,10 @@ class FFmpegRenderProvider:
             validated={'duration':duration,'width':1920,'height':1080,'fps':30,'video_codec':'h264','audio_codec':'aac','validation_method':'ffmpeg_decode_configured_format'}
             self.warnings.append('ffprobe bulunamadı; akışlar ve süre FFmpeg dekoduyla kontrol edildi. Biçim alanları render ayarlarından alınmıştır.')
         applied['scene_transitions']=len(transitions)
+        if advanced:
+            validated['advanced_editor']={'schema_version':advanced['schema_version'],'clips':len(advanced['clips']),
+                'adjustments':len(advanced['adjustments']),'transitions':len(advanced['transitions']),
+                'keyframes':sum(len(x['keyframes']) for x in advanced['clips']+advanced['adjustments'])}
         applied['emphasis_texts']=len(emphasis or ()) if smart and 'ass' in self.tools['filters'] else len(edit['emphasis']) if edit and 'ass' in self.tools['filters'] else sum(bool(x.get('overlay_text')) for x in timed) if mode!='none' and 'ass' in self.tools['filters'] else 0
         if style=='adaptive':
             applied['emphasis_texts']=applied['adaptive_texts'];applied['graphic_seconds']=round(applied['graphic_seconds'],3)

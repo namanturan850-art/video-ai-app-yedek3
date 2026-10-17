@@ -1,3 +1,10 @@
+## 2026-10-18 — Gelişmiş kurgu, motor ve arayüz aşamaları
+
+- Ortak FFmpeg graph ile dönüşüm, keyframe, efekt, ek metin/medya/motion ve kaynak sesi final montaja bağlandı. Program görüntüsü açıkça en fazla 5 fps örnek kare olarak sunulur. Kaynak/Program/yan yana monitörler, kalıcı işaretleyiciler, görünür videolarda gerçek thumbnail ve güvenli OS dosya bırakma eklendi.
+- Yalnız uygun türdeki kaynaklarda hız/ses alanları açılır. Anlatım ve altyazı saati değişmez. İşaretleyici notları final render parmak izini değiştirmez. Kesinti sonrası aynı kaynak/plan/ayar kimliğiyle yeni sürüm oluşturulur; kareden devam iddiası yoktur.
+- Son hedefli backend/gerçek kısa render paketi **23 geçti**. İlk/orta/son kare karşılaştırması ölçek/döndürme, saydamlık, efekt ve farklı iki kaynakla Wipe geçişini kapsar. 48 kHz ses uzunluğu 0,5× / 1× / 2× hızlarda doğrulandı. DOM paketi **7 geçti**. Gerçek API/SQLite kullanan Chromium etkileşim paketi geçti; son genişletilmiş ve regresyon sonuçları teslim kaydında güncellenecek.
+- Ayrıntılı denetim, desteklenen kapsam, açık sınırlar ve kullanıcı adımları: [ADVANCED_EDITING.md](ADVANCED_EDITING.md). Windows/GPU/kurulu harici motor doğrulanmış sayılmaz; ücretli API ve uzun render yapılmadı.
+
 ## 2026-10-18 — Gelişmiş kurgu, aşama 1
 
 - Güncel `main` (`bfb5144`) üzerinden `feature/naman-advanced-editing` açıldı. Anlatım tabanlı slotlara dokunmayan sürümlü ek kurgu belgesi ve plan/proje kapsamlı geçmiş eklendi; SQLite 14→15 yükseltmesi eklemelidir.

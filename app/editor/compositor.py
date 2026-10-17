@@ -152,7 +152,12 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
         if tr['scale']!=1 or any(k['property']=='scale' for k in edit['keyframes']):
             chain+=f'scale=w=\'max(2,trunc(iw*({expr("scale")} )/2)*2)\':h=\'max(2,trunc(ih*({expr("scale")})/2)*2)\':eval=frame,'
         if tr['rotation'] or any(k['property']=='rotation' for k in edit['keyframes']):
-            chain+=f'rotate=angle=\'({expr("rotation")})*PI/180\':ow=\'ceil(hypot(iw,ih)/2)*2\':oh=\'ceil(hypot(iw,ih)/2)*2\':c=none,'
+            # rotate evaluates output dimensions at graph initialization. Reserve
+            # a stable canvas for the largest saved scale so later zoom frames
+            # are not clipped and sampled previews use the same geometry.
+            largest=max([tr['scale']]+[k['value'] for k in edit['keyframes'] if k['property']=='scale'])
+            canvas=max(2,math.ceil(math.hypot(width,height)*largest/2)*2)
+            chain+=f'rotate=angle=\'({expr("rotation")})*PI/180\':ow={canvas}:oh={canvas}:c=none,'
         if any(k['property']=='opacity' for k in edit['keyframes']):
             chain+=f'geq=r=\'r(X,Y)\':g=\'g(X,Y)\':b=\'b(X,Y)\':a=\'alpha(X,Y)*({expr("opacity","T")})\','
         elif tr['opacity']!=1:chain+=f'colorchannelmixer=aa={tr["opacity"]},'

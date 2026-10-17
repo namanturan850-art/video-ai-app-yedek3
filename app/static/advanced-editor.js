@@ -1,0 +1,171 @@
+/* Supplementary clips keep the narration clock immutable. Every save is validated server-side. */
+(() => {
+  const n=(tag,text='',cls='')=>{const e=document.createElement(tag);e.textContent=text;e.className=cls;return e;};
+  const b=(text,fn)=>{const e=n('button',text);e.type='button';e.onclick=fn;return e;};
+  const clone=x=>JSON.parse(JSON.stringify(x));
+  const uid=()=>crypto.randomUUID().replaceAll('-','');
+  let dispose=()=>{};
+  window.NAMANAdvanced={mount};
+  async function mount(c){
+    dispose();let alive=true,state,chosen=null,selected=new Set(),base=null,activeTab='Düzenle',advancedHistory=false,busy=false,frameBusy=false,lastFrame=-1;
+    const clean=[];dispose=()=>{alive=false;clean.forEach(fn=>fn());};c.onDispose(dispose);
+    const setStatus=text=>{if(alive)c.status.textContent=text;};
+    try{state=await c.api(`/api/projects/${c.id}/editor/advanced`);}catch(e){setStatus('Ek kurgu yüklenemedi: '+e.message);return;}
+    if(!alive||!state.document)return;
+    const endpoint=`/api/projects/${c.id}/editor/advanced`,k=c.controls;
+    const defaults=()=>({transform:{x:0,y:0,scale:1,rotation:0,opacity:1,volume:0,speed:1,flip_x:false,flip_y:false,crop_left:0,crop_right:0,crop_top:0,crop_bottom:0},effects:{brightness:0,contrast:1,saturation:1,blur:0,sharpen:0,monochrome:false,vignette:false,enabled:true},keyframes:[],fade_in:0,fade_out:0});
+    const current=()=>state.document.clips.find(x=>selected.has(x.id));
+    const scale=()=>+k.zoom.value;
+    const originalChosen=c.setChosen;c.setChosen=item=>{chosen=item;originalChosen(item);};clean.push(()=>c.setChosen=originalChosen);
+    async function save(draft,message){
+      if(busy){setStatus('Önceki kurgu kaydı tamamlanıyor.');return false;}busy=true;
+      c.inspector.dataset.saving='1';const fields=[...c.inspector.querySelectorAll('button,input,select,textarea'),...document.querySelectorAll('.workspace-menubar button,.advanced-dialog button,.advanced-dialog input,.advanced-dialog textarea')].map(e=>[e,e.disabled]);fields.forEach(([e])=>e.disabled=true);setStatus('Kurgu revizyonu kaydediliyor…');
+      try{advancedHistory=true;state=await c.api(endpoint,{method:'PUT',body:JSON.stringify({...state,document:draft})});draw();requestFrame(true);setStatus(message+' Render için değişiklikler hazır.');return true;}
+      catch(e){setStatus(e.message);return false;}finally{busy=false;delete c.inspector.dataset.saving;fields.forEach(([e,wasDisabled])=>e.disabled=wasDisabled);}
+    }
+    async function history(direction){if(busy){setStatus('Önceki kurgu kaydı tamamlanıyor.');return;}busy=true;c.inspector.dataset.saving='1';try{state=await c.api(endpoint+`/history/${direction}`,{method:'POST',body:JSON.stringify({plan_id:state.plan_id,revision:state.revision})});selected.clear();base=null;c.inspector.replaceChildren(n('p','Geçmiş uygulandı. Güncel özellikler için klibi yeniden seçin.'));delete c.inspector.dataset.advanced;draw();requestFrame(true);setStatus(direction==='undo'?'Ek kurgu işlemi geri alındı.':'Ek kurgu işlemi yinelendi.');}catch(e){setStatus(e.message);}finally{busy=false;delete c.inspector.dataset.saving;}}
+    async function addMedia(item,track,start){
+      if(!item){setStatus('Önce arşivden medya seçin.');return;}
+      if((track==='audio')!==(item.media_type==='audio')){setStatus('Ses dosyasını Ses izine, video/görseli görsel izlere bırakın.');return;}
+      start=Math.max(0,Math.round(start*c.data.fps)/c.data.fps);const length=Math.min(5,c.data.duration-start,(item.clip_range?.end||item.duration||1e6)-(item.clip_range?.start||0));
+      if(length<1/c.data.fps){setStatus('Bu noktada yeterli anlatım veya kaynak süresi yok.');return;}
+      const clip={...defaults(),id:uid(),kind:'media',track,start,end:start+length,source_start:item.clip_range?.start||0,media:{provider:item.provider,media_id:item.media_id,sha256:item.sha256},visible:true,locked:false,order:state.document.clips.length};
+      if(track==='audio')clip.transform.volume=1;
+      const doc=clone(state.document);doc.clips.push(clip);if(await save(doc,'Ek klip kaydedildi.')){selected=new Set([clip.id]);base=null;properties();}
+    }
+    async function addText(){const start=c.getTime(),clip={...defaults(),id:uid(),kind:'text',track:'layers',start,end:Math.min(c.data.duration,start+3),text:'Yeni başlık',color:'#FFFFFF',font_size:64,visible:true,locked:false,order:state.document.clips.length};const doc=clone(state.document);doc.clips.push(clip);if(await save(doc,'Metin katmanı eklendi.')){selected=new Set([clip.id]);base=null;properties();}}
+    async function removeSelected(){const values=state.document.clips.filter(x=>selected.has(x.id));if(!values.length){setStatus('Yalnız ek kurgu klipleri güvenle silinebilir; ana anlatım yuvaları silinmez.');return;}if(values.some(x=>x.locked)){setStatus('Bu ek klip kilitli.');return;}const doc=clone(state.document);doc.clips=doc.clips.filter(x=>!selected.has(x.id));if(await save(doc,'Ek klipler silindi; anlatım ve altyazı korundu.')){selected.clear();c.inspector.replaceChildren(n('p','Bir klip seçin.'));}}
+    async function selectedAction(action){const source=current();if(!source)return;const doc=clone(state.document),item=doc.clips.find(x=>x.id===source.id);if(action==='lock'){item.locked=!item.locked;await save(doc,item.locked?'Ek klip kilitlendi.':'Ek klip kilidi açıldı.');properties();return;}if(item.locked){setStatus('Bu ek klip kilitli.');return;}
+      if(action==='duplicate'){const copy=clone(item);copy.id=uid();copy.order++;doc.clips.push(copy);selected=new Set([copy.id]);}
+      if(action==='split'){const at=Math.round(c.getTime()*c.data.fps)/c.data.fps;if(at<=item.start+1/c.data.fps||at>=item.end-1/c.data.fps){setStatus('İmleç ek klibin içinde olmalıdır.');return;}const right=clone(item),offset=at-item.start;if(offset<item.fade_in||item.end-at<item.fade_out){setStatus('Fade aralığı içinde bölme desteklenmiyor; önce fade süresini kısaltın.');return;}if(item.keyframes.some(k=>k.interpolation==='ease_in_out')){setStatus('Ease keyframe içeren klibi bölmeden önce interpolasyonu Linear yapın; animasyon eğrisi korunmalıdır.');return;}right.id=uid();right.start=at;right.source_start=(item.source_start||0)+offset*item.transform.speed;item.end=at;
+        // Boundary values are evaluated so the second half begins at the same animation state.
+        const value=(prop,t)=>keyValue(item,prop,t);
+        right.keyframes=[];['x','y','scale','rotation','opacity','volume'].forEach(prop=>{const points=item.keyframes.filter(k=>k.property===prop);if(points.length){right.keyframes.push({property:prop,time:0,value:value(prop,offset),interpolation:'linear'});right.keyframes.push(...points.filter(k=>k.time>offset).map(k=>({...k,time:k.time-offset})));}});
+        const boundary=['x','y','scale','rotation','opacity','volume'].filter(prop=>item.keyframes.some(k=>k.property===prop)).map(prop=>({property:prop,time:offset,value:value(prop,offset),interpolation:'linear'}));item.keyframes=[...item.keyframes.filter(k=>k.time<offset),...boundary];item.fade_out=0;right.fade_in=0;doc.clips.push(right);
+      }
+      if(await save(doc,action==='split'?'Ek klip bölündü.':'Ek klip çoğaltıldı.'))properties();
+    }
+    function keyValue(edit,prop,time){const points=edit.keyframes.filter(k=>k.property===prop).sort((a,b)=>a.time-b.time);if(!points.length)return edit.transform[prop];if(time<=points[0].time)return points[0].value;for(let i=1;i<points.length;i++)if(time<=points[i].time){const a=points[i-1],z=points[i];let u=(time-a.time)/(z.time-a.time);if(z.interpolation==='ease_in_out')u=u*u*(3-2*u);return a.value+(z.value-a.value)*u;}return points.at(-1).value;}
+
+    // Inspector uses the actual supplementary schema, with no unsupported CSS-only fields.
+    function properties(){
+      let original=current();const baseItem=base;
+      if(baseItem)original=state.document.adjustments.find(x=>x.slot_id===baseItem.slot_id)||{...defaults(),slot_id:baseItem.slot_id};
+      if(!original)return;
+      c.inspector.dataset.advanced='1';c.inspector.replaceChildren(n('h2',baseItem?'Ana klip: dönüşüm / efekt':'Ek kurgu klibi'));
+      const form=n('form','','advanced-form'),edit=clone(original),top=n('div','','advanced-panel-tabs');
+      ['Düzenle','Keyframe',...(edit.track==='audio'?[]:['Efektler']),...(baseItem?['Geçiş']:edit.kind==='motion'?['Motion']:edit.kind==='text'?['Metin']:[])].forEach(tab=>top.append(b(tab,()=>{activeTab=tab;properties();})));c.inspector.append(top,form);
+      const input=(label,key,object,type='number',min,max,step=.01)=>{const e=n('input');e.type=type;if(type==='checkbox')e.checked=!!object[key];else e.value=object[key]??'';if(min!==undefined)e.min=min;if(max!==undefined)e.max=max;e.step=step;e.oninput=()=>object[key]=type==='checkbox'?e.checked:type==='number'?+e.value:e.value;const l=n('label',label);l.append(e);form.append(l);return e;};
+      const bounds=baseItem||edit,duration=bounds.end-bounds.start,asset=baseItem?.media||(edit.media&&c.getArchive().items.find(x=>x.media_id===edit.media.media_id&&x.provider===edit.media.provider)),hasAudio=asset?.has_audio||asset?.media_type==='audio',timedMedia=['video','audio'].includes(asset?.media_type);
+      if(activeTab==='Düzenle'){
+        if(!baseItem){input('Başlangıç (sn)','start',edit,'number',0,c.data.duration,1/c.data.fps);input('Bitiş (sn)','end',edit,'number',0,c.data.duration,1/c.data.fps);input('Katman sırası','order',edit,'number',0,1000,1);input('Görünür','visible',edit,'checkbox');if(edit.kind==='media')input('Kaynak başlangıcı (sn)','source_start',edit,'number',0,undefined);}
+        [['X (1920 px düzleminde)','x',-1920,1920],['Y (1080 px düzleminde)','y',-1080,1080],['Oran korumalı ölçek','scale',.1,2],['Döndürme (°)','rotation',-180,180],['Saydamlık','opacity',0,1],['Oynatma hızı','speed',.25,4],['Ses seviyesi (kaynakta ses varsa)','volume',0,2],['Sol kırpma (0–0,45)','crop_left',0,.45],['Sağ kırpma','crop_right',0,.45],['Üst kırpma','crop_top',0,.45],['Alt kırpma','crop_bottom',0,.45]].filter(([,key])=>(edit.track!=='audio'||['volume','speed'].includes(key))&&(key!=='volume'||hasAudio)&&(key!=='speed'||timedMedia)).forEach(([label,key,min,max])=>input(label,key,edit.transform,'number',min,max));
+        if(edit.track!=='audio'){input('Yatay çevir','flip_x',edit.transform,'checkbox');input('Dikey çevir','flip_y',edit.transform,'checkbox');}input('Fade in (sn)','fade_in',edit,'number',0,Math.min(3,duration));input('Fade out (sn)','fade_out',edit,'number',0,Math.min(3,duration));
+      }else if(activeTab==='Efektler'){
+        input('Efektleri etkinleştir','enabled',edit.effects,'checkbox');[['Parlaklık','brightness',-.5,.5],['Kontrast','contrast',.2,3],['Doygunluk','saturation',0,3],['Bulanıklık','blur',0,10],['Keskinlik','sharpen',0,2]].forEach(([label,key,min,max])=>input(label,key,edit.effects,'number',min,max));input('Siyah-beyaz','monochrome',edit.effects,'checkbox');input('Hafif vignette','vignette',edit.effects,'checkbox');form.append(n('p','Sabit işlem sırası: renk → blur → sharpen → vignette.','note'));
+      }else if(activeTab==='Keyframe'){
+        const prop=n('select');(edit.track==='audio'?['volume']:['x','y','scale','rotation','opacity',...(hasAudio?['volume']:[])]).forEach(v=>prop.append(new Option(v,v)));form.append(prop);
+        form.append(b('İmleçte keyframe ekle',()=>{const time=Math.round(Math.max(0,Math.min(duration,c.getTime()-bounds.start))*c.data.fps)/c.data.fps;edit.keyframes=edit.keyframes.filter(x=>x.property!==prop.value||x.time!==time);edit.keyframes.push({property:prop.value,time,value:keyValue(edit,prop.value,time),interpolation:'linear'});persist(edit,'Keyframe eklendi.');}));
+        edit.keyframes.sort((a,b)=>a.time-b.time||a.property.localeCompare(b.property));
+        edit.keyframes.forEach((point,i)=>{const row=n('fieldset','','advanced-keyframe');row.append(n('legend',point.property));for(const key of ['time','value']){const e=n('input');e.type='number';e.step=key==='time'?1/c.data.fps:.01;e.value=point[key];e.setAttribute('aria-label',key==='time'?'Keyframe zamanı':'Keyframe değeri');e.oninput=()=>point[key]=+e.value;row.append(e);}const ease=n('select');ease.append(new Option('Linear','linear'),new Option('Ease In/Out','ease_in_out'));ease.value=point.interpolation;ease.onchange=()=>point.interpolation=ease.value;row.append(ease,b('Git',()=>c.seekTo(bounds.start+point.time)),b('Sil',()=>{edit.keyframes.splice(i,1);persist(edit,'Keyframe silindi.');}));form.append(row);});
+        const go=direction=>{const times=[...new Set(edit.keyframes.map(k=>bounds.start+k.time))].sort((a,b)=>a-b);const at=direction<0?times.filter(t=>t<c.getTime()-.001).at(-1):times.find(t=>t>c.getTime()+.001);if(at!==undefined)c.seekTo(at);};form.append(b('Önceki keyframe',()=>go(-1)),b('Sonraki keyframe',()=>go(1)));
+      }else if(activeTab==='Metin'){
+        const area=n('textarea');area.value=edit.text;area.oninput=()=>edit.text=area.value;form.append(area);input('Renk','color',edit,'color');input('Yazı boyutu (1080p)','font_size',edit,'number',18,160,1);
+      }else if(activeTab==='Motion'){
+        const area=n('textarea');area.value=JSON.stringify(edit.motion,null,2);area.setAttribute('aria-label','Motion şablonu ve verisi');area.oninput=()=>{try{edit.motion=JSON.parse(area.value);area.setCustomValidity('');}catch{area.setCustomValidity('Geçerli JSON girin.');}};form.append(area,n('p','Yalnız bu animasyon yerel olarak yeniden hazırlanır; medya araması ve ücretli çağrı yapılmaz.','note'));
+      }else if(activeTab==='Geçiş'){
+        const ordered=c.media().slice().sort((a,b)=>a.start-b.start),next=ordered.find(x=>Math.abs(x.start-baseItem.end)<.04&&x.slot_id!==baseItem.slot_id);
+        if(!next){form.append(n('p','Bu klibin ardından bitişik bir ana klip yok.'));return;}
+        const transition=clone(state.document.transitions.find(x=>x.slot_id===baseItem.slot_id)||{slot_id:baseItem.slot_id,next_slot_id:next.slot_id,kind:'cut',duration:.2}),kind=n('select');['cut','cross_dissolve','dip_black','wipe'].forEach(v=>kind.append(new Option(v,v)));kind.value=transition.kind;kind.onchange=()=>transition.kind=kind.value;form.append(kind);input('Geçiş süresi (sn)','duration',transition,'number',0,2,1/c.data.fps);form.append(b('Geçişi kaydet',async()=>{const doc=clone(state.document);doc.transitions=doc.transitions.filter(t=>t.slot_id!==baseItem.slot_id);doc.transitions.push(transition);await save(doc,'Geçiş kaydedildi.');}));return;
+      }
+      if(!baseItem&&edit.kind==='media')form.append(b('Seçili arşiv medyasıyla değiştir',async()=>{if(!chosen){setStatus('Önce arşivden yeni kaynak seçin.');return;}if((chosen.media_type==='audio')!==(edit.track==='audio')){setStatus('Yeni kaynak aynı iz türünde olmalıdır.');return;}edit.media={provider:chosen.provider,media_id:chosen.media_id,sha256:chosen.sha256};edit.source_start=chosen.clip_range?.start||0;await persist(edit,'Ek klibin kaynağı değiştirildi.');}));const submit=n('button','Kaydet ve gerçek önizlemeyi güncelle');submit.type='submit';submit.disabled=!!(edit.locked||baseItem?.locked);form.append(submit);form.onsubmit=e=>{e.preventDefault();persist(edit,'Klip, efekt ve keyframe ayarları kaydedildi.');};
+      async function persist(item,message){const doc=clone(state.document);if(baseItem){doc.adjustments=doc.adjustments.filter(x=>x.slot_id!==baseItem.slot_id);doc.adjustments.push(item);}else doc.clips=doc.clips.map(x=>x.id===item.id?item:x);if(await save(doc,message))properties();}
+    }
+
+    function draw(){
+      c.timeline.querySelectorAll('.advanced-clip,.advanced-marker').forEach(x=>x.remove());
+      const rows=[...c.timeline.querySelectorAll('.naman-track')];
+      state.document.clips.forEach(clip=>{const row=rows[c.data.track_order.indexOf(clip.track)],lane=row?.querySelector('.naman-lane');if(!lane)return;const element=b(clip.kind==='text'?clip.text:clip.kind==='motion'?clip.motion.template:`Ek ${clip.media.media_id.slice(0,10)}`,()=>{});element.className='naman-clip advanced-clip';element.dataset.advancedId=clip.id;element.dataset.track=clip.track;element.style.left=clip.start*scale()+'px';element.style.width=Math.max(4,(clip.end-clip.start)*scale())+'px';element.classList.toggle('selected',selected.has(clip.id));element.classList.toggle('locked',clip.locked);element.classList.toggle('advanced-invisible',!clip.visible);element.title=`Ek katman · ${c.clock(clip.start,true)}–${c.clock(clip.end,true)}${clip.locked?' · Kilitli':''}`;
+        element.onclick=e=>{e.stopPropagation();base=null;if(e.shiftKey){selected.has(clip.id)?selected.delete(clip.id):selected.add(clip.id);}else selected=new Set([clip.id]);activeTab='Düzenle';draw();properties();};
+        if(!clip.locked){const left=n('span','','trim-handle left'),right=n('span','','trim-handle right');element.append(left,right);left.onpointerdown=e=>drag(e,clip,'left');right.onpointerdown=e=>drag(e,clip,'right');element.onpointerdown=e=>{if(e.target===element)drag(e,clip,'move');};}lane.append(element);
+      });
+      state.document.markers.forEach(marker=>{const element=b('◆',()=>markerEditor(marker));element.className='advanced-marker';element.style.left=marker.time*scale()+'px';element.style.color=marker.color;element.title=marker.name+' · '+marker.note;element.setAttribute('aria-label','İşaretleyici: '+marker.name);c.timeline.querySelector('.naman-ruler').append(element);});
+    }
+    function drag(event,clip,mode){
+      event.preventDefault();event.stopPropagation();let moved=false;const origin=event.clientX,doc=clone(state.document),item=doc.clips.find(x=>x.id===clip.id),duration=clip.end-clip.start;
+      const snap=t=>{const points=[c.getTime(),...c.media().flatMap(x=>[x.start,x.end]),...state.document.clips.flatMap(x=>[x.start,x.end])].filter(v=>Math.abs(v-t)*scale()<6);return Math.round((points[0]??t)*c.data.fps)/c.data.fps;};
+      const move=e=>{if(Math.abs(e.clientX-origin)<4&&!moved)return;moved=true;const delta=(e.clientX-origin)/scale();if(mode==='move'){const lane=document.elementFromPoint(e.clientX,e.clientY)?.closest('.naman-lane'),row=lane?.closest('.naman-track'),targetTrack=c.data.track_order[[...c.timeline.querySelectorAll('.naman-track')].indexOf(row)];if(targetTrack&&targetTrack!=='subtitles'&&(targetTrack==='audio')===(clip.track==='audio'))item.track=targetTrack;item.start=Math.max(0,Math.min(c.data.duration-duration,snap(clip.start+delta)));item.end=item.start+duration;}else if(mode==='left'){item.start=Math.max(0,Math.min(item.end-1/c.data.fps,snap(clip.start+delta)));item.source_start=Math.max(0,(clip.source_start||0)+(item.start-clip.start)*item.transform.speed);}else item.end=Math.min(c.data.duration,Math.max(item.start+1/c.data.fps,snap(clip.end+delta)));const el=c.timeline.querySelector(`[data-advanced-id="${clip.id}"]`);if(el){const lane=c.timeline.querySelectorAll('.naman-track')[c.data.track_order.indexOf(item.track)]?.querySelector('.naman-lane');if(lane&&el.parentNode!==lane)lane.append(el);el.style.left=item.start*scale()+'px';el.style.width=(item.end-item.start)*scale()+'px';}};
+      const up=()=>{removeEventListener('pointermove',move);removeEventListener('pointerup',up);if(moved)save(doc,'Ek klip konumu/kesiti kaydedildi.');};addEventListener('pointermove',move);addEventListener('pointerup',up);clean.push(()=>{removeEventListener('pointermove',move);removeEventListener('pointerup',up);});
+    }
+    // Capture supplemental clip events so the original base-slot editor cannot also write.
+    const captureClick=e=>{if(e.target.closest('.advanced-clip')){e.stopPropagation();e.target.closest('.advanced-clip').onclick?.(e);return;}if(e.target.closest('.naman-clip')){advancedHistory=false;selected.clear();base=null;delete c.inspector.dataset.advanced;setTimeout(addBaseButton,0);}};
+    c.timeline.addEventListener('click',captureClick,true);clean.push(()=>c.timeline.removeEventListener('click',captureClick,true));
+    function addBaseButton(){const selectedBase=c.getSelected();if(!selectedBase)return;const button=b(selectedBase.slot_id?'Dönüşüm / Efekt / Keyframe':'Bu plan katmanını ek kurguya al',()=>{if(selectedBase.slot_id){base=selectedBase;selected.clear();activeTab='Düzenle';properties();}else importLegacy(selectedBase);});button.className='advanced-open-properties';c.inspector.querySelector('.advanced-open-properties')?.remove();c.inspector.append(button);}
+    async function importLegacy(item){
+      const scene=c.data.scenes.find(s=>s.scene_id===item.scene_id);if(!scene)return;const existingMotion=item.template&&c.media().find(x=>x.scene_id===item.scene_id&&x.motion_spec?.template===item.template&&JSON.stringify(x.motion_spec.data)===JSON.stringify(item.data));if(existingMotion){c.select(c.data.track_order.find(t=>c.data.tracks[t].includes(existingMotion)),existingMotion);setStatus('Bu animasyon zaten ana medya yuvasında. Motion/JSON panelinden düzenleyin.');return;}
+      const previous=state.document.clips.find(clip=>clip.legacy_key&&clip.legacy_key===item.legacy_key);if(previous){selected=new Set([previous.id]);base=null;properties();return;}
+      const clip={...defaults(),id:uid(),track:'layers',kind:item.template?'motion':'text',start:item.start,end:item.end,text:item.text||item.label||'',color:'#FFFFFF',font_size:64,visible:true,locked:false,order:state.document.clips.length};if(item.template)clip.motion={template:item.template,data:item.data,emphasis:item.emphasis||''};
+      if(!item.legacy_key){setStatus('Bu plan öğesinde düzenlenebilir katman verisi yok. Hazır medya yuvası veya JSON planı kullanın.');return;}clip.legacy_key=item.legacy_key;
+      const doc=clone(state.document);doc.clips.push(clip);doc.suppressed_layers=[...new Set([...(doc.suppressed_layers||[]),item.legacy_key,...(scene.overlay_text===clip.text?[scene.scene_id+':overlay_text']:[])])];if(await save(doc,'Plan katmanı ek kurguya aktarıldı.')){selected=new Set([clip.id]);base=null;properties();}
+    }
+    for(const [name,action] of [['split','split'],['duplicate','duplicate'],['lock','lock']]){const handle=e=>{if(!current())return;e.preventDefault();e.stopImmediatePropagation();selectedAction(action);};k[name].addEventListener('click',handle,true);clean.push(()=>k[name].removeEventListener('click',handle,true));}
+    for(const [name,direction]of[['undo','undo'],['redo','redo']]){const handle=e=>{if(!advancedHistory&&!selected.size&&!base)return;e.preventDefault();e.stopImmediatePropagation();history(direction);};k[name].addEventListener('click',handle,true);clean.push(()=>k[name].removeEventListener('click',handle,true));}
+    const keydown=e=>{if(e.target.closest('input,textarea,select,[contenteditable=true]'))return;if(e.key==='Delete'&&selected.size){e.preventDefault();e.stopImmediatePropagation();removeSelected();}};addEventListener('keydown',keydown,true);clean.push(()=>removeEventListener('keydown',keydown,true));
+
+    // New clips go onto blank lanes. Existing slot replacement keeps its established path.
+    const tracks=['emphasis','layers','maps','infographics','visuals','audio','subtitles'];
+    const onDrop=async e=>{
+      if(e.dataTransfer.files.length){e.preventDefault();e.stopImmediatePropagation();for(const file of e.dataTransfer.files){setStatus(file.name+' güvenli arşive aktarılıyor…');try{await c.api(`/api/projects/${c.id}/editor/archive/upload`,{method:'POST',headers:{'Content-Type':'application/octet-stream','X-File-Name':encodeURIComponent(file.name)},body:file});}catch(error){setStatus(error.message);return;}}await c.load();setStatus('Dosyalar arşive eklendi. Şimdi uygun yuvaya veya ek katmana atayabilirsiniz.');return;}
+      const lane=e.target.closest('.naman-lane');if(!lane||e.target.closest('.naman-clip'))return;
+      if(!e.dataTransfer.types.includes('application/x-naman-media'))return;e.preventDefault();e.stopImmediatePropagation();try{const ref=JSON.parse(e.dataTransfer.getData('application/x-naman-media')),item=c.getArchive().items.find(x=>x.media_id===ref.media_id&&x.provider===ref.provider),row=lane.closest('.naman-track'),track=tracks[[...c.timeline.querySelectorAll('.naman-track')].indexOf(row)],start=(e.clientX-lane.getBoundingClientRect().left)/scale();if(track==='subtitles'){setStatus('Altyazı izine medya eklenmez.');return;}await addMedia(item,track,start);}catch(error){setStatus(error.message);}
+    };
+    const dragover=e=>{if(e.dataTransfer.files.length||e.dataTransfer.types.includes('Files')||e.target.closest('.naman-lane')&&!e.target.closest('.naman-clip'))e.preventDefault();};c.root.addEventListener('drop',onDrop,true);c.root.addEventListener('dragover',dragover,true);clean.push(()=>{c.root.removeEventListener('drop',onDrop,true);c.root.removeEventListener('dragover',dragover,true);});
+    // Real markers are notes; never burned into the video output.
+    const dialog=n('dialog','','workspace-dialog advanced-dialog');c.root.append(dialog);clean.push(()=>dialog.remove());
+    function show(title,children){dialog.replaceChildren(b('Kapat',()=>dialog.close()),n('h2',title),...children);if(!dialog.open)dialog.showModal();}
+    function markerEditor(marker=null){const item=clone(marker||{id:uid(),time:c.getTime(),name:'Yeni işaretleyici',note:'',color:'#8065E8'}),form=n('form','','advanced-form');for(const [key,title,type]of[['name','Ad','text'],['time','Zaman (sn)','number'],['note','Not','text'],['color','Renk','color']]){const input=n(key==='note'?'textarea':'input');input.type=type;input.value=item[key];if(key==='time')input.step=1/c.data.fps;input.setAttribute('aria-label',title);input.oninput=()=>item[key]=key==='time'?+input.value:input.value;const l=n('label',title);l.append(input);form.append(l);}form.append(b('İşaretleyiciyi kaydet',async()=>{const doc=clone(state.document);doc.markers=doc.markers.filter(m=>m.id!==item.id);doc.markers.push(item);if(await save(doc,'İşaretleyici kaydedildi.'))dialog.close();}),b('Sil',async()=>{const doc=clone(state.document);doc.markers=doc.markers.filter(m=>m.id!==item.id);if(await save(doc,'İşaretleyici silindi.'))dialog.close();}));show('İşaretleyici', [form]);}
+    function goMarker(direction){const markers=state.document.markers.slice().sort((a,b)=>a.time-b.time),marker=direction<0?markers.filter(m=>m.time<c.getTime()-.001).at(-1):markers.find(m=>m.time>c.getTime()+.001);if(marker)c.seekTo(marker.time);else setStatus('Bu yönde işaretleyici yok.');}
+    const markerMenu=[...document.querySelectorAll('.workspace-menubar details')].find(d=>d.querySelector('summary').textContent==='İşaretleyiciler')?.querySelector('.workspace-menu');
+    if(markerMenu)markerMenu.replaceChildren(b('İmleçte işaretleyici ekle',()=>markerEditor()),b('İşaretleyici listesi',()=>show('İşaretleyiciler',state.document.markers.length?state.document.markers.map(m=>b(c.clock(m.time,true)+' · '+m.name,()=>markerEditor(m))):[n('p','Henüz işaretleyici yok.')])),b('Önceki işaretleyici',()=>goMarker(-1)),b('Sonraki işaretleyici',()=>goMarker(1)));
+    const extra=c.root.querySelector('.workspace-overflow');extra.append(b('Seçili arşivi imlece ekle',()=>addMedia(chosen,chosen?.media_type==='audio'?'audio':'layers',c.getTime())),b('Metin katmanı ekle',addText),b('Ek klipleri sil',removeSelected),b('Ek kurgu geri al',()=>history('undo')),b('Ek kurgu yinele',()=>history('redo')));
+
+    // Reuse the real source preview in a monitor tab or a side-by-side wide layout.
+    const surface=c.preview.querySelector('.workspace-program-surface'),programFrame=n('img','','advanced-program-frame'),monitorTabs=n('div','','advanced-monitor-tabs');programFrame.hidden=true;surface.append(programFrame);let mode='program';
+    const source=c.library.querySelector('.workspace-source'),sourceHome=source?.parentNode;
+    const selectMonitor=value=>{mode=value;if(value==='program')source?.querySelectorAll('video,audio').forEach(e=>e.pause());c.preview.classList.toggle('advanced-dual',value==='dual');c.preview.classList.toggle('advanced-source-only',value==='source');if(value==='program'){sourceHome?.append(source);source?.classList.remove('advanced-source-monitor');}else if(source){source.hidden=false;c.preview.append(source);source.classList.add('advanced-source-monitor');}if(value==='source')c.pause();};
+    monitorTabs.append(b('Program',()=>selectMonitor('program')),b('Kaynak',()=>selectMonitor('source')),b('Yan yana',()=>selectMonitor('dual')));c.preview.append(monitorTabs);
+    let frameTimer;
+    async function requestFrame(force=false){
+      if(force)lastFrame=-1;if(!alive||frameBusy||mode==='source')return;
+      const time=c.getTime(),hasChanges=state.document.clips.some(x=>x.visible)||state.document.adjustments.length||state.document.transitions.length;
+      const planLayer=[...c.data.tracks.layers,...c.data.tracks.maps,...c.data.tracks.infographics].find(x=>!x.slot_id&&x.start<=time&&time<x.end),rawOverlay=c.preview.querySelector('.naman-overlay');if(rawOverlay)rawOverlay.hidden=!!planLayer&&((state.document.suppressed_layers||[]).includes(planLayer.legacy_key)||(state.document.suppressed_scenes||[]).includes(planLayer.scene_id));
+      if(!hasChanges){programFrame.hidden=true;return;}
+      if(!force&&Math.abs(lastFrame-time)<.18)return;lastFrame=time;frameBusy=true;const revision=state.revision;
+      try{const response=await fetch(endpoint+`/program-frame?time=${time}`,{cache:'no-store'});if(!response.ok){const error=await response.json();throw Error(error.message||'Önizleme alınamadı.');}const blob=await response.blob();if(state.revision!==revision){lastFrame=-1;return;}if(alive){const previous=programFrame.src;programFrame.src=URL.createObjectURL(blob);programFrame.hidden=false;if(previous.startsWith('blob:'))URL.revokeObjectURL(previous);}}catch(e){setStatus(e.message);}finally{frameBusy=false;}
+    }
+    frameTimer=setInterval(()=>requestFrame(),200);clean.push(()=>{clearInterval(frameTimer);if(programFrame.src.startsWith('blob:'))URL.revokeObjectURL(programFrame.src);});
+    const frameInfo=n('span','Yerel kurgu önizlemesi: örnek kareler (en fazla 5 fps)','advanced-preview-info');c.preview.append(frameInfo);
+    const audioPlayers=new Map();let audioContext;
+    const enableAudio=()=>{const Context=window.AudioContext||window.webkitAudioContext;if(Context&&!audioContext)audioContext=new Context();audioContext?.resume().catch(()=>setStatus('Ses önizlemesini başlatmak için tekrar Oynat düğmesine basın.'));};k.play.addEventListener('click',enableAudio);
+    function syncAudio(){
+      const time=c.getTime(),running=k.play.textContent.includes('Duraklat')&&mode!=='source',sources=[];
+      state.document.clips.filter(clip=>clip.visible&&clip.kind==='media').forEach(clip=>{const item=c.getArchive().items.find(a=>a.provider===clip.media.provider&&a.media_id===clip.media.media_id);if(item&&(item.media_type==='audio'||item.has_audio))sources.push({...clip,url:item.preview_url});});
+      state.document.adjustments.forEach(edit=>{const item=c.media().find(m=>m.slot_id===edit.slot_id);if(item?.media?.has_audio)sources.push({...edit,...item,id:'base-'+edit.slot_id,source_start:item.clip_start||0,url:item.preview_url});});
+      const active=new Set();
+      sources.forEach(clip=>{if(!(clip.start<=time&&time<clip.end))return;active.add(clip.id);let player=audioPlayers.get(clip.id);if(!player){const element=document.createElement('audio');element.src=clip.url;element.preload='metadata';player={element};audioPlayers.set(clip.id,player);}const {element}=player;
+        const local=time-clip.start,desired=(clip.source_start||0)+local*clip.transform.speed;
+        if(Math.abs(element.currentTime-desired)>.22)try{element.currentTime=desired;}catch{}
+        element.playbackRate=clip.transform.speed;const fade=Math.min(1,clip.fade_in?local/clip.fade_in:1,clip.fade_out?(clip.end-time)/clip.fade_out:1),volume=Math.max(0,keyValue(clip,'volume',local)*fade);
+        if(audioContext&&!player.gain){player.gain=audioContext.createGain();player.source=audioContext.createMediaElementSource(element);player.source.connect(player.gain).connect(audioContext.destination);}
+        if(player.gain)player.gain.gain.value=volume;else element.volume=Math.min(1,volume);
+        if(running&&element.paused)element.play().catch(()=>{});if(!running)element.pause();
+      });
+      audioPlayers.forEach((player,id)=>{if(!active.has(id))player.element.pause();});
+    }
+    const audioTimer=setInterval(syncAudio,100);clean.push(()=>{clearInterval(audioTimer);k.play.removeEventListener('click',enableAudio);audioPlayers.forEach(p=>{p.element.pause();p.element.removeAttribute('src');p.source?.disconnect();p.gain?.disconnect();});audioContext?.close().catch(()=>{});});
+    const afterZoom=()=>setTimeout(draw,0);k.zoom.addEventListener('input',afterZoom);k.fit.addEventListener('click',afterZoom);clean.push(()=>{k.zoom.removeEventListener('input',afterZoom);k.fit.removeEventListener('click',afterZoom);});
+    const thumbObserver=typeof IntersectionObserver==='undefined'?null:new IntersectionObserver(entries=>entries.forEach(entry=>{if(!entry.isIntersecting)return;const img=entry.target;img.src=img.dataset.thumbnail;thumbObserver.unobserve(img);}),{root:c.library.querySelector('.workspace-media-grid'),rootMargin:'60px'});
+    const thumbnails=()=>{c.library.querySelectorAll('.workspace-media-card').forEach(card=>{const item=c.getArchive().items.find(x=>x.media_id===card.dataset.mediaId&&x.provider===card.dataset.provider);if(!item?.thumbnail_url||item.media_type!=='video'||card.querySelector('[data-thumbnail]'))return;const img=n('img');img.alt=item.title||'Gerçek video karesi';img.dataset.thumbnail=item.thumbnail_url;img.loading='lazy';img.onerror=()=>{img.remove();};const thumb=card.querySelector('.workspace-media-thumb');thumb.replaceChildren(img);if(thumbObserver)thumbObserver.observe(img);else img.src=item.thumbnail_url;card.title+=` · ${item.width||'?'}×${item.height||'?'} · ${item.provider}`;});};
+    const archiveObserver=typeof MutationObserver==='undefined'?null:new MutationObserver(thumbnails);archiveObserver?.observe(c.library.querySelector('.workspace-media-grid'),{childList:true});clean.push(()=>{archiveObserver?.disconnect();thumbObserver?.disconnect();});thumbnails();draw();requestFrame(true);
+  }
+})();

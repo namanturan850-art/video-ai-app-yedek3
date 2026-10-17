@@ -104,6 +104,10 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
         panel.append(el('p','Hata devam ederse yalnız bu güvenli tanıyı paylaşın. Önceki video ve kaynaklar korundu.'));jobs.append(panel);
       }
       if(activeJob())button(jobs,'Renderı İptal Et',()=>action(()=>request(`${base}/jobs/${j.id}/cancel`,'POST')));
+      if(['error','cancelled'].includes(j.status)){
+        jobs.append(el('p','Güvenli yeniden başlatma kaynak/plan kimliğini doğrular, aynı ayarlarla yeni sürüm üretir ve hazır medya/animasyon önbelleğini kullanır. Kaldığı kareden devam etmez.','note'));
+        button(jobs,'Aynı ayarlarla güvenli yeniden başlat',()=>{if(confirm('Kaynaklar doğrulanıp aynı yerel ayarlarla yeni render sürümü başlatılsın mı?'))return action(()=>request(`${base}/jobs/${j.id}/restart`,'POST',{confirmed:true}));});
+      }
     }
     // Poll progress without resetting the current video player or its seek/play state.
     const key=JSON.stringify([state.active?.id,state.versions.map(v=>[v.id,v.status,v.stale,v.video_missing])]);

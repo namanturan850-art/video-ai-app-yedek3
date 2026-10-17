@@ -33,6 +33,7 @@
     function selectTab(name){activeTab=name;if(name==='Ses'){showTool('Ses miks ayarları',audioTools);}applyTab();}
     const tabObserver=typeof MutationObserver==='undefined'?null:new MutationObserver(applyTab);tabObserver?.observe(inspector,{childList:true,subtree:true});
     function applyTab(){
+      if(inspector.dataset.advanced==='1')return;
       tabBar.querySelectorAll('button').forEach(b=>{const on=b.dataset.tab===activeTab;b.classList.toggle('active',on);b.setAttribute('aria-selected',String(on));b.tabIndex=on?0:-1;});
       const form=inspector.querySelector('form');
       if(!form)return;
@@ -105,7 +106,7 @@
       const filtered=archive.items.filter(x=>(!provider.value||x.provider===provider.value)&&(!query||String(x.title||x.media_id).toLocaleLowerCase('tr').includes(query))&&(archiveTab==='Arşiv'||archiveTab==='Görseller'&&['video','image'].includes(x.media_type)||archiveTab==='Sesler'&&x.media_type==='audio'||archiveTab==='Ekran'&&x.provider==='screen'));
       if(!filtered.length)items.append(node('p',archiveTab==='Ekran'?'Ekran kaydı yok. Harici kaydedilen MP4 dosyasını içe aktarabilirsiniz.':'Eşleşen yerel medya yok. Medya içe aktarın veya filtreleri değiştirin.','workspace-empty'));
       filtered.slice(0,page*pageSize).forEach(item=>{
-        const b=button('',()=>selectSource(item));b.className='workspace-media-card';b.draggable=item.media_type!=='audio';b.dataset.mediaId=item.media_id;b.title=item.title||item.media_id;
+        const b=button('',()=>selectSource(item));b.className='workspace-media-card';b.draggable=item.media_type!=='audio';b.dataset.mediaId=item.media_id;b.dataset.provider=item.provider;b.title=item.title||item.media_id;
         const thumb=node('div','','workspace-media-thumb');
         if(item.media_type==='image'){const img=node('img');img.src=item.preview_url;img.alt=item.title||'Yerel görsel';img.loading='lazy';img.onerror=()=>thumb.replaceChildren(node('span','Görsel önizlenemiyor'));thumb.append(img);}
         else thumb.append(node('span',item.media_type==='audio'?'♪':'▶'),node('small',item.media_type==='audio'?'Ses dosyası':'Video · kaynakta önizle'));
@@ -152,8 +153,10 @@
     const extra=node('details','','workspace-overflow'),summary=node('summary','⋯');summary.setAttribute('aria-label','Diğer araçlar');extra.append(summary,field('Zaman koduna git',k.seek),button('Ses miks ayarları',()=>showTool('Ses miks ayarları',audioTools)),button('Manuel AI / JSON',()=>showTool('Manuel AI / JSON',manualTools)),c.review);bar.replaceChildren(edit,transport,view,extra);
     // Root grid owns height; details open in a modal and cannot push the timeline out of view.
     const qualityButton=button('Medya kalitesi',()=>showTool('Medya kalite raporu',c.quality));
-    const motionCount=c.media().filter(x=>x.motion_spec).length,total=c.media().length,percent=total?Math.round(motionCount/total*100):0;
-    qualityButton.textContent=`Motion %${percent} · hedef ≤%25`;qualityButton.className=percent>25?'workspace-warning':'workspace-quality';
+    const selectedMedia=c.media().filter(x=>x.media),motionCount=selectedMedia.filter(x=>x.motion_spec).length,total=selectedMedia.length,percent=c.data.media_metrics?.clip_ratio??(total?Math.round(motionCount/total*100):0);
+    qualityButton.textContent=`Motion klip %${percent} · hedef ≤%25`;qualityButton.className=percent>25?'workspace-warning':'workspace-quality';
+    const sceneMetric=c.quality.querySelector('p');if(sceneMetric)sceneMetric.textContent=`Ana kurgu motion klip oranı: ${motionCount}/${total} (%${percent}). Durum çubuğuyla aynı ölçüm; ek katmanlar hariç.`;
+    c.quality.append(node('p',`Motion içeren sahne oranı: %${c.data.media_metrics?.scene_ratio??Math.round(new Set(selectedMedia.filter(x=>x.motion_spec).map(x=>x.scene_id)).size/Math.max(1,c.data.scenes.length)*100)}${c.data.media_metrics?` · Ana kurgu motion süre oranı: %${c.data.media_metrics.duration_ratio}`:''}. Sahne ve süre oranı, klip oranından farklı ölçümlerdir.`));
     const qualityFooter=node('div','','workspace-statusbar');qualityFooter.append(qualityButton,link('Medya hazırlama / eksikleri tamamla',`/projects/${c.id}/production`),status);
     if(audioTools)audioTools.remove();if(manualTools)manualTools.remove();c.quality.remove();root.append(qualityFooter);
     const info=()=>openReport('Sekans bilgileri',[node('p',`Süre: ${c.clock(c.data.duration,true)} · ${c.data.fps} fps · ${c.data.scenes.length} sahne`),node('p',`Plan: ${c.data.plan_id} · revizyon ${c.data.revision} · medya revizyonu ${c.data.stock_revision}`),link('Çıkış ve render ayarları',`/projects/${c.id}/render`)]);
@@ -212,6 +215,7 @@
     const resize=()=>applyLayout();addEventListener('resize',resize);
     cleanup=()=>{stopReverse();tabObserver?.disconnect();removeEventListener('keydown',keydown);removeEventListener('resize',resize);document.removeEventListener('click',clickAway);menubar.remove();report.close();};
     c.onDispose(cleanup);
+    window.NAMANAdvanced?.mount(c);
     // Reapply real waveform when re-rendering after a saved edit.
     paintWaveform(c.data.tracks.audio[0]?.waveform||[]);
   }

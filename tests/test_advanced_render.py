@@ -22,7 +22,9 @@ def test_real_keyframe_effect_overlay_and_duration(tmp_path):
         'media':{'provider':'local','media_id':'a','sha256':'a'*64},'transform':{'scale':.3},
         'effects':{'monochrome':True},'keyframes':[{'property':'x','time':0.,'value':-480.},
           {'property':'x','time':.6,'value':480.},{'property':'opacity','time':0.,'value':.3},
-          {'property':'opacity','time':.6,'value':1.,'interpolation':'ease_in_out'}]}]}).model_dump()
+          {'property':'opacity','time':.6,'value':1.,'interpolation':'ease_in_out'},
+          {'property':'scale','time':0.,'value':.2},{'property':'scale','time':.6,'value':.4},
+          {'property':'rotation','time':0.,'value':0.},{'property':'rotation','time':.6,'value':20.}]}]}).model_dump()
     args=[ffmpeg,'-v','error','-y','-filter_complex_threads','1','-threads','1','-f','lavfi','-i','color=c=blue:s=320x180:r=30:d=0.6']
     graph,label,_=compile_graph(args,document,{'a'*32:{'path':source,'type':'image'}},folder=tmp_path,duration=.6,width=320,height=180)
     out=tmp_path/'out.mp4'
@@ -59,7 +61,7 @@ def test_real_text_fade_and_black_background_adjustment(tmp_path):
     assert decoded_frame(out,.3).getpixel((0,0))[2]>200
 
 
-def test_native_engine_delivers_edits_transition_and_unchanged_clock(tmp_path):
+def test_native_engine_delivers_edits_transition_and_unchanged_clock(tmp_path,monkeypatch):
     from test_rendering import contract,synthetic
     from test_subtitles import wav
     from app.rendering.engine import FFmpegRenderProvider
@@ -68,13 +70,14 @@ def test_native_engine_delivers_edits_transition_and_unchanged_clock(tmp_path):
     from app.rendering.models import options
     from app.rendering.timeline import build
     h,p=contract(2.);source=synthetic(tmp_path,'source.mp4',['-f','lavfi','-i','color=c=blue:s=320x180:r=30:d=3','-c:v','libx264','-threads','1'])
+    second=synthetic(tmp_path,'second.mp4',['-f','lavfi','-i','color=c=red:s=320x180:r=30:d=3','-c:v','libx264','-threads','1'])
     voice=tmp_path/'voice.wav';voice.write_bytes(wav(2))
     document=Document.model_validate({'adjustments':[{'slot_id':'1','effects':{'brightness':.15}}],
         'clips':[{'id':'c'*32,'kind':'text','track':'emphasis','start':.1,'end':1.8,'text':'NAMAN','color':'#FF0000','font_size':100}],
         'transitions':[{'slot_id':'1','next_slot_id':'2','kind':'wipe','duration':.1}]}).model_dump()
     timeline=build(h,p)
     plan={'temporary':tmp_path,'timeline':timeline,'handoff':h,'options':options({'encoder':'cpu','subtitle_display':'none'}),
-          'audio':voice,'music':None,'media':{'1':{'path':source,'type':'video'},'2':{'path':source,'type':'video'}},
+          'audio':voice,'music':None,'media':{'1':{'path':source,'type':'video'},'2':{'path':second,'type':'video'}},
           'advanced_document':document,'advanced_assets':{},'advanced_slots':{x['slot_id']:x for x in timeline['slots']}}
     result=FFmpegRenderProvider(discover(),ProcessRunner(),workers=1).render(plan)
     assert abs(result['metadata']['duration']-2)<.04
@@ -83,14 +86,36 @@ def test_native_engine_delivers_edits_transition_and_unchanged_clock(tmp_path):
     graphs='\n'.join(p.read_text() for p in tmp_path.glob('filter-*.txt'))
     assert 'wipeleft' in graphs and 'brightness=0.15' in graphs
     assert result['metadata']['smart_edit_applied_summary']['scene_transitions']==1
+    # Visible, different sources prove the saved Wipe actually reaches encoded frames.
+    from types import SimpleNamespace
+    from hashlib import sha256
+    from app.editor.previews import program_frame
+    from PIL import ImageChops,ImageStat
+    (tmp_path/'stock').mkdir()
+    media=[]
+    for slot,path in zip(timeline['slots'],(source,second)):
+        media.append({**slot,'clip_start':0,'media':{'media_type':'video','duration':3.,'sha256':sha256(path.read_bytes()).hexdigest(),'_test_path':path}})
+    monkeypatch.setattr('app.stock.download.asset_path',lambda projects,pid,item:item['_test_path'])
+    editor=SimpleNamespace(projects=SimpleNamespace(_path=lambda pid:tmp_path),stock=None,archive_file=lambda *args:None,
+        view=lambda pid:{'duration':2.,'stock_revision':1,'tracks':{'visuals':media}})
+    advanced=SimpleNamespace(get=lambda pid:{'document':document})
+    for time in (1.5,1.5+1/30,1.5+2/30):
+        preview=Image.open(program_frame(editor,advanced,'test',time)).convert('RGB')
+        final=decoded_frame(result['path'],time).resize((640,360))
+        # Corners exclude the independently rasterized caption glyphs.
+        for box in ((10,20,100,80),(540,20,630,80)):
+            assert max(ImageStat.Stat(ImageChops.difference(preview.crop(box),final.crop(box))).mean)<12
+    mid=decoded_frame(result['path'],1.5+1/30)
+    assert mid.getpixel((100,100))[2]>150 and mid.getpixel((1820,100))[0]>150
 
 
-def test_audio_layer_delay_fade_and_volume_keyframes(tmp_path):
+@pytest.mark.parametrize('speed',[.5,1.,2.])
+def test_audio_layer_delay_fade_and_volume_keyframes(tmp_path,speed):
     import wave,array,math
     ffmpeg=shutil.which('ffmpeg');sound=tmp_path/'sine.wav'
     subprocess.run([ffmpeg,'-v','error','-y','-f','lavfi','-i','sine=frequency=440:duration=0.8',str(sound)],check=True,capture_output=True)
     doc=Document.model_validate({'clips':[{'id':'d'*32,'kind':'media','track':'audio','start':.2,'end':.6,
-       'media':{'provider':'local','media_id':'sound','sha256':'d'*64},'transform':{'volume':.5},'fade_in':.1,
+       'media':{'provider':'local','media_id':'sound','sha256':'d'*64},'transform':{'volume':.5,'speed':speed},'fade_in':.1,
        'keyframes':[{'property':'volume','time':0.,'value':.1},{'property':'volume','time':.4,'value':.5}]}]}).model_dump()
     args=[ffmpeg,'-v','error','-y','-filter_complex_threads','1','-f','lavfi','-i','color=c=black:s=32x32:r=30:d=1']
     graph,_,labels=compile_graph(args,doc,{'d'*32:{'path':sound,'type':'audio'}},folder=tmp_path,duration=1,width=32,height=32)

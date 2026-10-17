@@ -109,6 +109,25 @@ def test_audio_has_only_supported_controls(advanced):
     with pytest.raises(EditorError,match='yetersiz'):change(editor,pid,lambda d:d['clips'][0].update(end=3.))
 
 
+def test_locked_transition_allows_notes_but_rejects_removal(advanced):
+    editor,pid,view,digest=advanced
+    view['tracks']['visuals'][0]['end']=4.
+    view['tracks']['visuals'].append({'slot_id':'next','start':4.,'end':8.,'locked':False,'media':{'media_type':'image'}})
+    change(editor,pid,lambda d:d['transitions'].append({'slot_id':'base','next_slot_id':'next','kind':'wipe','duration':.2}))
+    view['tracks']['visuals'][0]['locked']=True
+    change(editor,pid,lambda d:d['markers'].append({'id':'f'*32,'time':1.,'name':'Not'}))
+    with pytest.raises(EditorError,match='Kilitli'):change(editor,pid,lambda d:d['transitions'].clear())
+
+
+def test_clip_cannot_escape_a_locked_scene(advanced):
+    editor,pid,view,digest=advanced
+    view['scenes'][0]['end']=4.
+    view['scenes'].append({'scene_id':'other','start':4.,'end':8.,'locked':False})
+    change(editor,pid,lambda d:d['clips'].append({'id':'e'*32,'kind':'text','track':'layers','start':0.,'end':2.,'text':'Başlık'}))
+    view['scenes'][0]['locked']=True
+    with pytest.raises(EditorError,match='Kilitli'):change(editor,pid,lambda d:d['clips'][0].update(start=5.,end=7.))
+
+
 def test_real_thumbnail_cache_and_changed_hash_rejection(advanced):
     import subprocess,shutil
     from PIL import Image

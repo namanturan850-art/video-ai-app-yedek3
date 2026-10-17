@@ -1,4 +1,5 @@
 import sqlite3
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -109,3 +110,62 @@ def test_gemini_frame_analysis_is_bounded_and_maps_descriptions(monkeypatch):
     assert result['gemini_status']=='complete'
     assert len(calls)==1 and len(calls[0]['images'])==3
     assert [x['description'] for x in result['clips'][:3]]==['bir','iki','üç']
+
+
+def test_generated_motion_is_projected_once_to_its_semantic_track():
+    class MotionStock(Stock):
+        def view(self, _):
+            result=super().view(_)
+            result['slots'][0]['selected_media']={'media_id':'g1','provider':'generated','media_type':'video',
+                'description':'Ankara rota haritası','source_metadata':{'motion':{'template':'map','data':{'place':'Ankara','label':'Başkent','lat':39.933,'lon':32.86},'emphasis':'Ankara'}}}
+            return result
+    result=EditorService(Production(),MotionStock(),Subtitles(),None).view('a'*32)
+    assert len(result['tracks']['maps'])==1
+    assert result['tracks']['maps'][0]['label']=='Harita + işaret'
+    assert result['tracks']['maps'][0]['preview_url'].endswith('/v1/preview')
+    assert result['tracks']['visuals']==[]  # ana motion klibi ikinci kez katman olarak çizilmez
+
+
+def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):
+    database=tmp_path/'state.sqlite3'
+    with sqlite3.connect(database) as c:
+        c.execute('CREATE TABLE editor_revisions(id,project_id,plan_id,parent_plan_id,kind,payload_json,created_at)')
+    class Projects:
+        lock=threading.RLock()
+        def _connection(self):
+            connection=sqlite3.connect(database);connection.row_factory=sqlite3.Row;return connection
+        def get(self,pid):return {'id':pid}
+    projects=Projects()
+    plan={'plan_id':'p1','revision':3,'blocks':[{'id':'s1','start':0,'end':4,'narration':'Anlatılan kırk kilometrelik rota.','locked':False,'transition':'fade','motion':'none','overlay_text':'','composition':'wide'}]}
+    class P(Production):
+        def __init__(self):self.projects=projects
+        def view(self,_):return {'plan':plan}
+    state={'plan_id':'p1','revision':1,'slots':[
+        {'slot_id':'a','scene_id':'s1','order':1,'duration':2,'estimated_start':0,'estimated_end':2,'locked':False,'status':'complete','segment_start':0,'selected_media':{'provider':'local','media_id':'a','media_type':'video','duration':9}},
+        {'slot_id':'b','scene_id':'s1','order':2,'duration':2,'estimated_start':2,'estimated_end':4,'locked':False,'status':'complete','segment_start':1,'selected_media':{'provider':'local','media_id':'b','media_type':'video','duration':9}}]}
+    class S:
+        def _handoff(self,_):return {'project_id':'x','plan_id':'p1','scenes':[{'scene_id':'s1','start_estimate':0,'end_estimate':4}]}
+        def _ensure(self,c,h):return state
+        def _stamp(self,s,p):assert (p['plan_id'],p['revision'])==('p1',1)
+        def _idle(self,c,p):pass
+        def _save(self,c,s):s['revision']+=1
+        def _mirror(self,s):pass
+        def view(self,_):return {'plan_id':'p1','revision':state['revision'],'slots':state['slots'],'warnings':[],'job':None}
+    class T(Subtitles):
+        def handoff(self,_):return {'audio_duration':4,'scenes':[{'scene_id':'s1','start':0,'end':4}], 'stock_slots':[]}
+    editor=EditorService(P(),S(),T(),None)
+    editor.update_timeline('x',{'plan_id':'p1','revision':1,'scene_id':'s1','slots':[
+        {'slot_id':'b','start':0,'end':1.5,'source_start':2,'source_end':3.5},
+        {'slot_id':'a','start':1.5,'end':4,'source_start':3,'source_end':5.5}]})
+    assert [(s['slot_id'],s['order'],s['segment_start'],s['duration']) for s in state['slots']]==[('a',2,3,2.5),('b',1,2,1.5)]
+    with sqlite3.connect(database) as c: assert c.execute("SELECT kind FROM editor_revisions").fetchone()==('timeline_edit',)
+
+
+def test_motion_edit_uses_existing_single_slot_regeneration_pipeline():
+    calls=[]
+    class MotionStock(Stock):
+        def start(self,pid,payload,slot_id=None):calls.append((pid,payload,slot_id));return {'job_id':'j1'}
+    result=EditorService(Production(),MotionStock(),Subtitles(),None).edit_motion('p','slot',{
+        'plan_id':'stock-plan','revision':4,'motion':{'template':'map','data':{'place':'Ankara'},'emphasis':'Ankara'}})
+    assert result=={'job_id':'j1'}
+    assert calls[0][1]['action']=='motion_edit' and calls[0][2]=='slot'

@@ -16,6 +16,9 @@ from app.stock.download import asset_path
 
 TRACKS = ('emphasis', 'layers', 'maps', 'infographics', 'visuals', 'audio', 'subtitles')
 ANALYZER_VERSION = 'naman-frames-v2'
+MAP_TEMPLATES = {'map','route','empire','zoom','relief','region','arrow'}
+INFOGRAPHIC_TEMPLATES = {'stat','timeline','compare','list','beforeafter','icons','ratio','dynasty','fact'}
+EMPHASIS_TEMPLATES = {'mark'}
 
 
 def serialized(method):
@@ -83,11 +86,20 @@ class EditorService:
         tracks = {name: [] for name in TRACKS}
         for scene in scenes:
             base = {'scene_id': scene['scene_id'], 'start': scene['start'], 'end': scene['end']}
-            tracks['visuals'].extend([{**base, 'start': s['start'], 'end': s['end'], 'slot_id': s['slot_id'], 'media': s.get('selected_media'),
-                                       'locked':s.get('locked',False), 'clip_start': s.get('clip_start', 0)} for s in scene['slots']])
+            for slot in scene['slots']:
+                media=slot.get('selected_media') or {}; spec=((media.get('source_metadata') or {}).get('motion') or {})
+                template=spec.get('template')
+                item={**base,'start':slot['start'],'end':slot['end'],'slot_id':slot['slot_id'],'media':media or None,
+                      'locked':slot.get('locked',False),'clip_start':slot.get('clip_start',0),'clip_end':slot.get('clip_end'),
+                      'label':self._clip_label(media,template),'preview_url':f'/api/projects/{project_id}/production/stock/slots/{slot["slot_id"]}/preview'}
+                if template in MAP_TEMPLATES: tracks['maps'].append({**item,'kind':'map','type':template,'motion_spec':spec})
+                elif template in INFOGRAPHIC_TEMPLATES: tracks['infographics'].append({**item,'kind':'infographic','type':template,'motion_spec':spec})
+                elif template in EMPHASIS_TEMPLATES: tracks['emphasis'].append({**item,'kind':'emphasis','type':template,'motion_spec':spec})
+                elif template: tracks['layers'].append({**item,'kind':'layer','type':template,'motion_spec':spec})
+                else: tracks['visuals'].append(item)
             motion = scene.get('motion') or ''
-            if motion in ('map', 'route', 'schema'): tracks['maps'].append({**base, 'type': motion})
-            if motion in ('number', 'compare', 'card', 'chart', 'infographic'): tracks['infographics'].append({**base, 'type': motion})
+            if motion in ('map', 'route', 'schema') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['maps']): tracks['maps'].append({**base, 'type': motion})
+            if motion in ('number', 'compare', 'card', 'chart', 'infographic') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['infographics']): tracks['infographics'].append({**base, 'type': motion})
             if scene.get('overlay_text'): tracks['layers'].append({**base, 'text': scene['overlay_text']})
             for overlay in scene['naman_overlays']:
                 item={**base,**overlay}
@@ -107,6 +119,7 @@ class EditorService:
                 'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
                 'duration': timing.get('audio_duration') or duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
                 'track_order': list(TRACKS), 'audio_ready': bool(audio), 'subtitle_timing': subtitle_state.get('timing_source'),
+                'stock_job':stock.get('job'),
                 'warnings': stock.get('warnings', []) + ([subtitle_state['message']] if subtitle_state.get('message') else [])}
 
     @staticmethod
@@ -117,7 +130,74 @@ class EditorService:
                 if key.endswith('_url') and key not in ('source_url',): media.pop(key, None)
         return {'slot_id': slot['slot_id'], 'scene_id': slot.get('scene_id'), 'start': slot.get('estimated_start', 0),
                 'end': slot.get('estimated_end', 0), 'locked': bool(slot.get('locked')), 'status': slot.get('status'),
-                'selected_media': media, 'clip_start': slot.get('segment_start') or 0}
+                'selected_media': media, 'clip_start': slot.get('segment_start') or 0,
+                'clip_end':slot.get('segment_end')}
+
+    @staticmethod
+    def _clip_label(media, template=None):
+        if template:
+            from app.motion.templates import TEMPLATES
+            return TEMPLATES.get(template,template)
+        value=(media or {}).get('description') or (media or {}).get('title')
+        return ' '.join(str(value).split())[:70] if value else ('Video' if (media or {}).get('media_type')=='video' else 'Görsel')
+
+    @serialized
+    def update_timeline(self, project_id, payload):
+        required={'plan_id','revision','scene_id','slots'}
+        if not isinstance(payload,dict) or set(payload)!=required or not isinstance(payload.get('slots'),list) or not payload['slots']:
+            raise EditorError('invalid_timeline','Zaman çizelgesi değişikliklerini kontrol edin.')
+        timing=self.subtitles.handoff(project_id)
+        scene_time=next((s for s in timing.get('scenes',[]) if s['scene_id']==payload['scene_id']),None)
+        if not scene_time: raise EditorError('stale_timing','Ses ve altyazı zamanlaması değişti. Sayfayı yenileyin.',409)
+        handoff=self.stock._handoff(project_id)
+        scene_source=next((s for s in handoff['scenes'] if s['scene_id']==payload['scene_id']),None)
+        if not scene_source: raise EditorError('stale_timeline','Sahne planı değişti. Sayfayı yenileyin.',409)
+        with closing(self.projects._connection()) as connection,connection:
+            state=self.stock._ensure(connection,handoff);self.stock._stamp(state,payload);self.stock._idle(connection,project_id)
+            plan=self._active(project_id);scene=next((b for b in plan['blocks'] if b['id']==payload['scene_id']),None)
+            if not scene or scene.get('locked'): raise EditorError('locked','Kilitli sahnenin zamanlaması değiştirilemez.',409)
+            current=[s for s in state['slots'] if s['scene_id']==payload['scene_id']]
+            incoming=payload['slots']
+            ids=[x.get('slot_id') for x in incoming]
+            if len(ids)!=len(set(ids)) or set(ids)!={s['slot_id'] for s in current}:
+                raise EditorError('stale_timeline','Sahne klipleri değişti. Sayfayı yenileyin.',409)
+            cursor=float(scene_time['start']); prepared=[]
+            for index,item in enumerate(incoming,1):
+                if not isinstance(item,dict) or set(item)-{'slot_id','start','end','source_start','source_end'}:
+                    raise EditorError('invalid_timeline','Klip alanlarını kontrol edin.')
+                if not finite(item.get('start')) or not finite(item.get('end')):
+                    raise EditorError('invalid_timeline','Klip başlangıç ve bitişi sayı olmalıdır.')
+                start,end=round(item['start']*30)/30,round(item['end']*30)/30
+                if abs(start-cursor)>.018 or end-start<1/30-.001:
+                    raise EditorError('timeline_gap','Sahne içinde boşluk veya üst üste binme olamaz; komşu klip sınırını da taşıyın.')
+                slot=next(s for s in current if s['slot_id']==item['slot_id'])
+                if slot.get('locked'): raise EditorError('locked','Kilitli klip taşınamaz veya kesilemez.',409)
+                media=slot.get('selected_media') or {};source_start=item.get('source_start',slot.get('segment_start') or 0)
+                source_end=item.get('source_end',source_start+(end-start))
+                if not finite(source_start) or not finite(source_end) or source_start<0 or source_end<=source_start:
+                    raise EditorError('invalid_range','Kaynak klip aralığını kontrol edin.')
+                if media.get('media_type')=='video' and (not finite(media.get('duration')) or source_end>media['duration']+.001 or source_end-source_start+.001<end-start):
+                    raise EditorError('invalid_range','Kaynak video aralığı gösterim süresini karşılamalı ve dosya sınırında kalmalıdır.')
+                prepared.append((slot,start,end,source_start,source_end,index));cursor=end
+            if abs(cursor-float(scene_time['end']))>.018:
+                raise EditorError('timeline_gap','Sahnenin görüntüleri seslendirme süresinin tamamını kapsamalıdır.')
+            estimate_start=float(scene_source['start_estimate']);estimate_duration=float(scene_source['end_estimate'])-estimate_start
+            actual_duration=float(scene_time['end'])-float(scene_time['start'])
+            for slot,start,end,source_start,source_end,index in prepared:
+                a=estimate_start+(start-float(scene_time['start']))/actual_duration*estimate_duration
+                b=estimate_start+(end-float(scene_time['start']))/actual_duration*estimate_duration
+                slot.update(order=index,duration=round(b-a,6),estimated_start=round(a,6),estimated_end=round(b,6),
+                            segment_start=source_start,segment_end=source_end)
+            self.stock._save(connection,state)
+            connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
+                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',json.dumps(payload,ensure_ascii=False),now()))
+        self.stock._mirror(state)
+        return self.view(project_id)
+
+    def edit_motion(self, project_id, slot_id, payload):
+        if not isinstance(payload,dict) or set(payload)!={'plan_id','revision','motion'}:
+            raise EditorError('invalid_input','Animasyon düzenleme alanlarını kontrol edin.')
+        return self.stock.start(project_id,{**payload,'action':'motion_edit'},slot_id=slot_id)
 
     def archive(self, project_id):
         self.projects.get(project_id)

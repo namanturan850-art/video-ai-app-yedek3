@@ -31,7 +31,7 @@ def stock_router(service):
         media = slot['selected_media']
         if not media: raise StockError('missing_media','Önce medya seçip indirin.',404)
         path = asset_path(service.projects,project_id,media)
-        return FileResponse(path,media_type=media['content_type'],headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
+        return FileResponse(path,media_type=media.get('content_type'),headers={'X-Content-Type-Options':'nosniff','Cache-Control':'no-store'})
 
     @router.get('/diagnostics')
     def diagnostics(project_id: str):

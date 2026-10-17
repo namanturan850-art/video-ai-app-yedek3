@@ -1,6 +1,7 @@
 """Read-only Gemini evidence and local, version-scoped finding dispositions."""
 from contextlib import closing
 import json
+import math
 from uuid import uuid4
 
 from app.editor.models import EditorError
@@ -21,10 +22,22 @@ class Reviews:
             item=json.loads(row[0]);statuses[(item['render_version_id'],item['finding_id'])]=item['status']
         reports=[]
         for row in rows:
-            report=json.loads(row['result_json']);report['source_sha256']=row['sha256']
+            try:report=json.loads(row['result_json'])
+            except (ValueError,TypeError):continue
+            if not isinstance(report,dict) or not report.get('render_version_id') or not isinstance(report.get('issues'),list):continue
+            report['source_sha256']=row['sha256'];report.setdefault('basis','Eski kayıtlı örnek kare raporu; kapsamı bağımsız doğrulayın.')
+            report['summary']=str(report.get('summary') or 'Kayıtlı denetim raporu')[:2000]
+            normalized=[]
             for index,issue in enumerate(report['issues']):
+                if not isinstance(issue,dict):continue
+                t=issue.get('timecode',0)
+                if type(t) not in (int,float) or not math.isfinite(t) or t<0:continue
+                issue['message']=str(issue.get('message') or 'Kaynağı elle kontrol edin.')[:2000]
+                issue['category']=str(issue.get('category') or 'Kontrol')[:120]
                 issue['id']=str(index);issue['status']=statuses.get((report['render_version_id'],str(index)),'open')
                 issue.setdefault('confidence','Belirtilmedi');issue.setdefault('basis',report['basis'])
+                normalized.append(issue)
+            report['issues']=normalized
             reports.append(report)
         return {'analysis_scope':'sample_frames','max_frames':8,'max_output_tokens':900,'reports':reports,
                 'notice':'Yalnız örnek kareler incelenir. Ses seviyesi ve tarih/coğrafya bulguları ölçüm veya bağımsız doğrulama olmadan kesin değildir. Tam video gönderimi etkin değildir.',

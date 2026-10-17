@@ -199,6 +199,16 @@ def test_intentionally_removed_bad_source_does_not_block_readiness(ready):
     assert not any(b['code']=='quality_rejected' for b in view['readiness']['blockers'])
 
 
+def test_base_preview_infers_mime_for_older_archive_metadata(ready):
+    editorial,_=setup_manual(ready);pid=ready['pid'];projects=editorial.projects
+    with closing(projects._connection()) as c,c:
+        row=c.execute('SELECT state_json FROM stock_plans WHERE project_id=?',(pid,)).fetchone();stock=json.loads(row[0]);slot=stock['slots'][0]
+        slot['selected_media'].pop('content_type',None)
+        c.execute('UPDATE stock_plans SET state_json=? WHERE project_id=?',(json.dumps(stock),pid))
+    response=ready['client'].get(f'/api/projects/{pid}/production/stock/slots/{slot["slot_id"]}/preview')
+    assert response.status_code==200 and response.headers['content-type'].startswith('video/')
+
+
 def test_subtitle_text_timing_versions_and_undo_keep_narration_clock(ready):
     st=ready;app=st['client'].app;pid=st['pid'];editorial,advanced=setup_manual(st)
     before=app.state.subtitles.handoff(pid);active=app.state.subtitles.view(pid)['active']

@@ -68,6 +68,16 @@ def test_manual_import_validation_rejects_stale_and_locked_changes():
     assert 'güncel görev paketini' in result['correction_message']
 
 
+def test_manual_task_zip_contains_full_package_and_output_template():
+    editor=service()
+    editor.projects.get=lambda _: {'name':'Belgesel','topic':'Konu','language':'tr'}
+    import io, json, zipfile
+    with zipfile.ZipFile(io.BytesIO(editor.task_package_zip('a'*32))) as archive:
+        assert {'NAMAN_GOREV_PAKETI.json','NAMAN_CIKTI_SABLONU.json','OKU.txt'}==set(archive.namelist())
+        package=json.loads(archive.read('NAMAN_GOREV_PAKETI.json'))
+        assert package['required_sections']==['sahneler','infografikler','harita_sahneleri','vurgular','katmanlar']
+
+
 def test_frontend_contains_brand_logo_timeline_and_preview_contract():
     root=Path(__file__).parents[1]
     html=(root/'app/static/index.html').read_text(encoding='utf-8')
@@ -78,6 +88,9 @@ def test_frontend_contains_brand_logo_timeline_and_preview_contract():
     for behavior in ('currentTime','requestAnimationFrame','Oynat','Saniyeye git','manual/validate'):
         assert behavior in js
     assert 'archive/upload' in js and 'MP4, JPG, PNG, WebP, MP3, WAV' in js
+    for tool in ('Görsel düzenleme','JSON ile düzenle','JSON’u kopyala','Dosyaya aktar',
+                 'Sözdizimini ve yapıyı kontrol et','Değişiklikleri karşılaştır','AI ile yeniden planla'):
+        assert tool in js
 
 
 def test_local_image_upload_is_content_validated_and_project_scoped(tmp_path):

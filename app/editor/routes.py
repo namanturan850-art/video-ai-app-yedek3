@@ -4,6 +4,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from app.editor.models import EditorError
 from app.stock.download import directory
 
@@ -68,6 +69,11 @@ def editor_router(service):
 
     @router.get('/manual/package')
     def task_package(project_id:str): return service.task_package(project_id)
+
+    @router.get('/manual/package.zip')
+    def task_package_zip(project_id:str):
+        content=service.task_package_zip(project_id)
+        return Response(content,media_type='application/zip',headers={'Content-Disposition':'attachment; filename="naman-manuel-plan.zip"'})
 
     @router.post('/manual/validate')
     def validate(project_id:str,payload:dict): return service.validate_import(project_id,payload)

@@ -10,6 +10,8 @@ import subprocess
 import re
 import os
 import array
+import io
+import zipfile
 from uuid import uuid4
 from functools import wraps
 
@@ -456,6 +458,14 @@ class EditorService:
                 'narration':[{'scene_id':b['id'],'text':b['narration'],'locked':bool(b.get('locked'))} for b in plan['blocks']],
                 'output_template':{'schema':'naman.manual-plan.v1','base':{'plan_id':plan['plan_id'],'revision':plan['revision']},
                                    'sahneler':[],'infografikler':[],'harita_sahneleri':[],'vurgular':[],'katmanlar':[]}}
+
+    def task_package_zip(self,project_id):
+        package=self.task_package(project_id);stream=io.BytesIO()
+        with zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('NAMAN_GOREV_PAKETI.json',json.dumps(package,ensure_ascii=False,indent=2))
+            archive.writestr('NAMAN_CIKTI_SABLONU.json',json.dumps(package['output_template'],ensure_ascii=False,indent=2))
+            archive.writestr('OKU.txt','Görev paketini yapay zekâya verin. Dönen JSON yalnız NAMAN_CIKTI_SABLONU yapısında olmalıdır. NAMAN içinde Doğrula demeden plan uygulanmaz.\n')
+        return stream.getvalue()
 
     def validate_import(self, project_id, payload):
         plan=self._active(project_id); errors=[]

@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+import array
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -140,6 +141,16 @@ def test_generated_motion_is_projected_once_to_its_semantic_track():
     assert result['tracks']['maps'][0]['label']=='Harita + işaret'
     assert result['tracks']['maps'][0]['preview_url'].endswith('/v1/preview')
     assert result['tracks']['visuals']==[]  # ana motion klibi ikinci kez katman olarak çizilmez
+
+
+def test_waveform_peaks_come_from_decoded_audio_samples(monkeypatch):
+    editor=service()
+    monkeypatch.setattr('app.narration.audio.audio_path',lambda *args:Path('/tmp/synthetic.wav'))
+    monkeypatch.setattr('app.rendering.tools.discover',lambda:{'ffmpeg':'ffmpeg'})
+    pcm=array.array('h',[0,1000,-2000,8000,-16000,32767]).tobytes()
+    monkeypatch.setattr('app.editor.service.subprocess.run',lambda *args,**kwargs:SimpleNamespace(returncode=0,stdout=pcm))
+    peaks=editor._waveform('a'*32,{'sha256':'wave-identity'})
+    assert peaks and peaks[-1]==1.0 and max(peaks[:-1])<1
 
 
 def test_timeline_reorder_and_trim_persist_as_stock_plan_revision(tmp_path):

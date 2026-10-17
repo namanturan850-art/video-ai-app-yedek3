@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import re
 import os
+import array
 from uuid import uuid4
 from functools import wraps
 
@@ -51,6 +52,26 @@ class EditorService:
     def __init__(self, production, stock, subtitles, settings):
         self.production, self.stock, self.subtitles, self.settings = production, stock, subtitles, settings
         self.projects = production.projects
+        self._waveforms = {}
+
+    def _waveform(self,project_id,audio):
+        """Return bounded peaks from the actual narration PCM; never synthesize a waveform."""
+        identity=audio.get('sha256')
+        if not identity:return None
+        if identity in self._waveforms:return self._waveforms[identity]
+        try:
+            from app.narration.audio import audio_path
+            from app.rendering.tools import discover
+            path=audio_path(self.projects,project_id,audio);ffmpeg=discover().get('ffmpeg')
+            if not ffmpeg:return None
+            done=subprocess.run([ffmpeg,'-v','error','-i',str(path),'-ac','1','-ar','100','-f','s16le','pipe:1'],capture_output=True,timeout=45,stdin=subprocess.DEVNULL)
+            if done.returncode or not done.stdout:return None
+            samples=array.array('h');samples.frombytes(done.stdout);bins=160;step=max(1,math.ceil(len(samples)/bins))
+            peaks=[round(max((abs(v) for v in samples[i:i+step]),default=0)/32768,3) for i in range(0,len(samples),step)][:bins]
+            self._waveforms[identity]=peaks
+            if len(self._waveforms)>32:self._waveforms.pop(next(iter(self._waveforms)))
+            return peaks
+        except (OSError,subprocess.SubprocessError,ValueError):return None
 
     def _active(self, project_id):
         production = self.production.view(project_id)
@@ -115,12 +136,13 @@ class EditorService:
             tracks['emphasis'].extend({'start': cue['start'] + i * step, 'end': cue['start'] + (i + 1) * step,
                                        'text': word, 'timing': 'estimated'} for i, word in enumerate(words))
         if audio: tracks['audio'].append({'start': 0, 'end': float(audio.get('duration') or duration),
-                                          'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio'})
+                                          'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio',
+                                          'waveform':self._waveform(project_id,audio)})
         return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],
                 'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
                 'duration': timing.get('audio_duration') or duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
                 'track_order': list(TRACKS), 'audio_ready': bool(audio), 'subtitle_timing': subtitle_state.get('timing_source'),
-                'stock_job':stock.get('job'),
+                'stock_job':stock.get('job'),'subtitle_version_id':active_subtitles.get('id') or active_subtitles.get('version_id'),
                 'warnings': stock.get('warnings', []) + ([subtitle_state['message']] if subtitle_state.get('message') else [])}
 
     @staticmethod

@@ -141,13 +141,17 @@ class EditorService:
                                        'text': word, 'timing': 'estimated'} for i, word in enumerate(words))
         if audio: tracks['audio'].append({'start': 0, 'end': float(audio.get('duration') or duration),
                                           'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio',
-                                          'waveform':self._waveform(project_id,audio)})
+                                          'waveform_url':f'/api/projects/{project_id}/editor/waveform'})
         return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],
                 'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
                 'duration': timing.get('audio_duration') or duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
                 'track_order': list(TRACKS), 'audio_ready': bool(audio), 'subtitle_timing': subtitle_state.get('timing_source'),
                 'stock_job':stock.get('job'),'subtitle_version_id':active_subtitles.get('id') or active_subtitles.get('version_id'),
                 'warnings': stock.get('warnings', []) + ([subtitle_state['message']] if subtitle_state.get('message') else [])}
+
+    def waveform(self,project_id):
+        subtitle_state=self.subtitles.view(project_id);audio=((subtitle_state.get('narration') or {}).get('metadata') or {}).get('audio') or {}
+        return {'peaks':self._waveform(project_id,audio) or [],'source':'decoded_narration_pcm' if audio else 'no_active_narration'}
 
     @staticmethod
     def _public_slot(slot):
@@ -324,9 +328,8 @@ class EditorService:
             meta=json.loads(row['metadata_json']); item={'provider':row['provider'],'media_id':row['media_id'],'media_type':row['media_type'],**meta}
             try:
                 path=asset_path(self.projects,project_id,item)
-                identity=sha256_file(path)
-                if item.get('sha256') and item['sha256'] != identity:
-                    continue
+                identity=item.get('sha256')
+                if not isinstance(identity,str) or not re.fullmatch(r'[a-f0-9]{64}',identity):continue
             except Exception:
                 continue
             rights=item.get('source_metadata') or {}
@@ -387,6 +390,9 @@ class EditorService:
             raise EditorError('invalid_range','Klip bitişi başlangıçtan sonra olmalıdır.')
         archive=next((x for x in self.archive(project_id)['items'] if x['provider']==provider and x['media_id']==media_id),None)
         if not archive or archive['sha256'] != payload['sha256']:
+            raise EditorError('stale_media','Yerel medya değişti. Arşivi yenileyip tekrar deneyin.',409)
+        path,_=self.archive_file(project_id,provider,media_id)
+        if sha256_file(path)!=payload['sha256']:
             raise EditorError('stale_media','Yerel medya değişti. Arşivi yenileyip tekrar deneyin.',409)
         if finite(archive.get('duration')) and payload['end'] > archive['duration'] + .001:
             raise EditorError('invalid_range','Klip aralığı medya süresini aşamaz.')

@@ -18,6 +18,9 @@ def editor_router(service):
     @router.get('/archive')
     def archive(project_id:str): return service.archive(project_id)
 
+    @router.get('/waveform')
+    def waveform(project_id:str): return service.waveform(project_id)
+
     @router.post('/archive/upload',status_code=201)
     async def archive_upload(project_id:str,request:Request):
         name=unquote(request.headers.get('x-file-name',''))

@@ -10,7 +10,7 @@ import re
 from app.editor.models import EditorError
 from app.providers.json_output import _unique_object, _reject_constant
 
-SECTIONS=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar')
+SECTIONS=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar','animasyon_sahneleri')
 
 
 def _finite_number(value):

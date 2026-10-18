@@ -144,18 +144,19 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         validate_edits(scene,element_edits)
         scene['_editor_elements']=element_edits
     if sample_time is not None:scene['_sample_time']=max(0,min(duration,float(sample_time)))
-    target = folder / (scene_key(scene) + '.mp4')
+    suffix='.mov' if scene.get('alpha') else '.mp4'
+    target = folder / (scene_key(scene) + suffix)
     if sample_time is not None:
         cache=folder/'editor-cache'
         if linked(cache):raise RuntimeError('Önizleme önbelleği güvenli bir yerel klasör olmalıdır.')
         cache.mkdir(exist_ok=True)
-        target=cache/('motion-sample-'+scene_key(scene)+'.mp4')
+        target=cache/('motion-sample-'+scene_key(scene)+suffix)
     from app.motion import relief
     relief.LAST_WARNING = relief.LAST_INFO = ''  # only this clip's satellite problem / view is reported
     if target.is_file() and not linked(target) and target.stat().st_size > 0:
         if sample_time is not None:target.touch()
         return target, scene, 'cache'
-    temporary = folder / ('.motion-' + uuid4().hex + '.mp4')
+    temporary = folder / ('.motion-' + uuid4().hex + suffix)
     engine = 'local'
     from app.motion.control import CANCELLED, check
     token = CANCELLED.set(cancelled or (lambda:False))
@@ -182,7 +183,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         temporary.unlink(missing_ok=True)
     if sample_time is not None:
         # Only disposable sampled previews, never archived source media.
-        cached=sorted(target.parent.glob('motion-sample-*.mp4'),key=lambda p:p.stat().st_mtime)
+        cached=sorted([*target.parent.glob('motion-sample-*.mp4'),*target.parent.glob('motion-sample-*.mov')],key=lambda p:p.stat().st_mtime)
         for stale in cached[:-240]:
             if stale!=target and not linked(stale):
                 try:stale.unlink(missing_ok=True)

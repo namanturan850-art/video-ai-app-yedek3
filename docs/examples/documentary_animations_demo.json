@@ -1,0 +1,207 @@
+{
+  "science": {
+    "schema": "naman.animation.v1",
+    "basis": "demo",
+    "background": null,
+    "objects": [
+      {
+        "id": "cloud-left",
+        "kind": "cloud",
+        "x": 620.0,
+        "y": 310.0,
+        "width": 440.0,
+        "height": 180.0,
+        "layer": 1,
+        "color": "#657992",
+        "data": {
+          "drift": 18.0
+        }
+      },
+      {
+        "id": "cloud-right",
+        "kind": "cloud",
+        "x": 1150.0,
+        "y": 280.0,
+        "width": 500.0,
+        "height": 210.0,
+        "layer": 1,
+        "color": "#93AAC7",
+        "data": {
+          "drift": -12.0
+        }
+      },
+      {
+        "id": "air",
+        "kind": "flow",
+        "x": 900.0,
+        "y": 500.0,
+        "layer": 2,
+        "color": "#77DDE7",
+        "data": {
+          "speed": 160.0,
+          "points": [
+            {
+              "x": -500.0,
+              "y": 80.0
+            },
+            {
+              "x": -100.0,
+              "y": -20.0
+            },
+            {
+              "x": 400.0,
+              "y": -70.0
+            }
+          ]
+        }
+      },
+      {
+        "id": "bolt",
+        "kind": "lightning",
+        "x": 1000.0,
+        "y": 560.0,
+        "width": 100.0,
+        "height": 380.0,
+        "layer": 3,
+        "color": "#B8D9FF",
+        "stroke": "#FFFFFF",
+        "data": {
+          "seed": 13
+        }
+      },
+      {
+        "id": "rain",
+        "kind": "particles",
+        "x": 950.0,
+        "y": 700.0,
+        "width": 700.0,
+        "height": 260.0,
+        "opacity": 0.5,
+        "data": {
+          "seed": 11,
+          "direction": 100.0,
+          "speed": 110.0
+        }
+      }
+    ]
+  },
+  "chart": {
+    "schema": "naman.animation.v1",
+    "basis": "demo",
+    "background": null,
+    "objects": [
+      {
+        "id": "data",
+        "kind": "bar_chart",
+        "x": 960.0,
+        "y": 490.0,
+        "width": 1040.0,
+        "height": 420.0,
+        "color": "#6BD7B6",
+        "data": {
+          "items": [
+            {
+              "label": "A",
+              "value": 20.0
+            },
+            {
+              "label": "B",
+              "value": 40.0
+            },
+            {
+              "label": "C",
+              "value": 60.0
+            }
+          ],
+          "unit": "DEMO"
+        }
+      },
+      {
+        "id": "title",
+        "kind": "label",
+        "x": 960.0,
+        "y": 150.0,
+        "width": 1400.0,
+        "data": {
+          "text": "Hareketli veri grafiği"
+        }
+      }
+    ]
+  },
+  "diagram": {
+    "schema": "naman.animation.v1",
+    "basis": "demo",
+    "background": null,
+    "objects": [
+      {
+        "id": "input",
+        "kind": "node",
+        "x": 430.0,
+        "y": 500.0,
+        "width": 360.0,
+        "height": 170.0,
+        "layer": 2,
+        "color": "#204B6E",
+        "data": {
+          "text": "Girdi"
+        }
+      },
+      {
+        "id": "output",
+        "kind": "node",
+        "x": 1470.0,
+        "y": 500.0,
+        "width": 360.0,
+        "height": 170.0,
+        "layer": 2,
+        "color": "#214E43",
+        "data": {
+          "text": "Sonuç"
+        }
+      },
+      {
+        "id": "link",
+        "kind": "flow",
+        "x": 960.0,
+        "y": 500.0,
+        "data": {
+          "points": [
+            {
+              "x": -340.0,
+              "y": 0.0
+            },
+            {
+              "x": 340.0,
+              "y": 0.0
+            }
+          ],
+          "speed": 200.0
+        }
+      },
+      {
+        "id": "module",
+        "kind": "isometric_box",
+        "x": 960.0,
+        "y": 740.0,
+        "width": 170.0,
+        "height": 90.0,
+        "layer": 1,
+        "opacity": 0.8
+      }
+    ],
+    "camera": {
+      "keyframes": [
+        {
+          "property": "scale",
+          "time": 0.0,
+          "value": 1.0
+        },
+        {
+          "property": "scale",
+          "time": 1.0,
+          "value": 1.05
+        }
+      ]
+    }
+  }
+}

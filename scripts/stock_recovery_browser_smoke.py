@@ -46,6 +46,8 @@ def main():
                 download=waiting.value;assert not download.failure();download.save_as(out/'diagnostics.json')
                 report=json.loads((out/'diagnostics.json').read_text());assert len(report['slots'])==32
                 assert 'local_path' not in json.dumps(report) and data['storage'] not in json.dumps(report) and 'synthetic-recovery-secret' not in json.dumps(report)
+                assert report['export_policy_versions']==report['jobs'][0]['progress']['policy_versions']
+                metrics['export_and_job_policy_versions']=report['export_policy_versions']
                 metrics['download']={'slots':32,'filename':download.suggested_filename,'schema':report['schema_version']}
                 page.locator('#stock-diagnostics-copy').click();page.get_by_text('Tanılama panoya kopyalandı.',exact=False).wait_for()
                 assert len(json.loads(page.evaluate('navigator.clipboard.readText()'))['slots'])==32

@@ -4,7 +4,7 @@ Only concepts actually present in narration are composed. Unknown subjects keep
 existing planner queries. This is vocabulary matching, never factual inference.
 """
 import re
-from app.stock.relevance import canonical, normalized, unique
+from app.stock.relevance import canonical, normalized, unique, ALIASES
 
 # Research attribution only. A university/building scene without a separate
 # visual subject is left intact. Keep the original narration elsewhere.
@@ -13,7 +13,7 @@ INSTITUTION = re.compile(
     r'|\b[A-ZÀ-ÖØ-Þİ][\wÀ-ÿ]*(?:\s+[A-ZÀ-ÖØ-Þİ][\wÀ-ÿ]*){0,3}\s+(?:Üniversitesi|University|Universität))')
 RESEARCH = ('arastir', 'karsilastir', 'research', 'study', 'studied', 'compared', 'investig', 'estudio', 'comparo', 'recherche', 'etude', 'untersuch')
 EVENTS = ('lightning', 'wind', 'current', 'storm', 'charging', 'navigation', 'flight')
-SUBJECTS = ('lake', 'waterfall', 'ship', 'aircraft', 'train', 'car', 'animal', 'food', 'ocean', 'water', 'forest', 'mountain', 'beach', 'computer', 'urban')
+SUBJECTS = ('lake', 'waterfall', 'ship', 'aircraft', 'train', 'car', 'animal', 'food', 'ocean', 'water', 'basin', 'forest', 'mountain', 'beach', 'computer', 'urban')
 
 
 def analyze(text):
@@ -40,8 +40,23 @@ def analyze(text):
             queries.append(' '.join(subjects[:2]))
         for subject in subjects[:2]:
             queries.extend((subject + ' landscape', subject + ' aerial view', subject + ' surface'))
-    return {'concepts': sorted(actual & (set(SUBJECTS) | set(EVENTS))),
-            'institutions': institutions, 'location_text': clean.strip(),
+    # Gazetteers also contain common nouns (Lagos, Corrientes, Cuenca).
+    # Lowercase visual vocabulary in narration is not a named city. Proper
+    # capitalization and multiword names such as Black Sea remain untouched.
+    from app.motion.places import find, spoken_places
+    protected = [normalized(name) for name, _, _ in spoken_places(clean) if len(name.split()) > 1]
+    location_text = query_text = clean
+    ambiguous_places = []
+    for match in re.finditer(r'[^\W_]+', clean):
+        word = match.group();concept = ALIASES.get(normalized(word))
+        if not word.islower() or not concept or not find(word):continue
+        if any(normalized(word) in name.split() for name in protected):continue
+        ambiguous_places.append(word)
+        pattern = r'(?<!\w)' + re.escape(word) + r'(?!\w)'
+        location_text = re.sub(pattern, ' ', location_text)
+        query_text = re.sub(pattern, concept, query_text)
+    return {'ambiguous_places':ambiguous_places, 'concepts': sorted(actual & (set(SUBJECTS) | set(EVENTS))),
+            'institutions': institutions, 'location_text': location_text.strip(), 'query_text':query_text,
             'queries': unique(queries), 'subject': ' '.join(subjects[:2])}
 
 

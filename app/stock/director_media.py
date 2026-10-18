@@ -1557,7 +1557,7 @@ class MediaDirector:
             if not any(s.get('provider') == provider and s.get('error') for s in log.get('searches', [])):
                 log.setdefault('searches', []).append({'provider':provider,'query':'','media_type':'video',
                     'skipped':'provider_unavailable','error':category,'error_text':ERROR_TEXT.get(category,'Sağlayıcı bu işte kullanılamıyor')})
-        slot.update(selected_media=None,status='ai_needed',message='Uygun kaynak bulunamadı; manuel medya atayın. Otomatik grafik oluşturulmadı.')
+        slot.update(selected_media=None,local_review=None,ai_review=None,needs_ai_review=False,status='ai_needed',message='Uygun kaynak bulunamadı; manuel medya atayın. Otomatik grafik oluşturulmadı.')
         from app.stock.search_evidence import reasons
         slot['missing_reasons'] = reasons(log)
         log.setdefault('steps',[]).append({'stage':'sources_only','label': STAGES['sources_only'],'result':'missing'})
@@ -1835,6 +1835,10 @@ class MediaDirector:
         self.sources_only=manual(self.service.projects,self.pid)
         intentional=read_document(self.service.projects,self.pid,self.job['plan_id'])['document']
         self.empty_slots=set(intentional.get('empty_slots',[])+intentional.get('disabled_slots',[]))
+        from app.stock.shot import VERSION as SHOT_VERSION
+        from app.stock.verdict_cache import POLICY
+        self.progress['policy_versions'] = {'shot':SHOT_VERSION,'verdict':POLICY,'single_slot_scope':1}
+        self.progress['scope'] = 'single_slot' if self.job.get('slot_id') else 'project'
         CURRENT_PROJECT.set(self.pid)
         service, job = self.service, self.job
         with service.projects.lock, closing(service.projects._connection()) as c:
@@ -1877,8 +1881,11 @@ class MediaDirector:
         targets = []
         for slot in sorted(self.slots, key=lambda s: s['estimated_start']):
             media = slot.get('selected_media')
-            if single and slot['slot_id'] == single:
-                targets.append((slot, action))
+            if single:
+                if slot['slot_id'] == single:
+                    targets.append((slot, action))
+                elif self.valid(slot) and not slot.get('continuation_of'):
+                    self.register(slot['slot_id'], media, float(slot.get('segment_start') or 0), used_seconds(slot))
                 continue
             if slot['slot_id'] in self.empty_slots and not single:continue
             hint = None if self.sources_only else self.owner.get(slot['slot_id'])
@@ -2127,7 +2134,9 @@ class MediaDirector:
         if media and key(media) in self.usage:
             self.usage[key(media)] = [u for u in self.usage[key(media)] if u[0] != slot['slot_id']]
             if not self.usage[key(media)]: del self.usage[key(media)]
-        slot.update(selected_media=None, status='pending', ai_review=None, segment_start=None, continuation_of=None)
+        slot.update(selected_media=None, status='pending', ai_review=None, local_review=None,
+                    local_validation=None, selection_context=None, setting_check=None, needs_ai_review=False,
+                    review_flags=[], segment_start=None, continuation_of=None)
 
     def review(self, scenes):
         """Whole-video look: repeated or too similar shots, tone breaks.
@@ -2229,11 +2238,14 @@ class MediaDirector:
 
     def finalize(self):
         service, job = self.service, self.job
-        help_text = self.owner_help(self.slots) if getattr(self, 'slots', None) else {}
+        single = job.get('slot_id')
+        affected = [s for s in getattr(self, 'slots', []) if not single or s['slot_id'] == single]
+        help_text = self.owner_help(affected) if affected else {}
         with service.projects.lock, closing(service.projects._connection()) as c, c:
             state = service._load(c, self.pid, job['plan_id'])
             bands = {} if self.sources_only else self.bands(state['slots'])
             for slot in state['slots']:
+                if single and slot['slot_id'] != single:continue
                 if slot['slot_id'] in help_text: slot.update(help_text[slot['slot_id']])
                 slot['review_flags'] = review_flags(slot)
                 if self.sources_only:continue
@@ -2416,7 +2428,7 @@ def summary(slots):
         if model and not is_generated(s['selected_media']) and not s.get('continuation_of'): models[model] = models.get(model, 0) + 1
     if models:
         text += ' · seçen model' + ('ler' if len(models) > 1 else '') + ': ' + ', '.join(f'{m.removeprefix("gemini-")} ({n})' for m, n in sorted(models.items(), key=lambda kv: -kv[1]))
-    clip = [s for s in filled if (s.get('local_review') or {}).get('method') == 'clip' and not (s.get('ai_review') or {}).get('approved')]
+    clip = [s for s in filled if not is_generated(s['selected_media']) and not s.get('continuation_of') and (s.get('local_review') or {}).get('method') == 'clip' and not (s.get('ai_review') or {}).get('approved')]
     if clip: text += f' · {len(clip)} yuva yerel görüntü modeliyle (CLIP) onaylandı'
     unchecked = [s['slot_id'] for s in filled if not is_generated(s['selected_media']) and not s.get('continuation_of')
                  and not (s.get('ai_review') or {}).get('approved') and (s.get('local_review') or {}).get('method') != 'clip']
@@ -2522,14 +2534,15 @@ def diagnostics(service, project_id):
                       'media': {k: media.get(k) for k in ('provider', 'media_type', 'media_id', 'width', 'height', 'duration', 'page_url')} if media else None,
                       'segment_start': s.get('segment_start'), 'continuation_of': s.get('continuation_of'),
                       'sentence': s.get('sentence'), 'visual_goal': s.get('visual_goal'),
-                      'visual_subject': s.get('visual_subject'), 'relevance_profile': s.get('relevance_profile'),
+                      'visual_subject': s.get('visual_subject'), 'relevance_profile': s.get('current_relevance_profile', s.get('relevance_profile')),
+                      'selection_relevance_profile':s.get('relevance_profile'),
                       'search_attempts': s.get('search_attempts', []), 'local_review': s.get('local_review'),
                       'planned_query': s.get('search_query'), 'fallback_queries': s.get('fallback_queries'),
                       'director': s.get('director'), 'older_search_diagnostics': s.get('search_diagnostics', [])[-12:],
                       'missing_reasons': s.get('missing_reason_messages', [])})
     with closing(service.projects._connection()) as c:
         jobs = [{'id': r['id'], 'action': r['action'], 'status': r['status'], 'error': r['error_message'], 'created_at': r['created_at'],
-                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('message', 'percent', 'category', 'timings', 'performance', 'search_metrics', 'api_errors', 'preview_cache_hits', 'preview_reads', 'clip_metrics', 'quality_cache_hits', 'provider_searches', 'cached_search_reads', 'motion_cache_hits', 'motion_renders', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
+                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('policy_versions', 'scope', 'message', 'percent', 'category', 'timings', 'performance', 'search_metrics', 'api_errors', 'preview_cache_hits', 'preview_reads', 'clip_metrics', 'quality_cache_hits', 'provider_searches', 'cached_search_reads', 'motion_cache_hits', 'motion_renders', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
                                                                                     'ai_attempts', 'ai_requests', 'ai_cached', 'ai_requests_total', 'local_mode', 'local_reason')}}
                 for r in c.execute('SELECT * FROM stock_jobs WHERE project_id=? ORDER BY created_at DESC LIMIT 10', (project_id,))]
     from app.providers.gemini_chain import ATTEMPTS
@@ -2539,7 +2552,9 @@ def diagnostics(service, project_id):
         if attempt['result'] == 'ok': row['ok'] += 1
         else: row['errors'][attempt['result']] = row['errors'].get(attempt['result'], 0) + 1
     from app.stock.diagnostics import public_report
-    return public_report({'schema_version':2, 'editorial_preferences':state.get('editorial_preferences'),
+    from app.stock.shot import VERSION as SHOT_VERSION
+    from app.stock.verdict_cache import POLICY
+    return public_report({'schema_version':2,'export_policy_versions':{'shot':SHOT_VERSION,'verdict':POLICY,'single_slot_scope':1}, 'editorial_preferences':state.get('editorial_preferences'),
             'counter_scope':'setting_rejected counts unique candidate media in the latest job, not missing slots',
             'generated_at': now(), 'project_id': project_id, 'plan_id': state['plan_id'], 'summary': state.get('media_summary'),
             'gemini_models_tried': tried, 'gemini_attempts': list(ATTEMPTS)[-200:], 'gemini_skipped_until': getattr(service.settings, 'gemini_exhausted', dict)(),

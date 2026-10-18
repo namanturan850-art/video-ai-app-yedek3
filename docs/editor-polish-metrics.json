@@ -1,0 +1,26 @@
+{
+  "first_open_ms": 4255.2,
+  "playback_mode_and_fps": "Yerel proxy · 320×180 · ölçülen 29.0 fps",
+  "proxy_audio_current_time": 0.9842,
+  "motion_object_preview": "API + persisted source signature + actual FFmpeg program frame passed",
+  "dense_200_open_ms": 2468.5,
+  "dense_200_second_open_ms": 4950.5,
+  "seek_ui_ms": 15.6,
+  "selection_ms": 59.5,
+  "archive_api_ms": 1204.2,
+  "archive_items": 503,
+  "project_duration_seconds": 480.0,
+  "archive_card_height": 112.5,
+  "js_heap_bytes": 8815100,
+  "errors": [],
+  "platform": "Linux Chromium; Windows/WebView2 değil",
+  "proxy": "320x180 30fps encoded; measured playback field above",
+  "frame_seek_measurement": {
+    "seek_frame_cold_ms": 1120.2,
+    "seek_frame_cached_ms": 774.0,
+    "same_file_cache_hit": true,
+    "backend_peak_rss_kib": 126260,
+    "maximum_child_rss_kib": 126260,
+    "scope": "Separate synthetic 480s / 200 clips; one requested frame at 230s; no long video render; Linux peak RSS includes initialization and is not a controlled comparative benchmark."
+  }
+}

@@ -1157,3 +1157,5 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - **65 JavaScript/DOM testi geçti.** Gerçek FFmpeg'de Bezier başlangıç/orta/son örnek kareleri ile final grafiği karşılaştırması ayrıca geçti.
 - Windows CPU/WebView2 tanı aracı, çift tıklanan kontrol dosyası ve PR/manüel Windows CI dosyası hazır; fiziksel Windows/NVENC ve kurulu OpenMontage doğrulanmadı. Tam checkpoint devamı eklenmedi; verified_restart korunur.
 - Ayrıntılı kapsam ve açık kalanlar: `docs/EDITOR_FINAL_POLISH_DELIVERY.md`.
+- Son ek kanıt: 480 saniyelik sentetik PCM/timeline üzerinde 200 klip ve 503 arşiv kaydı; düşük proxy 29,0 FPS, seçim 59,5 ms, 230. saniyeye UI seek 15,6 ms. Ayrı gerçek örnek kare isteği soğuk 1120,2 ms / önbellekli 774,0 ms. İkinci açılış daha yavaş ölçüldü; iyileşme garantisi verilmez. Tam ölçümler `docs/editor-polish-metrics.json`.
+- 480 saniye fixture güncellemesinden sonra **53 passed** odaklı tekrar (98,42 sn); ek gerçek başlangıç/orta/son FFmpeg kare karşılaştırması **1 passed** (5,17 sn). Bu tekrarlar geniş kapsamla örtüşür.

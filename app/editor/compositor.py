@@ -130,7 +130,7 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
         nonlocal counter
         counter+=1;return f'adv{counter}'
     def input_file(path,kind,source_start=0,speed=1,seconds=None):
-        index=args.count('-i')
+        index=args.count('-i');args.extend(['-threads','1'])
         if kind=='image':args.extend(['-loop','1','-framerate','30'])
         elif source_start:args.extend(['-ss',f'{source_start:.6f}'])
         args.extend(['-t',f'{(seconds or duration)*speed+.1:.6f}','-i',str(path)])

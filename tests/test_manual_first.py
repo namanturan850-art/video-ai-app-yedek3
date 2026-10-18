@@ -10,7 +10,7 @@ from app.rendering.models import options
 from test_rendering import ready,await_job,url
 
 
-def install_manual_example(app):
+def install_manual_example(app,seconds=4):
     """Real local Spanish script/voice/subtitle/media data; no providers or TTS."""
     from test_subtitles import seed,no_network
     from test_production import scene
@@ -22,11 +22,12 @@ def install_manual_example(app):
     from uuid import uuid4
     import wave,math,struct
     text='Recorremos 40 kilómetros en Roma. Después comparamos el paisaje. Terminamos nuestro recorrido.'
-    st=seed(app,text=text,seconds=4,language='es');pid=st['pid'];root=app.state.projects._path(pid)
+    st=seed(app,text=text,seconds=seconds,language='es');pid=st['pid'];root=app.state.projects._path(pid)
     voice=root/st['audio']['local_path']
     with wave.open(str(voice),'wb') as f:
         f.setnchannels(1);f.setsampwidth(2);f.setframerate(8000)
-        f.writeframes(b''.join(struct.pack('<h',round(9000*math.sin(2*math.pi*220*i/8000))) for i in range(32000)))
+        one_second=b''.join(struct.pack('<h',round(9000*math.sin(2*math.pi*220*i/8000))) for i in range(8000))
+        for _ in range(seconds):f.writeframes(one_second)
     with closing(app.state.projects._connection()) as c,c:
         row=c.execute('SELECT id,metadata_json FROM narration_versions WHERE project_id=?',(pid,)).fetchone();meta=json.loads(row['metadata_json']);meta['audio'].update(sha256=sha256(voice.read_bytes()).hexdigest(),file_size=voice.stat().st_size)
         c.execute('UPDATE narration_versions SET metadata_json=? WHERE id=?',(json.dumps(meta),row['id']))
@@ -39,7 +40,7 @@ def install_manual_example(app):
     sound=synthetic(root/'stock',uuid4().hex+'.wav',['-f','lavfi','-i','sine=frequency=660:duration=4','-c:a','pcm_s16le'])
     slots=[];assets=[]
     for i,sc in enumerate(handoff['scenes']):
-        path=video if i==0 else image;kind='video' if i==0 else 'image'
+        path=video if i==0 and seconds<=5 else image;kind='video' if i==0 and seconds<=5 else 'image'
         media={'provider':'local','media_id':uuid4().hex,'media_type':kind,'title':'Sentetik video' if i==0 else 'Sentetik görsel',
                'local_path':'stock/'+path.name,'file_size':path.stat().st_size,'sha256':sha256(path.read_bytes()).hexdigest(),
                'duration':5. if i==0 else None,'width':320,'height':180,'has_audio':False,'source_metadata':{'license':'Sentetik yerel test'}}

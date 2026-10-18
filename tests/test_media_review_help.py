@@ -3,6 +3,15 @@
 import test_fast_media as F
 import test_media_director_topics as T
 from app.stock.director_media import review_flags
+from app.editor.editorial import Editorial
+
+
+def legacy_translation_fixture(client,pid):
+    # These scenarios exercise the old automatic media/translation pipeline.
+    # New projects retain the separately tested manual/source-only default.
+    editorial=Editorial(client.app.state.editor);state=editorial.get(pid)
+    state["preferences"].update(editing_mode="legacy",media_preparation_mode="legacy")
+    editorial.save(pid,state)
 
 
 class Translator:
@@ -18,6 +27,7 @@ class Translator:
 def test_each_slot_gets_its_sentence_in_turkish_with_one_saved_request(tmp_path, monkeypatch):
     client, pid, world, fake = F.make(tmp_path, monkeypatch)
     try:
+        legacy_translation_fixture(client,pid)
         client.app.state.stock.clip_scorer = F.clip_fake(world, [])
         translator = Translator()
         client.app.state.stock.ai_factory = lambda: translator
@@ -38,6 +48,7 @@ def test_each_slot_gets_its_sentence_in_turkish_with_one_saved_request(tmp_path,
 def test_without_ai_the_translation_stays_empty_and_the_job_finishes(tmp_path, monkeypatch):
     client, pid, world, fake = F.make(tmp_path, monkeypatch)
     try:
+        legacy_translation_fixture(client,pid)
         client.app.state.stock.ai_factory = lambda: Translator(fail=True)
         view = T.complete(client, pid)
         assert view['job']['status'] == 'completed' and view['media_summary']['missing'] == 0

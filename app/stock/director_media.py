@@ -234,6 +234,7 @@ class MediaDirector:
         self.service, self.job, self.pid = service, job, job['project_id']
         self.progress = job['progress']
         self.ai, self.ai_error, self.waited, self.unusable = None, '', 0, 0
+        self.engine,self.label='local','Yerel değerlendirme'
         self.local, self.requests = False, 0
         self.answered, self.ai_waited, self.skipped_looks, self.last_error, self.single = False, 0.0, 0, None, False
         self.clip, self.marker_error, self.marker_note = None, '', ''

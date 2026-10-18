@@ -1146,3 +1146,14 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - Atomik ek klip grupları, Bezier/Ease/Hold, özgün animasyon alanını koruyan bölme, dört saniyelik yerel FFmpeg proxyleri, kaynak nesnesi düzenlemeleri, yerel metadata denetimi ve onaylı/iptal edilebilir parçalı Gemini kare incelemesi eklendi.
 - İlk ilgili entegrasyon çalıştırması: **64 passed** (93,77 sn), gerçek SQLite/FFmpeg ve mevcut manuel kurgu testleri dahil; ağ bağlantıları offline test korumasıyla kapalı.
 - Sonraki doğrulama sürüyor: Chromium etkileşimleri, proxy durum sorgusu optimizasyonu, Windows test araçları ve kapsamlı teslim raporu. Windows donanımına erişim ve tam render checkpoint desteği henüz doğrulanmış/tamamlanmış değildir.
+
+### 2026-10-18 — Final polish arayüzü ve regresyon doğrulaması
+
+- Gerçek Chromium: grup taşıma/undo, yeniden açılan Bezier kolu, proxy ses/video oynatma, Kaynak/Program geçişi, kaynak imzalı motion nesnesi düzenleme ve gerçek program karesi geçti.
+- Yoğun arşivde kartların 10 px yüksekliğe sıkışması düzeltildi; gerçek kart 112,5 px, thumbnail 67,5 px ölçüldü. Arşiv araması debounce, kaldırılan thumbnail gözlemcilerinin temizlenmesi ve yinelenen dosya yolu tarama önbelleği eklendi.
+- Ana yuva bölmesi artık ilgili animasyon belgeleriyle aynı transaction/geçmiş olayında kaydedilir; kaynak başlangıcı, Ease/fade zamanı, boş/devre dışı durumu ve tek undo/redo korunur.
+- Kaynak hazırlamada erken yerel moda geçişte eksik `label` alanı ve eski stok kayıtlarının eksik `warnings` alanı düzeltildi. Çalışan manuel varsayılanlar korunur; eski otomatik çeviri testleri açıkça legacy fixture kullanır.
+- **491 passed / 3 skipped**, 538,48 sn: editör, manuel kurgu, altyazı, FFmpeg render, restart, motion, stok/arşiv, proje/şema, workspace ve desktop birim testleri. Remotion kurulumu ve iki eski marker fixture verisi nedeniyle üç test atlandı.
+- **65 JavaScript/DOM testi geçti.** Gerçek FFmpeg'de Bezier başlangıç/orta/son örnek kareleri ile final grafiği karşılaştırması ayrıca geçti.
+- Windows CPU/WebView2 tanı aracı, çift tıklanan kontrol dosyası ve PR/manüel Windows CI dosyası hazır; fiziksel Windows/NVENC ve kurulu OpenMontage doğrulanmadı. Tam checkpoint devamı eklenmedi; verified_restart korunur.
+- Ayrıntılı kapsam ve açık kalanlar: `docs/EDITOR_FINAL_POLISH_DELIVERY.md`.

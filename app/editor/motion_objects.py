@@ -1,11 +1,22 @@
 """Edits address generated scene indices, never guessed layers in flat MP4s."""
 from copy import deepcopy
+import hashlib
+import json
+from pathlib import Path
 from app.editor.models import EditorError
+
+
+def signature(scene):
+    elements=deepcopy(scene['elements'])
+    for e in elements:
+        if e['props'].get('path'):e['props']['path']=Path(e['props']['path']).name
+    return hashlib.sha256(json.dumps([elements,scene['duration'],scene['ease'],scene['background']],sort_keys=True).encode()).hexdigest()
 
 
 def validate_edits(scene,edits):
     duration=scene['duration']
     for edit in edits:
+        if edit.get('source_signature') and edit['source_signature']!=signature(scene):raise ValueError('Motion kaynağı değişmiş; nesne düzenlemelerini sıfırlayıp yeniden seçin.')
         if edit['index']>=len(scene['elements']):raise ValueError('Motion nesnesi artık bu şablonda yok; nesneleri yeniden açın.')
         kind=scene['elements'][edit['index']]['type']
         if edit['start']>=duration or (edit['end'] is not None and edit['end']>duration+.001) or any(k['time']>duration for k in edit['keyframes']):raise ValueError('Nesne zamanı animasyon kaynağını aşıyor.')
@@ -22,8 +33,12 @@ def scene_for(advanced,pid,cid):
     from app.motion.places import offline
     state=advanced.get(pid);clip=next((c for c in state['document']['clips'] if c['id']==cid),None)
     if not clip or clip['kind']!='motion':raise EditorError('flat_source','Bu düz MP4/görselin içine işlenmiş yazılar ayrı katman olarak düzenlenemez.')
-    with offline():scene=build({**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)},DEFAULT_STYLE,clip.get('animation_duration') or clip['end']-clip['start'],0,advanced.projects.get(pid)['language'])
-    return {'source_type':'editable_naman','revision':state['revision'],'duration':scene['duration'],
+    channels=getattr(getattr(advanced.editor,'rendering',None),'channels',None)
+    kit=deepcopy(channels.for_project(pid)['style'] if channels else DEFAULT_STYLE)
+    if clip.get('motion_color'):kit['palette']['accent']=clip['motion_color']
+    from app.motion.clips import with_pictures
+    with offline():scene=build(with_pictures({**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)},advanced.projects._path(pid)/'stock'),kit,clip.get('animation_duration') or clip['end']-clip['start'],0,advanced.projects.get(pid)['language'])
+    return {'source_type':'editable_naman','revision':state['revision'],'duration':scene['duration'],'source_signature':signature(scene),
             'elements':[{'index':i,'type':e['type'],'label':str(e['props'].get('text') or e['props'].get('target') or e['type'])[:160],
                          'controls':['visibility','time'] if e['type'] in ('map','relief') else ['visibility','time','x','y','opacity','color','keyframes']+(['text'] if e['type'] in ('text','counter') else [])} for i,e in enumerate(scene['elements'])]}
 

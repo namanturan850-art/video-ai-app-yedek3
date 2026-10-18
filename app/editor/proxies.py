@@ -52,6 +52,7 @@ def snapshot(editor,advanced,pid,time,quality):
         if original['transitions'] or view.get('editorial',{}).get('legacy_decorations'):
             raise EditorError('proxy_fallback','Geçiş/eski plan süslemesi için gerçek örnek kare modu kullanılıyor.')
         doc=Document().model_dump();doc['clips']=[restrict(c,start,end) for c in original['clips'] if c['visible'] and c['start']<end and c['end']>start]
+        if len(doc['clips'])>32 or sum(c['kind']=='media' for c in doc['clips'])>8:raise EditorError('proxy_fallback','Bu aralıkta çok sayıda katman var; çözücü/bellek sınırı için örnek kare modu kullanılıyor.')
         if any(c['kind']=='motion' for c in doc['clips']):raise EditorError('proxy_fallback','Yerel motion için gerçek örnek kare modu kullanılıyor; uzun motion videosu otomatik oluşturulmaz.')
         verifier=getattr(getattr(editor.stock,'downloader',None),'verified_hash',None)
         assets=resolve(editor.projects,pid,doc,editor.archive_file,verify=verifier)
@@ -76,9 +77,14 @@ def snapshot(editor,advanced,pid,time,quality):
             if digest!=audio.get('sha256'):raise EditorError('stale_media','Anlatım kaynağı değişmiş.',409)
             hashes.append(digest);verified_sources.append((str(narration),digest))
         preferences=view.get('editorial',{});display=preferences.get('subtitle_display','full')
+        if preferences.get('word_highlight') and any(q['start']<start<q['end'] or q['start']<end<q['end'] for q in (subtitles.get('active') or {}).get('cues',[])):
+            raise EditorError('proxy_fallback','Kesit sınırındaki kelime vurgusu için örnek kare/altyazı saati korunuyor.')
+        channels=getattr(getattr(editor,'rendering',None),'channels',None)
+        kit=channels.for_project(pid)['style'] if channels else {}
+        subtitle_style={**(kit.get('subtitle') or {}),'word_highlight':preferences.get('word_highlight',False)}
         cues=[{**q,'start':max(start,q['start'])-start,'end':min(end,q['end'])-start} for q in (subtitles.get('active') or {}).get('cues',[]) if q['start']<end and q['end']>start and display!='none' and (display!='emphasis' or q['index'] in preferences.get('important_cues',[]))]
         mix=editor.audio_settings(pid)
-        data={'version':1,'document':doc,'bases':bases,'hashes':hashes,'assets':assets,'cues':cues,'mix':mix,'size':SIZES[quality],
+        data={'version':2,'subtitle_style':subtitle_style,'document':doc,'bases':bases,'hashes':hashes,'assets':assets,'cues':cues,'mix':mix,'size':SIZES[quality],
               'verified_sources':verified_sources,'start':start,'duration':duration,'narration':narration,'full_duration':view['duration'],'slots':slots}
         key=hashlib.sha256(json.dumps(data,sort_keys=True,default=str).encode()).hexdigest()
         return key,data,state['revision']
@@ -173,12 +179,13 @@ def build(folder,target,data):
         else:run([ffmpeg,'-v','error','-y','-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t',str(duration),str(narration)])
         graph,label,audio=compile_graph(args,data['document'],data['assets'],base='base',folder=temporary,duration=duration,width=width,height=height,adjustment_slots=data['slots'],narration=narration)
         if graph:graphs.append(graph)
-        content,_,has_text=ass.create(data['cues'],[],duration,subtitles=bool(data['cues']),overlays=False)
+        content,_,has_text=ass.create(data['cues'],[],duration,subtitles=bool(data['cues']),overlays=False,subtitle_style=data.get('subtitle_style'))
         if has_text:
             # ASS PlayRes is the final 1080p plane; libass scales to proxy size.
             (temporary/'captions.ass').write_text(content,encoding='utf-8')
             caption=str(temporary/'captions.ass').replace('\\','/').replace(':',r'\:').replace("'",r"\'")
-            graphs.append(f"[{label}]ass=filename='{caption}'[captioned]");label='captioned'
+            font_path=str(Path(__file__).resolve().parents[1]/'static/fonts').replace('\\','/').replace(':',r'\:').replace("'",r"\'")
+            graphs.append(f"[{label}]ass=filename='{caption}':fontsdir='{font_path}'[captioned]");label='captioned'
         index=args.count('-i');args+=['-i',str(narration)];mix=data['mix'];gain=mix.get('narration_volume',1)
         voice=f'[{index}:a]aresample=48000,apad,atrim=duration={duration},asetpts=PTS-STARTPTS,volume={gain}'
         fi=mix.get('narration_fade_in',0);fo=mix.get('narration_fade_out',0);start=data['start']

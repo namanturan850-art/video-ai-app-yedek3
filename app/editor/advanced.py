@@ -60,6 +60,7 @@ class Effects(Strict):
 
 
 class Keyframe(Strict):
+    curve_version: Literal[1]=1
     property: Literal['x','y','scale','rotation','opacity','volume']
     time: float=Field(ge=0)
     value: float
@@ -75,6 +76,7 @@ class Keyframe(Strict):
 
 
 class MotionElementEdit(Strict):
+    source_signature: str|None=Field(default=None,pattern=r'^[a-f0-9]{64}$')
     index: int=Field(ge=0,le=2000)
     visible: bool=True
     x: float=Field(default=0,ge=-1920,le=1920)
@@ -242,6 +244,7 @@ class AdvancedEditor:
                 if not slot or slot['locked']:raise EditorError('locked','Bu yuva eksik veya kilitli. Önce kilidini açın.',409)
         old_clips={c['id']:c for c in old['clips']}
         for clip in validated['clips']:
+            if clip.get('animation_duration') and clip['animation_duration']>duration+.001:raise EditorError('invalid_animation','Animasyon kaynak süresi ana anlatımı aşamaz.')
             if clip['end']>duration+.001:raise EditorError('clip_outside','Ek klip anlatım süresinin dışına çıkamaz.')
             previous=old_clips.get(clip['id'])
             changed=previous!=clip
@@ -296,10 +299,14 @@ class AdvancedEditor:
                 try:
                     with offline():
                         spec=with_pictures({**clip['motion'],'local_only':True},self.projects._path(pid)/'stock')
-                        scene=build(spec,DEFAULT_STYLE,clip.get('animation_duration') or clip['end']-clip['start'],0,self.projects.get(pid)['language'])
+                        channels=getattr(getattr(self.editor,'rendering',None),'channels',None)
+                        kit=deepcopy(channels.for_project(pid)['style'] if channels else DEFAULT_STYLE)
+                        if clip.get('motion_color'):kit['palette']['accent']=clip['motion_color']
+                        spec={**spec,'clean_source':clip.get('clean_map',False)}
+                        scene=build(spec,kit,clip.get('animation_duration') or clip['end']-clip['start'],0,self.projects.get(pid)['language'])
                         from app.editor.motion_objects import validate_edits
                         validate_edits(scene,clip['motion_elements'])
-                except (ValueError,RuntimeError,KeyError,TypeError,IndexError):raise EditorError('invalid_motion','Animasyonun gerekli veri alanları veya yerel görseli eksik. Şablon örneğini ve arşivi kontrol edin.') from None
+                except (ValueError,RuntimeError,KeyError,TypeError,IndexError):raise EditorError('invalid_motion','Animasyon verisi, görseli veya nesne kaynağı değişmiş/geçersiz. Şablonu/arşivi kontrol edin; kaynak değiştiyse nesne düzenlemelerini sıfırlayın.') from None
         for previous in old['clips']:
             if previous['id'] not in {c['id'] for c in validated['clips']} and (previous['locked'] or any(s['locked'] and previous['start']<s['end'] and previous['end']>s['start'] for s in view['scenes'])):
                 raise EditorError('locked','Kilitli ek klip silinemez.',409)
@@ -312,8 +319,10 @@ class AdvancedEditor:
             item=after.get(sid)
             if item:
                 duration=slot['end']-slot['start']
-                if item['fade_in']+item['fade_out']>duration:raise EditorError('invalid_fade','Fade süreleri ana klibi aşıyor.')
-                if any(k['time']>duration+.001 for k in item['keyframes']):raise EditorError('invalid_keyframe','Keyframe ana klip süresini aşıyor.')
+                animation_length=item.get('animation_duration') or duration
+                if item.get('animation_offset',0)+duration>animation_length+.001 or animation_length>view['duration']+.001:raise EditorError('invalid_animation','Ana klibin animasyon kaynak saati geçersiz.')
+                if item['fade_in']+item['fade_out']>animation_length:raise EditorError('invalid_fade','Fade süreleri ana klibi aşıyor.')
+                if any(k['time']>animation_length+.001 for k in item['keyframes']):raise EditorError('invalid_keyframe','Keyframe ana klip süresini aşıyor.')
                 # Main-clock speed is applied only with enough actual source coverage.
                 asset=slot.get('media') or {}
                 if asset.get('media_type')!='video' and item['transform']['speed']!=1:raise EditorError('still_speed','Yalnız kaynak videonun oynatma hızı değiştirilebilir.')

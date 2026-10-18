@@ -25,7 +25,7 @@ class Reviews:
             try:report=json.loads(row['result_json'])
             except (ValueError,TypeError):continue
             if not isinstance(report,dict) or not report.get('render_version_id') or not isinstance(report.get('issues'),list):continue
-            report['source_sha256']=row['sha256'];report.setdefault('basis','Eski kayıtlı örnek kare raporu; kapsamı bağımsız doğrulayın.')
+            report.setdefault('source_sha256',row['sha256']);report.setdefault('basis','Eski kayıtlı örnek kare raporu; kapsamı bağımsız doğrulayın.')
             report['summary']=str(report.get('summary') or 'Kayıtlı denetim raporu')[:2000]
             normalized=[]
             for index,issue in enumerate(report['issues']):
@@ -41,6 +41,7 @@ class Reviews:
             reports.append(report)
         return {'analysis_scope':'sample_frames','max_frames':8,'max_output_tokens':900,'reports':reports,
                 'notice':'Yalnız örnek kareler incelenir. Ses seviyesi ve tarih/coğrafya bulguları ölçüm veya bağımsız doğrulama olmadan kesin değildir. Tam video gönderimi etkin değildir.',
+                'comprehensive_max_frames':48,'local_scope':'metadata_and_available_render_samples',
                 'cost_notice':'Gemini sağlayıcı/model kotası kullanılır; kesin ücret burada hesaplanamaz. En fazla 8 küçük kare ve 900 çıktı tokeni. Açık veri paylaşımı ve maliyet onayı gereklidir.'}
 
     def request(self,pid,payload):

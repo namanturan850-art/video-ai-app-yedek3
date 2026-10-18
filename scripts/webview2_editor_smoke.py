@@ -14,6 +14,9 @@ import threading
 import time
 from pathlib import Path
 
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+if hasattr(sys.stdout,"reconfigure"):sys.stdout.reconfigure(encoding="utf-8")
+
 
 def main():
     if platform.system() != 'Windows':
@@ -40,6 +43,11 @@ def main():
 
     def check():
         try:
+          results=[]
+          for requested in [(1366,768),(1600,900),(1920,1080)]:
+            window.resize(*requested)
+            time.sleep(.4)
+            result.update(ok=False,message='WebView2 yerleşim kontrolü tamamlanamadı.')
             end=time.monotonic()+30
             while time.monotonic()<end:
                 state=window.evaluate_js("""(() => {
@@ -50,7 +58,8 @@ def main():
                   const deck=root?.querySelector('.workspace-monitor-deck')?.getBoundingClientRect();
                   const surface=root?.querySelector('.workspace-program-surface')?.getBoundingClientRect();
                   return {status,tracks:tracks.length,
-                          viewport:{width:innerWidth,height:innerHeight},
+                          viewport:{width:innerWidth,height:innerHeight,devicePixelRatio},
+                          qualityControl:!!root?.querySelector('[aria-label="Program önizleme kalitesi"]'),
                           noPageScroll:document.documentElement.scrollHeight<=innerHeight,
                           menuCount:document.querySelectorAll('.workspace-menubar>details').length,
                           manualControls:!!root?.querySelector('.manual-mode-strip'),
@@ -61,11 +70,15 @@ def main():
                 })()""")
                 if state and state.get('tracks')==7 and 'yükleniyor' not in state.get('status','').lower():
                     ready=(state.get('noPageScroll') and state.get('allTracksVisible') and state.get('menuCount')==9
-                           and state.get('manualControls') and state.get('timelineTools')==10 and state.get('playbackBelow'))
+                           and state.get('manualControls') and state.get('qualityControl') and state.get('timelineTools')==10 and state.get('playbackBelow'))
                     result.update(ok=bool(ready),message='Kurgu WebView2 içinde açıldı; menüler ve yedi iz kontrol edildi.',state=state);break
                 if state and state.get('retry'):
                     result.update(message='Kurgu hata ekranına düştü.',state=state);break
                 time.sleep(.25)
+            results.append({'requested':requested,'ok':result['ok'],'state':result.get('state')})
+          result['ok']=len(results)==3 and all(r['ok'] for r in results)
+          result['viewports']=results
+          result['unverified']=['OS DPI 125%/150% ayrı oturumları','Gerçek ses aygıtı','Yerel dosya seçici/sürükle bırak','NVENC','OpenMontage/Remotion']
         finally:webview.windows[0].destroy()
 
     window.events.loaded += check

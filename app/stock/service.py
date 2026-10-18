@@ -205,6 +205,7 @@ class StockService:
             handoff = self._handoff(project_id)
             state = self._ensure(connection,handoff)
             public = deepcopy(state)
+            public.setdefault('warnings',[])
             timing=getattr(self,'timing_handoff',lambda pid:None)(project_id) or {}
             used={s['slot_id']:s['duration'] for s in timing.get('stock_slots',[])}
             for slot in public['slots']:

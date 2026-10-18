@@ -15,6 +15,7 @@ class GroupOperation(Strict):
     action: Literal['move','duplicate','delete','visibility','lock','split']
     delta: float=0
     track: str|None=None
+    track_delta: int=Field(default=0,ge=-4,le=4)
     value: bool|None=None
     time: float|None=None
 
@@ -36,6 +37,12 @@ def operate(advanced,pid,payload):
                 target=clip
                 if op.action=='duplicate':
                     target=deepcopy(clip);target['id']=uuid4().hex;target['legacy_key']=None;target['source_key']=None;doc['clips'].append(target)
+                if op.track_delta:
+                    tracks=['emphasis','layers','maps','infographics','visuals']
+                    if clip['track'] not in tracks or op.track:raise EditorError('invalid_track','Ses izi kaydırılamaz; iz hedefi ile iz farkını birlikte seçmeyin.')
+                    index=tracks.index(clip['track'])+op.track_delta
+                    if not 0<=index<len(tracks):raise EditorError('invalid_track','Grup görsel iz sınırlarının dışına çıkamaz.')
+                    target['track']=tracks[index]
                 if op.track:
                     if (op.track=='audio')!=(clip['track']=='audio'):raise EditorError('invalid_track','Ses ve görsel izler birbirine taşınamaz.')
                     target['track']=op.track

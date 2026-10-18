@@ -67,7 +67,7 @@ class FFmpegRenderProvider:
         opts=dict(opts)
         edit=plan.get('smart_edit_plan');style=edit['editing_style'] if edit else 'basic';smart=style!='basic' and edit is not None
         mode=opts.get('subtitle_display') or 'full'  # full subtitles (every sentence, bottom centre) unless the owner chose otherwise
-        opts['subtitle_burned']=mode=='full'
+        opts['subtitle_burned']=mode=='full' or bool(plan.get('editorial') and mode=='emphasis')
         edits={item['slot_id']:item for item in edit['slots']} if edit else {}
         advanced=plan.get('advanced_document') or {}
         custom_transitions={item['slot_id']:item for item in advanced.get('transitions',[])}
@@ -81,6 +81,7 @@ class FFmpegRenderProvider:
         if opts['subtitle_burned'] and 'ass' not in self.tools['filters']:
             raise RenderError('subtitle_invalid','Bu FFmpeg sürümü altyazı yazmayı desteklemiyor. Altyazı seçimini kapatın veya libass destekli FFmpeg kullanın.',diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder))
         kit=plan.get('style_kit') or {};sub_style=kit.get('subtitle')
+        if plan.get('editorial'):sub_style={**(sub_style or {}),'word_highlight':plan['editorial']['word_highlight']}
         fontsdir='';graphic_style=None
         from app.channels import FONTS
         if kit.get('palette'):
@@ -103,6 +104,12 @@ class FFmpegRenderProvider:
             emphasis=[item for item in emphasis if not any(s['start']<=item.get('start',-1)<s['end'] for s in hidden)]
         if emphasis and replaced_texts:
             emphasis=[item for item in emphasis if not any(a<=item.get('start',-1)<b and item.get('text')==text for a,b,text in replaced_texts)]
+        if emphasis and advanced.get('suppressed_layers'):
+            hidden_words=[]
+            for cue_index,cue in enumerate(plan['handoff']['subtitles'],1):
+                for i,word in enumerate(cue['text'].split()):
+                    if f'word:{cue.get("index",cue_index)}:{i}' in advanced['suppressed_layers']:hidden_words.append((cue['start'],cue['end'],word))
+            emphasis=[item for item in emphasis if not any(a<=item.get('start',-1)<b and item.get('text','').casefold()==word.casefold() for a,b,word in hidden_words)]
         try:content,warnings,has_text=ass.create(plan['handoff']['subtitles'],timed,duration,subtitles=opts['subtitle_burned'],overlays=mode!='none' and 'ass' in self.tools['filters'],editing_style=style,subtitle_style=sub_style,graphic_style=graphic_style,emphasis=emphasis)
         except RenderError as error:
             raise RenderError(error.category,str(error),diagnostic=diagnostic('subtitle_filter_failed',phase='subtitle_preflight',encoder=encoder)) from None
@@ -151,12 +158,13 @@ class FFmpegRenderProvider:
             media=plan['media'][slot['slot_id']];args=self.command()
             speed=custom_adjustments.get(slot['slot_id'],{}).get('transform',{}).get('speed',1)
             context={'slot_index':i,'slot_id':slot['slot_id'],'slot_count':len(slots),'media_type':media['type'],'encoder':encoder}
-            actual=probe.stock(self.tools['ffprobe'],media['path'],media['type'],**{k:v for k,v in context.items() if k!='media_type'})
-            if actual is None:
+            actual=None if media['type']=='empty' else probe.stock(self.tools['ffprobe'],media['path'],media['type'],**{k:v for k,v in context.items() if k!='media_type'})
+            if actual is None and media['type']!='empty':
                 # ffprobe remains optional: verify actual decoding when unavailable.
                 runner.run(self.command()+['-i',str(media['path']),'-map','0:v:0','-frames:v','1','-an','-f','null','-'],folder,phase='input_preflight',**context)
                 self.warnings.append('ffprobe bulunamadı; stok medya dekodu kontrol edildi ancak kaynak boyutu ve süresi ön kontrolde ölçülemedi.')
-            if media['type']=='video':
+            if media['type']=='empty':args+=['-f','lavfi','-i',f'color=c=black:s=1920x1080:r=30:d={length:.6f}']
+            elif media['type']=='video':
                 source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
                 planned=edits.get(slot['slot_id'],{})
                 seek=min(max(0,planned.get('source_in',media.get('segment_start',max(0,(source_duration-length*speed)/2)))),max(0,source_duration-length*speed))
@@ -322,10 +330,9 @@ class FFmpegRenderProvider:
             assets={**plan['media'],**dict(plan.get('advanced_assets') or {})}
             for clip in advanced.get('clips',[]):
                 if clip['visible'] and clip['kind']=='motion':
-                    from app.motion.clips import render_clip
-                    path,_,_=render_clip(plan['advanced_stock'],{**clip['motion'],'local_only':True},plan.get('style_kit') or {},clip['end']-clip['start'],0,prefer_openmontage=False,cancelled=self.runner.event.is_set if hasattr(self.runner,'event') else None)
-                    assets[clip['id']]={'path':path,'type':'video','has_audio':False}
-            prefix,video_label,extra_audio=compile_graph(args,advanced,assets,folder=folder,duration=duration,adjustment_slots=plan.get('advanced_slots'))
+                    from app.editor.compositor import motion_asset
+                    assets[clip['id']]=motion_asset(clip,plan['advanced_stock'],plan.get('style_kit'),self.runner.event.is_set if hasattr(self.runner,'event') else None,language=plan['handoff'].get('target_language','de'))
+            prefix,video_label,extra_audio=compile_graph(args,advanced,assets,folder=folder,duration=duration,adjustment_slots=plan.get('advanced_slots'),narration=plan['audio'])
             if prefix:graph=prefix+';\n'+graph.replace('[0:v]null',f'[{video_label}]null',1)
             if extra_audio:
                 graph=graph.replace('[a]','[adv_master]',1)

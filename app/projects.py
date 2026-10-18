@@ -227,6 +227,8 @@ class ProjectService:
                         values['channel_id'] = connection.execute('SELECT id FROM channels WHERE is_default=1').fetchone()[0]
                     columns = ', '.join(values)
                     connection.execute(f"INSERT INTO projects ({columns}) VALUES ({', '.join('?' for _ in values)})", tuple(values.values()))
+                    from app.editor.editorial import initialize_project
+                    initialize_project(connection,project_id)
                     project = self._detail(connection, project_id)
                 return project
             except (OSError, sqlite3.Error, ProjectError) as error:

@@ -326,8 +326,12 @@ def gemini_429(free=False):
 
 def fast_motion(scene, output, ffmpeg):
     import subprocess
-    subprocess.run([ffmpeg, '-v', 'error', '-y', '-f', 'lavfi', '-i', f'color=c=0x101823:s=1920x1080:r=30:d={scene["duration"]}',
-                    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', str(output)], check=True)
+    # This suite verifies choosing/approval/reuse with synthetic provider files,
+    # not frame duration. Keep its renderer stub to one real frame: the story
+    # clock stays three minutes without encoding long placeholder movies.
+    # Exact duration/decoding is covered by the short real FFmpeg suites.
+    subprocess.run([ffmpeg, '-v', 'error', '-nostdin', '-y', '-f', 'lavfi', '-i', 'color=c=0x101823:s=1920x1080:r=30:d=0.04',
+                    '-frames:v', '1', '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', str(output)], check=True)
 
 
 def build(tmp_path, monkeypatch, key, engine='gemini'):
@@ -361,6 +365,11 @@ def build(tmp_path, monkeypatch, key, engine='gemini'):
     assert s.ai_engine() == engine
     client.app.state.stock.ai_sleep = lambda seconds, service: client.app.state.stock.__dict__.setdefault('slept', []).append(seconds)
     pid = client.post('/api/projects', json={'name': key, 'topic': data['topic'], 'language': 'de', 'target_duration_minutes': 3}).json()['id']
+    # These acceptance cases intentionally cover the preserved legacy creative
+    # completion policy. New manual/source-only projects have separate tests.
+    from app.editor.editorial import Preferences
+    with closing(client.app.state.projects._connection()) as c,c:
+        c.execute('UPDATE editorial_state SET payload_json=? WHERE project_id=?',(json.dumps(Preferences().model_dump()),pid))
     r = client.post(f'/api/projects/{pid}/director/run', json={'cost_confirmed': True})
     assert r.status_code == 202, r.text
     client.app.state.director.futures[pid].result(timeout=60)

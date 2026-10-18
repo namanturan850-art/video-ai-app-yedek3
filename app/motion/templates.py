@@ -56,7 +56,9 @@ BASIC = ('stat', 'map', 'quote', 'timeline', 'compare', 'list')  # also drawn by
 def validate(spec, narration, entities=(), *, trusted=False):
     """Clean spec (see _validate); the chosen layout (0-2, app/motion/layouts.py) is kept."""
     from app.motion.layouts import layout_of
-    result = _validate(spec, narration, entities, trusted=trusted)
+    from app.motion.places import offline
+    with offline(bool(spec.get('local_only')) if isinstance(spec,dict) else False):
+        result = _validate(spec, narration, entities, trusted=trusted)
     if layout_of(spec):
         result = {**result, 'layout': layout_of(spec)}
     return result
@@ -293,6 +295,7 @@ class Scene:
 
 def build(spec, kit, duration, emphasis_offset, language='de'):
     from app.motion.layouts import arrange
+    if spec.get('clean_source'):return keep_text_safe(_build(spec,kit,duration,emphasis_offset,language))
     return keep_text_safe(arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit))
 
 
@@ -375,6 +378,7 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         at = min(E, max(.6, D - 2.6))
         s.add('map', {'zoom': [[0, 0], [at, 1]]}, lon=d['lon'], lat=d['lat'], span_from=span_from, span_to=span_to,
               land=mix(s.bg, s.primary, .28), coast=mix(s.bg, s.primary, .5), ocean=mix(s.bg, s.primary, .06))
+        if spec.get('clean_source'):return s.result()
         # The pin sits on the place itself (near the poles the view stops at ±85°, so it is not always the centre).
         left, top, span, height = map_view({'lon': d['lon'], 'lat': d['lat'], 'span_from': span_from, 'span_to': span_to}, 1)
         cx, cy = W / 2, (top - d['lat']) / height * H

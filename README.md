@@ -1,8 +1,14 @@
-# Part 9.8 — OpenMontage Ana Motor + Akıllı Medya Kurtarma
+# NAMAN 2.0 — Manuel öncelikli kurgu
+
+Yeni projelerde **Manuel Kurgu** varsayılandır: medya hazırlama yalnız kaynak hazırlar; otomatik yaratıcı montaj eklemez. Yedi iz, güvenli silme/geri alma, gerçek altyazı ve ses düzenlemeleri Kurgu ekranındadır. Otomatik/AI JSON önerileri ayrı taslakta incelenip onaylanır. Manuel final çıktı kayıtlı timeline ile yerel FFmpeg motorunu kullanır. Eski projeler açılışta kendiliğinden dönüştürülmez.
+
+[Güncel özellikler, test sonuçları ve 10 dakikalık Windows kontrolü](docs/MANUAL_FIRST_DELIVERY.md).
+
+## Önceki Part 9.8 — OpenMontage ve legacy akıllı medya kurtarma
 
 **Görsel / Kurgu Planı → Eksik Medyaları Akıllı Tamamla**: geçerli mevcut seçimleri korur, yalnız eksik/kilitsiz alanlarda yeni konu sorguları ve sayfalar dener. Yeterli yeni kaynak yoksa aynı sahnenin bitişik boş aralığını uygun videonun kesintisiz kullanımıyla kapatabilir. 55 ham alanın her biri için ayrı dosya zorunlu değildir. Güvenle kapatılamayan süre açık engel olarak kalır.
 
-Yeni renderlarda **OpenMontage — Ana Motor** varsayılandır. **INSTALL_OPENMONTAGE.bat** dosyasına çift tıklayıp açık kurulum onayı verin; ardından **Ayarlar → OpenMontage → Durumu Yenile**. Kurmak istemezseniz Render'da **Yerel Adaptif — FFmpeg / NVIDIA** seçin. Motor kendiliğinden değiştirilmez. Önceki video sürümleri kendi motorlarını korur.
+Legacy kurgu davranışında **OpenMontage — Ana Motor** desteği korunur. **INSTALL_OPENMONTAGE.bat** dosyasına çift tıklayıp açık kurulum onayı verin; ardından **Ayarlar → OpenMontage → Durumu Yenile**. Kurmak istemezseniz Render'da **Yerel Adaptif — FFmpeg / NVIDIA** seçebilirsiniz. Manuel Kurgu kendi kayıtlı timeline'ını yerel motorla oluşturur. Önceki video sürümleri kendi motorlarını korur.
 
 Yerel kare analizi isteğe bağlıdır: **INSTALL_OPENMONTAGE_SEMANTIC.bat** açık onayla ayrı ortama paketler ve yaklaşık 350 MB CLIP modeli indirir. Paketler birkaç GB olabilir. Sonra **Ayarlar → OpenMontage → Yerel semantik kare analizi → Kaydet**. Kurulmadığında yalnız metadata/elle kontrol kullanılır; görsel doğrulama iddia edilmez. CLIP benzerliği tarihî gerçeklik kanıtı değildir.
 

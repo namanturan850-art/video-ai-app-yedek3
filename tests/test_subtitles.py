@@ -35,17 +35,22 @@ def wav(seconds=13):
     return buffer.getvalue()
 
 
-def seed(app,text=TEXT,seconds=13):
+def seed(app,text=TEXT,seconds=13,language='de'):
     projects=app.state.projects
-    project=projects.create({'name':'Altyazı denemesi','topic':'Yerel zamanlama','language':'de'})
+    project=projects.create({'name':'Altyazı denemesi','topic':'Yerel zamanlama','language':language})
     pid=project['id'];repo=app.state.scripts.repository
+    # This shared fixture represents pre-manual-first projects. New-default tests
+    # create their own project or explicitly switch these saved legacy sources.
+    from app.editor.editorial import Preferences
+    with closing(projects._connection()) as c,c:
+        c.execute('UPDATE editorial_state SET payload_json=? WHERE project_id=?',(json.dumps(Preferences().model_dump()),pid))
     sid=repo.create_version(pid,text,'ollama','local-fixture',ScriptOptions().model_dump(),'Otomatik',{},confirmed=True)
     repo.approve(pid,sid,True)
     data=wav(seconds);audio_name=uuid4().hex+'.wav';path=projects._path(pid)/'voice'/audio_name;path.write_bytes(data)
     audio={'local_path':'voice/'+audio_name,'format':'wav','content_type':'audio/wav','file_size':len(data),'sha256':hashlib.sha256(data).hexdigest(),'duration':None,'duration_message':'Ses süresi daha sonra hesaplanacak.'}
     vid=uuid4().hex
     meta={'provider':'AI33 / OpenSpeaker','voice_provider':'elevenlabs','voice_id':'elevenlabs_fixture','voice_name':'Local Fixture',
-          'speed':1.0,'target_language':'de','source_script_version':1,'character_count':len(text),'script_fingerprint':script_fingerprint(text),
+          'speed':1.0,'target_language':language,'source_script_version':1,'character_count':len(text),'script_fingerprint':script_fingerprint(text),
           'text':text,'task_id':'fixture-existing-task','creation_attempted':True,'audio':audio,'status':'completed'}
     with closing(projects._connection()) as c,c:
         stamp=project['created_at']

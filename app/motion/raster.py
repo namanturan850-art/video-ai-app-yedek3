@@ -258,7 +258,7 @@ def render(scene, output, ffmpeg):
     if any(e['type'] == 'archive' for e in scene['elements']):
         from app.motion.archive import render as archive_render
         return archive_render(scene, output, ffmpeg)
-    frames = max(1, round(scene['duration'] * FPS))
+    frames = 1 if '_sample_time' in scene else max(1, round(scene['duration'] * FPS))
     base = Image.new('RGB', (W, H), scene['background'])
     maps = {i: MapLayer(e['props']) for i, e in enumerate(scene['elements']) if e['type'] == 'map'}
     pictures = Pictures()
@@ -274,7 +274,7 @@ def render(scene, output, ffmpeg):
         for i in range(frames):
             check()
             if data is None or i / FPS <= settled + 1e-6:
-                data = draw_frame(scene, i / FPS, base, maps, pictures).tobytes()
+                data = draw_frame(scene, scene.get('_sample_time',i / FPS), base, maps, pictures).tobytes()
             process.stdin.write(data)
         process.stdin.close()
         error = process.stderr.read()

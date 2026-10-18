@@ -33,6 +33,10 @@ def serialized(method):
     @wraps(method)
     def call(self, *args, **kwargs):
         with self.projects.lock:
+            if hasattr(self.projects,'_connection') and hasattr(self.projects,'_row') and args:
+                with closing(self.projects._connection()) as c:
+                    if c.execute("SELECT 1 FROM render_jobs WHERE project_id=? AND status IN ('queued','preparing','rendering','validating')",(args[0],)).fetchone():
+                        raise EditorError('render_busy','Render sırasında düzenleme yapılamaz; tamamlanmasını bekleyin veya iptal edin.',409)
             return method(self, *args, **kwargs)
     return call
 
@@ -100,7 +104,7 @@ class EditorService:
                 'sfx_volume':row['sfx_volume'],'sfx_levels':levels if isinstance(levels,dict) else {}}
 
     @serialized
-    def save_audio_settings(self,project_id,payload):
+    def save_audio_settings(self,project_id,payload,*,history_kind='audio_mix'):
         expected=set(DEFAULT_AUDIO_SETTINGS)
         if not isinstance(payload,dict) or set(payload)!=expected:
             raise EditorError('invalid_audio_settings','Ses ayarı alanlarını kontrol edin.')
@@ -115,6 +119,7 @@ class EditorService:
                 or not finite(value) or not 0<=value<=.5 for key,value in levels.items()):
             raise EditorError('invalid_audio_settings','Klip başına SFX seviyelerini kontrol edin.')
         self.projects.get(project_id)
+        before=self.audio_settings(project_id);before.pop('project_id',None)
         with closing(self.projects._connection()) as connection,connection:
             connection.execute('''INSERT INTO editor_audio_settings VALUES (?,?,?,?,?,?,?)
                 ON CONFLICT(project_id) DO UPDATE SET narration_volume=excluded.narration_volume,
@@ -122,10 +127,19 @@ class EditorService:
                 sfx_volume=excluded.sfx_volume,sfx_levels_json=excluded.sfx_levels_json,updated_at=excluded.updated_at''',
                 (project_id,values['narration_volume'],values['narration_fade_in'],values['narration_fade_out'],
                  values['sfx_volume'],json.dumps(levels,sort_keys=True,separators=(',',':')),now()))
+            if hasattr(self.projects,'_row'):
+                plan=self.production.view(project_id).get('plan')
+                if plan:connection.execute('INSERT INTO editorial_events(project_id,plan_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)',
+                                   (project_id,plan['plan_id'],history_kind,json.dumps({'before':before,'after':payload}),now()))
         return self.audio_settings(project_id)
 
     def view(self, project_id):
         plan = self._active(project_id)
+        from app.editor.editorial import read
+        from app.editor.advanced import read_document
+        editorial=read(self.projects,project_id)['preferences']
+        edits=read_document(self.projects,project_id,plan['plan_id'])['document']
+        empty=set(edits.get('empty_slots',[])+edits.get('disabled_slots',[]))
         stock = self.stock.view(project_id)
         subtitle_state = self.subtitles.view(project_id)
         active_subtitles = subtitle_state.get('active') or {}
@@ -162,16 +176,17 @@ class EditorService:
                 item={**base,'start':slot['start'],'end':slot['end'],'slot_id':slot['slot_id'],'media':media or None,
                       'locked':bool(slot.get('locked',False) or scene.get('locked')),'clip_start':slot.get('clip_start',0),'clip_end':slot.get('clip_end'),
                       'label':self._clip_label(media,template),'preview_url':f'/api/projects/{project_id}/production/stock/slots/{slot["slot_id"]}/preview'}
+                if slot['slot_id'] in empty:item.update(media=None,label='Boş yuva — kaynak arşivde korundu',intentional_empty=True)
                 if template in MAP_TEMPLATES: tracks['maps'].append({**item,'kind':'map','type':template,'motion_spec':spec})
                 elif template in INFOGRAPHIC_TEMPLATES: tracks['infographics'].append({**item,'kind':'infographic','type':template,'motion_spec':spec})
                 elif template in EMPHASIS_TEMPLATES: tracks['emphasis'].append({**item,'kind':'emphasis','type':template,'motion_spec':spec})
                 elif template: tracks['layers'].append({**item,'kind':'layer','type':template,'motion_spec':spec})
                 else: tracks['visuals'].append(item)
             motion = scene.get('motion') or ''
-            if motion in ('map', 'route', 'schema') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['maps']): tracks['maps'].append({**base, 'type': motion})
-            if motion in ('number', 'compare', 'card', 'chart', 'infographic') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['infographics']): tracks['infographics'].append({**base, 'type': motion})
-            if scene.get('overlay_text'): tracks['layers'].append({**base, 'text': scene['overlay_text'],'legacy_key':scene['scene_id']+':overlay_text'})
-            for index,overlay in enumerate(scene['naman_overlays']):
+            if editorial['legacy_decorations'] and motion in ('map', 'route', 'schema') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['maps']): tracks['maps'].append({**base, 'type': motion})
+            if editorial['legacy_decorations'] and motion in ('number', 'compare', 'card', 'chart', 'infographic') and not any(x.get('scene_id')==scene['scene_id'] and x.get('slot_id') for x in tracks['infographics']): tracks['infographics'].append({**base, 'type': motion})
+            if scene.get('overlay_text') and editorial['legacy_decorations']: tracks['layers'].append({**base, 'text': scene['overlay_text'],'legacy_key':scene['scene_id']+':overlay_text'})
+            for index,overlay in enumerate(scene['naman_overlays'] if editorial['legacy_decorations'] else []):
                 item={**base,**overlay,'legacy_key':scene['scene_id']+':overlay:'+str(index)}
                 if overlay['kind']=='map': tracks['maps'].append(item)
                 elif overlay['kind']=='infographic': tracks['infographics'].append(item)
@@ -181,8 +196,11 @@ class EditorService:
             tracks['subtitles'].append({'start': cue['start'], 'end': cue['end'], 'text': cue['text'], 'index': cue['index']})
             words = cue['text'].split()
             step = (cue['end'] - cue['start']) / max(1, len(words))
-            tracks['emphasis'].extend({'start': cue['start'] + i * step, 'end': cue['start'] + (i + 1) * step,
-                                       'text': word, 'timing': 'estimated'} for i, word in enumerate(words))
+            if editorial['editing_mode']=='legacy':
+                scene=next((s for s in scenes if s['start']<=cue['start']<s['end']),None)
+                tracks['emphasis'].extend({'start': cue['start'] + i * step, 'end': cue['start'] + (i + 1) * step,
+                                       'scene_id':scene['scene_id'] if scene else '',
+                                       'text': word, 'timing': 'estimated','legacy_key':f'word:{cue["index"]}:{i}'} for i, word in enumerate(words))
         if audio: tracks['audio'].append({'start': 0, 'end': float(audio.get('duration') or duration),
                                           'url': f'/api/projects/{project_id}/narration/versions/{subtitle_state["narration"]["id"]}/audio',
                                           'waveform_url':f'/api/projects/{project_id}/editor/waveform'})
@@ -193,7 +211,7 @@ class EditorService:
                        'clip_ratio':round(100*len(motion_media)/len(base_media)) if base_media else 0,
                        'scene_ratio':round(100*len({m['scene_id'] for m in motion_media})/len(scenes)) if scenes else 0,
                        'duration_ratio':round(100*sum(m['end']-m['start'] for m in motion_media)/max(.001,float(timing.get('audio_duration') or duration)))}
-        return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],
+        return {'brand': 'NAMAN', 'contract_version': 1, 'project_id': project_id, 'plan_id': plan['plan_id'],'editorial':editorial,
                 'media_metrics':media_metrics,
                 'revision': plan['revision'], 'stock_plan_id':stock.get('plan_id'), 'stock_revision':stock.get('revision'),
                 'duration': timing.get('audio_duration') or duration, 'fps': 30, 'scenes': scenes, 'tracks': tracks,
@@ -302,6 +320,15 @@ class EditorService:
             if not target: raise EditorError('nothing_to_'+direction,'Bu yönde uygulanabilecek zaman çizelgesi değişikliği yok.',409)
             snapshot=records[target]['before' if direction=='undo' else 'after']
             expected=records[target]['after' if direction=='undo' else 'before']
+            extra=records[target].get('advanced')
+            if extra:
+                from app.editor.advanced import Document
+                row=connection.execute('SELECT revision,payload_json FROM editor_documents WHERE project_id=? AND plan_id=?',(project_id,state['plan_id'])).fetchone()
+                current_doc=Document.model_validate(json.loads(row['payload_json'])).model_dump() if row else Document().model_dump()
+                expected_doc=extra['after' if direction=='undo' else 'before']
+                if current_doc!=expected_doc:raise EditorError('stale_history','Ek katman değişmiş; yuva geçmişi güvenle uygulanamadı.',409)
+                restore=extra['before' if direction=='undo' else 'after']
+                connection.execute('UPDATE editor_documents SET revision=revision+1,payload_json=?,updated_at=? WHERE project_id=? AND plan_id=?',(json.dumps(restore),now(),project_id,state['plan_id']))
             scenes={s.get('scene_id') for s in snapshot+expected}
             plan=self._active(project_id)
             current=[s for s in state['slots'] if s.get('scene_id') in scenes]
@@ -399,7 +426,7 @@ class EditorService:
             rights=item.get('source_metadata') or {}
             saved=ranges.get((row['provider'],row['media_id']))
             result.append({'provider':row['provider'],'media_id':row['media_id'],'media_type':row['media_type'],
-                           'sha256':identity,'duration':item.get('duration'),'source_url':item.get('source_url',''),
+                           'sha256':identity,'file_name':path.name,'duration':item.get('duration'),'source_url':item.get('source_url',''),
                            'width':item.get('width',0),'height':item.get('height',0),'has_audio':bool(item.get('has_audio')),
                            'thumbnail_url':f'/api/projects/{project_id}/editor/archive/{row["provider"]}/{row["media_id"]}/thumbnail' if row['media_type']!='audio' else None,
                            'title':item.get('title') or item.get('description') or row['media_id'],
@@ -528,11 +555,20 @@ class EditorService:
             slot.update(selected_media=item,status='complete',segment_start=payload['start'] if item['media_type']=='video' else 0,
                         segment_end=payload['end'],message='Yerel arşivden atandı.',warnings=[])
             slot.pop('continuation_of',None)
+            from app.editor.advanced import Document
+            extra=None
+            doc_row=connection.execute('SELECT revision,payload_json FROM editor_documents WHERE project_id=? AND plan_id=?',(project_id,state['plan_id'])).fetchone()
+            if doc_row:
+                previous=Document.model_validate(json.loads(doc_row['payload_json'])).model_dump();following=deepcopy(previous)
+                for field in ('empty_slots','disabled_slots'):following[field]=[sid for sid in following[field] if sid!=slot_id]
+                if previous!=following:
+                    extra={'before':previous,'after':following}
+                    connection.execute('UPDATE editor_documents SET revision=revision+1,payload_json=?,updated_at=? WHERE project_id=? AND plan_id=?',(json.dumps(following),now(),project_id,state['plan_id']))
             self.stock._save(connection,state)
             after=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
             connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
                 (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',
-                 json.dumps({'request':payload,'before':before,'after':after},ensure_ascii=False),now()))
+                 json.dumps({'request':payload,'before':before,'after':after,**({'advanced':extra} if extra else {})},ensure_ascii=False),now()))
         self.stock._mirror(state)
         return self.view(project_id)
 
@@ -622,6 +658,8 @@ class EditorService:
 
     @serialized
     def import_plan(self, project_id, payload):
+        from app.editor.editorial import manual,Editorial
+        if manual(self.projects,project_id):return {'draft':Editorial(self).import_draft(project_id,payload)}
         check=self.validate_import(project_id,payload)
         if not check['valid']: raise EditorError('invalid_import','JSON doğrulanamadı; hiçbir değişiklik kaydedilmedi.',422,check['errors'])
         plan=deepcopy(self._active(project_id)); by_id={b['id']:b for b in plan['blocks']}
@@ -688,8 +726,8 @@ class EditorService:
         return result
 
     def video_review(self,project_id,payload):
-        if payload!={'confirm':True} or type(payload.get('confirm')) is not bool:
-            raise EditorError('confirmation_required','Gemini incelemesi için açık onay gereklidir.')
+        if set(payload)!={'confirm','data_sharing_confirmed','cost_confirmed'} or any(payload[k] is not True for k in payload):
+            raise EditorError('confirmation_required','Gemini için açık kare paylaşımı ve olası maliyet onayı gereklidir. Kurgu içindeki Gemini inceleme panelini kullanın.')
         if not self.rendering: raise EditorError('render_required','Render servisi kullanılamıyor.',409)
         if not self.settings or not self.settings.ai_visual_check():
             raise EditorError('gemini_disabled','Önce Ayarlar bölümünde Gemini görsel kontrolünü açın.',409)
@@ -723,8 +761,15 @@ class EditorService:
             if isinstance(error,(ScriptProviderError,ValueError,OSError)):
                 raise EditorError('gemini_unavailable','Gemini video incelemesi tamamlanamadı; video ve render korunuyor.',503) from None
             raise
+        issues=[]
+        for item in answer['issues'][:100]:
+            if not isinstance(item,dict) or not finite(item.get('timecode')) or not 0<=item['timecode']<=duration:continue
+            if not isinstance(item.get('message'),str) or not isinstance(item.get('category'),str):continue
+            issues.append({'timecode':round(item['timecode'],3),'category':item['category'][:80],'message':item['message'][:1000],
+                           'severity':str(item.get('severity',''))[:30],'confidence':str(item.get('confidence','Belirtilmedi'))[:40],
+                           'basis':context['sampling_notice'],'suggestion':str(item.get('suggestion','İlgili klibi ve kaynak verisini elle kontrol edin.'))[:700]})
         result={'cached':False,'basis':context['sampling_notice'],'sample_timecodes':context['samples'],'summary':' '.join(answer['summary'].split())[:1000],
-                'issues':answer['issues'][:100],'render_version_id':version['id']}
+                'issues':issues,'render_version_id':version['id'],'analysis_scope':'sample_frames','source_sha256':identity}
         with self.projects.lock,closing(self.projects._connection()) as connection,connection:
             connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,identity,VIDEO_REVIEW_VERSION,json.dumps(result,ensure_ascii=False),now()))
         return result

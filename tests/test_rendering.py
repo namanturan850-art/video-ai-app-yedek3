@@ -471,7 +471,14 @@ def test_source_change_during_job_preserves_previous_video(ready):
     c.app.state.rendering.factory=Changed
     assert c.post(url(st)+'/jobs',json={'encoder':'cpu'}).status_code==202 and entered.wait(15)
     active=c.app.state.subtitles.view(st['pid'])['active'];cues=[{k:q[k] for k in ('start','end','text')} for q in active['cues']];cues[0]['text']='Neue Anzeige.'
-    c.app.state.subtitles.edit(st['pid'],active['id'],{'cues':cues});gate.set()
+    from app.subtitles.models import SubtitleError
+    with pytest.raises(SubtitleError) as blocked:c.app.state.subtitles.edit(st['pid'],active['id'],{'cues':cues})
+    assert blocked.value.category=='render_busy'
+    # Simulate an out-of-process legacy writer after checking the public guard.
+    # The worker must still detect a changed source before activating its output.
+    with closing(c.app.state.projects._connection()) as connection,connection:
+        connection.execute('UPDATE subtitle_cues SET text=? WHERE version_id=? AND cue_index=?',('Neue Anzeige.',active['id'],1))
+    gate.set()
     state=await_job(st);assert state['job']['status']=='error' and state['job']['error_category']=='source_stale' and state['active']['id']==previous['id'] and oldpath.exists()
     assert not (st['root']/'renders'/'video-v2.mp4').exists()
 

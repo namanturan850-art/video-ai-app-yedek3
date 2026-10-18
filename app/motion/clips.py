@@ -130,7 +130,7 @@ def shared_render(fn):
 
 @shared_render
 
-def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None):
+def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
     from app.rendering.tools import discover
@@ -139,10 +139,17 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         raise RuntimeError('ffmpeg_missing')
     spec = with_pictures(spec, folder)
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
+    if sample_time is not None:scene['_sample_time']=max(0,min(duration,float(sample_time)))
     target = folder / (scene_key(scene) + '.mp4')
+    if sample_time is not None:
+        cache=folder/'editor-cache'
+        if linked(cache):raise RuntimeError('Önizleme önbelleği güvenli bir yerel klasör olmalıdır.')
+        cache.mkdir(exist_ok=True)
+        target=cache/('motion-sample-'+scene_key(scene)+'.mp4')
     from app.motion import relief
     relief.LAST_WARNING = relief.LAST_INFO = ''  # only this clip's satellite problem / view is reported
     if target.is_file() and not linked(target) and target.stat().st_size > 0:
+        if sample_time is not None:target.touch()
         return target, scene, 'cache'
     temporary = folder / ('.motion-' + uuid4().hex + '.mp4')
     engine = 'local'
@@ -169,6 +176,13 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     finally:
         CANCELLED.reset(token)
         temporary.unlink(missing_ok=True)
+    if sample_time is not None:
+        # Only disposable sampled previews, never archived source media.
+        cached=sorted(target.parent.glob('motion-sample-*.mp4'),key=lambda p:p.stat().st_mtime)
+        for stale in cached[:-240]:
+            if stale!=target and not linked(stale):
+                try:stale.unlink(missing_ok=True)
+                except OSError:pass  # Windows may still have this preview open.
     return target, scene, engine
 
 

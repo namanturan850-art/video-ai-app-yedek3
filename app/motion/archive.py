@@ -39,7 +39,8 @@ def render(scene, output, ffmpeg):
     from app.motion.templates import _font
     photo = Image.open(props['image_path']).convert('RGB')
     still = compose(photo, props.get('caption', ''), _font('Montserrat.ttf', 38, True))
-    frames = max(1, round(scene['duration'] * FPS))
+    total_frames=max(1,round(scene['duration']*FPS))
+    frames = 1 if '_sample_time' in scene else total_frames
     command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
                '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', str(output)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
@@ -48,7 +49,7 @@ def render(scene, output, ffmpeg):
         cw, ch = still.size
         for i in range(frames):
             check()
-            p = i / max(1, frames - 1)
+            p = scene.get('_sample_time',i / FPS)*FPS / max(1,total_frames-1)
             scale = 1 / 1.12 * (1 - ZOOM * p)  # crop shrinks → slow zoom-in
             w, h = cw * scale * 1.12 / 1.12, ch * scale
             w = W / H * h

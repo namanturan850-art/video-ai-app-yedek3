@@ -51,6 +51,7 @@ def clock():  # replaced in tests
     import time
     return time.monotonic()
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
+          'sources_only':'Kaynak hazırlanıyor — yaratıcı montaj yapılmaz',
           'local_archive': '1 · Yerel medya arşivi',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
@@ -253,6 +254,8 @@ class MediaDirector:
         self.clip = ClipCheck(self.service)
         self.progress['clip_ready'] = self.clip.ready()
         if not self.progress['clip_ready']: self.progress['clip_warning'] = MISSING
+        if getattr(self,'sources_only',False):
+            self.local=True;self.progress['local_reason']='Yalnız kaynak hazırlama: ücretli AI ve yaratıcı montaj kapalı.';return
         else: self.progress.pop('clip_warning', None)
         engine = settings.ai_engine()
         self.engine = engine or 'gemini'
@@ -1399,9 +1402,11 @@ class MediaDirector:
 
     @timed('motion')
     def motion(self, slot, scene, log, spec=None, stage='motion'):
+        if getattr(self,'sources_only',False) and self.job['action'] not in ('to_motion','motion_edit'):return self.unresolved(slot,log)
         from app.motion.clips import render_clip, media_record
         from app.motion.layouts import pick
         spec = spec or self.motion_spec(slot, scene)
+        if getattr(self,'sources_only',False):spec={**spec,'local_only':True}
         if stage in ('motion', 'motion_planned') and self.opening_overlay(slot, scene, log, spec):
             return True
         marker = json.dumps({k: v for k, v in spec.items() if k != 'layout'}, sort_keys=True)
@@ -1461,6 +1466,8 @@ class MediaDirector:
                 and spec.get('template') not in ('intro', 'outro') and (spec.get('template') in ('stat', 'quote', 'timeline', 'map') or meta.get('card_kind')))
 
     def opening_overlay(self, slot, scene, log, spec):
+        if getattr(self,'sources_only',False):return False
+
         """Opening scene: no full-screen card longer than OPENING_CARD seconds.
         The slot gets moving footage (stock, the neighbouring take or neutral
         footage of the setting) and the card's 2-5 words as a band over it for
@@ -1482,7 +1489,15 @@ class MediaDirector:
         slot['message'] = f'Açılış: hareketli görüntü üstünde “{text}” ({OPENING_CARD:g} sn; tam ekran kart yerine).'
         return True
 
+    def unresolved(self,slot,log):
+        slot.update(selected_media=None,status='ai_needed',message='Uygun kaynak bulunamadı; manuel medya atayın. Otomatik grafik oluşturulmadı.')
+        slot['missing_reasons']=['sources_only_no_approved_stock']
+        log.setdefault('steps',[]).append({'stage':'sources_only','result':'missing'})
+        return log
+
     def card(self, slot, scene, log, framed=False):
+        if getattr(self,'sources_only',False):return self.unresolved(slot,log)
+
         kind, text = card_spec(slot, scene, self.card_texts)
         if text in self.card_texts and self.continue_card(slot, text, log):
             return True
@@ -1542,6 +1557,7 @@ class MediaDirector:
         if not chosen and used_seconds(slot) < MERGE_SECONDS and self.merge(slot, log):
             chosen = True
         if not chosen:
+            if getattr(self,'sources_only',False):return self.unresolved(slot,log)
             spec = self.motion_spec(slot, scene)
             if spec['template'] == 'quote':
                 # A band over the neighbouring shot beats a full-screen text card.
@@ -1698,6 +1714,7 @@ class MediaDirector:
 
     def finish_slot(self, slot, log):
         stage = next((s['stage'] for s in reversed(log['steps']) if s.get('result') in ('chosen', 'kept', 'kept_no_better_option')), 'motion')
+        if getattr(self,'sources_only',False) and not slot.get('selected_media'):stage='sources_only'
         slot['director'] = {'stage': stage, 'stage_label': STAGES[stage], 'reason': slot.get('message', ''),
                             'searches': log['searches'][-40:], 'steps': [{k: v for k, v in s.items()} for s in log['steps']],
                             'rejected': log.get('rejected', {}), 'rewritten_queries': log.get('rewritten_queries', []),
@@ -1734,6 +1751,11 @@ class MediaDirector:
 
     # ---- job ---------------------------------------------------------------
     def run(self):
+        from app.editor.editorial import manual
+        from app.editor.advanced import read_document
+        self.sources_only=manual(self.service.projects,self.pid)
+        intentional=read_document(self.service.projects,self.pid,self.job['plan_id'])['document']
+        self.empty_slots=set(intentional.get('empty_slots',[])+intentional.get('disabled_slots',[]))
         CURRENT_PROJECT.set(self.pid)
         service, job = self.service, self.job
         with service.projects.lock, closing(service.projects._connection()) as c:
@@ -1779,14 +1801,15 @@ class MediaDirector:
             if single and slot['slot_id'] == single:
                 targets.append((slot, action))
                 continue
-            hint = self.owner.get(slot['slot_id'])
+            if slot['slot_id'] in self.empty_slots and not single:continue
+            hint = None if self.sources_only else self.owner.get(slot['slot_id'])
             if hint and not slot['locked'] and not slot.get('manual_stock') and not slot.get('motion_edited') and (
                     not self.valid(slot) or not is_generated(media) or (media.get('source_metadata') or {}).get('owner_hint') != hint
                     or UNREACHABLE in slot.get('message', '')):
                 targets.append((slot, 'motion_owner'))
                 continue
             planned = scenes[slot['scene_id']].get('motion_spec') if not any(h.get('type') in INFOGRAPHIC for h in scenes[slot['scene_id']].get('owner_hints') or []) else None
-            if not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and not (
+            if not self.sources_only and not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and not (
                     slot.get('lower_third_seconds') and self.valid(slot)) and (
                     not self.valid(slot) or not is_generated(media) and not (slot.get('ai_review') or {}).get('approved')
                     or is_generated(media) and ((media.get('source_metadata') or {}).get('planned') or (media.get('source_metadata') or {}).get('motion')) != planned

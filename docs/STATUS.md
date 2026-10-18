@@ -1,3 +1,36 @@
+## 2026-10-18 — Manuel kurgu: son teslim doğrulaması
+
+- Ana Python paketi **454 geçti / 3 atlandı** (428,62 sn). Son manuel paket **26 geçti** (68,27 sn); kalite/performans **73**, eski stok seçim/onay/reuse kabulü **17**, çalışma alanı/frontend/masaüstü birim paketi **5**, DOM paketi **7** testle geçti. Hedefli tekrarlar örtüşür; toplam olarak toplanmaz. Atlamalar kurulu olmayan yerel Remotion ve iki görselsiz eski marker fikstürüdür; gerçek resimli şablonlar ayrı geçen testlerde doğrulanır.
+- Üç gerçek Chromium paketi geçti: eski çalışma alanı; PR #91 gelişmiş kurgu; yeni manuel/JSON/taslak/Gemini-kayıtlı-bulgu akışı. Yeni akış gerçek **4,000 sn / 1920×1080 / 30 fps / 120 kare / AAC 48 kHz** çıktı üretti. Motion önizleme tek kare encode eder; 240 örnek dosya ile sınırlı ayrı önbellek kullanır.
+- Uzun render yapılmadı. Eski üç dakikalık stok kabul fikstürü aynı sahne/onay/yeniden kullanım/kota kontrollerini koruyarak çizici taklidinde yalnız tek kare üretir. Kaynak seçimlerinin eski davranışı açık legacy politikasıyla, yeni manuel kaynak-only davranışı ayrı testlerle doğrulanır.
+- Kod ayrı dala gönderildi; main `f4fa91c` olarak korundu. `gh pr create --draft` çağrısı `api.github.com/graphql: Forbidden` ile engellendi; draft PR açılmış sayılmaz. Hazır açıklama/karşılaştırma bağlantısı ve 19 bölümlü [Türkçe teslim raporu](MANUAL_FIRST_DELIVERY.md), sentetik ekran görüntüleri ve render SHA/ffprobe kanıtı eklendi.
+- Canlı ücretli API, gerçek Windows WebView2/DPI/NVENC ve harici motor denemesi yapılmadı; kalan ortam sınırları raporda açıkça ayrılır.
+
+## 2026-10-17 — Manuel kurgu arayüzü ve uçtan uca doğrulama
+
+- Beyaz müzik paneli tema değişkenlerine bağlandı; kontroller Program'ın altına ve 10 timeline aracı sola taşındı. Manuel mod, taslaklar/JSON, harita/infografik, gerçek altyazı ve müzik/SFX panelleri mevcut editöre bağlandı.
+- Anlatım ve ek müzik aynı Ses izinde ayrı dikey alanlarda seçilebilir. Eski medya kaydında MIME alanı eksikse güvenli dosya türü çıkarımıyla önizleme açılır. Başarılı Program karesi kaynak önizleme hata mesajının arkasında kalmaz.
+- Gerçek API/SQLite/Chromium paketi geçti: sil/undo/redo/refill, stil/keyframe, temiz harita/stat, altyazı/müzik, yeniden açma, otomatik ve JSON taslak onay/undo, kaydetmeden gerçek taslak karesi, kayıtlı Gemini bulgusunun durum/zaman kodu akışı, beş viewport ve **4 saniyelik gerçek native MP4**. Gemini raporu bu UI testinde sentetiktir; canlı çağrı yoktur.
+- PR #91 gelişmiş kurgu tarayıcı testi ve önceki çalışma alanı etkileşim/menü/yerleşim testi geçti. DOM testleri **7 geçti**. Son hedefli backend testleri **13 geçti**, eski MIME önizlemesi **1 geçti**. Son geniş regresyon sürüyor; Windows/NVENC/canlı sağlayıcı test edilmedi.
+
+## 2026-10-18 — Manuel kurgu: ortak geçmiş ve gerçek önizleme
+
+- Ortak Undo/Redo; temel yuva atama/kaldırma, ek belge, kurgu politikası, gerçek altyazı sürümü ve ses miksini proje/plan/revizyon kontrolüyle birleştirir. Taslak onayını geri almak modu da geri getirir.
+- JSON/otomatik taslaklar kalıcıdır; yeniden açılabilir, ayrı partiler halinde onaylanabilir. Fark/çakışma listesi ve kaydetmeden ortak compositor üzerinden gerçek kare önizlemesi vardır. Eski taslaklar veya tekrar onaylanan nesneler reddedilir.
+- Harita doğrulama ve ek katman renderı yerel bağlamda kalır; bilinmeyen yer için Mapbox çağrısı yapılmaz. Görsel tabanlı şablonlar yalnız aynı projenin hash doğrulamalı arşiv görsellerini kabul eder.
+- Motion önizlemesi uzun klibi encode etmez: aynı sahneden yalnız istenen kare hazırlanır. Font/kalınlık/satır/kutu, temiz harita ve bağımsız işaretler gerçek raster/FFmpeg yolunu kullanır. Ducking yan zinciri müzik sonunu kesmemek için anlatım saatine pad edilir.
+- Aktif render sırasında medya/altyazı değişikliği engellenir; dışarıdan kaynak değişikliği yine işçi tarafından kontrol edilir. Render durumu/aktif sürüm tek SQLite snapshot'ından okunur. Bilinçli boşaltılmış yuvadaki eski bozuk kaynak renderı engellemez.
+- Doğrulama: hedefli backend/sürüm/render paketi **41 geçti**; beş fontun gerçek kalın pikseli + gerçek FFmpeg ducking **6 geçti**. Önceki geniş tur **320 geçti / 1 eski beklenti hatası / 1 ortam nedeniyle atlandı**; eski beklenti güncellendi ve ilgili test geçti. Son geniş tur sürüyor.
+
+## 2026-10-18 — Manuel öncelikli editör: kalıcı altyapı
+
+- Başlangıç `main`: `f4fa91c` (PR #90/#91 korunuyor). Dal: `feature/naman-manual-first-editor-overhaul`.
+- SQLite 15→16 eklemeli editorial politika/olay kayıtları; yeni projede Manuel + yalnız kaynak hazırlama, eski kayıt eksikse legacy davranışı ve salt okunur açılış korunur.
+- Ek belgeye boş/devre dışı temel yuva, güvenli font/metin kutusu, bağımsız işaret/ok, temiz yerel harita ve müzik/SFX rolleri eklendi. Kaynak hazırlama manuel modda otomatik metinli motion/kart üretmez; uygun kaynak yoksa açık eksik durum kalır.
+- Manuel renderda smart-edit, otomatik SFX/endscreen ve kaynak ikamesi kapalıdır. Seçilen altyazı modu ve bağımsız kullanıcı katmanları ortak gerçek FFmpeg zincirinden geçer. Kaldırılan görüntünün saati korunur, siyah aralık olur; kaynak arşivde kalır.
+- Otomatik/JSON taslak kaydı mevcut kurguyu değiştirmez; seçili nesneler ayrı onayla uygulanır. Kurgu altyazı API'si gerçek SRT/VTT sürümlerini ve ayrı geçmişi kullanır; anlatım/sahne saati korunur. Gemini için ayrı paylaşım/maliyet izin kapısı ve proje/render kapsamlı bulgu durumları eklendi; canlı çağrı yapılmadı.
+- İlk altyapı testi: **97 geçti** (proje + belge). Son hedefli çekirdek test: **49 geçti** (yeni manuel akış, gerçek kısa siyah çıktı, kaynak/saat/geçmiş, JSON onayı, Gemini izin/kapsam, temiz harita ve PR #91 regresyonları). Arayüz ve uçtan uca genişletme sürüyor; henüz tüm görev tamamlandı sayılmaz.
+
 ## 2026-10-18 — Gelişmiş kurgu, motor ve arayüz aşamaları
 
 - **Son teslim doğrulaması:** seçili Python paketi **192 geçti** (229,66 sn), ayrıca eski kanal/render uyumluluğu **2 geçti**, DOM paketi **7 geçti**. Gerçek API/SQLite Chromium paketi; yeni klip boş-iz drop, trim/taşı/böl/sil/undo, keyframe ve marker CRUD, bağımsız monitör, OS upload, thumbnail ve son revizyon kare çözümüyle geçti. Dört viewportta dış scroll yok/yedi iz görünür; mevcut menü/resize/görünürlük regresyonu da geçti.

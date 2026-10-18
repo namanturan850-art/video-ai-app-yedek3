@@ -71,7 +71,7 @@
     const previewMessage=node('p','','workspace-preview-message');surface.append(previewMessage);preview.append(surface);
     const checkPreview=(time=c.getTime())=>{
       const item=c.media().find(x=>x.start<=time&&time<x.end);
-      const message=!item?'Bu aralıkta hazırlanmış görüntü yok.':!item.media?'Bu yuvanın medya dosyası henüz hazır değil.':'';
+      const message=item?.intentional_empty?'Bu aralık bilinçli olarak boş bırakıldı; renderda siyah görüntü kullanılır.':!item?'Bu aralıkta hazırlanmış görüntü yok.':!item.media?'Bu yuvanın medya dosyası henüz hazır değil.':'';
       if(previewMessage.textContent!==message)previewMessage.textContent=message;
       previewMessage.hidden=!message;
     };
@@ -125,14 +125,14 @@
     }
     redrawArchive=drawArchive;drawArchive();
     async function assign(item,target){
-      if(!target?.slot_id||target.locked||!c.data.tracks.visuals.some(x=>x.slot_id===target.slot_id)){status.textContent='Medyayı kilitsiz bir Görüntü yuvasına bırakın. Yeni katman veya süre oluşturulmaz.';return;}
+      if(!target?.slot_id||target.locked||!c.media().some(x=>x.slot_id===target.slot_id)){status.textContent='Medyayı kilitsiz bir Görüntü yuvasına bırakın. Yeni katman veya süre oluşturulmaz.';return;}
       if(!['video','image'].includes(item.media_type)){status.textContent='Bu yuvaya yalnız video veya görsel atanabilir.';return;}
       const start=item.clip_range?.start||0,end=item.clip_range?.end||item.duration||Math.max(1,target.end-target.start);
       try{await c.api(`/api/projects/${c.id}/editor/slots/${target.slot_id}/media`,{method:'PUT',body:JSON.stringify({plan_id:c.data.stock_plan_id,revision:c.data.stock_revision,provider:item.provider,media_id:item.media_id,sha256:item.sha256,start,end})});await c.load();ctx.status.textContent='Medya atandı ve revizyon kaydedildi. Geri al ile geri dönebilirsiniz.';}catch(e){status.textContent=e.message;}
     }
-    timeline.addEventListener('dragover',e=>{const clip=e.target.closest('.naman-clip'),motion=e.dataTransfer.types.includes('application/x-naman-motion-slot');if(!clip||!motion&&!e.dataTransfer.types.includes('application/x-naman-media'))return;e.preventDefault();timeline.querySelectorAll('.drop-target').forEach(n=>n.classList.remove('drop-target'));if((motion?['maps','infographics','layers','emphasis'].includes(clip.dataset.track):clip.dataset.track==='visuals')&&!clip.classList.contains('locked'))clip.classList.add('drop-target');e.dataTransfer.dropEffect=clip.classList.contains('drop-target')?(motion?'move':'copy'):'none';});
+    timeline.addEventListener('dragover',e=>{const clip=e.target.closest('.naman-clip'),motion=e.dataTransfer.types.includes('application/x-naman-motion-slot');if(!clip||!motion&&!e.dataTransfer.types.includes('application/x-naman-media'))return;e.preventDefault();timeline.querySelectorAll('.drop-target').forEach(n=>n.classList.remove('drop-target'));if((motion?['maps','infographics','layers','emphasis'].includes(clip.dataset.track):!!clip.dataset.slotId)&&!clip.classList.contains('locked'))clip.classList.add('drop-target');e.dataTransfer.dropEffect=clip.classList.contains('drop-target')?(motion?'move':'copy'):'none';});
     timeline.addEventListener('dragleave',e=>e.target.closest('.naman-clip')?.classList.remove('drop-target'));
-    timeline.addEventListener('drop',e=>{e.preventDefault();const clip=e.target.closest('.naman-clip');timeline.querySelectorAll('.drop-target').forEach(n=>n.classList.remove('drop-target'));if(e.dataTransfer.types.includes('application/x-naman-motion-slot')){moveMotion(e.dataTransfer.getData('application/x-naman-motion-slot'),clip);return;}try{const ref=JSON.parse(e.dataTransfer.getData('application/x-naman-media')),item=c.getArchive().items.find(x=>x.media_id===ref.media_id&&x.provider===ref.provider),target=c.data.tracks.visuals.find(x=>x.slot_id===clip?.dataset.slotId);if(!item)throw Error('Arşiv öğesi bulunamadı. Arşivi yenileyin.');assign(item,target);}catch(error){status.textContent=e.dataTransfer.files.length?'Dosyayı önce Medya içe aktar ile güvenli arşive ekleyin.':error.message;}});
+    timeline.addEventListener('drop',e=>{e.preventDefault();const clip=e.target.closest('.naman-clip');timeline.querySelectorAll('.drop-target').forEach(n=>n.classList.remove('drop-target'));if(e.dataTransfer.types.includes('application/x-naman-motion-slot')){moveMotion(e.dataTransfer.getData('application/x-naman-motion-slot'),clip);return;}try{const ref=JSON.parse(e.dataTransfer.getData('application/x-naman-media')),item=c.getArchive().items.find(x=>x.media_id===ref.media_id&&x.provider===ref.provider),target=c.media().find(x=>x.slot_id===clip?.dataset.slotId);if(!item)throw Error('Arşiv öğesi bulunamadı. Arşivi yenileyin.');assign(item,target);}catch(error){status.textContent=e.dataTransfer.files.length?'Dosyayı önce Medya içe aktar ile güvenli arşive ekleyin.':error.message;}});
     async function moveMotion(slotId,clip){
       const source=c.media().find(x=>x.slot_id===slotId),target=c.media().find(x=>x.slot_id===clip?.dataset.slotId);
       const track=c.data.track_order.find(t=>c.data.tracks[t].some(x=>x.slot_id===slotId));
@@ -149,8 +149,8 @@
     const labels={undo:'↶',redo:'↷',split:'Böl',duplicate:'Çoğalt',lock:'Kilitle',back:'−5 sn',next:'+5 sn',fb:'│◀',ff:'▶│',fullscreen:'⛶'};
     const titles={undo:'Geri al · Ctrl+Z',redo:'Yinele · Ctrl+Shift+Z',split:'İmleçte böl · Ctrl+K',duplicate:'Seçili klibi çoğalt',lock:'Klip kilidini değiştir',back:'5 saniye geri',next:'5 saniye ileri',fb:'Bir kare geri · ←',ff:'Bir kare ileri · →',play:'Oynat / Duraklat · Space',stop:'Durdur',fullscreen:'Program monitörünü tam ekran aç',fit:'Timeline’a sığdır'};
     Object.entries(titles).forEach(([key,title])=>{k[key].title=title;k[key].setAttribute('aria-label',title);if(labels[key])k[key].textContent=labels[key];});
-    edit.append(k.undo,k.redo,k.split,k.duplicate,k.lock);transport.append(k.back,k.fb,k.play,k.stop,k.ff,k.next,k.time);view.append(k.fit,k.zoom,k.fullscreen);
-    const extra=node('details','','workspace-overflow'),summary=node('summary','⋯');summary.setAttribute('aria-label','Diğer araçlar');extra.append(summary,field('Zaman koduna git',k.seek),button('Ses miks ayarları',()=>showTool('Ses miks ayarları',audioTools)),button('Manuel AI / JSON',()=>showTool('Manuel AI / JSON',manualTools)),c.review);bar.replaceChildren(edit,transport,view,extra);
+    edit.append(k.undo,k.redo);transport.append(k.back,k.fb,k.play,k.stop,k.ff,k.next,k.time);view.append(k.fit,k.zoom,k.fullscreen);
+    const extra=node('details','','workspace-overflow'),summary=node('summary','⋯');summary.setAttribute('aria-label','Diğer araçlar');extra.append(summary,field('Zaman koduna git',k.seek),button('Ses miks ayarları',()=>showTool('Ses miks ayarları',audioTools)),button('Manuel AI / JSON',()=>showTool('Manuel AI / JSON',manualTools)),c.review);bar.replaceChildren(edit,extra);const deck=node('div','','workspace-monitor-deck');deck.setAttribute('aria-label','Program oynatma kontrolleri');const reverseButton=button('◀◀',()=>reverse()),forwardButton=button('▶▶',()=>{stopReverse();c.setPlaybackRate?.(2);if(k.play.textContent.includes('Oynat'))k.play.click();});reverseButton.title='Geri oynat · J';forwardButton.title='İleri oynat 2× · L';deck.append(node('small','Program'),transport,reverseButton,forwardButton,view);preview.append(deck);
     // Root grid owns height; details open in a modal and cannot push the timeline out of view.
     const qualityButton=button('Medya kalitesi',()=>showTool('Medya kalite raporu',c.quality));
     const selectedMedia=c.media().filter(x=>x.media),motionCount=selectedMedia.filter(x=>x.motion_spec).length,total=selectedMedia.length,percent=c.data.media_metrics?.clip_ratio??(total?Math.round(motionCount/total*100):0);
@@ -160,7 +160,7 @@
     const qualityFooter=node('div','','workspace-statusbar');qualityFooter.append(qualityButton,link('Medya hazırlama / eksikleri tamamla',`/projects/${c.id}/production`),status);
     if(audioTools)audioTools.remove();if(manualTools)manualTools.remove();c.quality.remove();root.append(qualityFooter);
     const info=()=>openReport('Sekans bilgileri',[node('p',`Süre: ${c.clock(c.data.duration,true)} · ${c.data.fps} fps · ${c.data.scenes.length} sahne`),node('p',`Plan: ${c.data.plan_id} · revizyon ${c.data.revision} · medya revizyonu ${c.data.stock_revision}`),link('Çıkış ve render ayarları',`/projects/${c.id}/render`)]);
-    const focusEdit=()=>{if(!c.getSelected()){status.textContent='Önce timeline üzerinde bir klip seçin.';return;}selectTab('Düzenle');inspector.querySelector('input')?.focus();};
+    const toolRail=node('div','','workspace-tool-rail');toolRail.setAttribute('role','toolbar');toolRail.setAttribute('aria-label','Timeline araçları');layout.prepend(toolRail);const command=name=>root.dispatchEvent(new CustomEvent('naman-command',{detail:name}));const toolButtons=[];[['select','↖','Seçim · V'],['split','✂','Kes/Böl · C'],['move','↔','Taşı · M'],['trim','⊣','Trim · R'],['duplicate','⧉','Çoğalt'],['delete','⌫','Sil · Delete'],['lock','🔒','Kilitle/Kilidi aç'],['text','T+','Yazı Ekle'],['marker','◆','İşaretleyici Ekle'],['snap','⌁','Snap Aç/Kapat · S']].forEach(([name,icon,title])=>{const item=button(icon,()=>{if(['select','split','move','trim'].includes(name)){root.dataset.tool=name;toolButtons.forEach(x=>x.classList.toggle('active',x===item));}else if(name==='snap'){root.dataset.snap=root.dataset.snap==='off'?'on':'off';item.setAttribute('aria-pressed',String(root.dataset.snap!=='off'));}else if(name==='duplicate'||name==='lock')k[name].click();else command(name);});item.title=title;item.setAttribute('aria-label',title);item.dataset.command=name;toolButtons.push(item);toolRail.append(item);});root.dataset.tool='select';root.dataset.snap='on';toolButtons[0].classList.add('active');bar.append(button('T+ Yazı Ekle',()=>command('text')));const focusEdit=()=>{if(!c.getSelected()){status.textContent='Önce timeline üzerinde bir klip seçin.';return;}selectTab('Düzenle');inspector.querySelector('input')?.focus();};
     const save=()=>{const form=inspector.querySelector('form');if(form&&!form.closest('[hidden]')){const motionSave=[...form.querySelectorAll('button[type=button]')].find(b=>b.textContent.includes('önizleme oluştur'));if(motionSave&&['Motion','JSON'].includes(activeTab))motionSave.click();else form.requestSubmit();}else status.textContent='Uygulanan işlemler proje revizyonuna otomatik kaydedilir. Kaydedilecek açık klip formu yok.';};
     const showAudio=()=>showTool('Ses miks ayarları',audioTools),showManual=()=>{showTool('Manuel AI / JSON',manualTools);};
     const shortcuts=()=>openReport('Klavye kısayolları',[node('p','Space: oynat/duraklat · J: geri sar · K: duraklat · L: oynat · ←/→: bir kare · Ctrl+K: böl · Ctrl+S: açık klip formunu kaydet · Ctrl+Z / Ctrl+Shift+Z: geri al/yinele.'),node('p','Metin ve JSON alanlarında yazarken kısayollar devreye girmez. Sahne süresini bozan serbest silme desteklenmez.')]);
@@ -202,20 +202,20 @@
     stopReverse=()=>{clearInterval(reverseTimer);reverseTimer=null;};
     const reverse=()=>{c.pause();stopReverse();reverseTimer=setInterval(()=>{if(c.getTime()<=0){stopReverse();return;}c.seekTo(c.getTime()-.1);},100);status.textContent='Geri sarılıyor · durdurmak için K';};
     const keydown=e=>{
-      if(e.target.closest('input,textarea,select,[contenteditable=true]')||report.open)return;
+      if(e.target.closest('input,textarea,select,[contenteditable=true]')||report.open||preview.classList.contains('advanced-source-only'))return;
       const ctrl=e.ctrlKey||e.metaKey,key=e.key.toLowerCase();let action;
       if(ctrl&&key==='z')action=()=>e.shiftKey?k.redo.click():k.undo.click();
       else if(ctrl&&key==='s')action=save;else if(ctrl&&key==='k')action=()=>k.split.click();
       else if(!ctrl&&e.code==='Space')action=()=>{stopReverse();k.play.click();};
       else if(!ctrl&&key==='arrowleft')action=()=>{stopReverse();k.fb.click();};else if(!ctrl&&key==='arrowright')action=()=>{stopReverse();k.ff.click();};
-      else if(!ctrl&&key==='j')action=reverse;else if(!ctrl&&key==='k')action=()=>{stopReverse();c.pause();};else if(!ctrl&&key==='l')action=()=>{stopReverse();if(k.play.textContent.includes('Oynat'))k.play.click();};
+      else if(!ctrl&&key==='j')action=reverse;else if(!ctrl&&key==='k')action=()=>{stopReverse();c.pause();};else if(!ctrl&&key==='l')action=()=>{stopReverse();c.setPlaybackRate?.(k.play.textContent.includes('Oynat')?1:2);if(k.play.textContent.includes('Oynat'))k.play.click();};
       if(action){e.preventDefault();action();}
     };addEventListener('keydown',keydown);k.stop.addEventListener('click',stopReverse);k.play.addEventListener('click',stopReverse);
     report.addEventListener('click',e=>{if(e.target===report)report.close();});
     const resize=()=>applyLayout();addEventListener('resize',resize);
     cleanup=()=>{stopReverse();tabObserver?.disconnect();removeEventListener('keydown',keydown);removeEventListener('resize',resize);document.removeEventListener('click',clickAway);menubar.remove();report.close();};
-    c.onDispose(cleanup);
-    window.NAMANAdvanced?.mount(c);
+    c.onDispose(cleanup);c.stopTransport=()=>{stopReverse();c.pause();};
+    const pendingTools=[k.undo,k.redo,k.split,k.duplicate,k.lock,...toolButtons];pendingTools.forEach(button=>button.disabled=true);Promise.resolve(window.NAMANAdvanced?.mount(c)).then(()=>window.NAMANManual?.mount(c)).finally(()=>{if(c.bar.isConnected)pendingTools.forEach(button=>button.disabled=false);});
     // Reapply real waveform when re-rendering after a saved edit.
     paintWaveform(c.data.tracks.audio[0]?.waveform||[]);
   }

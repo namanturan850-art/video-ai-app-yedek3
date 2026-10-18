@@ -156,7 +156,7 @@ def main():
             page.locator('.workspace-overflow summary').click();revision=document()['revision'];page.get_by_role('button',name='Ek kurgu geri al',exact=True).click();saved_after(revision)
             original=document()['document']['clips'][0];middle=(original['start']+original['end'])/2
             seek=page.get_by_role('textbox',name='Saniyeye git',exact=True);seek.fill(str(middle));seek.press('Tab');page.locator('.workspace-overflow summary').click()
-            page.locator('.advanced-clip').click();revision=document()['revision'];page.get_by_role('button',name='İmleçte böl · Ctrl+K',exact=True).click();saved_after(revision)
+            page.locator('.advanced-clip').click();revision=document()['revision'];page.keyboard.press('Control+k');saved_after(revision)
             split=document()['document']['clips'];assert len(split)==2 and split[0]['end']==split[1]['start'],split
             page.locator('.workspace-overflow summary').click();revision=document()['revision'];page.get_by_role('button',name='Ek kurgu geri al',exact=True).click();saved_after(revision);page.locator('.workspace-overflow summary').click()
             page.wait_for_function("rev=>{const image=document.querySelector('.advanced-program-frame');return image?.naturalWidth===640&&+image.dataset.revision===rev;}",arg=document()['revision'],timeout=30000)

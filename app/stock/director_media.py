@@ -670,10 +670,10 @@ class MediaDirector:
             clip = {**result, 'descriptor': descriptor[:160]}
             media['clip'] = clip
             self.progress['clip_checked'] = self.progress.get('clip_checked', 0) + 1
-            from app.stock.visual_subject import contradiction
+            from app.stock.visual_subject import contradiction, CONFLICT_MESSAGES
             subject_conflict = contradiction(media, slot.get('relevance_profile') or relevance.profile(scene, slot))
             if subject_conflict:
-                decided[key(media)] = {'score': 0, 'approved': False, 'local': True, 'clip': clip, 'reason': 'Görüntünün etiketleri anlatılan görsel konuyla çelişiyor: ' + subject_conflict}
+                decided[key(media)] = {'score': 0, 'approved': False, 'local': True, 'clip': clip, 'reason': CONFLICT_MESSAGES.get(subject_conflict, 'Görsel konu anlatımla çelişiyor.')}
             elif isinstance(result.get('conflict'), dict):  # looks like something the period/place rules out
                 from app.stock.setting import reason
                 self.setting_rejected(media, result['conflict'])
@@ -753,7 +753,9 @@ class MediaDirector:
         from app.scripts.query_clean import english_query, generic_queries
         subject = scene.get('visual_subject') or {}
         if subject.get('queries'):return subject['queries'][3:] if broader else subject['queries'][1:]
-        if broader: return generic_queries(scene.get('narration_text') or self.topic, self.language)
+        if broader:
+            topic = (scene.get('narration_text') or self.topic) if getattr(self, 'sources_only', False) else self.topic
+            return generic_queries(topic, self.language)
         out = []
         for sentence in re.split(r'(?<=[.!?…])\s+', scene.get('narration_text', '')):
             words = english_query(sentence, self.language, strict=True, limit=6).split()
@@ -792,12 +794,15 @@ class MediaDirector:
         self.unique_queries.add(' '.join(query.casefold().split()))
         from app.stock.search_evidence import failed_recently, identity, SLOT_REQUESTS, JOB_REQUESTS
         from app.stock.verdict_cache import context
-        fingerprint = context(scene or {}, slot)
+        fingerprint = context(scene or {}, {**slot, 'quality_setting':self.where(scene or {})})
+        slot_id = slot.get('slot_id', str(slot.get('order', 0)))
         attempts = getattr(self, 'request_attempts', {})
         requested = getattr(self, 'requested_keys', set())
         self.requested_keys = requested
         self.request_attempts = attempts
         names = list(provider_names if provider_names is not None else self.providers(scene))
+        global_requests = getattr(self, 'global_request_keys', set())
+        self.global_request_keys = global_requests
         allowed = set()
         for kind in kinds:
             for name in names:
@@ -805,14 +810,15 @@ class MediaDirector:
                 entry = {'provider': name, 'media_type': kind, 'query': query, 'page': page}
                 if failed_recently(slot, entry, fingerprint):
                     log['searches'].append({**entry, 'skipped': 'previous_failure'})
-                elif (slot['slot_id'], identity(entry)) not in requested and (attempts.get(slot['slot_id'], 0) >= SLOT_REQUESTS or sum(attempts.values()) >= JOB_REQUESTS):
+                elif (slot_id, identity(entry)) not in requested and (attempts.get(slot_id, 0) >= SLOT_REQUESTS or (identity(entry) not in global_requests and len(global_requests) >= JOB_REQUESTS)):
                     log['searches'].append({**entry, 'skipped': 'budget'})
                 else:
                     allowed.add((kind, name))
-                    request_key = (slot['slot_id'], identity(entry))
+                    request_key = (slot_id, identity(entry))
                     if request_key not in requested:
                         requested.add(request_key)
-                        attempts[slot['slot_id']] = attempts.get(slot['slot_id'], 0) + 1
+                        global_requests.add(identity(entry))
+                        attempts[slot_id] = attempts.get(slot_id, 0) + 1
         def read(name, kind):
             config = self.service.settings.stock_config(name) if hasattr(self.service, 'settings') else {}
             signature = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
@@ -850,6 +856,9 @@ class MediaDirector:
                 except Exception:  # an unexpected provider answer never stops the chain
                     LOG.warning('stock operation=director_search category=unexpected provider=%s', name)
                     entry.update(error='unexpected', error_text='beklenmeyen yanıt')
+                    self.unavailable = getattr(self, 'unavailable', {})
+                    self.unavailable[name] = 'unexpected'
+                    self.progress['unavailable_providers'] = self.unavailable
                     log['searches'].append(entry)
                     continue
                 metric = 'cached_search_reads' if cached else 'provider_searches'
@@ -994,6 +1003,9 @@ class MediaDirector:
             log = {'steps': [], 'searches': [], 'judged': memo['judged'], 'rejected': {}}
             fresh = [m for m in self.pool(slot, self.search(slot, kinds, query, log, scene), log, set(), scene)
                      if key(m) not in memo['judged'] and key(m) not in seen][:CANDIDATES]
+            prelogs = getattr(self, 'presearch_logs', {})
+            prelogs[slot['slot_id']] = log
+            self.presearch_logs = prelogs
             for media in fresh:
                 seen.add(key(media)); pooled.append(media)
         pooled = pooled[:24 if clip else 16]
@@ -1509,6 +1521,8 @@ class MediaDirector:
         more than OPENING_CARD seconds of the first scene."""
         meta = (media or {}).get('source_metadata') or {}
         spec = meta.get('motion') or {}
+        scene = getattr(self, 'scene_by_id', {}).get(slot['scene_id'])
+        if scene and slot.get('opening_search_context') == self.selection_context(slot, scene):return False
         return (bool(self.scene_order) and slot['scene_id'] == self.scene_order[0] and used_seconds(slot) > OPENING_CARD
                 and not slot.get('locked') and not slot.get('motion_edited') and not meta.get('owner_hint') and slot['slot_id'] not in self.owner
                 and spec.get('template') not in ('intro', 'outro') and (spec.get('template') in ('stat', 'quote', 'timeline', 'map') or meta.get('card_kind')))
@@ -1526,6 +1540,7 @@ class MediaDirector:
         data = spec.get('data') or {}
         text = focus(' '.join(x for x in (str(data.get('value') or ''), str(data.get('label') or data.get('text') or data.get('place') or '')) if x))
         if not text: return False
+        slot['opening_search_context'] = self.selection_context(slot, scene)
         planned = list(dict.fromkeys(q for q in [slot.get('search_query'), *slot.get('fallback_queries', []), scene.get('primary_stock_query'),
                                                  *scene.get('alternative_stock_queries', [])] if q))[:4]
         slot.setdefault('relevance_profile', relevance.profile(scene, slot))
@@ -1538,6 +1553,10 @@ class MediaDirector:
         return True
 
     def unresolved(self,slot,log):
+        for provider, category in getattr(self, 'unavailable', {}).items():
+            if not any(s.get('provider') == provider and s.get('error') for s in log.get('searches', [])):
+                log.setdefault('searches', []).append({'provider':provider,'query':'','media_type':'video',
+                    'skipped':'provider_unavailable','error':category,'error_text':ERROR_TEXT.get(category,'Sağlayıcı bu işte kullanılamıyor')})
         slot.update(selected_media=None,status='ai_needed',message='Uygun kaynak bulunamadı; manuel medya atayın. Otomatik grafik oluşturulmadı.')
         from app.stock.search_evidence import reasons
         slot['missing_reasons'] = reasons(log)
@@ -1579,7 +1598,8 @@ class MediaDirector:
         slot['relevance_profile'] = relevance.profile(scene, slot)
         # Slots of one scene share the AI's verdicts and rewritten queries.
         memo = self.memo.setdefault(memo_key(scene), {'judged': {}})
-        log = {'started_at': now(), 'steps': [], 'searches': [], 'judged': memo['judged'], 'rejected': {}}
+        previous = getattr(self, 'presearch_logs', {}).pop(slot['slot_id'], {})
+        log = {'started_at': now(), 'steps': [], 'searches': list(previous.get('searches', [])), 'judged': memo['judged'], 'rejected': dict(previous.get('rejected', {}))}
         planned = list(dict.fromkeys(q for q in [scene.get('primary_stock_query'), slot.get('search_query'), *slot.get('fallback_queries', []),
                                                  *scene.get('alternative_stock_queries', [])] if q))[:4]
         if scene.get('visual_subject', {}).get('queries'):
@@ -1770,7 +1790,7 @@ class MediaDirector:
         from app.stock.search_evidence import remember
         from app.stock.verdict_cache import context
         scene = bind_shot(getattr(self, 'scene_by_id', {}).get(slot['scene_id'], {}), slot, self.language) if getattr(self, 'scene_by_id', {}).get(slot['scene_id']) else {}
-        remember(slot, log, context(scene, slot), now())
+        remember(slot, log, context(scene, {**slot, 'quality_setting':self.where(scene)}), now())
         history = list((slot.get('director') or {}).get('history', []))
         old = slot.get('director') or {}
         if old.get('updated_at'):history.append({k:old.get(k) for k in ('updated_at','stage','searches','steps','rejected')})
@@ -1868,7 +1888,7 @@ class MediaDirector:
                 targets.append((slot, 'motion_owner'))
                 continue
             planned = scenes[slot['scene_id']].get('motion_spec') if not any(h.get('type') in INFOGRAPHIC for h in scenes[slot['scene_id']].get('owner_hints') or []) else None
-            if not self.sources_only and not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and not (
+            if not self.sources_only and not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and (slot.get('prepared_motion_plan') != planned or not self.valid(slot)) and not (
                     slot.get('lower_third_seconds') and self.valid(slot)) and (
                     not self.valid(slot) or not is_generated(media) and not (slot.get('ai_review') or {}).get('approved')
                     or is_generated(media) and ((media.get('source_metadata') or {}).get('planned') or (media.get('source_metadata') or {}).get('motion')) != planned
@@ -1968,6 +1988,7 @@ class MediaDirector:
             return log
         if why == 'motion_planned':
             planned, spec = scene['motion_spec'], scene['motion_spec']
+            slot['prepared_motion_plan'] = deepcopy(planned)
             self._release(slot); log = empty()
             if planned['template'] == 'quote':  # a text card is the last choice
                 other = self.motion_spec(slot, scene)
@@ -2034,6 +2055,7 @@ class MediaDirector:
             slot['relevance_profile'] = relevance.profile(scene, slot)
             if not self.opening_overlay(slot, scene, log, (old.get('source_metadata') or {}).get('motion') or {}):
                 slot.clear(); slot.update(backup)  # nothing moving found: the card stays
+                slot['opening_search_context'] = self.selection_context(slot, scene)
                 self.register(slot['slot_id'], old, 0., used_seconds(slot))
             return log
         if why in ('reselect', 'setting'):
@@ -2212,6 +2234,7 @@ class MediaDirector:
             bands = {} if self.sources_only else self.bands(state['slots'])
             for slot in state['slots']:
                 if slot['slot_id'] in help_text: slot.update(help_text[slot['slot_id']])
+                slot['review_flags'] = review_flags(slot)
                 if self.sources_only:continue
                 if slot['slot_id'] in bands: slot['band'] = bands[slot['slot_id']]
                 elif 'band' in slot and not bands.get(slot['slot_id']): slot.pop('band')
@@ -2492,7 +2515,7 @@ def diagnostics(service, project_id):
     slots = []
     for s in state['slots']:
         media = s.get('selected_media') or {}
-        slots.append({'order': s['order'], 'scene_id': s['scene_id'], 'start': s['estimated_start'], 'end': s['estimated_end'],
+        slots.append({'order': s.get('display_order',s['order']), 'scene_slot_order':s['order'], 'scene_id': s['scene_id'], 'start': s['estimated_start'], 'end': s['estimated_end'],
                       'duration': s['duration'], 'status': s['status'], 'locked': s['locked'], 'message': s.get('message', ''),
                       'stage': (s.get('director') or {}).get('stage_label'), 'ai_review': s.get('ai_review'),
                       'media': {k: media.get(k) for k in ('provider', 'media_type', 'media_id', 'width', 'height', 'duration', 'page_url')} if media else None,

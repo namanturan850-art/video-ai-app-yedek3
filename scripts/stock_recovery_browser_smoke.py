@@ -38,6 +38,7 @@ def main():
                 assert page.locator('.stock-missing-diagnostic').count()==29
                 assert 'undefined: missing' not in page.locator('#production-content').inner_text()
                 assert 'Otomatik grafik eklenmez' in page.locator('#stock-controls').inner_text()
+                page.locator('#stock-recovery-drawer>summary').click()
                 first=page.locator('.stock-missing-diagnostic').first;first.locator('summary').click()
                 assert first.locator('.stock-diagnostic-scroll').evaluate('(e)=>e.clientHeight<=340&&e.scrollHeight>e.clientHeight')
                 assert first.get_by_role('button',name='Yalnız yeni alternatifleri ara').count()==1

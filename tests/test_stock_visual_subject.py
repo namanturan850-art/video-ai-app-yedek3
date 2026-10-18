@@ -26,9 +26,10 @@ def test_lake_lightning_queries_include_the_event_without_invented_location():
 
 def test_university_is_attribution_not_visual_subject_or_scene_geography():
     text='São Paulo Üniversitesi tarafından yapılan bir araştırma onlarca tropikal gölü karşılaştırdı. İki faktör: gölün büyüklüğü ve yakındaki dağlar.'
-    bound=bind(scene(text),slot(),'tr')
+    bound=bind({**scene(text),'location':'São Paulo'},slot(),'tr')
     assert 'lake' in bound['primary_stock_query']
     assert 'São Paulo' not in bound['entities']
+    assert bound['location']==''
     assert bound['visual_subject']['institutions']==['São Paulo Üniversitesi']
     assert bound['narration_text']==text
     setting=infer(['Venezuela tropical lake',text], 'Venezuela')
@@ -64,3 +65,30 @@ def test_low_clip_needs_independent_strong_evidence_and_query_is_not_evidence():
     assert not decisions[key(wrong)]['approved']
     assert decisions[key(good)]['approved']
     assert 'güçlü' in decisions[key(good)]['reason']
+
+
+def test_high_clip_cannot_override_an_explicit_subject_conflict():
+    import base64
+    director=MediaDirector.__new__(MediaDirector)
+    sc=bind(scene('lake wind current'),slot(),'en');s={**slot(),'order':1}
+    media={'provider':'pixabay','media_id':'fall','media_type':'video','description':'waterfall river water'}
+    from app.stock.director_media import key_text
+    director.clip=SimpleNamespace(ready=lambda:True,score=lambda *a:{key_text(media):{'verdict':'match','score':9}},broken=False,metrics={})
+    director.frames=lambda m:[{'source':{'data':base64.b64encode(b'fake frame bytes').decode()}}]
+    director.where=lambda sc:{};director.language='en';director.progress={};director.pid='test';director.job={}
+    director.service=SimpleNamespace(projects=None,_checkpoint=lambda *a,**kw:None)
+    # directory() is only needed to hand a cache path to the mocked CLIP scorer.
+    from unittest.mock import patch
+    with patch('app.stock.director_media.directory',return_value=None):
+        decision=director.clip_judge(s,sc,[media],descriptor='lake wind current')[key(media)]
+    assert not decision['approved'] and decision['score']==0
+
+
+def test_correct_named_archive_can_survive_uncertain_clip_with_explicit_reason():
+    director=MediaDirector.__new__(MediaDirector)
+    sc={'primary_stock_query':'Titanic ship ocean','visual_intent':'Titanic ship ocean','entities':['Titanic']}
+    s={'relevance_profile':relevance.profile(sc)}
+    media={'provider':'wikimedia','media_id':'archive','media_type':'image','description':'Titanic ship ocean archival photograph','clip':{'score':5}}
+    verdict=director.local_judge(s,sc,[media])[key(media)]
+    assert verdict['approved'] and verdict['local'] and not verdict.get('clip_approved')
+    assert 'güçlü' in verdict['reason']

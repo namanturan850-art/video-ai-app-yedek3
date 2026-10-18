@@ -10,7 +10,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   section.append(node('h2','Stok Medya — kaynak hazırlama'),modeText);
   const message=node('p','Güncel sahne planı kontrol ediliyor…');message.setAttribute('role','status');
   const controls=node('div','','settings-actions'),warningList=node('ul');section.append(message,controls,warningList);root.insertBefore(section,blocks);
-  const recovery=node('section');recovery.id='stock-recovery-report';section.append(recovery);const mix=node('details'),recent=node('details');recent.append(node('summary','Son arama tanısı'));section.append(mix,recent);
+  const recovery=node('section');recovery.id='stock-recovery-report';const recoveryDrawer=node('details');recoveryDrawer.id='stock-recovery-drawer';recoveryDrawer.append(node('summary','Eksik medya tanısı'),recovery);section.append(recoveryDrawer);const mix=node('details'),recent=node('details');recent.append(node('summary','Son arama tanısı'));section.append(mix,recent);
   const performanceLine=node('p','','note');performanceLine.id='stock-performance';section.insertBefore(performanceLine,controls);
   let state=null,pending=false,timer=null,loading=false,previewSlot=null;
   const active=()=>pending||['queued','running'].includes(state?.job?.status);
@@ -25,20 +25,20 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const fallbackText=()=>manualMode()?'Uygun stok bulunamazsa yuva boş bırakılır. Otomatik grafik eklenmez.':'Legacy otomatik mod: uygun stok bulunamazsa anlatımdan motion grafik hazırlanabilir.';
   async function diagnosticText(){return JSON.stringify(await request(`${base}/diagnostics`),null,2);}
   download.addEventListener('click',async event=>{event.preventDefault();diagnosticStatus.textContent='Tanılama hazırlanıyor…';
-    try{const text=await diagnosticText(),filename=`NAMAN-medya-tani-${new Date().toISOString().slice(0,10)}.json`;
+    try{const filename=`NAMAN-medya-tani-${new Date().toISOString().slice(0,10)}.json`;
       if(typeof window.showSaveFilePicker==='function'){
         let handle;try{handle=await window.showSaveFilePicker({suggestedName:filename,types:[{description:'JSON tanılama',accept:{'application/json':['.json']}}]});}catch(error){if(error.name==='AbortError'){diagnosticStatus.textContent='Kaydetme iptal edildi. Tanıyı Kopyala seçeneğini kullanabilirsiniz.';return;}throw error;}
-        const writable=await handle.createWritable();await writable.write(text);await writable.close();diagnosticStatus.textContent=`Kaydedildi: ${handle.name} — seçtiğiniz klasör.`;
+        const text=await diagnosticText(),writable=await handle.createWritable();await writable.write(text);await writable.close();diagnosticStatus.textContent=`Kaydedildi: ${handle.name} — seçtiğiniz klasör.`;
       }else{
-        const url=URL.createObjectURL(new Blob([text],{type:'application/json'})),a=node('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
+        const text=await diagnosticText(),url=URL.createObjectURL(new Blob([text],{type:'application/json'})),a=node('a');a.href=url;a.download=filename;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000);
         diagnosticStatus.textContent='İndirme tarayıcıya iletildi. Masaüstünde Farklı Kaydet penceresinden konum seçin; tarayıcıda İndirilenler bölümünü kontrol edin. Kaydetme tamamlanmadıysa Tanıyı Kopyala seçeneğini kullanın.';
       }
     }catch(error){diagnosticStatus.textContent='Tanılama kaydedilemedi: '+error.message+' Tanıyı Kopyala seçeneğini deneyin.';}
   });
-  button(controls,'Tanıyı Kopyala',async()=>{try{const text=await diagnosticText();
+  button(controls,'Tanıyı Kopyala',async()=>{let text;try{text=await diagnosticText();
     if(!globalThis.navigator?.clipboard?.writeText)throw new Error('Panoya erişim yok.');
     await navigator.clipboard.writeText(text);copyFallback.hidden=true;diagnosticStatus.textContent='Tanılama panoya kopyalandı. Seçtiğiniz metin dosyasına yapıştırabilirsiniz.';
-  }catch(error){try{copyFallback.value=await diagnosticText();copyFallback.hidden=false;copyFallback.focus();copyFallback.select();diagnosticStatus.textContent='Otomatik kopyalama yapılamadı. Aşağıdaki seçili tanı metnini Ctrl+C ile kopyalayın.';}catch(readError){diagnosticStatus.textContent='Tanılama okunamadı: '+readError.message;}}}).id='stock-diagnostics-copy';
+  }catch(error){try{copyFallback.value=text||await diagnosticText();copyFallback.hidden=false;copyFallback.focus();copyFallback.select();diagnosticStatus.textContent='Otomatik kopyalama yapılamadı. Aşağıdaki seçili tanı metnini Ctrl+C ile kopyalayın.';}catch(readError){diagnosticStatus.textContent='Tanılama okunamadı: '+readError.message;}}}).id='stock-diagnostics-copy';
   const summaryLine=node('p','','provider-status');summaryLine.id='stock-summary';section.insertBefore(summaryLine,controls);
   const clipNote=node('p','','note stock-clip-warning');clipNote.id='stock-clip-warning';clipNote.hidden=true;section.insertBefore(clipNote,controls);
   const translateNote=node('p','','note stock-translate');translateNote.id='stock-translate';translateNote.hidden=true;
@@ -54,7 +54,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     if(!response.ok){const error=new Error(result.message||'Medya işlemi tamamlanamadı.');error.category=result.category;throw error;}
     return result;
   }
-  function sync(){complete.disabled=active()||!state;const unchecked=state?.media_summary?.unchecked||0;recheck.hidden=!unchecked||state?.job?.progress?.local_mode==='off';recheck.textContent=`Yapay zekâyla yeniden kontrol et (${unchecked} yuva)`;recheck.disabled=active()||!state;}
+  function sync(){complete.disabled=active()||!state;const unchecked=state?.media_summary?.unchecked||0;recheck.hidden=manualMode()||!unchecked||state?.job?.progress?.local_mode==='off';recheck.textContent=`Yapay zekâyla yeniden kontrol et (${unchecked} yuva)`;recheck.disabled=active()||!state;}
   async function operate(fn){if(active()||!state)return;pending=true;sync();try{await fn();await load();}catch(error){message.textContent=error.message;}finally{pending=false;render();}}
   function start(action){return operate(()=>request(base+'/jobs','POST',{...stamp(),action}));}
   function slotJob(slot,action,extra={}){return operate(()=>request(`${base}/slots/${slot.slot_id}/jobs`,'POST',{...stamp(),action,...extra}));}
@@ -121,7 +121,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const media=slot.selected_media;
     const score=media&&media.provider!=='generated'?slot.ai_review?.score:null;
     if(Number.isFinite(score)&&score<9)card.classList.add('stock-slot-check');  // 7–8: worth a look first
-    card.append(node('h4',`Medya ${slot.order}${slot.locked?' · Kilitli':''} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
+    card.append(node('h4',`Medya ${slot.display_order||slot.order}${slot.locked?' · Kilitli':''} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
     const stage=slot.director?.stage_label||(slot.locked&&media?'Kilitli (sizin seçiminiz)':media?(slot.ai_review?.approved?'Yapay zekâ onayladı':slot.local_review?.method==='clip'?'CLIP onayladı — kaynak hazır':slot.local_review?.method==='words'?'Yalnız etiket/kelimeyle seçildi — önizleyin':'Kaynak hazır — Yapay zekâ onayı bekliyor'):'Boş — Medyayı Tamamla deyin');
     const stageLine=node('p',`Aşama: ${stage}`,'provider-status');stageLine.className+=' stock-stage';card.append(stageLine);
     if(Number.isFinite(score)){const rel=node('p',`Alaka puanı: ${score}/10${score<9?' — önce buna bakın':''} · ${slot.ai_review.reason||''}`,'stock-relevance');if(slot.ai_review.model)rel.append(node('small',` · ${slot.ai_review.model.replace(/^gemini-/,'')} ile seçildi`,'stock-model'));card.append(rel);}
@@ -179,7 +179,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     if(!list.length){reviewBox.append(node('p','Kontrol gerekmiyor.','stock-review-none'));return;}
     for(const slot of list){
       const item=node('article','','stock-review-item');item.dataset.slotId=slot.slot_id;
-      item.append(node('h4',`Medya ${slot.order} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
+      item.append(node('h4',`Medya ${slot.display_order||slot.order} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
       for(const flag of slot.review_flags)item.append(node('p','⚠ '+flag,'stock-review-flag'));
       const sentence=slot.sentence_tr||slot.sentence;if(sentence)item.append(node('p',`Cümle: ${sentence}`,'stock-sentence-tr'));
       if(slot.selected_media)item.append(thumbnail(slot.selected_media));
@@ -208,14 +208,16 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     modeText.textContent='Yerel arşiv → ilgili stok video → ilgili stok görsel aranır. CLIP veya yalnız metadata kontrolünün kapsamı her seçimde gösterilir. '+fallbackText();
     recovery.replaceChildren();const diag=state?.missing_media_diagnostics;if(diag?.unresolved_raw_slots){for(const d of diag.reasons||[])recovery.append(node('p',`${d.count} eksik yuva: ${d.message}`));}
     for(const slot of state?.slots||[])if(!slot.selected_media&&slot.status!=='complete'){
-      const detail=node('details','','stock-missing-diagnostic');detail.append(node('summary',`Eksik yuva ${slot.order} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
+      const detail=node('details','','stock-missing-diagnostic');detail.append(node('summary',`Eksik yuva ${slot.display_order||slot.order} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));
       const panel=node('div','','stock-diagnostic-scroll');detail.append(panel);
       panel.append(node('p',`Anlatım: ${slot.sentence||'Cümle kaydı yok'}`),node('p',`Görsel amaç: ${slot.visual_goal||'Belirtilmedi'}`),node('p',`Ana konu: ${slot.visual_subject?.subject||slot.subject_anchor||'Belirlenemedi'}`));
       for(const reason of slot.missing_reason_messages||[])panel.append(node('p',reason));
       const attempts=slot.search_attempts?.length?slot.search_attempts:slot.director?.searches||[];
-      for(const s of attempts)panel.append(node('p',`${s.at||''} · ${s.provider} · ${s.media_type==='image'?'Görsel':'Video'} · “${s.query}” · sayfa ${s.page||1} · sonuç ${s.results??'—'}${s.cached?' · önbellek':''}${s.skipped?' · '+(s.skipped==='budget'?'arama bütçesi':'önceki başarısız deneme'):''}${s.error?' · '+(s.error_text||s.error):''}`,'note'));
-      for(const [reason,count] of Object.entries(slot.director?.rejected||{}))panel.append(node('p',`Eleme: ${reason} · ${count} aday geçişi`));
-      for(const j of slot.director?.judged||[])panel.append(node('p',`${j.media} · CLIP ${j.clip?.score??'yok'}/10 · ${j.approved?'uygun':'elenmiş'} · ${j.reason||'Neden kaydı yok'}`));
+      if(attempts.length>100)panel.append(node('p',`Son 100/${attempts.length} arama kaydı gösteriliyor. Tam kayıt için Tanılama dosyası indir seçeneğini kullanın.`));
+      for(const s of attempts.slice(-100))panel.append(node('p',`${s.at||''} · ${s.provider} · ${s.media_type==='image'?'Görsel':'Video'} · “${s.query}” · sayfa ${s.page||1} · sonuç ${s.results??'—'}${s.cached?' · önbellek':''}${s.skipped?' · '+(s.skipped==='budget'?'arama bütçesi':'önceki başarısız deneme'):''}${s.error?' · '+(s.error_text||s.error):''}`,'note'));
+      if(slot.search_attempts?.length)for(const s of slot.director?.searches||[])if(s.skipped)panel.append(node('p',`${s.provider} · “${s.query||'sağlayıcı durumu'}” · ${{previous_failure:'Önceki başarısız deneme bu geçişte tekrarlanmadı',budget:'Güvenli arama bütçesi; bu alternatif henüz denenmedi',provider_unavailable:'Bu işte önceki sağlayıcı hatası nedeniyle atlandı'}[s.skipped]||'Arama atlandı'}${s.error_text?' · '+s.error_text:''}`,'note'));
+      for(const [reason,count] of Object.entries(slot.director?.rejected||{}))panel.append(node('p',`Eleme: ${{setting_conflict:'Dönem/coğrafya uyumsuz',visual_subject_conflict:'Görsel konu çelişkisi',used_elsewhere:'Daha önce kullanıldı',duration:'Süre yetersiz',resolution:'Çözünürlük yetersiz',orientation:'Çerçeve oranı uyumsuz',ai_rejected_before:'Uygunluk kontrolünde elendi',owner_rejected:'Kullanıcı reddetti',watermark_or_logo:'Logo/filigran',must_not_show:'İstenmeyen içerik',modern_in_history:'Tarihle çelişen modern içerik'}[reason]||'Diğer kayıt ('+reason+')'} · ${count} aday geçişi`));
+      for(const j of slot.director?.judged||[])panel.append(node('p',`${j.media} · ${j.clip?'CLIP '+j.clip.score+'/10':'CLIP uygulanmadı'} · ${j.approved?'uygun':'elenmiş'} · ${j.reason||'Neden kaydı yok'}`));
       panel.append(node('p','Alternatif: kendi medyanızı Arşiv üzerinden atayabilir veya bu bölüm için manuel infografik hazırlayabilirsiniz. Otomatik eklenmez.'));
       button(panel,'Yalnız yeni alternatifleri ara',()=>slotJob(slot,'reselect'),active()||slot.locked);recovery.append(detail);
     }

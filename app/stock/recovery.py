@@ -20,8 +20,11 @@ JOB_DOWNLOADS=40
 ROUNDS=3
 
 LABELS={
+ 'empty_search_results':'Bazı sorgular sağlayıcıdan sonuç döndürmedi.',
+ 'relevance_unverified':'Bazı adayların sahneye uygunluğu doğrulanamadı.',
+ 'duplicate_candidates_rejected':'Daha önce kullanılan adaylar elendi.',
  'sources_only_no_approved_stock':'Uygun stok video veya görsel bulunamadı. Otomatik grafik oluşturulmadı.',
- 'setting_conflict':'Adaylar anlatımın coğrafyası veya dönemiyle çelişiyor.',
+ 'setting_conflict':'Coğrafya veya dönemle çelişen adaylar elendi.',
  'technical_quality_rejected':'İndirilen kaynak teknik kalite kontrolünü geçemedi.',
  'no_provider_results':'Sağlayıcı sonuç döndürmedi.',
  'all_candidates_irrelevant':'Adaylar sahnenin konusuyla uyumlu değil.',

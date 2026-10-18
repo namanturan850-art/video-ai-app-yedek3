@@ -49,8 +49,17 @@ def contradiction(media, profile):
     """Reject explicit opposing subjects, not incomplete or absent provider tags."""
     expected = set(profile.get('anchor_tokens', [])) | set(profile.get('context_tokens', []))
     actual = canonical(media.get('description', ''))
+    if expected & {'lake','current','lightning'} and actual & {'animal','food','car'} and not actual & expected:
+        return 'opposing_visual_subject'
     if 'waterfall' in actual and 'waterfall' not in expected and expected & {'lake', 'current', 'wind'}:
         return 'waterfall_instead_of_water_process'
     if 'urban' in actual and 'urban' not in expected and expected & {'lake', 'current', 'lightning'} and not actual & {'lake', 'current', 'lightning'}:
         return 'city_instead_of_natural_subject'
     return None
+
+
+CONFLICT_MESSAGES = {
+    'waterfall_instead_of_water_process':'Şelale görüntüsü göl üzerindeki rüzgâr/akıntıyı temsil etmiyor.',
+    'city_instead_of_natural_subject':'Şehir manzarası anlatılan doğal olayı temsil etmiyor.',
+    'opposing_visual_subject':'Etiketler anlatılan doğal olay yerine farklı bir görsel konu gösteriyor.',
+}

@@ -96,6 +96,12 @@ def test_32_slot_recovery_preserves_sources_and_manual_document_and_downloads_di
         assert len(downloads)==3
         assert next(s for s in again['slots'] if s['slot_id']==locked['slot_id'])['locked']
         assert any(s['director'].get('history') for s in again['slots'] if not s.get('selected_media'))
+        target=next(s for s in again['slots'] if not s.get('selected_media') and s.get('search_attempts'))
+        retried=complete(client,pid,target['slot_id'])
+        current=next(s for s in retried['slots'] if s['slot_id']==target['slot_id'])
+        assert any(s.get('skipped')=='previous_failure' for s in current['director']['searches'])
+        assert current['director']['history']
+        assert len(downloads)==3
         assert editor.get(pid)==before
         diag=client.get(base+'/diagnostics');assert diag.status_code==200,diag.text
         assert 'attachment' in diag.headers['Content-Disposition'] and diag.headers['Cache-Control']=='no-store'
@@ -112,6 +118,8 @@ def test_failed_attempt_ledger_expires_and_does_not_suppress_errors_or_changed_s
     remember(slot,{'searches':[entry]},'subject',datetime.now(timezone.utc).isoformat())
     assert failed_recently(slot,{**entry,'query':'lake lightning'},'subject')
     assert not failed_recently(slot,entry,'other-subject')
+    slot['search_attempts'][0]['normalization']={'raw_count':0}
+    assert failed_recently(slot,{**entry,'page':2},'subject')
     slot['search_attempts'][0]['at']=(datetime.now(timezone.utc)-timedelta(hours=2)).isoformat()
     assert not failed_recently(slot,entry,'subject')
     remember(slot,{'searches':[{**entry,'error':'rate_limit'}]},'subject',datetime.now(timezone.utc).isoformat())
@@ -126,3 +134,20 @@ def test_empty_search_cache_has_short_ttl(monkeypatch):
     def empty():calls.append(1);return [],{'raw_count':0},False
     session.call('q',empty);clock[0]=299;session.call('q',empty);assert len(calls)==1
     clock[0]=301;session.call('q',empty);assert len(calls)==2
+
+
+def test_job_budget_counts_shared_query_once_across_slots(monkeypatch):
+    from types import SimpleNamespace
+    from app.stock.director_media import MediaDirector
+    import app.stock.search_evidence as evidence
+    monkeypatch.setattr(evidence,'JOB_REQUESTS',1)
+    director=MediaDirector.__new__(MediaDirector);director.language='en';director.pid='p';director.progress={};director.job={}
+    director.providers=lambda scene=None:['wikimedia'];calls=[]
+    def search(*args,**kw):
+        calls.append(args);return [{'media_id':'shared'}],{'raw_count':1},False
+    director.service=SimpleNamespace(_cache_search=search,_checkpoint=lambda *a,**kw:None)
+    log={'searches':[]}
+    assert director.search({'slot_id':'a','order':1},['video'],'lake lightning',log)
+    assert director.search({'slot_id':'b','order':2},['video'],'lake lightning',log)
+    assert not director.search({'slot_id':'b','order':2},['video'],'lake mountain',log)
+    assert len(calls)==1 and log['searches'][-1]['skipped']=='budget'

@@ -2,6 +2,7 @@
 from contextlib import closing
 from copy import deepcopy
 import json
+import re
 
 import pytest
 
@@ -21,7 +22,10 @@ def test_caption_words_times_and_explicit_owner_style_in_every_profile(style):
     plan=smart_edit.build(timeline.build(h,p),h,style,'source')
     output,_,_=ass.create(h['subtitles'],h['scenes'],4,editing_style=style,emphasis=plan['emphasis'])
     captions=lambda text:[line for line in text.splitlines() if line.startswith('Style: Subtitle,') or line.startswith('Dialogue: 0,')]
-    assert [line for line in captions(output) if line.startswith('Dialogue:')]==[line for line in captions(original) if line.startswith('Dialogue:')]
+    # Profile-specific font overrides may change while words, timing and the
+    # other ASS fields remain identical. Keep checking styles separately below.
+    dialogue=lambda text:[re.sub(r'\{\\fs[0-9.]+\}', '', line) for line in captions(text) if line.startswith('Dialogue:')]
+    assert dialogue(output)==dialogue(original)
     if style=='basic':assert captions(output)==captions(original)
     else:
         assert f'Style: Subtitle,Arial,{50 if style=="balanced" else 52},' in output

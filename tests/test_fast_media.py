@@ -1,8 +1,10 @@
 """Gemini never stalls Medyayı Tamamla; media choice does not depend on
 Gemini (English-only queries, local CLIP check); the nine marker
 infographics. Everything offline: Gemini, stock sites and CLIP are faked."""
+from contextlib import closing
 import base64
 import io
+import json
 import time
 
 import httpx
@@ -68,6 +70,10 @@ def make(tmp_path, monkeypatch, text=None, *, key='rome', visual_check=False, pl
     stock = client.app.state.stock
     stock.ai_sleep = lambda seconds, service: None
     pid = client.post('/api/projects', json={'name': data['topic'], 'topic': data['topic'], 'language': language}).json()['id']
+    # Marker/creative-completion acceptance uses the explicitly preserved legacy policy.
+    from app.editor.editorial import Preferences
+    with closing(client.app.state.projects._connection()) as c,c:
+        c.execute('UPDATE editorial_state SET payload_json=? WHERE project_id=?',(json.dumps(Preferences().model_dump()),pid))
     r = client.post(f'/api/projects/{pid}/script/paste', json={'text': text or R.pasted_text(data)})
     assert r.status_code == 201, r.text
     r = client.post(f'/api/projects/{pid}/production/plan', json={'provider': plan, 'cost_confirmed': plan != 'local', 'confirm_replace_plan': False})

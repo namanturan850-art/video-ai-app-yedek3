@@ -23,9 +23,9 @@ GENERIC=set('world people city nature video background view travel beautiful gen
 WORDS={
  'ocean':'ocean sea seas oceans water waves wave coast coastal meer meere ozean wasser wellen kuste mar mares oceano agua olas costa mer eau vagues cote deniz okyanus su dalga dalgalar kiyi',
  'water':'water agua eau wasser su suyun suyu',
- 'lake':'lake lakes lago lagos lac lacs see seen gol golu goller golleri golun',
+ 'lake':'lake lakes lago lagos lac lacs binnensee binnenseen gol golu goller golleri golun',
  'lightning':'lightning thunderbolt thunderbolts rayo rayos relampago relampagos blitz blitze foudre eclair yildirim yildirimlar',
- 'wind':'wind winds breeze viento vientos vent ruzgar ruzgarlari ruzgarlari',
+ 'wind':'wind winds breeze viento vientos vent ruzgar ruzgarlari',
  'current':'current currents corriente corrientes courant stromung akinti akintilar akintilarin',
  'waterfall':'waterfall waterfalls cascade cascada cascadas wasserfall selale selalesi',
  'tropical':'tropical tropikal tropisch',

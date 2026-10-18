@@ -210,7 +210,8 @@ class StockService:
             public.setdefault('warnings',[])
             timing=getattr(self,'timing_handoff',lambda pid:None)(project_id) or {}
             used={s['slot_id']:s['duration'] for s in timing.get('stock_slots',[])}
-            for slot in public['slots']:
+            for index,slot in enumerate(sorted(public['slots'],key=lambda s:s['estimated_start']),1):
+                slot['display_order'] = index
                 repeated=media_duplicate(slot['selected_media'],[x['selected_media'] for x in public['slots'] if x['slot_id']!=slot['slot_id']])
                 slot['repeat_status']=('Komşu çekimin devamı' if slot.get('continuation_of') else 'Aynı klibin farklı bölümü' if repeated and slot.get('segment_start') is not None
                                        else 'Manuel tekrar kullanım' if repeated and slot.get('manual_reuse') else 'Daha önce kullanılmış' if repeated else 'Benzersiz')
@@ -223,8 +224,9 @@ class StockService:
                 # Read-only display refresh: never replace an existing asset or
                 # overwrite archived history merely because the page is opened.
                 if slot['selected_media']:
-                    slot['selected_media'].update(relevance.evaluate(slot['selected_media'],current_profile))
-                    slot.update({k:slot['selected_media'][k] for k in ('relevance_score','relevance_label')})
+                    scored = relevance.evaluate(slot['selected_media'],current_profile)
+                    if not slot['locked']:slot['selected_media'].update(scored)
+                    slot.update({k:scored[k] for k in ('relevance_score','relevance_label')})
                 slot['candidates']=[{**m,**relevance.evaluate(m,current_profile)} for m in slot['candidates']]
                 if slot['selected_media']:
                     try: asset_path(self.projects,project_id,slot['selected_media'])

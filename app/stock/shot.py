@@ -46,6 +46,9 @@ def bind(scene, slot, language=None):
                 explicit_visual = True
                 result['visual_subject'] = {**subject, 'queries': [], 'subject': explicit, 'explicit_visual': True}
                 break
+    if subject['institutions'] and not explicit_visual:
+        location = str(scene.get('location') or '')
+        if location and location.casefold() not in subject['location_text'].casefold():result['location'] = ''
     if subject['queries'] and not explicit_visual:
         query = subject['queries'][0]
         result['alternative_stock_queries'] = subject['queries'][1:]

@@ -154,4 +154,4 @@ Dal: <https://github.com/naman85331/video-ai-app/tree/feature/naman-editor-final
 
 Karşılaştırma / PR oluşturma: <https://github.com/naman85331/video-ai-app/compare/main...feature/naman-editor-final-polish?expand=1>
 
-Hazır PR açıklaması: `docs/EDITOR_FINAL_POLISH_PR.md`. GitHub gönderimi ve draft PR denemesinin gerçek sonucu nihai teslimde belirtilir. Main'e onaysız merge yapılmaz.
+Hazır PR açıklaması: `docs/EDITOR_FINAL_POLISH_PR.md`. Dal GitHub'a başarıyla gönderildi. `gh pr create --draft` isteği `https://api.github.com/graphql` üzerinde **403 Forbidden** döndü; bu nedenle PR oluşturulmadı ve PR numarası yoktur. Yukarıdaki karşılaştırma bağlantısı hazırdır. Windows CI da henüz çalışmış sayılmaz. Main'e merge yapılmadı.

@@ -1159,3 +1159,5 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - Ayrıntılı kapsam ve açık kalanlar: `docs/EDITOR_FINAL_POLISH_DELIVERY.md`.
 - Son ek kanıt: 480 saniyelik sentetik PCM/timeline üzerinde 200 klip ve 503 arşiv kaydı; düşük proxy 29,0 FPS, seçim 59,5 ms, 230. saniyeye UI seek 15,6 ms. Ayrı gerçek örnek kare isteği soğuk 1120,2 ms / önbellekli 774,0 ms. İkinci açılış daha yavaş ölçüldü; iyileşme garantisi verilmez. Tam ölçümler `docs/editor-polish-metrics.json`.
 - 480 saniye fixture güncellemesinden sonra **53 passed** odaklı tekrar (98,42 sn); ek gerçek başlangıç/orta/son FFmpeg kare karşılaştırması **1 passed** (5,17 sn). Bu tekrarlar geniş kapsamla örtüşür.
+
+- Yayın: `feature/naman-editor-final-polish` GitHub'a push edildi. Draft PR denemesi GitHub GraphQL API tarafından 403 Forbidden ile reddedildi; PR oluşturulmadı. Karşılaştırma bağlantısı/hazır açıklama teslim raporundadır. Main değiştirilmedi.

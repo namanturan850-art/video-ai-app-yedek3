@@ -66,3 +66,28 @@ test('saving an audio mix invalidates buffered sound even without a timeline rev
   c.data.audio_settings={narration_volume:.5};p.tick();
   assert.equal(signal.aborted,true);assert.equal(p.active,false);assert.equal(video.buffered.length,0);
 });
+test('underrun waits for actual forward buffer instead of counting already played segments',()=>{
+  const {p,video,c,setTime}=setup();c.data.duration=240;
+  p.positioned=true;p.next=100;p.started=true;p.ratios=[2];
+  video.currentTime=99.9;video.ranges=[[92,100]];video.paused=false;
+  setTime(99.9);p.lastClock=99.9;video.dispatchEvent(new Event('waiting'));
+  p.tick();assert.equal(video.paused,true);assert.equal(p.started,false);
+  video.ranges=[[92,160]];p.next=160;p.tick();assert.equal(video.paused,false);
+});
+test('recovery near the end requires only the remaining duration',()=>{
+  const {p,video,c,setTime}=setup();c.data.duration=240;
+  p.positioned=true;p.next=240;p.ratios=[4];video.currentTime=236;video.ranges=[[228,240]];
+  setTime(236);p.lastClock=236;
+  assert.equal(p.warmup(),4);p.tick();assert.equal(video.paused,false);
+});
+test('a discontinuous buffer is never counted as contiguous runway',()=>{
+  const {p,video}=setup();p.positioned=true;p.next=64;p.ratios=[2];
+  video.ranges=[[0,4],[8,64]];p.tick();assert.equal(video.paused,true);
+});
+test('long sessions retain only the preparation measurements used by the scheduler',async()=>{
+  const {p,c,video}=setup();c.data.duration=20;p.ratios=[1,2,3];
+  c.api=async()=>({status:'ready',start:p.next,duration:4,cache_hit:false});
+  p.append=async meta=>{video.ranges=[[0,meta.start+meta.duration]];};
+  await Object.getPrototypeOf(p).pump.call(p);
+  assert.equal(p.ratios.length,3);assert.ok(p.ratios.every(n=>n<1));
+});

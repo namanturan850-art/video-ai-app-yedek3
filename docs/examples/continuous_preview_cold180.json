@@ -1,0 +1,20 @@
+{
+  "passed": true,
+  "duration": 180,
+  "overlapping_layers": 5,
+  "initial_proxy_seconds": 11.58,
+  "startup_seconds": 82.21,
+  "cold_cache": true,
+  "browser": {
+    "frames": 5400,
+    "seconds": 180.0261,
+    "fps": 29.990095880541766,
+    "maxGap": 0.1,
+    "sizes": [
+      "1280x720"
+    ],
+    "samples": 5243,
+    "maxBoundaryGap": 0.05010000000000582
+  },
+  "errors": []
+}

@@ -83,3 +83,11 @@ ZIP'in **MIT / Copyright (c) 2026 yihui-dev** bildirimi [aynen korundu](ANIMATIO
 - Gerçek Chromium'da JSON dosyası yükleme, yeteneklerin pakette görünmesi, hatalı animasyonu ayırma, JPEG, onayı iptal etme ve yalnız geçerli animasyonu kaydetme kontrol edilir. Yedi iz ve orijinal kaynaklar korunur; harici ağ isteği yapılmaz.
 - Yeni bileşen/katman/kamera/keyframe/veri/altyazı sürümü/kilit/notice kontrolleri ve eski Manuel Plan/geçiş/motion/render regresyonları çalıştırılır. Sonuç: **266 farklı Python testi passed / 3 skipped** (269 toplandı); 68, 197 ve son 43-testlik grupların örtüşmeleri çıkarıldı. Son çizim/validasyon kontrolü 20 passed (örtüşen tekrar). Frontend 70 passed ve üç gerçek Chromium akışı başarılı. Atlananlar 1 yerel Remotion ve 2 ek görsel/yer verisi gerektiren mevcut marker testidir. Ayrıntılar `docs/STATUS.md` içinde.
 - **Canlı Gemini, Windows ve gerçek OpenMontage testi yapılmadı.** Gemini hazırlığı sağlayıcı taklidiyle doğrulandı. Bu bileşenler mevcut yerel Pillow/FFmpeg yolunu kullanır. Kullanıcı verileri veya ücretli API çağrısı kullanılmadı.
+
+## GitHub teslim sonucu
+
+Uygulama, testler, lisans ve 300 referans raporu **`b14e611`** commit'iyle `feature/manual-documentary-animations` dalına gönderildi. Draft PR açıklaması hazırlandı; oluşturma isteği hem GraphQL hem REST üzerinden **Forbidden** ile engellendi. Bu ortamda PR oluşturulamadı; main merge yapılmadı.
+
+[Gönderilen dal farkı / PR oluşturma ekranı](https://github.com/naman85331/video-ai-app/compare/fix/manual-package-safe-import...feature/manual-documentary-animations?expand=1)
+
+PR başlığı: **Manuel Plan: güvenli belgesel animasyon bileşimi ve 300 referans incelemesi**. Taban `fix/manual-package-safe-import`; kaynak `feature/manual-documentary-animations`. Draft inceleme içindir. Kullanım, kapsam ve test sonuçları bu raporda bulunur.

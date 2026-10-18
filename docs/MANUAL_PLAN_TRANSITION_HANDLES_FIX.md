@@ -31,3 +31,7 @@ Sorunları çözmeden diğer geçerli önerileri uygulamak isterseniz ayrıca uy
 - Onaylanan geçişte eksik FFmpeg filtresi ve gerçek crossfade çalıştırma hatası enjekte edilerek sessiz hard cut geri dönüşü engellendiği test edildi.
 - **70 frontend testi** geçti. `scripts/transition_handles_browser_smoke.py`, gerçek Chromium'da mesaj/seçim, onaysız değişmeme, kısmi uygulamayı iptal etme, işareti kaldırılmış önerinin korunması, gerçek önizleme ve yalnız seçili düzenlemelerin uygulanmasını doğruladı; JavaScript hatası ve dış istek yok.
 - Python derleme, JavaScript sözdizimi ve `git diff --check` kontrolleri. Canlı/ücretli API, uzun render, kullanıcı verisi silme veya main merge işlemi yapılmadı. Test projeleri geçici ve sentetiktir.
+
+## GitHub teslimi
+
+Kod commit `4d80ed2` ile [fix/manual-plan-transition-handles](https://github.com/naman85331/video-ai-app/tree/fix/manual-plan-transition-handles) dalına gönderildi. Temel dala draft PR oluşturma hem GraphQL hem REST API üzerinden `403 Forbidden` ile reddedildi; PR oluşturulduğu iddia edilmez. [Değişiklikleri incele / PR aç](https://github.com/naman85331/video-ai-app/compare/fix/manual-plan-interval-import...fix/manual-plan-transition-handles). Main'e merge yapılmadı.

@@ -141,7 +141,7 @@ class Editorial:
     def _import_draft(self,pid,payload,*,persist=True):
         from hashlib import sha256
         plain=deepcopy(payload)
-        sections=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar')
+        sections=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar','animasyon_sahneleri')
         if not isinstance(payload,dict):raise EditorError('invalid_json','JSON kökü nesne olmalıdır.')
         for section in sections:
             if isinstance(plain.get(section),list):
@@ -155,7 +155,7 @@ class Editorial:
         slots=sorted([x for values in view['tracks'].values() for x in values if x.get('slot_id')],key=lambda x:x['start'])
         intervals=SceneIntervals(slots,current,view.get('fps',30))
         for section in sections:
-            for item in payload[section]:
+            for item in payload.get(section,[]):
                 scene=scenes[item['scene_id']];start=item.get('start',scene['start']);end=item.get('end',scene['end'])
                 if type(start) not in (int,float) or type(end) not in (int,float) or not math.isfinite(start) or not math.isfinite(end) or not scene['start']<=start<end<=scene['end']:
                     raise EditorError('invalid_time',f'{section}: zamanlar kendi sahne aralığında olmalıdır.')
@@ -166,6 +166,10 @@ class Editorial:
                 key=item.get('object_id') or source_key
                 if key in seen or source_key in existing:raise EditorError('duplicate','Tekrarlanan JSON nesnesi bulundu. Var olan öğe korunuyor.')
                 seen.add(key)
+                if section=='animasyon_sahneleri':
+                    from app.animation.importing import clips_for
+                    clips+=clips_for(item,scene,start,end,slots,source_key,self.editor,pid)
+                    continue
                 if section=='sahneler':
                     if item.get('composition') not in (None,'wide') or item.get('motion') in ('overlay','emphasis_text') and not item.get('overlay_text'):
                         raise EditorError('unsupported_scene','Bu manuel JSON sahnesinin composition/motion alanı desteklenmiyor. Gerçek X/Y, ölçek veya bağımsız metin katmanı kullanın.')
@@ -200,7 +204,10 @@ class Editorial:
                     if item.get('effect')=='glitch':clip['keyframes']=[{'property':'x','time':0.,'value':0.},{'property':'x','time':duration*.1,'value':8.},{'property':'x','time':duration*.2,'value':-6.},{'property':'x','time':duration*.3,'value':0.}]
                 clips.append(clip)
         adjustments,transitions,interval_changes=intervals.compile()
-        return self.draft(pid,clips,'json',adjustments,transitions,{'transition_issues':intervals.transition_issues,'import_scope':import_scope(view),'changes':checked['changes']+interval_changes,'overlapping_manual_ids':[c['id'] for c in current['clips'] if any(c['start']<x['end'] and c['end']>x['start'] for x in clips)]},persist=persist)
+        details={'transition_issues':intervals.transition_issues,'import_scope':import_scope(view),'changes':checked['changes']+interval_changes,'overlapping_manual_ids':[c['id'] for c in current['clips'] if any(c['start']<x['end'] and c['end']>x['start'] for x in clips)]}
+        if payload.get('animasyon_sahneleri'):
+            details['animation_subtitle_version']=view.get('subtitle_version_id')
+        return self.draft(pid,clips,'json',adjustments,transitions,details,persist=persist)
 
     def drafts(self,pid,limit=100):
         state=self.advanced.get(pid)
@@ -221,7 +228,8 @@ class Editorial:
                 else:
                     d['applied_ids']+=value.get('clip_ids',[]);d['expected_revision']=value['revision']
         scope=import_scope(self.editor.view(pid)) if any(d.get('import_scope') for d in drafts.values()) else None
-        for d in drafts.values():d['stale']=d['expected_revision']!=state['revision'] or bool(d.get('import_scope') and d['import_scope']!=scope)
+        subtitle_version=self.editor.view(pid).get('subtitle_version_id') if any('animation_subtitle_version' in d for d in drafts.values()) else None
+        for d in drafts.values():d['stale']=('animation_subtitle_version' in d and d['animation_subtitle_version']!=subtitle_version) or d['expected_revision']!=state['revision'] or bool(d.get('import_scope') and d['import_scope']!=scope)
         values=list(reversed(list(drafts.values())))
         return {'drafts':values if limit is None else values[:limit]}
 
@@ -318,6 +326,8 @@ class Editorial:
             state=self.advanced.get(pid)
             draft=next((d for d in self.drafts(pid,limit=None)['drafts'] if d['id']==did),None)
             expected=(draft or {}).get('expected_revision')
+            if draft and 'animation_subtitle_version' in draft and draft['animation_subtitle_version']!=self.editor.view(pid).get('subtitle_version_id'):
+                raise EditorError('stale_draft','Animasyonun altyazı cümleleri değişmiş; güncel paketle yeni taslak oluşturun.',409)
             if draft and draft.get('import_scope') and draft['import_scope']!=import_scope(self.editor.view(pid)):
                 raise EditorError('stale_draft','Taslak hazırlanırken görüntü yuvaları, kaynaklar veya kilitler değişti. Güncel paketle yeni taslak oluşturun.',409)
             if not draft or expected!=state['revision']:raise EditorError('stale_draft','Taslak başka düzenlemelerden önce oluşturulmuş. Güncel kurgu üzerinden yeni taslak oluşturun.',409)

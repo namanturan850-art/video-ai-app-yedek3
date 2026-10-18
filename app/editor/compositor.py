@@ -83,8 +83,15 @@ def motion_asset(clip,folder,kit=None,cancelled=None,language='de',sample_time=N
     if clip.get('motion_color'):style['palette']['accent']=clip['motion_color']
     spec={**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)}
     from app.motion.places import offline
-    with offline():
-        path,_,_=render_clip(folder,spec,style,clip.get('animation_duration') or clip['end']-clip['start'],0,language=language,prefer_openmontage=False,cancelled=cancelled,sample_time=(sample_time+clip.get('animation_offset',0) if sample_time is not None else None),element_edits=clip.get('motion_elements'))
+    from app.motion.control import MotionCancelled
+    try:
+        with offline():
+            path,_,_=render_clip(folder,spec,style,clip.get('animation_duration') or clip['end']-clip['start'],0,language=language,prefer_openmontage=False,cancelled=cancelled,sample_time=(sample_time+clip.get('animation_offset',0) if sample_time is not None else None),element_edits=clip.get('motion_elements'))
+    except MotionCancelled:raise
+    except (RuntimeError,OSError,ValueError):
+        if spec['template']=='documentary':
+            raise RenderError('animation_render_failed','Animasyon yerel olarak çizilemedi. FFmpeg kurulumunu ve animasyon verisini kontrol edin; şeffaf sahnelerde qtrle desteği gerekir.') from None
+        raise
     return {'path':path,'type':'video','has_audio':False,'sampled':sample_time is not None}
 
 

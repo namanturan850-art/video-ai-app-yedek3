@@ -16,3 +16,13 @@ Bu sayfa, uygulamanın kullandığı dış bileşenlerin lisanslarını sade dil
 | **Python paketleri** (FastAPI, Pillow, httpx …) | `.venv` | MIT / BSD / HPND vb. açık kaynak | `requirements.txt` içindeki sürümler. |
 
 Gemini, Claude, AI33 gibi bulut hizmetlerinin kullanım koşulları ilgili hesabınızın sözleşmesine tabidir; uygulama bu hizmetlerin içeriğini değiştirmez.
+
+## Belgesel animasyon referansları (18 Ekim 2026)
+
+Kullanıcının `NAMAN_Animasyon_300_CODEX_SECKISI.zip` dosyası, yihui-dev'in
+`awesome-opus5-5-videos` kaynağı için MIT bildirimi içerir. Bildirim
+[ANIMATION_REFERENCE_MIT_LICENSE.txt](ANIMATION_REFERENCE_MIT_LICENSE.txt)
+içinde korundu. 300 prompt/katalog metni teknik referans olarak incelendi;
+çalıştırılabilir yabancı kod veya bağlantılı video/müzik/3D varlıklar kopyalanmadı.
+Dış bağlantılardaki varlıkların hakları bu MIT bildirimiyle doğrulanmış sayılmaz.
+Uygulama mevcut Pillow/FFmpeg ve OFL fontlarını kullanır; yeni büyük bağımlılık yok.

@@ -613,7 +613,7 @@ class EditorService:
                 'required_sections':['sahneler','infografikler','harita_sahneleri','vurgular','katmanlar'],
                 'narration':[{'scene_id':b['id'],'text':b['narration'],'locked':bool(b.get('locked'))} for b in plan['blocks']],
                 'output_template':{'schema':'naman.manual-plan.v1','base':{'plan_id':plan['plan_id'],'revision':plan['revision']},
-                                   'sahneler':[],'infografikler':[],'harita_sahneleri':[],'vurgular':[],'katmanlar':[]}}
+                                   'sahneler':[],'infografikler':[],'harita_sahneleri':[],'vurgular':[],'katmanlar':[],'animasyon_sahneleri':[]}}
 
         from app.editor.advanced import read_document
         from app.editor.editorial import read
@@ -689,6 +689,14 @@ class EditorService:
             'infografikler':{'template':'stat','data':{'value':'ANLATIMDAKİ SAYI','label':'ANLATIMDAKİ ETİKET'}},
             'harita_sahneleri':{'template':'map','data':{'place':'ANLATIMDAKİ YER','label':'İSTEĞE BAĞLI ETİKET','lat':'GERÇEK ENLEM SAYISI','lon':'GERÇEK BOYLAM SAYISI'}},
             'vurgular':{'text':'ANLATIMDAKİ KISA İFADE','effect':'pulse'}}
+        from app.animation.capabilities import capabilities
+        package['animation_capabilities']=capabilities()
+        package['output_contract']['animasyon_sahneleri']=package['animation_capabilities']['record_contract']
+        package['instructions'] += [
+            'animasyon_sahneleri isteğe bağlıdır; yalnız anlatımı açıklamak için gerekli yerlerde kullanın. Bileşenleri nesne/katman/keyframe ile birleştirin. Serbest kod, URL veya dosya yolu göndermeyin.',
+            'Animasyon başlangıç/bitişi ana sahne saatidir; nesne/kamera zamanları sahne içi saniyelerdir. sentence_indices, sentence_index listesindeki sıfır tabanlı cümle kimlikleridir. Seslendirme ve altyazı saatlerini değiştirmeyin.',
+            'Bilimsel şemalar schematic; sayısal veri yalnız anlatımda doğrulanan narration temeliyle, kurmaca örnekler açık demo temeliyle kullanılabilir. Demo/şematik açıklaması otomatik ve kalıcıdır.',
+            'Veri veya uygun arşiv kaynağı yoksa uydurmayın. Mevcut arka planı korumak için background=null kullanın. Yeni kaynak önerilecekse yalnız gerçek arşiv kimliğiyle background_media verin.']
         return package
 
     def prepare_task_package(self,project_id,payload):
@@ -728,7 +736,7 @@ class EditorService:
         plan=self._active(project_id); errors=[]
         required={'schema','base','sahneler','infografikler','harita_sahneleri','vurgular','katmanlar'}
         if not isinstance(payload,dict): errors.append('JSON kökü bir nesne olmalıdır.'); payload={}
-        missing=required-set(payload); extra=set(payload)-required
+        missing=required-set(payload); extra=set(payload)-required-{'animasyon_sahneleri'}
         if missing: errors.append('Eksik bölümler: '+', '.join(sorted(missing)))
         if extra: errors.append('Bilinmeyen bölümler: '+', '.join(sorted(extra)))
         if payload.get('schema')!='naman.manual-plan.v1': errors.append('schema değeri naman.manual-plan.v1 olmalıdır.')
@@ -776,6 +784,13 @@ class EditorService:
                         errors.append(f'{section}[{index}] text sahne anlatımında aynen geçmelidir.')
                     if item.get('effect','pulse') not in ('pulse','glitch','none'):
                         errors.append(f'{section}[{index}] effect geçersiz.')
+        animations=payload.get('animasyon_sahneleri',[])
+        if not isinstance(animations,list):errors.append('animasyon_sahneleri bir liste olmalıdır.')
+        else:
+            from app.animation.importing import validate_item
+            for index,item in enumerate(animations):
+                try:validate_item(self,project_id,item,known)
+                except (ValueError,TypeError) as error:errors.append(f'animasyon_sahneleri[{index}]: {error}')
         diff=self._diff(plan,payload) if not errors else []
         correction='\n'.join(f'- {e}' for e in errors)
         return {'valid':not errors,'errors':errors,'correction_message':('JSON düzeltmeleri:\n'+correction) if errors else '',
@@ -783,7 +798,7 @@ class EditorService:
 
     def _diff(self, plan, payload):
         changes=[]
-        for section,field in (('sahneler','scene'),('infografikler','infographic'),('harita_sahneleri','map'),('vurgular','emphasis'),('katmanlar','layer')):
+        for section,field in (('sahneler','scene'),('infografikler','infographic'),('harita_sahneleri','map'),('vurgular','emphasis'),('katmanlar','layer'),('animasyon_sahneleri','animation')):
             for item in payload.get(section,[]):
                 if len(item)>1:
                     block=next(b for b in plan['blocks'] if b['id']==item['scene_id'])
@@ -795,6 +810,8 @@ class EditorService:
     def import_plan(self, project_id, payload):
         from app.editor.editorial import manual,Editorial
         if manual(self.projects,project_id):return {'draft':Editorial(self).import_draft(project_id,payload)}
+        if payload.get('animasyon_sahneleri'):
+            raise EditorError('draft_required','Animasyonlar yalnız Manuel Plan taslağı ve açık onayla uygulanabilir.')
         check=self.validate_import(project_id,payload)
         if not check['valid']: raise EditorError('invalid_import','JSON doğrulanamadı; hiçbir değişiklik kaydedilmedi.',422,check['errors'])
         plan=deepcopy(self._active(project_id)); by_id={b['id']:b for b in plan['blocks']}

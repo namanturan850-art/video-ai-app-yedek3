@@ -2,6 +2,7 @@
 from contextlib import closing
 from copy import deepcopy
 import json
+import math
 from uuid import uuid4
 
 from pydantic import Field
@@ -9,6 +10,7 @@ from typing import Literal
 from app.editor.advanced import Strict, AdvancedEditor
 from app.editor.models import EditorError
 from app.projects import now
+from app.editor.plan_intervals import SceneIntervals, upsert_slots, import_scope
 
 STATEMENTS=(
     '''CREATE TABLE IF NOT EXISTS editorial_state(project_id TEXT PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
@@ -75,19 +77,21 @@ class Editorial:
                 c.execute('INSERT INTO editorial_events(project_id,plan_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)',(pid,old['plan_id'],kind,json.dumps({'before':old['preferences'],'after':prefs}),now()))
             return self.get(pid)
 
-    def draft(self,pid,clips,source='automatic',adjustments=None,transitions=None,details=None):
+    def draft(self,pid,clips,source='automatic',adjustments=None,transitions=None,details=None,*,persist=True):
         state=self.advanced.get(pid);doc=deepcopy(state['document'])
         for i,clip in enumerate(clips):clip.setdefault('order',len(doc['clips'])+i)
         doc['clips']+=clips
-        doc['adjustments']+=adjustments or [];doc['transitions']+=transitions or []
+        doc['adjustments']=upsert_slots(doc['adjustments'],adjustments or []) if source=='json' else doc['adjustments']+(adjustments or [])
+        doc['transitions']+=transitions or []
         # Validate without committing: no plan, source, or user edit changes here.
         normalized=self.advanced.validate(pid,doc,state['document'])
         draft={'id':uuid4().hex,'source':source,'base_revision':state['revision'],'clips':normalized['clips'][len(state['document']['clips']):],
-               'adjustments':normalized['adjustments'][len(state['document']['adjustments']):],
+               'adjustments':[x for x in normalized['adjustments'] if x['slot_id'] in {a['slot_id'] for a in (adjustments or [])}],
                'transitions':normalized['transitions'][len(state['document']['transitions']):],
                'plan_id':state['plan_id'],'created_at':now(),**(details or {})}
-        with closing(self.projects._connection()) as c,c:
-            c.execute('INSERT INTO editorial_events(project_id,plan_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)',(pid,state['plan_id'],'draft',json.dumps(draft),now()))
+        if persist:
+            with closing(self.projects._connection()) as c,c:
+                c.execute('INSERT INTO editorial_events(project_id,plan_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)',(pid,state['plan_id'],'draft',json.dumps(draft),now()))
         return draft
 
     def automatic(self,pid):
@@ -122,6 +126,19 @@ class Editorial:
         return self.draft(pid,clips,transitions=transitions,details={'changes':[f'{len(clips)} bağımsız katman, {len(transitions)} geçiş önerisi. Yerel deterministik analiz; yeni olgu veya medya üretilmedi.',*warnings]})
 
     def import_draft(self,pid,payload):
+        with self.projects.lock:
+            return self._import_draft(pid,payload)
+
+    def validate_response(self,pid,payload):
+        with self.projects.lock:
+            try:
+                draft=self._import_draft(pid,payload,persist=False)
+                plan=self.editor._active(pid)
+                return {'valid':True,'errors':[],'correction_message':'','changes':draft['changes'],'base_plan_id':plan['plan_id'],'base_revision':plan.get('revision')}
+            except EditorError as error:
+                return {'valid':False,'errors':[str(error)],'correction_message':str(error),'changes':[]}
+
+    def _import_draft(self,pid,payload,*,persist=True):
         from hashlib import sha256
         plain=deepcopy(payload)
         sections=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar')
@@ -136,10 +153,11 @@ class Editorial:
         view=self.editor.view(pid);scenes={s['scene_id']:s for s in view['scenes']};clips=[];adjustments=[];transitions=[];seen=set()
         current=self.advanced.get(pid)['document'];existing={c.get('source_key') for c in current['clips'] if c.get('source_key')}
         slots=sorted([x for values in view['tracks'].values() for x in values if x.get('slot_id')],key=lambda x:x['start'])
+        intervals=SceneIntervals(slots,current,view.get('fps',30))
         for section in sections:
             for item in payload[section]:
                 scene=scenes[item['scene_id']];start=item.get('start',scene['start']);end=item.get('end',scene['end'])
-                if type(start) not in (int,float) or type(end) not in (int,float) or not scene['start']<=start<end<=scene['end']:
+                if type(start) not in (int,float) or type(end) not in (int,float) or not math.isfinite(start) or not math.isfinite(end) or not scene['start']<=start<end<=scene['end']:
                     raise EditorError('invalid_time',f'{section}: zamanlar kendi sahne aralığında olmalıdır.')
                 if 'object_id' in item and (not isinstance(item['object_id'],str) or not 1<=len(item['object_id'])<=160):
                     raise EditorError('invalid_object_id',f'{section}: object_id 1–160 karakterlik metin olmalıdır.')
@@ -153,17 +171,7 @@ class Editorial:
                         raise EditorError('unsupported_scene','Bu manuel JSON sahnesinin composition/motion alanı desteklenmiyor. Gerçek X/Y, ölçek veya bağımsız metin katmanı kullanın.')
                     text=item.get('overlay_text')
                     if text:clips.append({'id':uuid4().hex,'kind':'text','track':'layers','start':start,'end':end,'text':text,'origin':'json','source_key':source_key})
-                    for slot in (s for s in slots if s['scene_id']==scene['scene_id']):
-                        motion=item.get('motion','none');duration=slot['end']-slot['start']
-                        if motion in ('pan','slow_zoom','ken_burns'):
-                            prop='x' if motion=='pan' else 'scale';a,z=(-100.,100.) if prop=='x' else (1.,1.12)
-                            adjustments.append({'slot_id':slot['slot_id'],'keyframes':[{'property':prop,'time':0.,'value':a},{'property':prop,'time':duration,'value':z}]})
-                    transition=item.get('transition','none')
-                    last=next((s for s in slots if s['scene_id']==scene['scene_id'] and abs(s['end']-scene['end'])<.04),None)
-                    nxt=next((s for s in slots if last and abs(s['start']-last['end'])<.04),None)
-                    if last and nxt and transition!='none':
-                        length=min(.2,(last['end']-last['start'])/4,(nxt['end']-nxt['start'])/4)
-                        transitions.append({'slot_id':last['slot_id'],'next_slot_id':nxt['slot_id'],'kind':{'hard_cut':'cut','crossfade':'cross_dissolve','fade':'dip_black'}[transition],'duration':length})
+                    intervals.add(scene,item,start,end)
                     continue
                 track={'infografikler':'infographics','harita_sahneleri':'maps','vurgular':'emphasis','katmanlar':'layers'}[section]
                 clip={'id':uuid4().hex,'kind':'motion' if section in ('infografikler','harita_sahneleri') else 'text',
@@ -177,7 +185,8 @@ class Editorial:
                     if item.get('effect')=='pulse':clip['keyframes']=[{'property':'scale','time':0.,'value':1.},{'property':'scale','time':duration*.2,'value':1.08},{'property':'scale','time':duration*.5,'value':1.}]
                     if item.get('effect')=='glitch':clip['keyframes']=[{'property':'x','time':0.,'value':0.},{'property':'x','time':duration*.1,'value':8.},{'property':'x','time':duration*.2,'value':-6.},{'property':'x','time':duration*.3,'value':0.}]
                 clips.append(clip)
-        return self.draft(pid,clips,'json',adjustments,transitions,{'changes':checked['changes'],'overlapping_manual_ids':[c['id'] for c in current['clips'] if any(c['start']<x['end'] and c['end']>x['start'] for x in clips)]})
+        adjustments,transitions,interval_changes=intervals.compile()
+        return self.draft(pid,clips,'json',adjustments,transitions,{'import_scope':import_scope(view),'changes':checked['changes']+interval_changes,'overlapping_manual_ids':[c['id'] for c in current['clips'] if any(c['start']<x['end'] and c['end']>x['start'] for x in clips)]},persist=persist)
 
     def drafts(self,pid):
         state=self.advanced.get(pid)
@@ -189,7 +198,8 @@ class Editorial:
             if row['kind']=='draft':drafts[value['id']]={**value,'applied_ids':[],'expected_revision':value['base_revision']}
             elif value['draft_id'] in drafts:
                 d=drafts[value['draft_id']];d['applied_ids']+=value.get('clip_ids',[]);d['expected_revision']=value['revision']
-        for d in drafts.values():d['stale']=d['expected_revision']!=state['revision']
+        scope=import_scope(self.editor.view(pid)) if any(d.get('import_scope') for d in drafts.values()) else None
+        for d in drafts.values():d['stale']=d['expected_revision']!=state['revision'] or bool(d.get('import_scope') and d['import_scope']!=scope)
         return {'drafts':list(reversed(list(drafts.values())))[:100]}
 
     def subtitles_edit(self,pid,payload):
@@ -223,7 +233,7 @@ class Editorial:
             if not draft or draft['stale']:raise EditorError('stale_draft','Güncel bir taslak seçin; eski taslak uygulanmaz.',409)
             state=self.advanced.get(pid);doc=deepcopy(state['document']);used=set(draft['applied_ids'])
             doc['clips'] += [x for x in draft['clips'] if x['id'] not in used]
-            doc['adjustments'] += [x for x in draft.get('adjustments',[]) if 'adjustment:'+x['slot_id'] not in used]
+            doc['adjustments']=upsert_slots(doc['adjustments'],[x for x in draft.get('adjustments',[]) if 'adjustment:'+x['slot_id'] not in used])
             doc['transitions'] += [x for x in draft.get('transitions',[]) if 'transition:'+x['slot_id'] not in used]
             doc=self.advanced.validate(pid,doc,state['document'])
         # The shared compositor draws a sampled frame; no project save or full render.
@@ -267,12 +277,14 @@ class Editorial:
             draft=next((json.loads(r[0]) for r in rows if json.loads(r[0])['id']==did),None)
             batches=[json.loads(r[0]) for r in applied if json.loads(r[0])['draft_id']==did]
             expected=batches[-1]['revision'] if batches else (draft or {}).get('base_revision')
+            if draft and draft.get('import_scope') and draft['import_scope']!=import_scope(self.editor.view(pid)):
+                raise EditorError('stale_draft','Taslak hazırlanırken görüntü yuvaları, kaynaklar veya kilitler değişti. Güncel paketle yeni taslak oluşturun.',409)
             if not draft or expected!=state['revision']:raise EditorError('stale_draft','Taslak başka düzenlemelerden önce oluşturulmuş. Güncel kurgu üzerinden yeni taslak oluşturun.',409)
             used={cid for batch in batches for cid in batch.get('clip_ids',[])}
             selected=set(payload['clip_ids']);available={x['id'] for x in draft['clips']}|{'adjustment:'+x['slot_id'] for x in draft.get('adjustments',[])}|{'transition:'+x['slot_id'] for x in draft.get('transitions',[])}
             if not selected or not selected<=available or selected&used:raise EditorError('invalid_draft','Henüz uygulanmamış geçerli taslak öğelerini seçin.')
             doc=deepcopy(state['document']);doc['clips'] += [x for x in draft['clips'] if x['id'] in selected]
-            doc['adjustments'] += [x for x in draft.get('adjustments',[]) if 'adjustment:'+x['slot_id'] in selected]
+            doc['adjustments']=upsert_slots(doc['adjustments'],[x for x in draft.get('adjustments',[]) if 'adjustment:'+x['slot_id'] in selected])
             doc['transitions'] += [x for x in draft.get('transitions',[]) if 'transition:'+x['slot_id'] in selected]
             prefs_before=self.get(pid)['preferences']
             result=self.advanced.save(pid,{**state,'document':doc})

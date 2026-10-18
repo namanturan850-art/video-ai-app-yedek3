@@ -638,7 +638,14 @@ class EditorService:
             'sahneler':{'fields':['scene_id','start','end','object_id','transition','motion','composition','overlay_text'],
                 'transition':['none','hard_cut','crossfade','fade'],
                 'motion':['none','slow_zoom','pan','ken_burns'],
-                'composition':['wide']},
+                'composition':['wide'],
+                'interval_rules':[
+                    'Aynı scene_id farklı, çakışmayan start/end aralıklarında tekrarlanabilir. object_id her öneride benzersiz olmalıdır.',
+                    'Kamera hareketi yalnız önerinin aralığıyla kesişen görüntü yuvalarına uygulanır; aynı yuvadaki aralıklar tek adjustment içinde birleşir.',
+                    'Bir aralık en az bir karedir. Çakışan kamera önerileri ve mevcut manuel kamera ayarının üzerine yazma reddedilir.',
+                    'transition, önerinin end saniyesindeki mevcut bitişik görüntü yuvası sınırına uygulanır; sahne sonuna taşınmaz. Son video bitişinde veya yuva içinde geçiş/kesim desteklenmez; önce Kurgu içinde klibi bölün.',
+                    'Mevcut geçişle çakışan öneri reddedilir; aynı kesimde aynı geçiş tek kayda birleşir.',
+                    'none işlem eklemez. composition=wide kaynak kadrajını değiştirmez. Öneriler temel medya, seslendirme veya altyazıyı değiştirmez.']},
             'infografikler':{'fields':['scene_id','start','end','object_id','template','data','emphasis'],
                 'templates':sorted(INFOGRAPHIC_TEMPLATES),'rule':'Yalnız anlatımdaki doğrulanmış sayı/tarih/karşılaştırmalar.'},
             'harita_sahneleri':{'fields':['scene_id','start','end','object_id','template','data','emphasis'],
@@ -656,6 +663,8 @@ class EditorService:
         package['stock']={'plan_id':stock.get('plan_id'),'revision':stock.get('revision'),
             'slots':[{k:slot.get(k) for k in ('slot_id','scene_id','estimated_start','estimated_end','locked','status')} |
                      {'media':{k:(slot.get('selected_media') or {}).get(k) for k in ('provider','media_id','sha256')}} for slot in stock.get('slots',[])]}
+        package['editing_slots']=[{k:item.get(k) for k in ('slot_id','scene_id','start','end','locked','intentional_empty')}
+            for track in self.view(project_id)['tracks'].values() for item in track if item.get('slot_id')]
         return package
 
     def prepare_task_package(self,project_id,payload):

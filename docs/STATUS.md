@@ -1213,3 +1213,12 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - Gerçek `NAMAN_2_0_Kurgu_Plani(1).json` eklerde yok; birebir testi henüz yapılamadı. 16 kayıt / 6 sahne sentetik ve anonim regresyonu eklendi. Yuva içindeki yeni kesim sessizce kaydırılmaz/atlanmaz; mevcut motor sınırı açıklanır.
 - Ayrıntılar: [Manuel Plan aralık düzeltmesi](MANUAL_PLAN_INTERVAL_IMPORT_FIX.md). Main merge ve kullanıcı verisi silme işlemi yapılmadı.
 - Son güvenlik kontrolünden sonra manuel kurgu/paket grubu tekrar **32 passed**. Kod commit `983041c` ile GitHub'a gönderildi. Draft PR oluşturma GraphQL ve REST üzerinden `403 Forbidden` ile reddedildi; PR oluşturulduğu iddia edilmez. [Değişiklikleri incele / PR aç](https://github.com/naman85331/video-ai-app/compare/main...fix/manual-plan-interval-import). Gerçek JSON dosyası regresyonu, dosya eklenene kadar açık kalır.
+
+## 2026-10-18 — Manuel Plan kısa video geçiş kuyruğu düzeltmesi
+
+- `fix/manual-plan-interval-import` üzerinden `fix/manual-plan-transition-handles` dalı. Kaynak süresi, giriş noktası, hız ve 30 fps native kare saatiyle ortak geçiş kapasitesi hesabı.
+- Kısa kaynak yüzünden AI planı bütünüyle reddedilmiyor: sorunlu geçiş asıl isteğiyle bekleyen taslak sorunu, geçerli öneriler korunuyor. Kullanıcı uygun kısa süre / siyaha geçiş / hard cut seçip yalnız o düzeltmeyi onaylayabiliyor; ayrıca timeline uygulama onayı gerekiyor. Sessiz değiştirme yok.
+- Karar taslak geçmişine kaydoluyor; kısmi onay, yeniden açma, stale kaynak/kilit ve undo korunuyor. Render'da onaylanmış geçiş başarısızsa otomatik hard cut kullanılmıyor. Başka menü/özellik eklenmedi; yalnız mevcut taslakta gerekli düzeltme alanı var.
+- Test grupları: 62 mevcut test geçti; 92 testlik son regresyon grubu geçti; ayrıca eklenen iki test geçti. Toplam 156 farklı test passed, collection ile doğrulandı. 70 frontend testi ve gerçek Chromium geçiş düzeltmesi kontrolü geçti.
+- Ayrıntılar: [Kısa kaynak geçiş teslim raporu](MANUAL_PLAN_TRANSITION_HANDLES_FIX.md). Üç düzeltme seçeneği de gerçek HTTP/SQLite/JPEG/4 saniyelik FFmpeg zincirinde test edildi. Ücretli API/kullanıcı verisi işlemi/main merge yok.
+- GitHub teslimi: uygulama commit `4d80ed2`, `fix/manual-plan-transition-handles` dalına gönderildi. `fix/manual-plan-interval-import` tabanına draft PR oluşturma GraphQL ve REST üzerinden `403 Forbidden` ile reddedildi. [Dal farkını incele / PR aç](https://github.com/naman85331/video-ai-app/compare/fix/manual-plan-interval-import...fix/manual-plan-transition-handles). Main merge yapılmadı.

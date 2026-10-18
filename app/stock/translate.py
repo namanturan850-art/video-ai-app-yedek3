@@ -46,7 +46,7 @@ def reason_text(category):
     return REASONS.get(category) or f'Gemini çeviri isteği başarısız oldu ({category}).'
 
 
-def turkish(service, pid, language, texts, report=None):
+def turkish(service, pid, language, texts, report=None, *, allow_request=True):
     """{text: Turkish text} for the given texts; missing ones are left out.
     report (a dict) gets 'reason' (Turkish) when a translation could not be made."""
     texts = [t for t in dict.fromkeys(' '.join(str(x or '').split()) for x in texts) if t]
@@ -57,7 +57,7 @@ def turkish(service, pid, language, texts, report=None):
     except (OSError, ValueError): saved = {}
     if not isinstance(saved, dict): saved = {}
     missing = [t for t in texts if not isinstance(saved.get(_key(t)), str)]
-    if missing:
+    if missing and allow_request:
         fresh = _ask(service, language, missing[:150], report)
         if fresh:
             saved.update({_key(t): v for t, v in fresh.items()})
@@ -67,6 +67,8 @@ def turkish(service, pid, language, texts, report=None):
                     temporary.write_text(json.dumps(saved, ensure_ascii=False), encoding='utf-8'); temporary.replace(path)
             except OSError:
                 pass
+    if missing and not allow_request and report is not None:
+        report['reason'] = 'Yalnız kaynak hazırlama: otomatik bulut çevirisi yapılmadı. İsterseniz Çeviriyi yeniden dene düğmesini kullanın.'
     return {t: saved[_key(t)] for t in texts if isinstance(saved.get(_key(t)), str)}
 
 

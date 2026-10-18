@@ -1,0 +1,20 @@
+{
+  "download": {
+    "slots": 32,
+    "filename": "NAMAN-medya-tani-2026-10-18.json",
+    "schema": 2
+  },
+  "clipboard": "native clipboard readback passed",
+  "clipboard_fallback": "selectable JSON text passed",
+  "http_error": "visible Turkish failure passed",
+  "picker_cancel": "honest cancellation passed",
+  "picker_adapter": "save/write/close and visible filename passed; native picker not automated",
+  "same_origin": "foreign mutation rejected 403",
+  "missing_panels": 29,
+  "selected_images": 3,
+  "generated_motion": 0,
+  "js_errors": [],
+  "provider_calls": 23,
+  "downloads": 3,
+  "windows_webview2": "not available; smoke steps documented"
+}

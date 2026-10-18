@@ -126,6 +126,8 @@ def test_failed_attempt_ledger_expires_and_does_not_suppress_errors_or_changed_s
     assert not failed_recently(slot,entry,'subject')
     assert reasons({'searches':[{'error':'rate_limit'}]})==['provider_rate_limited']
     assert reasons({})==['sources_only_no_approved_stock']
+    assert reasons({'searches':[{'skipped':'previous_failure'}]})==['previous_search_failures_skipped']
+    assert reasons({'rejected':{'duration':1}})==['candidate_duration_too_short']
 
 
 def test_empty_search_cache_has_short_ttl(monkeypatch):
@@ -151,3 +153,18 @@ def test_job_budget_counts_shared_query_once_across_slots(monkeypatch):
     assert director.search({'slot_id':'b','order':2},['video'],'lake lightning',log)
     assert not director.search({'slot_id':'b','order':2},['video'],'lake mountain',log)
     assert len(calls)==1 and log['searches'][-1]['skipped']=='budget'
+
+
+def test_source_preparation_never_calls_configured_paid_translation(tmp_path):
+    with TestClient(create_app(tmp_path/'data'),headers=HEADERS) as client:
+        st,_,_=setup_recovery(client.app,count=1)
+        response=client.put('/api/settings/claude',json={'api_key':'sk-ant-synthetic-no-paid-translation','default_engine':True},headers={'X-AI-Video-Studio':'settings'})
+        assert response.status_code==200,response.text
+        paid=[]
+        def forbidden():
+            paid.append('called');raise AssertionError('No cloud request during manual media preparation')
+        client.app.state.stock.ai_factory=forbidden
+        result=complete(client,st['pid'])
+        assert not paid
+        assert 'otomatik bulut çevirisi yapılmadı' in result['translation_note']
+        assert result['slots'][0]['sentence']=='Lake lightning storm.'

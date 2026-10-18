@@ -17,7 +17,7 @@ import shutil
 from uuid import uuid4
 
 LOG = logging.getLogger('uvicorn.error.stock')
-MISSING = 'Daha doğru seçim için INSTALL_OPENMONTAGE_SEMANTIC.bat ile yerel modeli kurun (yerel görüntü modeli CLIP kurulu değil; medya etiket/kelime eşleşmesiyle seçildi).'
+MISSING = 'Daha doğru seçim için INSTALL_OPENMONTAGE_SEMANTIC.bat ile yerel modeli kurun (yerel görüntü modeli CLIP kurulu değil; seçimin AI veya metadata kontrolü yuvada ayrıca gösterilir).'
 BATCH = 24  # candidates per model load
 
 

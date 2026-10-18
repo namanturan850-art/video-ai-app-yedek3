@@ -51,7 +51,7 @@ def clock():  # replaced in tests
     import time
     return time.monotonic()
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
-          'sources_only':'Kaynak hazırlanıyor — yaratıcı montaj yapılmaz',
+          'sources_only':'Kaynak hazırlama',
           'local_archive': '1 · Yerel medya arşivi',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
@@ -255,9 +255,9 @@ class MediaDirector:
         self.clip = ClipCheck(self.service)
         self.progress['clip_ready'] = self.clip.ready()
         if not self.progress['clip_ready']: self.progress['clip_warning'] = MISSING
+        else:self.progress.pop('clip_warning', None)
         if getattr(self,'sources_only',False):
             self.local=True;self.progress['local_reason']='Yalnız kaynak hazırlama: ücretli AI ve yaratıcı montaj kapalı.';return
-        else: self.progress.pop('clip_warning', None)
         engine = settings.ai_engine()
         self.engine = engine or 'gemini'
         self.label = 'Claude' if engine == 'claude' else 'Gemini'
@@ -662,7 +662,7 @@ class MediaDirector:
         scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid), penalties(self.where(scene), descriptor))
         self.progress['clip_metrics'] = dict(getattr(self.clip, 'metrics', {}))
         if not scores and self.clip.broken:
-            self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; bu işte medya etiket/kelime eşleşmesiyle seçildi.'
+            self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; seçimin diğer kontrollerini ve gerekçesini yuvada inceleyin.'
         decided = {}
         for media in pool:
             result = scores.get(key_text(media))
@@ -2199,7 +2199,8 @@ class MediaDirector:
         self.service._checkpoint(self.job, self.progress, light=True)
         report = {}
         try:
-            tr = turkish(self.service, self.pid, self.language, [*spoken.values(), *notes.values()], report)
+            tr = turkish(self.service, self.pid, self.language, [*spoken.values(), *notes.values()], report,
+                         allow_request=not getattr(self, 'sources_only', False))
         except Exception:  # translation is only a help: never stops the job
             LOG.warning('stock operation=translate category=unexpected')
             tr, report = {}, {'reason': 'Çeviri beklenmeyen bir hata nedeniyle yapılamadı.'}

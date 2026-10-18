@@ -85,3 +85,9 @@ test('legacy mode explains legacy graphics separately',async()=>{
  const {root}=await harness({modify:s=>{s.editorial_preferences={editing_mode:'legacy'};}});
  assert.match(root.textContent,/Legacy otomatik mod/);assert.doesNotMatch(root.textContent,/her yuva dolar/);
 });
+
+test('uncertain CLIP with metadata support is distinct from an unseen image or CLIP approval',async()=>{
+ const {root}=await harness({modify:s=>{s.slots[0].local_review={method:'words',approved:true,clip:{score:5,verdict:'uncertain'}};}});
+ assert.match(root.textContent,/CLIP onay vermedi — etiket\/kelime eşleşmesiyle seçildi/);
+ assert.doesNotMatch(root.textContent,/Görüntüsü bir modelle kontrol edilmedi|CLIP onayladı/);
+});

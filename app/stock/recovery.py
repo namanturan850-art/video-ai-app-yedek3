@@ -20,6 +20,8 @@ JOB_DOWNLOADS=40
 ROUNDS=3
 
 LABELS={
+ 'previous_search_failures_skipped':'Daha önce başarısız olan sorgular bu geçişte atlandı.',
+ 'candidate_duration_too_short':'Sağlayıcının bildirdiği kaynak süresi bu yuva için yetersiz.',
  'empty_search_results':'Bazı sorgular sağlayıcıdan sonuç döndürmedi.',
  'relevance_unverified':'Bazı adayların sahneye uygunluğu doğrulanamadı.',
  'duplicate_candidates_rejected':'Daha önce kullanılan adaylar elendi.',

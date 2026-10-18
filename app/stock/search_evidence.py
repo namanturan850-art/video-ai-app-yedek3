@@ -49,16 +49,18 @@ def reasons(log):
         elif category in ('auth','invalid_key','unauthorized','missing_key','key_rejected'):found.add('provider_key_rejected')
         elif category:found.add('provider_unreachable')
         if s.get('skipped') == 'budget':found.add('search_budget_reached')
-        if s.get('skipped') == 'previous_failure':found.add('query_exhausted')
+        if s.get('skipped') == 'previous_failure':found.add('previous_search_failures_skipped')
     mapping = {'setting_conflict':'setting_conflict','visual_subject_conflict':'relevance_unverified',
                'used_elsewhere':'duplicate_candidates_rejected','ai_rejected_before':'relevance_unverified',
-               'orientation':'portrait_or_resolution_rejected','duration':'source_too_short','portrait':'portrait_or_resolution_rejected','resolution':'portrait_or_resolution_rejected',
+               'orientation':'portrait_or_resolution_rejected','duration':'candidate_duration_too_short','portrait':'portrait_or_resolution_rejected','resolution':'portrait_or_resolution_rejected',
                'too_short':'source_too_short'}
     for code,count in log.get('rejected', {}).items():
         if count and code in mapping:found.add(mapping[code])
     if any(not v.get('approved') for v in log.get('judged', {}).values()):found.add('relevance_unverified')
     for step in log.get('steps', []):
-        if step.get('download_errors'):found.add('download_failed')
+        if step.get('download_errors'):
+            found.add('download_failed')
+            if 'rate_limit' in step['download_errors']:found.add('provider_rate_limited')
         if step.get('quality_rejections'):found.add('technical_quality_rejected')
         if step.get('short_sources'):found.add('source_too_short')
     return sorted(found) or ['sources_only_no_approved_stock']

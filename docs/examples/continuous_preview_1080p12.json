@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "duration": 12,
+  "overlapping_layers": 5,
+  "initial_proxy_seconds": 18.24,
+  "startup_seconds": 20.77,
+  "cold_cache": true,
+  "browser": {
+    "frames": 360,
+    "seconds": 12.032800000000003,
+    "fps": 29.83511734592114,
+    "maxGap": 0.1,
+    "sizes": [
+      "1920x1080"
+    ],
+    "samples": 654,
+    "maxBoundaryGap": 0.03329999999999563
+  },
+  "errors": [],
+  "basis": "Yeni sentetik proje, beş ek katman, önceden ısıtılmamış proxy; yerel FFmpeg ve başsız Chromium. Canlı Gemini/Windows testi değildir."
+}

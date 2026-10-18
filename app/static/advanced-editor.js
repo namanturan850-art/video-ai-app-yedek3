@@ -183,42 +183,88 @@
       const planLayer=[...c.data.tracks.layers,...c.data.tracks.maps,...c.data.tracks.infographics].find(x=>!x.slot_id&&x.start<=time&&time<x.end),rawOverlay=c.preview.querySelector('.naman-overlay');if(rawOverlay)rawOverlay.hidden=!!planLayer&&((state.document.suppressed_layers||[]).includes(planLayer.legacy_key)||(state.document.suppressed_scenes||[]).includes(planLayer.scene_id));
       if(!hasChanges){programFrame.hidden=true;c.preview.classList.remove('advanced-has-frame');return;}
       if(!force&&Math.abs(lastFrame-time)<.18)return;lastFrame=time;frameBusy=true;const revision=state.revision;let candidate='';
-      try{const response=await fetch(endpoint+`/program-frame?time=${time}`,{cache:'no-store'});if(!response.ok){const error=await response.json();throw Error(error.message||'Önizleme alınamadı.');}const blob=await response.blob();candidate=URL.createObjectURL(blob);const decoded=new Image();decoded.src=candidate;await decoded.decode();if(!alive||state.revision!==revision){lastFrame=-1;return;}const previous=programFrame.src;programFrame.src=candidate;candidate='';programFrame.dataset.revision=revision;programFrame.hidden=false;c.preview.classList.add('advanced-has-frame');if(previous.startsWith('blob:'))URL.revokeObjectURL(previous);}catch(e){setStatus(e.message);}finally{if(candidate)URL.revokeObjectURL(candidate);frameBusy=false;}
+      try{const response=await fetch(endpoint+`/program-frame?time=${time}`,{cache:'no-store'});if(!response.ok){const error=await response.json();throw Error(error.message||'Önizleme alınamadı.');}const blob=await response.blob();candidate=URL.createObjectURL(blob);const decoded=new Image();decoded.src=candidate;await decoded.decode();if(!alive||proxyActive||state.revision!==revision){lastFrame=-1;return;}const previous=programFrame.src;programFrame.src=candidate;candidate='';programFrame.dataset.revision=revision;programFrame.hidden=false;c.preview.classList.add('advanced-has-frame');if(previous.startsWith('blob:'))URL.revokeObjectURL(previous);}catch(e){setStatus(e.message);}finally{if(candidate)URL.revokeObjectURL(candidate);frameBusy=false;}
     }
     frameTimer=setInterval(()=>requestFrame(),200);clean.push(()=>{clearInterval(frameTimer);if(programFrame.src.startsWith('blob:'))URL.revokeObjectURL(programFrame.src);});
     const frameInfo=n('span','Yerel kurgu önizlemesi: örnek kareler (en fazla 5 fps)','advanced-preview-info');c.preview.append(frameInfo);
-    const proxyVideo=n('video','','advanced-program-proxy'),quality=n('select');proxyVideo.hidden=true;proxyVideo.playsInline=true;proxyVideo.preload='auto';surface.append(proxyVideo);
-    [['auto','Otomatik'],['low','Düşük'],['medium','Orta'],['high','Yüksek'],['frames','Örnek kare']].forEach(([v,t])=>quality.append(new Option(t,v)));quality.setAttribute('aria-label','Program önizleme kalitesi');monitorTabs.prepend(quality);
+    let proxyVideo=n('video','','advanced-program-proxy'),quality=n('select');proxyVideo.hidden=true;proxyVideo.playsInline=true;proxyVideo.preload='auto';surface.append(proxyVideo);
+    [['full','1080p'],['auto','Otomatik (720p)'],['low','Düşük'],['medium','Orta'],['high','720p'],['frames','Örnek kare']].forEach(([v,t])=>quality.append(new Option(t,v)));quality.value='auto';quality.setAttribute('aria-label','Program önizleme kalitesi');monitorTabs.prepend(quality);
     let proxyActive=false,proxyMeta=null,proxyBusy=false,proxyAttempt='',proxyRevision=-1,lastProxyTry=0,pendingProxy=null,proxyError='',fpsStart=0,fpsFrames=0,frameCallback;
     const disableProxy=()=>{proxyActive=false;proxyVideo.hidden=true;proxyVideo.pause();if(c.narration)c.narration.muted=false;};
-    const invalidateProxy=()=>{proxyAttempt='';proxyRevision=-1;pendingProxy=null;proxyError='';disableProxy();};quality.onchange=invalidateProxy;
+    const invalidateProxy=()=>{if(nextProxy){nextProxy.video.removeAttribute('src');nextProxy.video.load();nextProxy.video.remove();}nextProxy=null;nextJob=null;proxyMeta=null;proxyAttempt='';proxyRevision=-1;pendingProxy=null;proxyError='';disableProxy();};quality.onchange=invalidateProxy;
     proxyVideo.onerror=()=>{proxyError='Video çözücüsü proxy açamadı';disableProxy();};
-    function measuredFrame(now){if(proxyActive&&!proxyVideo.paused){if(!fpsStart){fpsStart=now;fpsFrames=0;}else fpsFrames++;if(now-fpsStart>=1000){const fps=fpsFrames*1000/(now-fpsStart);frameInfo.textContent=`Yerel proxy · ${proxyMeta.width}×${proxyMeta.height} · ölçülen ${fps.toFixed(1)} fps`;if(quality.value==='auto'&&fps<18&&fpsFrames>2&&proxyMeta.width>320){quality.value='low';invalidateProxy();}fpsFrames=0;fpsStart=now;}}else{fpsStart=0;fpsFrames=0;}if(alive&&proxyVideo.requestVideoFrameCallback)frameCallback=proxyVideo.requestVideoFrameCallback(measuredFrame);}
-    if(proxyVideo.requestVideoFrameCallback)frameCallback=proxyVideo.requestVideoFrameCallback(measuredFrame);
+    function measuredFrame(now){if(proxyActive&&!proxyVideo.paused){if(!fpsStart){fpsStart=now;fpsFrames=0;}else fpsFrames++;if(now-fpsStart>=1000){const fps=fpsFrames*1000/(now-fpsStart);frameInfo.textContent=`Yerel proxy · ${proxyMeta.width}×${proxyMeta.height} · ölçülen ${fps.toFixed(1)} fps`;fpsFrames=0;fpsStart=now;}}else{fpsStart=0;fpsFrames=0;}if(alive&&proxyVideo.requestVideoFrameCallback)frameCallback=proxyVideo.requestVideoFrameCallback(measuredFrame);}
+
+    let nextProxy=null,nextJob=null,prefetchBusy=false,transportTime=null,lastTransportTime=null;
+    // The decoded, muxed video is the master clock. While preparing a segment,
+    // hold the transport instead of letting narration outrun the visible image.
+    const legacyClock=()=>{
+      if(mode==='source'||quality.value==='frames'||proxyError){if(c.root.dataset.programClock==='1'&&c.narration&&k.play.textContent.includes('Duraklat')){c.narration.currentTime=c.getTime();c.narration.play().catch(()=>{});}delete c.root.dataset.programClock;return undefined;}
+      c.root.dataset.programClock='1';
+      c.narration?.pause();
+      if(lastTransportTime!==null&&Math.abs(c.getTime()-lastTransportTime)>1/600){
+        const requested=c.getTime();
+        if(proxyMeta&&requested>=proxyMeta.start&&requested<proxyMeta.start+proxyMeta.duration)proxyVideo.currentTime=requested-proxyMeta.start;
+        else {disableProxy();lastTransportTime=requested;return requested;}
+      }
+      if(proxyActive&&proxyMeta){
+        transportTime=proxyMeta.start+proxyVideo.currentTime;
+        if(proxyVideo.ended&&nextProxy?.video.readyState>=2){
+          const old=proxyVideo;if(frameCallback)old.cancelVideoFrameCallback?.(frameCallback);old.pause();old.hidden=true;
+          proxyVideo=nextProxy.video;proxyMeta=nextProxy.meta;nextProxy=null;nextJob=null;
+          old.removeAttribute('src');old.load();old.remove();proxyVideo.hidden=false;
+          if(proxyVideo.requestVideoFrameCallback)frameCallback=proxyVideo.requestVideoFrameCallback(measuredFrame);
+          proxyVideo.playbackRate=c.getPlaybackRate?.()||1;
+          proxyVideo.play().catch(()=>{proxyError='Önizlemeyi başlatmak için Oynat düğmesine tekrar basın.';});
+          transportTime=proxyMeta.start;
+        }
+        lastTransportTime=transportTime;return Math.min(transportTime,c.data.duration);
+      }
+      lastTransportTime=c.getTime();return lastTransportTime;
+    };
+    c.setProgramClock?.(legacyClock);
+    async function prefetch(){
+      if(prefetchBusy||nextProxy||!proxyMeta||quality.value==='frames')return;
+      const time=proxyMeta.start+proxyMeta.duration,revision=state.revision,requestedQuality=quality.value;
+      if(time>=c.data.duration)return;
+      prefetchBusy=true;
+      try{
+        const result=nextJob?await c.api(nextJob.status_url):await c.api(endpoint+'/program-proxy',{method:'POST',body:JSON.stringify({time,quality:quality.value})});
+        if(!alive||revision!==state.revision||requestedQuality!==quality.value||!proxyMeta||time!==proxyMeta.start+proxyMeta.duration)return;
+        if(result.status==='ready'){
+          nextJob=null;const video=n('video','','advanced-program-proxy');video.hidden=true;video.playsInline=true;video.preload='auto';video.src=result.url;video.onerror=()=>{proxyError='Sonraki önizleme videosu çözülemedi; kaliteyi değiştirip yeniden deneyin.';disableProxy();};surface.append(video);video.load();nextProxy={video,meta:result};
+        }else nextJob=result;
+      }catch(e){frameInfo.textContent='Sonraki kesit hazırlanamadı · '+e.message;}finally{prefetchBusy=false;}
+    }
+    const gapless=globalThis.NAMANProgramPlayer&&typeof MediaSource!=='undefined'?new NAMANProgramPlayer({video:proxyVideo,c,getRevision:()=>NAMANProgramPlayer.revision(state.revision,c),getMode:()=>mode,quality,onState:({active,text})=>{proxyActive=active;frameInfo.textContent=text;if(active)programFrame.hidden=true;}}):null;
+    if(gapless){c.setProgramClock?.(()=>gapless.failed?legacyClock():gapless.clock());clean.push(()=>gapless.destroy());}
+    else if(proxyVideo.requestVideoFrameCallback)frameCallback=proxyVideo.requestVideoFrameCallback(measuredFrame);
     async function proxyTick(){
-      if(!alive)return;const time=c.getTime(),running=k.play.textContent.includes('Duraklat')&&mode!=='source';
+      if(!alive)return;if(gapless&&!gapless.failed){gapless.tick();return;}if(proxyRevision!==state.revision&&proxyMeta)invalidateProxy();const time=c.getTime(),running=k.play.textContent.includes('Duraklat')&&mode!=='source';
       if(mode==='source'||quality.value==='frames'||time>=c.data.duration){disableProxy();return;}
       if(proxyMeta&&proxyRevision===state.revision&&time>=proxyMeta.start&&time<proxyMeta.start+proxyMeta.duration&&proxyVideo.readyState>=2){
         proxyActive=true;proxyVideo.hidden=false;programFrame.hidden=true;proxyVideo.playbackRate=c.getPlaybackRate?.()||1;
-        if(Math.abs(proxyVideo.currentTime-(time-proxyMeta.start))>(running?.08:.01))proxyVideo.currentTime=time-proxyMeta.start;
+        if(!running||lastTransportTime===null||Math.abs(time-lastTransportTime)>.12){if(Math.abs(proxyVideo.currentTime-(time-proxyMeta.start))>.035)proxyVideo.currentTime=time-proxyMeta.start;}
+        c.preview.querySelector('video:not(.advanced-program-proxy)')?.pause();
+        prefetch();
         if(c.narration)c.narration.muted=true;
-        if(running){if(proxyVideo.paused)proxyVideo.play().catch(()=>{proxyError='Ses için Oynat düğmesine tekrar basın';disableProxy();});}else proxyVideo.pause();
+        if(running){c.narration?.pause();if(proxyVideo.ended&&proxyMeta.start+proxyMeta.duration<c.data.duration){frameInfo.textContent='Sonraki kesit hazırlanıyor · ses ve görüntü birlikte bekliyor';return;}if(proxyVideo.paused)proxyVideo.play().catch(()=>{proxyError='Ses için Oynat düğmesine tekrar basın';disableProxy();});}else proxyVideo.pause();
         if(!running)frameInfo.textContent=`Yerel proxy · ${proxyMeta.width}×${proxyMeta.height} · 30 fps kodlama · duraklatıldı`;return;
       }
       disableProxy();const id=Math.floor(time/4)+'/'+state.revision+'/'+quality.value;
       if(proxyBusy||performance.now()-lastProxyTry<800||proxyError&&proxyAttempt===id)return;
-      proxyBusy=true;lastProxyTry=performance.now();proxyAttempt=id;const revision=state.revision;
+      proxyBusy=true;lastProxyTry=performance.now();proxyAttempt=id;const revision=state.revision,requestedQuality=quality.value;
       try{const result=pendingProxy&&pendingProxy.requestId===id?await c.api(pendingProxy.status_url):await c.api(endpoint+'/program-proxy',{method:'POST',body:JSON.stringify({time,quality:quality.value})});
-        if(!alive||revision!==state.revision)return;
-        if(result.status==='ready'){pendingProxy=null;proxyMeta=result;proxyRevision=revision;proxyVideo.src=result.url;proxyVideo.load();frameInfo.title=result.audio;proxyError='';}
+        if(!alive||revision!==state.revision||requestedQuality!==quality.value)return;
+        if(result.status==='ready'){if(proxyMeta?.key===result.key)return;pendingProxy=null;if(nextProxy&&nextProxy.meta.start!==result.start+result.duration){nextProxy.video.removeAttribute('src');nextProxy.video.load();nextProxy.video.remove();nextProxy=null;}nextJob=null;proxyMeta=result;proxyRevision=revision;proxyVideo.src=result.url;proxyVideo.load();lastTransportTime=null;prefetch();frameInfo.title=result.audio;proxyError='';}
         else {pendingProxy={...result,requestId:id};frameInfo.textContent='Proxy hazırlanıyor · şimdilik örnek kare modu';}
-      }catch(e){proxyError=e.message;frameInfo.textContent='Örnek kare modu · '+e.message;if(quality.value==='auto'){quality.value='low';invalidateProxy();}}finally{proxyBusy=false;}
+      }catch(e){proxyError=e.message;frameInfo.textContent='Örnek kare modu · '+e.message;}finally{proxyBusy=false;}
     }
-    const proxyTimer=setInterval(proxyTick,80);clean.push(()=>{clearInterval(proxyTimer);disableProxy();if(frameCallback)proxyVideo.cancelVideoFrameCallback?.(frameCallback);proxyVideo.removeAttribute('src');proxyVideo.load();proxyVideo.remove();});
+    const proxyTimer=setInterval(proxyTick,80);clean.push(()=>{clearInterval(proxyTimer);c.setProgramClock?.(null);delete c.root.dataset.programClock;if(nextProxy){nextProxy.video.removeAttribute('src');nextProxy.video.load();nextProxy.video.remove();}disableProxy();if(frameCallback)proxyVideo.cancelVideoFrameCallback?.(frameCallback);proxyVideo.removeAttribute('src');proxyVideo.load();proxyVideo.remove();});
     const audioPlayers=new Map();let audioContext,narrationGain,narrationAnalyser;
     const enableAudio=()=>{const Context=window.AudioContext||window.webkitAudioContext;if(Context&&!audioContext){audioContext=new Context();if(c.narration?.src){const source=audioContext.createMediaElementSource(c.narration);narrationGain=audioContext.createGain();narrationAnalyser=audioContext.createAnalyser();source.connect(narrationAnalyser).connect(narrationGain).connect(audioContext.destination);}}audioContext?.resume().catch(()=>setStatus('Ses önizlemesini başlatmak için tekrar Oynat düğmesine basın.'));};k.play.addEventListener('click',enableAudio);
     function syncAudio(){
-      const time=c.getTime(),running=k.play.textContent.includes('Duraklat')&&mode!=='source',sources=[];if(proxyActive){audioPlayers.forEach(p=>p.element.pause());return;}let speech=0;if(narrationAnalyser){const samples=new Float32Array(narrationAnalyser.fftSize);narrationAnalyser.getFloatTimeDomainData(samples);speech=Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);}const mix=c.data.audio_settings||{},fade=Math.min(1,mix.narration_fade_in?time/mix.narration_fade_in:1,mix.narration_fade_out?(c.data.duration-time)/mix.narration_fade_out:1),gain=(mix.narration_volume??1)*fade;if(narrationGain)narrationGain.gain.value=Math.max(0,gain);else if(c.narration)c.narration.volume=Math.max(0,Math.min(1,gain));
+      const time=c.getTime(),running=k.play.textContent.includes('Duraklat')&&mode!=='source',sources=[];if(proxyActive||c.root.dataset.programClock==='1'){audioPlayers.forEach(p=>p.element.pause());return;}let speech=0;if(narrationAnalyser){const samples=new Float32Array(narrationAnalyser.fftSize);narrationAnalyser.getFloatTimeDomainData(samples);speech=Math.sqrt(samples.reduce((sum,value)=>sum+value*value,0)/samples.length);}const mix=c.data.audio_settings||{},fade=Math.min(1,mix.narration_fade_in?time/mix.narration_fade_in:1,mix.narration_fade_out?(c.data.duration-time)/mix.narration_fade_out:1),gain=(mix.narration_volume??1)*fade;if(narrationGain)narrationGain.gain.value=Math.max(0,gain);else if(c.narration)c.narration.volume=Math.max(0,Math.min(1,gain));
       state.document.clips.filter(clip=>clip.visible&&clip.kind==='media').forEach(clip=>{const item=c.getArchive().items.find(a=>a.provider===clip.media.provider&&a.media_id===clip.media.media_id);if(item&&(item.media_type==='audio'||item.has_audio))sources.push({...clip,url:item.preview_url});});
       state.document.adjustments.forEach(edit=>{const item=c.media().find(m=>m.slot_id===edit.slot_id);if(item?.media?.has_audio)sources.push({...edit,...item,id:'base-'+edit.slot_id,source_start:item.clip_start||0,url:item.preview_url});});
       const active=new Set();

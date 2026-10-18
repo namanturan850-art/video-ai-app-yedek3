@@ -15,7 +15,7 @@ from app.main import create_app
 from app.database import initialize_database
 from test_manual_first import install_manual_example
 import uvicorn
-storage=Path(tempfile.mkdtemp(prefix='naman-manual-ui-',dir='/tmp'));initialize_database(storage)
+storage=Path(tempfile.mkdtemp(prefix='naman-manual-ui-',dir=tempfile.gettempdir()));initialize_database(storage)
 app=create_app(storage);st=install_manual_example(app)
 from contextlib import closing
 from app.editor.service import VIDEO_REVIEW_VERSION

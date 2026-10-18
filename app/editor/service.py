@@ -691,6 +691,8 @@ class EditorService:
             'vurgular':{'text':'ANLATIMDAKİ KISA İFADE','effect':'pulse'}}
         from app.animation.capabilities import capabilities
         package['animation_capabilities']=capabilities()
+        from app.animation.references import select_techniques
+        package['animation_reference_selection']=select_techniques(package['narration'])
         package['output_contract']['animasyon_sahneleri']=package['animation_capabilities']['record_contract']
         package['instructions'] += [
             'animasyon_sahneleri isteğe bağlıdır; yalnız anlatımı açıklamak için gerekli yerlerde kullanın. Bileşenleri nesne/katman/keyframe ile birleştirin. Serbest kod, URL veya dosya yolu göndermeyin.',

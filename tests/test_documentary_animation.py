@@ -108,6 +108,10 @@ def test_json_validation_draft_preview_selection_approval_real_mp4(workflow,name
     assert result.status_code==202,result.text
     result=await_job({'client':client,'pid':pid});assert result['job']['status']=='completed',result
     path=client.app.state.rendering.export(pid,result['active']['id'])
+    streams=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(path)]))['streams']
+    video=next(s for s in streams if s['codec_type']=='video');audio=next(s for s in streams if s['codec_type']=='audio')
+    assert (video['width'],video['height'],video['avg_frame_rate'])==(1920,1080,'30/1')
+    assert abs(float(video['duration'])-float(audio['duration']))<1/30
     frame=decoded_frame(path,record['start']+.5)
     assert frame.size==(1920,1080) and frame.getpixel((20,20))[2]>150
     assert client.app.state.rendering._inputs(pid,__import__('app.rendering.models',fromlist=['options']).options({'encoder':'cpu'}))['advanced_document']['clips'][0]['motion']['data']['basis']=='demo'
@@ -176,6 +180,7 @@ def test_package_has_actual_schema_examples_and_gemini_needs_confirmation(workfl
     assert caps['canvas']=={'width':1920,'height':1080,'fps':30}
     assert caps['record_contract']['data_schema']['additionalProperties'] is False
     assert 'animation_capabilities' in calls[0] and 'animasyon_sahneleri' in calls[0] and ed.get(pid)==before
+    assert 'animation_reference_selection' in calls[0] and response.json()['animation_reference_selection']['catalog_count']==300
 
 
 def test_locked_slot_and_scene_preserve_valid_proposals(workflow):

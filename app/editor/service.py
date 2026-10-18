@@ -635,7 +635,7 @@ class EditorService:
             sentence.update(start=clock.get('start'),end=clock.get('end'))
         package['output_contract']={
             'common':'Her öğede narration listesindeki scene_id gerekir. start/end isteğe bağlıdır; kendi sahnesinin saniye aralığında olmalıdır. object_id isteğe bağlı tekil metindir.',
-            'sahneler':{'fields':['scene_id','start','end','object_id','transition','motion','composition','overlay_text'],
+            'sahneler':{'fields':['scene_id','start','end','object_id','transition','motion','composition','overlay_text','media','source_start'],
                 'transition':['none','hard_cut','crossfade','fade'],
                 'motion':['none','slow_zoom','pan','ken_burns'],
                 'composition':['wide'],
@@ -646,6 +646,7 @@ class EditorService:
                     'transition, önerinin end saniyesindeki mevcut bitişik görüntü yuvası sınırına uygulanır; sahne sonuna taşınmaz. Son video bitişinde veya yuva içinde geçiş/kesim desteklenmez; önce Kurgu içinde klibi bölün.',
                     'Mevcut geçişle çakışan öneri reddedilir; aynı kesimde aynı geçiş tek kayda birleşir.',
                     'Crossfade ilk kaynak videoda klip bitiminden sonra ek süre ister; kaynak başlangıcı ve hız hesaba katılır. Süre yetmiyorsa NAMAN bu geçişi beklemede tutar, uygun daha kısa geçiş / siyaha geçiş / hard_cut seçeneklerini kullanıcı onayına sunar. Hiçbiri sessizce değiştirilmez.',
+                    'media isteğe bağlıdır: yalnız archive listesindeki provider/media_id/sha256 nesnesidir. source_start kaynak saniyesidir. Bağımsız görüntü kesiti taslağa eklenir; temel medya korunur. Bu kesitte kamera hareketi desteklenir, geçiş için ayrı mevcut yuva önerisi gerekir.',
                     'none işlem eklemez. composition=wide kaynak kadrajını değiştirmez. Öneriler temel medya, seslendirme veya altyazıyı değiştirmez.']},
             'infografikler':{'fields':['scene_id','start','end','object_id','template','data','emphasis'],
                 'templates':sorted(INFOGRAPHIC_TEMPLATES),'rule':'Yalnız anlatımdaki doğrulanmış sayı/tarih/karşılaştırmalar.'},
@@ -664,8 +665,30 @@ class EditorService:
         package['stock']={'plan_id':stock.get('plan_id'),'revision':stock.get('revision'),
             'slots':[{k:slot.get(k) for k in ('slot_id','scene_id','estimated_start','estimated_end','locked','status')} |
                      {'media':{k:(slot.get('selected_media') or {}).get(k) for k in ('provider','media_id','sha256')}} for slot in stock.get('slots',[])]}
-        package['editing_slots']=[{k:item.get(k) for k in ('slot_id','scene_id','start','end','locked','intentional_empty')}
-            for track in self.view(project_id)['tracks'].values() for item in track if item.get('slot_id')]
+        view=self.view(project_id)
+        slots=sorted((item for track in view['tracks'].values() for item in track if item.get('slot_id')),key=lambda x:x['start'])
+        from app.editor.transition_handles import capacity
+        package['editing_slots']=[]
+        for index,item in enumerate(slots):
+            slot={k:item.get(k) for k in ('slot_id','scene_id','start','end','locked','intentional_empty','clip_start','clip_end')}
+            slot['media']={k:(item.get('media') or {}).get(k) for k in ('provider','media_id','sha256','media_type','duration')}
+            if index+1<len(slots) and abs(item['end']-slots[index+1]['start'])<1e-6:
+                slot['next_slot_id']=slots[index+1]['slot_id']
+                slot['transition_capacity']=capacity(item,slots[index+1],package['timeline']['document']['adjustments'])
+            package['editing_slots'].append(slot)
+        package['sentence_index']=[{'index':i,**cue} for i,cue in enumerate(package['subtitles']['cues'])]
+        package['maps']=[{'scene_id':s['scene_id'],'overlays':[o for o in s.get('naman_overlays',[]) if o.get('kind')=='map'],
+            'sources':[{'slot_id':slot['slot_id'],'motion':slot['motion_spec']} for slot in slots if slot['scene_id']==s['scene_id'] and (slot.get('motion_spec') or {}).get('template')=='map']} for s in view['scenes']]
+        package['instructions'] += [
+            'Bu paket tek başına yeterlidir: narration senaryoyu/sahne saatlerini, sentence_index altyazı cümlelerini, voice seslendirmeyi, archive gerçek kaynakları, timeline mevcut manuel kurguyu gösterir.',
+            'Ekran metinlerini project.language dilinde, anlatımdaki ifadelerle üretin. Kilitlere dokunmayın. Dosya veya koordinat uydurmayın.',
+            'Yalnız output_contract içinde listelenen NAMAN işlemlerini isteyin. ZADIAQ nesneler motoru bu şemanın parçası değildir. Medya seçilecekse yalnız archive listesindeki tam kimliği kullanın; mevcut medya silinmez.',
+            'Cevap uzunsa schema ve base aynı kalmak koşuluyla bölümleri ayrı geçerli JSON nesnelerinde gönderin. Her işlemi yalnız bir kez gönderin.',
+            'Hatalı öneriler uygulanmaz, taslakta düzeltme mesajıyla saklanır. Diğer geçerli öneriler yalnız kullanıcının seçimi ve onayıyla uygulanır.']
+        package['output_examples']={
+            'infografikler':{'template':'stat','data':{'value':'ANLATIMDAKİ SAYI','label':'ANLATIMDAKİ ETİKET'}},
+            'harita_sahneleri':{'template':'map','data':{'place':'ANLATIMDAKİ YER','label':'İSTEĞE BAĞLI ETİKET','lat':'GERÇEK ENLEM SAYISI','lon':'GERÇEK BOYLAM SAYISI'}},
+            'vurgular':{'text':'ANLATIMDAKİ KISA İFADE','effect':'pulse'}}
         return package
 
     def prepare_task_package(self,project_id,payload):
@@ -721,7 +744,7 @@ class EditorService:
             for index,item in enumerate(items):
                 if not isinstance(item,dict) or item.get('scene_id') not in known: errors.append(f'{section}[{index}] geçerli scene_id içermelidir.'); continue
                 if known[item['scene_id']].get('locked') and len(item)>1: errors.append(f'{item["scene_id"]} kilitli; değiştirilemez.')
-                allowed = ({'scene_id',*choices,'overlay_text'} if section=='sahneler' else
+                allowed = ({'scene_id',*choices,'overlay_text','media','source_start'} if section=='sahneler' else
                            {'scene_id','template','data','emphasis'} if section in ('infografikler','harita_sahneleri') else
                            {'scene_id','text','effect'})
                 if set(item)-allowed: errors.append(f'{section}[{index}] desteklenmeyen alan içeriyor.')
@@ -729,6 +752,13 @@ class EditorService:
                     for key, options in choices.items():
                         if key in item and (not isinstance(item[key],str) or item[key] not in options):
                             errors.append(f'{section}[{index}] {key} geçersiz.')
+                    if 'source_start' in item and 'media' not in item:
+                        errors.append('source_start yalnız arşiv medya kimliğiyle kullanılabilir.')
+                    if 'media' in item:
+                        if not isinstance(item['media'],dict) or set(item['media'])!={'provider','media_id','sha256'} or any(not isinstance(v,str) for v in item['media'].values()):
+                            errors.append('media arşivdeki provider/media_id/sha256 kimliği olmalıdır.')
+                        if item.get('transition','none')!='none':
+                            errors.append('Ek görüntü kesitinin geçişi desteklenmiyor; mevcut yuva sınırı için ayrı öneri gönderin.')
                     if 'overlay_text' in item and (not isinstance(item['overlay_text'],str) or len(item['overlay_text'])>150):
                         errors.append('Katman metni en fazla 150 karakter olmalıdır.')
                 elif section in ('infografikler','harita_sahneleri'):

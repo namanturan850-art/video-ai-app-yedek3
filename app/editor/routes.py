@@ -206,13 +206,8 @@ def editor_router(service):
 
     @router.post('/manual/response-draft',status_code=201)
     def response_draft(project_id:str,payload:dict):
-        from app.providers.json_output import parse_json_object
-        from app.providers.base import ScriptProviderError
-        try:
-            answer=parse_json_object(payload.get('text'))
-        except ScriptProviderError:
-            raise EditorError('invalid_response','Cevap tek bir geçerli JSON planı içermelidir. Dış yapay zekâdan paketteki çıktı şablonuyla yanıt isteyin.',422) from None
-        return editorial.import_draft(project_id,answer)
+        from app.editor.manual_review import parse_response, review
+        return review(editorial,project_id,parse_response(payload.get('text')))
 
     @router.get('/manual/package.zip')
     def task_package_zip(project_id:str):
@@ -222,7 +217,9 @@ def editor_router(service):
     @router.post('/manual/validate')
     def validate(project_id:str,payload:dict):
         from app.editor.editorial import manual
-        return editorial.validate_response(project_id,payload) if manual(service.projects,project_id) else service.validate_import(project_id,payload)
+        if not manual(service.projects,project_id):return service.validate_import(project_id,payload)
+        from app.editor.manual_review import review_validation
+        return review_validation(editorial,project_id,payload)
 
     @router.post('/manual/import',status_code=201)
     def import_plan(project_id:str,payload:dict): return service.import_plan(project_id,payload)

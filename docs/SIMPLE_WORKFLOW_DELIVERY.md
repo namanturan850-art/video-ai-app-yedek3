@@ -46,4 +46,4 @@ Dal: `feature/naman-simple-workflow`. Mevcut proje verileri üzerinde silme veya
 - `scripts/manual_editor_browser_smoke.py`: sentetik proje üzerinde düzenleme, taslak içe aktarma, salt okunur Gemini paket taklidi, beş pencere boyutu ve **4 saniyelik gerçek FFmpeg final çıktısı**. Canlı bulut çağrısı yapılmaz.
 - JavaScript sözdizimi, Python derleme ve `git diff --check` kontrolleri.
 
-GitHub teslim durumu işlem tamamlandığında `docs/STATUS.md` içinde kaydedilir. `main`e merge yapılmaz.
+**GitHub teslimi:** uygulama commit `6a78399` ile [geliştirme dalına](https://github.com/naman85331/video-ai-app/tree/feature/naman-simple-workflow) gönderildi. Son Chromium turu geçti. Draft PR oluşturma hem GitHub GraphQL hem REST API üzerinden `403 Forbidden` ile engellendi; PR oluşturulmuş gibi gösterilmedi. [Değişiklikleri incele / PR aç](https://github.com/naman85331/video-ai-app/compare/main...feature/naman-simple-workflow). `main`e merge yapılmadı.

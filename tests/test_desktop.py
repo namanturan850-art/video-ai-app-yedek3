@@ -19,7 +19,7 @@ def test_desktop_uses_native_window_and_stops_server(monkeypatch):
             self.started=True
             while not self.should_exit: desktop.time.sleep(.001)
             events.append('stopped')
-    fake_webview=SimpleNamespace(
+    fake_webview=SimpleNamespace(settings={},
         create_window=lambda title,url,**kw: events.append((title,url,kw)),
         start=lambda **kw: events.append(('window',kw)))
     monkeypatch.setitem(sys.modules,'webview',fake_webview)
@@ -28,5 +28,6 @@ def test_desktop_uses_native_window_and_stops_server(monkeypatch):
     monkeypatch.setattr(desktop.socket,'socket',lambda *args:Listener())
     desktop.run_desktop()
     window=next(event for event in events if isinstance(event,tuple) and event[0]=='NAMAN')
+    assert fake_webview.settings['ALLOW_DOWNLOADS'] is True
     assert window[1]=='http://127.0.0.1:43210'
     assert 'stopped' in events and events[-1]=='closed'

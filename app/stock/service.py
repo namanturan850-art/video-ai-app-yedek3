@@ -205,21 +205,28 @@ class StockService:
             handoff = self._handoff(project_id)
             state = self._ensure(connection,handoff)
             public = deepcopy(state)
+            from app.editor.editorial import read
+            public['editorial_preferences'] = read(self.projects, project_id)['preferences']
             public.setdefault('warnings',[])
             timing=getattr(self,'timing_handoff',lambda pid:None)(project_id) or {}
             used={s['slot_id']:s['duration'] for s in timing.get('stock_slots',[])}
-            for slot in public['slots']:
+            for index,slot in enumerate(sorted(public['slots'],key=lambda s:s['estimated_start']),1):
+                slot['display_order'] = index
                 repeated=media_duplicate(slot['selected_media'],[x['selected_media'] for x in public['slots'] if x['slot_id']!=slot['slot_id']])
                 slot['repeat_status']=('Komşu çekimin devamı' if slot.get('continuation_of') else 'Aynı klibin farklı bölümü' if repeated and slot.get('segment_start') is not None
                                        else 'Manuel tekrar kullanım' if repeated and slot.get('manual_reuse') else 'Daha önce kullanılmış' if repeated else 'Benzersiz')
                 scene=next(s for s in handoff['scenes'] if s['scene_id']==slot['scene_id'])
-                current_profile=relevance.profile(scene,slot)
+                from app.stock.shot import bind
+                bound = bind(scene, slot, handoff.get('language'))
+                slot['visual_subject'] = bound.get('visual_subject', {})
+                current_profile=relevance.profile(bound,slot)
                 slot['subject_anchor']=current_profile['subject_anchor']
                 # Read-only display refresh: never replace an existing asset or
                 # overwrite archived history merely because the page is opened.
                 if slot['selected_media']:
-                    slot['selected_media'].update(relevance.evaluate(slot['selected_media'],current_profile))
-                    slot.update({k:slot['selected_media'][k] for k in ('relevance_score','relevance_label')})
+                    scored = relevance.evaluate(slot['selected_media'],current_profile)
+                    if not slot['locked']:slot['selected_media'].update(scored)
+                    slot.update({k:scored[k] for k in ('relevance_score','relevance_label')})
                 slot['candidates']=[{**m,**relevance.evaluate(m,current_profile)} for m in slot['candidates']]
                 if slot['selected_media']:
                     try: asset_path(self.projects,project_id,slot['selected_media'])
@@ -506,7 +513,8 @@ class StockService:
                     from app.integrations.openmontage.media import cached_assets_valid
                     intact=cached_assets_valid(self.projects,project_id,connection,results)
                 else:intact=True
-                if intact:return results,counts,True
+                fresh = bool(results) or datetime.fromisoformat(row['created_at']) > datetime.now(timezone.utc)-timedelta(minutes=5)
+                if intact and fresh:return results,counts,True
         provider = self.factory(name,self.settings) if name != 'openmontage' else None
         def remote_search():
             if name == 'openmontage':

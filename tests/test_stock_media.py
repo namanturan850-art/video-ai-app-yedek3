@@ -173,7 +173,7 @@ def test_full_auto_downloads_multiple_unique_video_slots_preserves_part5(stock_s
     assert client.app.state.stock.test_calls[0][1]=='video'
     assert state['slots'][0]['selected_media']['creator_name']=='Fixture Creator'
     mirror=json.loads((data/'projects'/project['id']/'stock/media_slots.json').read_text())
-    assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('status_label','coverage_warning','trim_needed','repeat_status','used_duration','source_duration','portrait_warning')} for slot in state['slots']]
+    assert mirror['slots']==[{k:v for k,v in slot.items() if k not in ('visual_subject','display_order','status_label','coverage_warning','trim_needed','repeat_status','used_duration','source_duration','portrait_warning')} for slot in state['slots']]
     for secret in (KEY,OTHER_KEY,STOCK_KEY): assert secret not in json.dumps(state)
 
 

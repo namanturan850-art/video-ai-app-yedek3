@@ -240,7 +240,8 @@ def infer(texts, topic='', mode='auto'):
     mode = mode if mode in MODES else 'auto'
     parts = [x for t in texts for x in sentences(t)] + [str(topic)] * 2 * bool(str(topic or '').strip())
     joined = ' '.join(parts)
-    regions = places(joined)
+    from app.stock.visual_subject import analyze
+    regions = places(' '.join(analyze(t)['location_text'] for t in parts))
     if mode == 'modern':
         era, decade, evidence = 'contemporary', None, 0
     elif mode == 'historic':
@@ -266,14 +267,16 @@ def for_scene(setting, scene_text):
     """The video's setting; a scene that names its own years/period (a flashback,
     "1850", "v. Chr.") gets that period. Explicit scene places override the majority."""
     if not setting: return setting
-    own = places(scene_text)
+    from app.stock.visual_subject import analyze
+    location_text = analyze(scene_text)['location_text']
+    own = places(location_text)
     # A named scene takes precedence over the video's majority geography.
     # Modern mode fixes time, not geography.
     if own:
         setting = {**setting, **describe(setting.get('era'), setting.get('decade'), own, setting.get('evidence', 0)), 'scene_override': True}
     else:
         from app.motion.places import spoken_places
-        if spoken_places(scene_text):
+        if spoken_places(location_text):
             # A known city outside our small region vocabulary: no invented country.
             setting = {**setting, **describe(setting.get('era'), setting.get('decade'), [], setting.get('evidence', 0)), 'scene_override': True}
     if setting.get('mode') == 'modern': return setting

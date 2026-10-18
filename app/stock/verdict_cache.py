@@ -18,7 +18,7 @@ _lock = threading.Lock()
 
 def context(scene, slot=None):
     slot = slot or {}
-    value = {'policy': 5, 'narration': scene.get('narration_text'), 'visual': scene.get('visual_intent'),
+    value = {'policy': 6, 'narration': scene.get('narration_text'), 'visual': scene.get('visual_intent'),
              'must': scene.get('must_show'), 'must_not': scene.get('must_not_show'),
              'entities': scene.get('entities'), 'goal': scene.get('visual_intent') if scene.get('_shot_bound') else slot.get('visual_goal'),
              'setting': slot.get('quality_setting'),

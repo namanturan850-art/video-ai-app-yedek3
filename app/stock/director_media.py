@@ -51,7 +51,7 @@ def clock():  # replaced in tests
     import time
     return time.monotonic()
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
-          'sources_only':'Kaynak hazırlanıyor — yaratıcı montaj yapılmaz',
+          'sources_only':'Kaynak hazırlama',
           'local_archive': '1 · Yerel medya arşivi',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
@@ -255,9 +255,9 @@ class MediaDirector:
         self.clip = ClipCheck(self.service)
         self.progress['clip_ready'] = self.clip.ready()
         if not self.progress['clip_ready']: self.progress['clip_warning'] = MISSING
+        else:self.progress.pop('clip_warning', None)
         if getattr(self,'sources_only',False):
             self.local=True;self.progress['local_reason']='Yalnız kaynak hazırlama: ücretli AI ve yaratıcı montaj kapalı.';return
-        else: self.progress.pop('clip_warning', None)
         engine = settings.ai_engine()
         self.engine = engine or 'gemini'
         self.label = 'Claude' if engine == 'claude' else 'Gemini'
@@ -662,7 +662,7 @@ class MediaDirector:
         scores = self.clip.score(descriptor, items, directory(self.service.projects, self.pid), penalties(self.where(scene), descriptor))
         self.progress['clip_metrics'] = dict(getattr(self.clip, 'metrics', {}))
         if not scores and self.clip.broken:
-            self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; bu işte medya etiket/kelime eşleşmesiyle seçildi.'
+            self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; seçimin diğer kontrollerini ve gerekçesini yuvada inceleyin.'
         decided = {}
         for media in pool:
             result = scores.get(key_text(media))
@@ -670,7 +670,11 @@ class MediaDirector:
             clip = {**result, 'descriptor': descriptor[:160]}
             media['clip'] = clip
             self.progress['clip_checked'] = self.progress.get('clip_checked', 0) + 1
-            if isinstance(result.get('conflict'), dict):  # looks like something the period/place rules out
+            from app.stock.visual_subject import contradiction, CONFLICT_MESSAGES
+            subject_conflict = contradiction(media, slot.get('relevance_profile') or relevance.profile(scene, slot))
+            if subject_conflict:
+                decided[key(media)] = {'score': 0, 'approved': False, 'local': True, 'clip': clip, 'reason': CONFLICT_MESSAGES.get(subject_conflict, 'Görsel konu anlatımla çelişiyor.')}
+            elif isinstance(result.get('conflict'), dict):  # looks like something the period/place rules out
                 from app.stock.setting import reason
                 self.setting_rejected(media, result['conflict'])
                 decided[key(media)] = {'score': min(result['score'], 2), 'approved': False, 'local': True, 'clip': clip, 'setting_conflict': result['conflict'],
@@ -701,14 +705,21 @@ class MediaDirector:
         for media in pool:
             scored = {**media, **relevance.evaluate(media, profile)}
             value = scored.get('relevance_score') or 0
-            # The English query that found it was made from this scene (plan, rewrite or topic): its words count too.
-            shared = (wanted | local_words(media.get('query_used', ''))) & local_words(media.get('description', ''))
+            # Discovery terms are not evidence about the returned picture.
+            shared = wanted & local_words(media.get('description', ''))
             ok = relevance.acceptable(scored, profile) and (len(shared) >= 2 or value >= relevance.STRONG)
+            clip = media.get('clip') or {}
+            borderline = isinstance(clip.get('score'), (int, float)) and CLIP_MIN <= clip['score'] < CLIP_APPROVE
+            concepts = (set(profile.get('anchor_tokens', [])) | set(profile.get('context_tokens', []))) & set(relevance.WORDS)
+            support = concepts & relevance.canonical(media.get('description', ''))
+            strong_support = (value >= relevance.STRONG and len(support) >= 2) or (value >= relevance.RELATED and len(support) >= 3 and concepts <= support)
+            exact_archive = media.get('provider') == 'wikimedia' and value >= relevance.STRONG and profile.get('specificity') == 'named_specific' and scored.get('relevance_basis') == 'direct'
+            if borderline:ok = ok and (strong_support or exact_archive)
             verdicts[key(media)] = {'score': min(9, APPROVE_SCORE + max(0, len(shared) - 1) + (value >= 40)) if ok else min(4, len(shared) * 2),
                                     'approved': ok, 'local': True, 'relevance_label': scored.get('relevance_label'),
                                     **({'clip': media['clip']} if media.get('clip') else {}),
-                                    'reason': (f'Etiketler sahneyle eşleşiyor ({", ".join(sorted(shared)[:4])})' if ok and shared else
-                                               'Etiketler sahneyle eşleşiyor' if ok else 'Etiketler sahneyle eşleşmiyor') + ' — yerel kontrol, yapay zekâ onayı yok.'}
+                                    'reason': (('Düşük CLIP puanına karşı güçlü, doğrudan metadata desteği; ' if ok and borderline else 'Düşük CLIP puanı; güçlü bağımsız kanıt yok; ' if borderline else '') + (f'Etiketler sahneyle eşleşiyor ({", ".join(sorted(shared)[:4])})' if ok and shared else
+                                               'Etiketler sahneyle eşleşiyor' if ok else 'Etiketler sahneyle eşleşmiyor') + ' — yerel kontrol, yapay zekâ onayı yok.')}
         return verdicts
 
     def rewrite(self, slot, scene, tried, broader=False):
@@ -740,7 +751,11 @@ class MediaDirector:
         """Without the AI: the filmable English words of each sentence of the
         scene (other angles), or — broader — the topic's English fallback queries."""
         from app.scripts.query_clean import english_query, generic_queries
-        if broader: return generic_queries(self.topic, self.language)
+        subject = scene.get('visual_subject') or {}
+        if subject.get('queries'):return subject['queries'][3:] if broader else subject['queries'][1:]
+        if broader:
+            topic = (scene.get('narration_text') or self.topic) if getattr(self, 'sources_only', False) else self.topic
+            return generic_queries(topic, self.language)
         out = []
         for sentence in re.split(r'(?<=[.!?…])\s+', scene.get('narration_text', '')):
             words = english_query(sentence, self.language, strict=True, limit=6).split()
@@ -756,6 +771,8 @@ class MediaDirector:
         from app.stock.providers import ACTIVE
         names = [n for n in ACTIVE if n == 'wikimedia' or self.service.settings.stock_config(n).get('api_key')]
         if scene is not None and historic(scene): names.sort(key=lambda n: n != 'wikimedia')
+        bridge = getattr(self.service, 'openmontage', None)
+        if bridge and bridge.config().get('media_search') and bridge.status().get('ready'):names.append('openmontage')
         return [n for n in names if n not in self.unavailable]
 
     @timed('search')
@@ -775,6 +792,33 @@ class MediaDirector:
         self.search_pages = getattr(self, 'search_pages', {})
         self.unique_queries = getattr(self, 'unique_queries', set())
         self.unique_queries.add(' '.join(query.casefold().split()))
+        from app.stock.search_evidence import failed_recently, identity, SLOT_REQUESTS, JOB_REQUESTS
+        from app.stock.verdict_cache import context
+        fingerprint = context(scene or {}, {**slot, 'quality_setting':self.where(scene or {})})
+        slot_id = slot.get('slot_id', str(slot.get('order', 0)))
+        attempts = getattr(self, 'request_attempts', {})
+        requested = getattr(self, 'requested_keys', set())
+        self.requested_keys = requested
+        self.request_attempts = attempts
+        names = list(provider_names if provider_names is not None else self.providers(scene))
+        global_requests = getattr(self, 'global_request_keys', set())
+        self.global_request_keys = global_requests
+        allowed = set()
+        for kind in kinds:
+            for name in names:
+                if name == 'openmontage' and kind != 'video':continue
+                entry = {'provider': name, 'media_type': kind, 'query': query, 'page': page}
+                if failed_recently(slot, entry, fingerprint):
+                    log['searches'].append({**entry, 'skipped': 'previous_failure'})
+                elif (slot_id, identity(entry)) not in requested and (attempts.get(slot_id, 0) >= SLOT_REQUESTS or (identity(entry) not in global_requests and len(global_requests) >= JOB_REQUESTS)):
+                    log['searches'].append({**entry, 'skipped': 'budget'})
+                else:
+                    allowed.add((kind, name))
+                    request_key = (slot_id, identity(entry))
+                    if request_key not in requested:
+                        requested.add(request_key)
+                        global_requests.add(identity(entry))
+                        attempts[slot_id] = attempts.get(slot_id, 0) + 1
         def read(name, kind):
             config = self.service.settings.stock_config(name) if hasattr(self.service, 'settings') else {}
             signature = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()
@@ -790,9 +834,10 @@ class MediaDirector:
         names = [n for n in (provider_names if provider_names is not None else self.providers(scene)) if n not in getattr(self, 'unavailable', {})]
         executor = getattr(self.service, 'search_executor', None)
         pending = {(kind, name): executor.submit(read, name, kind)
-                   for kind in kinds for name in names} if executor else {}
+                   for kind in kinds for name in names if (kind, name) in allowed} if executor else {}
         for kind in kinds:
             for name in names:
+                if (kind, name) not in allowed:continue
                 entry = {'provider': name, 'media_type': kind, 'query': query, 'page': page}
                 self.progress['message'] = f'Yuva {slot["order"]} · {name.title()} {"video" if kind == "video" else "görsel"} aranıyor: “{query}”'
                 self.service._checkpoint(self.job, self.progress, light=True)
@@ -811,6 +856,9 @@ class MediaDirector:
                 except Exception:  # an unexpected provider answer never stops the chain
                     LOG.warning('stock operation=director_search category=unexpected provider=%s', name)
                     entry.update(error='unexpected', error_text='beklenmeyen yanıt')
+                    self.unavailable = getattr(self, 'unavailable', {})
+                    self.unavailable[name] = 'unexpected'
+                    self.progress['unavailable_providers'] = self.unavailable
                     log['searches'].append(entry)
                     continue
                 metric = 'cached_search_reads' if cached else 'provider_searches'
@@ -844,6 +892,8 @@ class MediaDirector:
         logo signs and anything from the scene's MUST-NOT list in the tags."""
         if key(media) in self.rejected_keys or (media.get('sha256') and media['sha256'] in self.rejected_hashes):
             return 'owner_rejected'
+        from app.stock.visual_subject import contradiction
+        if contradiction(media, relevance.profile(scene)):return 'visual_subject_conflict'
         tags = ' ' + relevance.normalized(f'{media.get("description", "")} {media.get("query_used", "")}') + ' '
         if any(f' {flag} ' in tags for flag in RED_FLAGS):
             return 'watermark_or_logo'
@@ -953,6 +1003,9 @@ class MediaDirector:
             log = {'steps': [], 'searches': [], 'judged': memo['judged'], 'rejected': {}}
             fresh = [m for m in self.pool(slot, self.search(slot, kinds, query, log, scene), log, set(), scene)
                      if key(m) not in memo['judged'] and key(m) not in seen][:CANDIDATES]
+            prelogs = getattr(self, 'presearch_logs', {})
+            prelogs[slot['slot_id']] = log
+            self.presearch_logs = prelogs
             for media in fresh:
                 seen.add(key(media)); pooled.append(media)
         pooled = pooled[:24 if clip else 16]
@@ -1022,11 +1075,15 @@ class MediaDirector:
                     return True
             return False
 
-        for query in list(dict.fromkeys(queries))[:2]:
-            for page in (2, 3):
-                results = self.search(slot, ['video'], query, log, scene, page=page, provider_names=free)
-                if checked(results, 'stock_video'):
-                    return True
+        for kind in ('video', 'image'):
+            stage = 'stock_video' if kind == 'video' else 'stock_image'
+            step = {'stage':stage,'label':STAGES[stage],'pages':[2,3]}
+            log['steps'].append(step)
+            for query in list(dict.fromkeys(queries))[:2]:
+                for page in (2, 3):
+                    results = self.search(slot, [kind], query, log, scene, page=page, provider_names=free)
+                    if checked(results, stage):return True
+            step['result']='no_approved_candidate'
         return False
 
     @timed('download_validation')
@@ -1053,6 +1110,7 @@ class MediaDirector:
                 log['steps'][-1].setdefault('quality_rejections', []).append(quality.get('reason','quality_unverified'))
                 return None
             if media['media_type']=='video' and (quality.get('duration') or 0) + .05 < start + need:
+                log['steps'][-1]['short_sources'] = True
                 return None
         except StockError as error:
             log['steps'][-1].setdefault('download_errors', []).append(error.category)
@@ -1067,7 +1125,7 @@ class MediaDirector:
                                                                  **({'model': verdict['model']} if verdict.get('model') else {})},
                     local_review={'approved': True, 'score': verdict['score'], 'label': verdict.get('relevance_label'), 'reviewed_at': now(),
                                   **({'clip': verdict['clip']} if verdict.get('clip') else {}),
-                                  'method': 'clip' if verdict.get('clip_approved') else 'words'} if verdict.get('local') else None,
+                                  'method': 'clip' if verdict.get('clip_approved') else 'words', 'reason': verdict.get('reason', '')} if verdict.get('local') else None,
                     needs_ai_review=bool(verdict.get('local')) and not verdict.get('clip_approved'),
                     message=verdict['reason'])
         if saved['width'] <= saved['height']:
@@ -1092,6 +1150,7 @@ class MediaDirector:
 
     # ---- other steps -------------------------------------------------------
     def merge(self, slot, log, limit=MERGE_SECONDS):
+        if getattr(self, 'sources_only', False):return False
         if used_seconds(slot) > limit: return False
         ordered = sorted(self.slots, key=lambda s: s['estimated_start'])
         index = next(i for i, s in enumerate(ordered) if s['slot_id'] == slot['slot_id'])
@@ -1462,6 +1521,8 @@ class MediaDirector:
         more than OPENING_CARD seconds of the first scene."""
         meta = (media or {}).get('source_metadata') or {}
         spec = meta.get('motion') or {}
+        scene = getattr(self, 'scene_by_id', {}).get(slot['scene_id'])
+        if scene and slot.get('opening_search_context') == self.selection_context(slot, scene):return False
         return (bool(self.scene_order) and slot['scene_id'] == self.scene_order[0] and used_seconds(slot) > OPENING_CARD
                 and not slot.get('locked') and not slot.get('motion_edited') and not meta.get('owner_hint') and slot['slot_id'] not in self.owner
                 and spec.get('template') not in ('intro', 'outro') and (spec.get('template') in ('stat', 'quote', 'timeline', 'map') or meta.get('card_kind')))
@@ -1479,6 +1540,7 @@ class MediaDirector:
         data = spec.get('data') or {}
         text = focus(' '.join(x for x in (str(data.get('value') or ''), str(data.get('label') or data.get('text') or data.get('place') or '')) if x))
         if not text: return False
+        slot['opening_search_context'] = self.selection_context(slot, scene)
         planned = list(dict.fromkeys(q for q in [slot.get('search_query'), *slot.get('fallback_queries', []), scene.get('primary_stock_query'),
                                                  *scene.get('alternative_stock_queries', [])] if q))[:4]
         slot.setdefault('relevance_profile', relevance.profile(scene, slot))
@@ -1491,9 +1553,14 @@ class MediaDirector:
         return True
 
     def unresolved(self,slot,log):
+        for provider, category in getattr(self, 'unavailable', {}).items():
+            if not any(s.get('provider') == provider and s.get('error') for s in log.get('searches', [])):
+                log.setdefault('searches', []).append({'provider':provider,'query':'','media_type':'video',
+                    'skipped':'provider_unavailable','error':category,'error_text':ERROR_TEXT.get(category,'Sağlayıcı bu işte kullanılamıyor')})
         slot.update(selected_media=None,status='ai_needed',message='Uygun kaynak bulunamadı; manuel medya atayın. Otomatik grafik oluşturulmadı.')
-        slot['missing_reasons']=['sources_only_no_approved_stock']
-        log.setdefault('steps',[]).append({'stage':'sources_only','result':'missing'})
+        from app.stock.search_evidence import reasons
+        slot['missing_reasons'] = reasons(log)
+        log.setdefault('steps',[]).append({'stage':'sources_only','label': STAGES['sources_only'],'result':'missing'})
         return log
 
     def card(self, slot, scene, log, framed=False):
@@ -1531,9 +1598,12 @@ class MediaDirector:
         slot['relevance_profile'] = relevance.profile(scene, slot)
         # Slots of one scene share the AI's verdicts and rewritten queries.
         memo = self.memo.setdefault(memo_key(scene), {'judged': {}})
-        log = {'started_at': now(), 'steps': [], 'searches': [], 'judged': memo['judged'], 'rejected': {}}
+        previous = getattr(self, 'presearch_logs', {}).pop(slot['slot_id'], {})
+        log = {'started_at': now(), 'steps': [], 'searches': list(previous.get('searches', [])), 'judged': memo['judged'], 'rejected': dict(previous.get('rejected', {}))}
         planned = list(dict.fromkeys(q for q in [scene.get('primary_stock_query'), slot.get('search_query'), *slot.get('fallback_queries', []),
                                                  *scene.get('alternative_stock_queries', [])] if q))[:4]
+        if scene.get('visual_subject', {}).get('queries'):
+            planned = scene['visual_subject']['queries'][:2]
         video_first = ['video'] if slot.get('preferred_type') != 'stock_image' else ['image', 'video']
         chosen = self.try_local_archive(slot, scene, log, exclude)
         if not chosen: chosen = self.try_step(slot, scene, 'stock_video', video_first, planned, log, exclude)
@@ -1584,6 +1654,7 @@ class MediaDirector:
             except (ValueError,KeyError,OSError,StockError):
                 continue
             candidates.append(media)
+        log['steps'].append({'stage':'local_archive','label':STAGES['local_archive'],'result':'no_approved_candidate'})
         pool=self.pool(slot,candidates,log,exclude,scene)[:CANDIDATES]
         if not pool:return None
         verdicts=self.judge(slot,scene,pool)
@@ -1716,7 +1787,14 @@ class MediaDirector:
     def finish_slot(self, slot, log):
         stage = next((s['stage'] for s in reversed(log['steps']) if s.get('result') in ('chosen', 'kept', 'kept_no_better_option')), 'motion')
         if getattr(self,'sources_only',False) and not slot.get('selected_media'):stage='sources_only'
-        slot['director'] = {'stage': stage, 'stage_label': STAGES[stage], 'reason': slot.get('message', ''),
+        from app.stock.search_evidence import remember
+        from app.stock.verdict_cache import context
+        scene = bind_shot(getattr(self, 'scene_by_id', {}).get(slot['scene_id'], {}), slot, self.language) if getattr(self, 'scene_by_id', {}).get(slot['scene_id']) else {}
+        remember(slot, log, context(scene, {**slot, 'quality_setting':self.where(scene)}), now())
+        history = list((slot.get('director') or {}).get('history', []))
+        old = slot.get('director') or {}
+        if old.get('updated_at'):history.append({k:old.get(k) for k in ('updated_at','stage','searches','steps','rejected')})
+        slot['director'] = {'history':history[-5:], 'stage': stage, 'stage_label': STAGES[stage], 'reason': slot.get('message', ''),
                             'searches': log['searches'][-40:], 'steps': [{k: v for k, v in s.items()} for s in log['steps']],
                             'rejected': log.get('rejected', {}), 'rewritten_queries': log.get('rewritten_queries', []),
                             'broader_queries': log.get('broader_queries', []), 'updated_at': now(),
@@ -1810,7 +1888,7 @@ class MediaDirector:
                 targets.append((slot, 'motion_owner'))
                 continue
             planned = scenes[slot['scene_id']].get('motion_spec') if not any(h.get('type') in INFOGRAPHIC for h in scenes[slot['scene_id']].get('owner_hints') or []) else None
-            if not self.sources_only and not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and not (
+            if not self.sources_only and not single and not slot['locked'] and planned and first[slot['scene_id']] == slot['slot_id'] and not slot.get('manual_stock') and (slot.get('prepared_motion_plan') != planned or not self.valid(slot)) and not (
                     slot.get('lower_third_seconds') and self.valid(slot)) and (
                     not self.valid(slot) or not is_generated(media) and not (slot.get('ai_review') or {}).get('approved')
                     or is_generated(media) and ((media.get('source_metadata') or {}).get('planned') or (media.get('source_metadata') or {}).get('motion')) != planned
@@ -1860,7 +1938,7 @@ class MediaDirector:
             except Exception as error:  # one slot's unexpected problem never stops the whole job
                 LOG.warning('stock operation=slot category=unexpected exception_class=%s slot=%s', type(error).__name__, slot.get('order'))
                 log = {'steps': [], 'searches': [], 'judged': {}, 'error': 'unexpected'}
-                self.progress.setdefault('slot_errors', []).append(f'Yuva {slot.get("order")}: beklenmeyen hata ({type(error).__name__}); yazı kartı kullanıldı.')
+                self.progress.setdefault('slot_errors', []).append(f'Yuva {slot.get("order")}: beklenmeyen hata ({type(error).__name__}); ' + ('yuva manuel kaynak için boş bırakıldı.' if self.sources_only else 'yazı kartı kullanıldı.'))
                 self.card(slot, scene, log)
             self.finish_slot(slot, log)
         # Period/place constraints never weaken just to reduce the motion share.
@@ -1910,6 +1988,7 @@ class MediaDirector:
             return log
         if why == 'motion_planned':
             planned, spec = scene['motion_spec'], scene['motion_spec']
+            slot['prepared_motion_plan'] = deepcopy(planned)
             self._release(slot); log = empty()
             if planned['template'] == 'quote':  # a text card is the last choice
                 other = self.motion_spec(slot, scene)
@@ -1976,6 +2055,7 @@ class MediaDirector:
             slot['relevance_profile'] = relevance.profile(scene, slot)
             if not self.opening_overlay(slot, scene, log, (old.get('source_metadata') or {}).get('motion') or {}):
                 slot.clear(); slot.update(backup)  # nothing moving found: the card stays
+                slot['opening_search_context'] = self.selection_context(slot, scene)
                 self.register(slot['slot_id'], old, 0., used_seconds(slot))
             return log
         if why in ('reselect', 'setting'):
@@ -2119,7 +2199,8 @@ class MediaDirector:
         self.service._checkpoint(self.job, self.progress, light=True)
         report = {}
         try:
-            tr = turkish(self.service, self.pid, self.language, [*spoken.values(), *notes.values()], report)
+            tr = turkish(self.service, self.pid, self.language, [*spoken.values(), *notes.values()], report,
+                         allow_request=not getattr(self, 'sources_only', False))
         except Exception:  # translation is only a help: never stops the job
             LOG.warning('stock operation=translate category=unexpected')
             tr, report = {}, {'reason': 'Çeviri beklenmeyen bir hata nedeniyle yapılamadı.'}
@@ -2151,9 +2232,11 @@ class MediaDirector:
         help_text = self.owner_help(self.slots) if getattr(self, 'slots', None) else {}
         with service.projects.lock, closing(service.projects._connection()) as c, c:
             state = service._load(c, self.pid, job['plan_id'])
-            bands = self.bands(state['slots'])
+            bands = {} if self.sources_only else self.bands(state['slots'])
             for slot in state['slots']:
                 if slot['slot_id'] in help_text: slot.update(help_text[slot['slot_id']])
+                slot['review_flags'] = review_flags(slot)
+                if self.sources_only:continue
                 if slot['slot_id'] in bands: slot['band'] = bands[slot['slot_id']]
                 elif 'band' in slot and not bands.get(slot['slot_id']): slot.pop('band')
                 slot['review_flags'] = review_flags(slot)
@@ -2433,11 +2516,14 @@ def diagnostics(service, project_id):
     slots = []
     for s in state['slots']:
         media = s.get('selected_media') or {}
-        slots.append({'order': s['order'], 'scene_id': s['scene_id'], 'start': s['estimated_start'], 'end': s['estimated_end'],
+        slots.append({'order': s.get('display_order',s['order']), 'scene_slot_order':s['order'], 'scene_id': s['scene_id'], 'start': s['estimated_start'], 'end': s['estimated_end'],
                       'duration': s['duration'], 'status': s['status'], 'locked': s['locked'], 'message': s.get('message', ''),
                       'stage': (s.get('director') or {}).get('stage_label'), 'ai_review': s.get('ai_review'),
-                      'media': {k: media.get(k) for k in ('provider', 'media_type', 'media_id', 'width', 'height', 'duration', 'page_url', 'local_path')} if media else None,
+                      'media': {k: media.get(k) for k in ('provider', 'media_type', 'media_id', 'width', 'height', 'duration', 'page_url')} if media else None,
                       'segment_start': s.get('segment_start'), 'continuation_of': s.get('continuation_of'),
+                      'sentence': s.get('sentence'), 'visual_goal': s.get('visual_goal'),
+                      'visual_subject': s.get('visual_subject'), 'relevance_profile': s.get('relevance_profile'),
+                      'search_attempts': s.get('search_attempts', []), 'local_review': s.get('local_review'),
                       'planned_query': s.get('search_query'), 'fallback_queries': s.get('fallback_queries'),
                       'director': s.get('director'), 'older_search_diagnostics': s.get('search_diagnostics', [])[-12:],
                       'missing_reasons': s.get('missing_reason_messages', [])})
@@ -2452,6 +2538,9 @@ def diagnostics(service, project_id):
         row = tried.setdefault(attempt['model'], {'ok': 0, 'errors': {}})
         if attempt['result'] == 'ok': row['ok'] += 1
         else: row['errors'][attempt['result']] = row['errors'].get(attempt['result'], 0) + 1
-    return {'generated_at': now(), 'project_id': project_id, 'plan_id': state['plan_id'], 'summary': state.get('media_summary'),
+    from app.stock.diagnostics import public_report
+    return public_report({'schema_version':2, 'editorial_preferences':state.get('editorial_preferences'),
+            'counter_scope':'setting_rejected counts unique candidate media in the latest job, not missing slots',
+            'generated_at': now(), 'project_id': project_id, 'plan_id': state['plan_id'], 'summary': state.get('media_summary'),
             'gemini_models_tried': tried, 'gemini_attempts': list(ATTEMPTS)[-200:], 'gemini_skipped_until': getattr(service.settings, 'gemini_exhausted', dict)(),
-            'providers_configured': state['providers'], 'warnings': state['warnings'], 'jobs': jobs, 'slots': slots}
+            'providers_configured': state['providers'], 'warnings': state['warnings'], 'jobs': jobs, 'slots': slots})

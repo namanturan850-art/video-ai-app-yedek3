@@ -142,7 +142,7 @@ def work(operation,inputs):
                 'semantic_model_version':weights['version'] if weights else ''}
     if operation in ('search','semantic'):
         from tools.video.stock_sources import available_sources
-        names=[s.name for s in available_sources() if s.name in (*FREE,'pexels','pixabay_video')]
+        names=[s.name for s in available_sources() if s.name in (*FREE,'pixabay_video')]
         if not names:raise ValueError('source_missing')
         inputs={**inputs,'sources':names}
         if operation=='search':

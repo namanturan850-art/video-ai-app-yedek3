@@ -2,6 +2,7 @@
 Tamamla with deliberately irrelevant candidates in every search (dog, barber,
 office, modern city, watermarked footage). None of them may ever be chosen;
 only 7+/10 stock media is used; every slot is filled. No network."""
+from contextlib import closing
 import base64
 import io
 import json
@@ -72,6 +73,11 @@ def build(tmp_path, monkeypatch, key):
     stock = client.app.state.stock
     stock.ai_sleep = lambda seconds, service: None
     pid = client.post('/api/projects', json={'name': data['topic'], 'language': 'de'}).json()['id']
+    # This suite explicitly verifies the preserved legacy auto-graphic fallback.
+    # New source-only projects are covered by test_stock_recovery_integration.
+    from app.editor.editorial import Preferences
+    with closing(client.app.state.projects._connection()) as c,c:
+        c.execute('UPDATE editorial_state SET payload_json=? WHERE project_id=?',(json.dumps(Preferences().model_dump()),pid))
     r = client.post(f'/api/projects/{pid}/script/paste', json={'text': pasted_text(data)})
     assert r.status_code == 201, r.text
     r = client.post(f'/api/projects/{pid}/production/plan', json={'provider': 'gemini', 'cost_confirmed': True, 'confirm_replace_plan': False})

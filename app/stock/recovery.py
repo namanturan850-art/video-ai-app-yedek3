@@ -20,6 +20,9 @@ JOB_DOWNLOADS=40
 ROUNDS=3
 
 LABELS={
+ 'sources_only_no_approved_stock':'Uygun stok video veya görsel bulunamadı. Otomatik grafik oluşturulmadı.',
+ 'setting_conflict':'Adaylar anlatımın coğrafyası veya dönemiyle çelişiyor.',
+ 'technical_quality_rejected':'İndirilen kaynak teknik kalite kontrolünü geçemedi.',
  'no_provider_results':'Sağlayıcı sonuç döndürmedi.',
  'all_candidates_irrelevant':'Adaylar sahnenin konusuyla uyumlu değil.',
  'all_candidates_duplicates':'Uygun adaylar başka alanlarda kullanılıyor.',

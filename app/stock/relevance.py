@@ -22,6 +22,14 @@ GENERIC=set('world people city nature video background view travel beautiful gen
 # do not enter this dictionary: Bermuda/Titanic/Everest/Tokyo remain exact names.
 WORDS={
  'ocean':'ocean sea seas oceans water waves wave coast coastal meer meere ozean wasser wellen kuste mar mares oceano agua olas costa mer eau vagues cote deniz okyanus su dalga dalgalar kiyi',
+ 'water':'water agua eau wasser su suyun suyu',
+ 'lake':'lake lakes lago lagos lac lacs see seen gol golu goller golleri golun',
+ 'lightning':'lightning thunderbolt thunderbolts rayo rayos relampago relampagos blitz blitze foudre eclair yildirim yildirimlar',
+ 'wind':'wind winds breeze viento vientos vent ruzgar ruzgarlari ruzgarlari',
+ 'current':'current currents corriente corrientes courant stromung akinti akintilar akintilarin',
+ 'waterfall':'waterfall waterfalls cascade cascada cascadas wasserfall selale selalesi',
+ 'tropical':'tropical tropikal tropisch',
+ 'night':'night noche nuit nacht gece',
  'ship':'ship ships boat boats vessel vessels schiff schiffe boot barco barcos navire bateau gemi tekne',
  'aircraft':'aircraft airplane airplanes plane planes flugzeug flugzeuge avion aviones avions ucak',
  'storm':'storm storms tempest sturm gewitter tormenta tempete orage firtina',
@@ -48,6 +56,7 @@ WORDS={
 }
 DOMAINS={'aviation':{'aircraft','aviation','cockpit','crew'},'rail':{'train'},'animal':{'animal'},'food':{'food'},
          'urban':{'urban'},'marine':{'ocean','ship','storm'},'mountain':{'mountain','snow'},
+         'freshwater':{'lake'},'weather':{'lightning','wind','current'},'waterfall':{'waterfall'},
          'forest':{'forest'},'beach':{'beach'},'vehicle':{'car','charging'},'technology':{'computer','navigation','instrument'}}
 
 
@@ -203,6 +212,9 @@ def queries_for(profile):
 
 
 def evaluate(media,profile):
+    from app.stock.visual_subject import contradiction
+    conflict = contradiction(media, profile)
+    if conflict:return {'relevance_score':0,'relevance_label':LABELS[0],'relevance_basis':conflict}
     analysis=media.get('source_metadata',{}).get('visual_analysis',{})
     if analysis.get('verdict')=='mismatch':return {'relevance_score':0,'relevance_label':LABELS[0]}
     if analysis.get('verdict')=='match':

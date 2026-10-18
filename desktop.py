@@ -25,6 +25,9 @@ def run_desktop(storage=None):
             time.sleep(.05)
         if not server.started:
             raise RuntimeError('NAMAN sunucusu açılamadı. Veri klasörünün yazılabilir olduğunu kontrol edin.')
+        # pywebview 6.1 edgechromium.on_download_starting opens SaveFileDialog.
+        # No path or filesystem method is exposed to JavaScript.
+        if hasattr(webview, 'settings'):webview.settings['ALLOW_DOWNLOADS'] = True
         webview.create_window('NAMAN', f'http://127.0.0.1:{port}', width=1440, height=960,
                               min_size=(960, 640), text_select=True)
         # No JS/Python bridge: the existing same-origin HTTP checks remain authoritative.

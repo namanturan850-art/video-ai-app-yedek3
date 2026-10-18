@@ -23,7 +23,11 @@ class SearchSession:
     def call(self, key, operation):
         with self.lock:
             entry = self.entries.get(key)
-            if entry and entry[0].done() and monotonic() - entry[1] >= self.ttl:
+            lifetime = self.ttl
+            if entry and entry[0].done() and not entry[0].exception():
+                saved = entry[0].result()
+                if isinstance(saved, tuple) and len(saved) == 3 and not saved[0]:lifetime = min(lifetime, 300)
+            if entry and entry[0].done() and monotonic() - entry[1] >= lifetime:
                 self.entries.pop(key); entry = None
             if entry:
                 future = entry[0]

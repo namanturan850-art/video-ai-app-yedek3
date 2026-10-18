@@ -205,6 +205,8 @@ class StockService:
             handoff = self._handoff(project_id)
             state = self._ensure(connection,handoff)
             public = deepcopy(state)
+            from app.editor.editorial import read
+            public['editorial_preferences'] = read(self.projects, project_id)['preferences']
             public.setdefault('warnings',[])
             timing=getattr(self,'timing_handoff',lambda pid:None)(project_id) or {}
             used={s['slot_id']:s['duration'] for s in timing.get('stock_slots',[])}
@@ -213,7 +215,10 @@ class StockService:
                 slot['repeat_status']=('Komşu çekimin devamı' if slot.get('continuation_of') else 'Aynı klibin farklı bölümü' if repeated and slot.get('segment_start') is not None
                                        else 'Manuel tekrar kullanım' if repeated and slot.get('manual_reuse') else 'Daha önce kullanılmış' if repeated else 'Benzersiz')
                 scene=next(s for s in handoff['scenes'] if s['scene_id']==slot['scene_id'])
-                current_profile=relevance.profile(scene,slot)
+                from app.stock.shot import bind
+                bound = bind(scene, slot, handoff.get('language'))
+                slot['visual_subject'] = bound.get('visual_subject', {})
+                current_profile=relevance.profile(bound,slot)
                 slot['subject_anchor']=current_profile['subject_anchor']
                 # Read-only display refresh: never replace an existing asset or
                 # overwrite archived history merely because the page is opened.
@@ -506,7 +511,8 @@ class StockService:
                     from app.integrations.openmontage.media import cached_assets_valid
                     intact=cached_assets_valid(self.projects,project_id,connection,results)
                 else:intact=True
-                if intact:return results,counts,True
+                fresh = bool(results) or datetime.fromisoformat(row['created_at']) > datetime.now(timezone.utc)-timedelta(minutes=5)
+                if intact and fresh:return results,counts,True
         provider = self.factory(name,self.settings) if name != 'openmontage' else None
         def remote_search():
             if name == 'openmontage':

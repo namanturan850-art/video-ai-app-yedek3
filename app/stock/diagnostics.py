@@ -61,3 +61,26 @@ def log_search(diagnostic):
              diagnostic['provider'],diagnostic['media_type'],diagnostic['query'],diagnostic['raw_count'],
              diagnostic['normalized_count'],diagnostic['accepted_count'],diagnostic['available_count'],
              *(diagnostic['rejected'][r] for r in REASONS),diagnostic['cached'],diagnostic['category'])
+
+
+def public_report(value):
+    """Support export omits local paths, signed URLs and arbitrary raw payloads.
+
+    SecretGuard still validates the final response in the route. Only slot-sized
+    narration is included by the caller; full scripts/voice/project files aren't.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+    hidden = {'local_path', 'download_url', 'preview_url', 'source_url', 'creator_url',
+              'api_key', 'token', 'authorization', 'password', 'raw_response', 'context'}
+    if isinstance(value, dict):
+        return {k: public_report(v) for k, v in value.items() if k.casefold() not in hidden}
+    if isinstance(value, list):return [public_report(v) for v in value]
+    if not isinstance(value, str):return value
+    if value.startswith(('https://', 'http://')):
+        try:
+            url = urlsplit(value)
+            return urlunsplit((url.scheme, url.hostname or '', url.path, '', ''))
+        except ValueError:return '[adres çıkarıldı]'
+    value = re.sub(r'\b[A-Za-z]:[\\/][^\s\n]+', '[yerel yol çıkarıldı]', value)
+    value = re.sub(r'(?<![\w:/])/(?:workspace|tmp|home|Users|var|opt)/[^\s\n]+', '[yerel yol çıkarıldı]', value)
+    return value

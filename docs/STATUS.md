@@ -1161,3 +1161,12 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - 480 saniye fixture güncellemesinden sonra **53 passed** odaklı tekrar (98,42 sn); ek gerçek başlangıç/orta/son FFmpeg kare karşılaştırması **1 passed** (5,17 sn). Bu tekrarlar geniş kapsamla örtüşür.
 
 - Yayın: `feature/naman-editor-final-polish` GitHub'a push edildi. Draft PR denemesi GitHub GraphQL API tarafından 403 Forbidden ile reddedildi; PR oluşturulmadı. Karşılaştırma bağlantısı/hazır açıklama teslim raporundadır. Main değiştirilmedi.
+
+### 18 Ekim 2026 — stok medya kurtarma (ilk doğrulanan aşama)
+
+- Araştırma kurumu/görsel konu ayrımı; göl, yıldırım, akıntı ve şelale regresyonları; bağımsız metadata kanıtı olmayan düşük CLIP seçimleri engellendi. Yeni politika eski karar önbelleğini geçersiz kılar.
+- Yuva arama kanıtı SQLite planında saklanır; başarısız denemeler 1 saat atlanır, boş sonuç önbelleği 5 dakikada yenilenir. Yuva başına 24, iş başına 120 farklı arama geçişi; bütçe nedeniyle denenmeyen alternatifler açıkça gösterilir. Yerel arşiv, video, görsel ve sayfa alternatifleri korunur; Pexels açılmaz.
+- Manuel kaynak hazırlamada otomatik kart/motion/komşu klibe birleştirme/şerit eklenmez. Legacy davranış ve açık Motion'a Çevir işlemi korunur.
+- Tanı: eksik yuva ayrıntıları, geçmiş denemeler, JSON indir/kopyala, görünür hata ve seçilebilir metin alternatifi. pywebview 6.1 kaynak kodundaki `ALLOW_DOWNLOADS` varsayılan kapalı; şimdi Windows SaveFileDialog etkinleştirilir, yeni dosya erişim köprüsü yok.
+- İlk kanıt: 5 konu regresyonu + frontend Python koşucusu + desktop testi geçti (frontend içinde 11 DOM senaryosu). 32 yuvalı gerçek API/SQLite/PNG kontrolü: 3 uygun görsel, 29 eksik, 0 motion, yalnız 3 indirme; başarısız sağlayıcıdan Wikimedia'ya geçiş ve tekrar çalıştırmada kaynakları koruma geçti. Sağlayıcı yanıtları sentetiktir.
+- Chromium: gerçek JSON indirme, panoya yazıp geri okuma, panoya erişim reddinde metin alternatifi, HTTP hatası, kaydetme iptali, kaydetme adaptörü ve yabancı origin 403 geçti; JS hatası yok. Fiziksel Windows/WebView2 doğrulaması açık. Geniş regresyon kontrolü sürüyor.

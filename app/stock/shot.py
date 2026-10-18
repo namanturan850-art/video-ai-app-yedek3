@@ -1,7 +1,7 @@
 """Bind a visual slot to its own immutable narration, without changing timing."""
 import re
 
-VERSION = 2
+VERSION = 3
 
 
 def narration(scene, slot):
@@ -31,6 +31,10 @@ def bind(scene, slot, language=None):
     # Scene metadata may span several different subjects. Search the spoken
     # sentence first, keeping the original queries as candidate discovery only.
     from app.scripts.query_clean import english_query, place_english
+    from app.stock.visual_subject import analyze
+    subject = analyze(spoken)
+    result['visual_subject'] = subject
+    explicit_visual = False
     spoken_language = language or scene.get('stock_query_language') or 'en'
     query = english_query(spoken, spoken_language, strict=spoken_language != 'en', limit=6)
     for hint in scene.get('owner_hints') or []:
@@ -39,11 +43,16 @@ def bind(scene, slot, language=None):
             explicit = english_query(hint.get('value', ''), spoken_language, strict=False, limit=6)
             if len(explicit.split()) >= 2:
                 query = explicit
+                explicit_visual = True
+                result['visual_subject'] = {**subject, 'queries': [], 'subject': explicit, 'explicit_visual': True}
                 break
-    if len(query.split()) >= 2:
+    if subject['queries'] and not explicit_visual:
+        query = subject['queries'][0]
+        result['alternative_stock_queries'] = subject['queries'][1:]
+    if len(query.split()) >= 2 or subject['queries']:
         from app.motion.places import spoken_places
-        places=[place_english(name,exact=True) for name,_,_ in spoken_places(spoken)]
-        entities=[e for e in scene.get('entities', []) if e.casefold() in spoken.casefold()]
+        places=[place_english(name,exact=True) for name,_,_ in spoken_places(subject['location_text'])]
+        entities=[e for e in scene.get('entities', []) if e.casefold() in subject['location_text'].casefold()]
         result.update(primary_stock_query=query, visual_intent=query, must_show=query, search_anchor='',
                       entities=list(dict.fromkeys([p for p in places if p]+entities)))
     return result

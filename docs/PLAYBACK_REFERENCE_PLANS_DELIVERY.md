@@ -44,3 +44,9 @@ Tekrar çalıştırma: `.venv/bin/python -m pytest -q tests/test_preview_playbac
 Eski otomatik dekorasyonların kullanıldığı projeler ile mevcut güvenlik sınırını aşan aralıklar (32 ek klip / 8 ek medya) hâlâ açık hata/açıklamayla örnek kare modunu kullanır. Desteklenmeyen efektler sessizce atılmaz. Relief/archive gibi özel şablonlar mevcut kendi çizicilerini kullanır ve hazırlıkları daha uzun sürebilir. Kısa proxy miksinin loudnorm/compressor başlangıç durumu final miksinden farklı olabilir; aynı mux içindeki ses/video saati korunur.
 
 Canlı Gemini, Windows, gerçek donanım hızlandırma ve saatler süren kullanıcı projeleri bu bulut ortamında test edilmedi. Ücretli API çağrısı yapılmadı. 300 bağımsız efekt veya fizik/3D motoru eklenmedi; önceki MIT incelemesi ve lisans kaydı geçerli.
+
+## GitHub teslimi
+
+Uygulama ve test commit’i `1f955fe`, `fix/smooth-preview-reference-plans` dalına gönderildi; uzak dal SHA’sı `git ls-remote` ile doğrulandı. `main` hâlâ `27000f7`; bu çalışmada birleştirme yapılmadı.
+
+Draft PR oluşturma denemesi GitHub GraphQL API’sinde `Forbidden` yanıtı aldı. Bu nedenle PR oluşturulmuş değildir. Kod ve rapor GitHub’da ayrı dalda bulunur: https://github.com/naman85331/video-ai-app/tree/fix/smooth-preview-reference-plans . Karşılaştırma/PR formu: https://github.com/naman85331/video-ai-app/compare/main...fix/smooth-preview-reference-plans?expand=1 .

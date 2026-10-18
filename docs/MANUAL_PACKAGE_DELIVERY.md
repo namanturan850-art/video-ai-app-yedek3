@@ -46,3 +46,11 @@ Testler yalnız geçici SQLite projeleri ve sentetik medya üzerinde çalışır
 - Chromium: gerçek `.json` yükleme, paket/düzeltme panosu, Gemini onayını iptal etme, kısmi uygulamayı iptal etme, cevap düzenleme, yeniden doğrulama ve yalnız seçilen öğeyi kaydetme başarılı. Harici ağ isteği ve tarayıcı çalışma hatası yok.
 - Önceki kısa geçiş Chromium akışı da başarılı: tekil düzeltme onayı, seçilmeyen öneriyi koruma ve gerçek JPEG.
 - Son regresyon: **164 passed**; ek koruma testi **1 passed**; toplam **165 farklı Python testi**. Son parçalayıcı/hata mesajı kontrolü **14 passed** (örtüşen tekrar). Frontend **70 passed**; derleme, JS sözdizimi ve diff kontrolleri başarılı. GitHub teslim sonucu `docs/STATUS.md` içinde kaydedilir.
+
+## GitHub teslimi
+
+Kod commit'i **`7912a9f`**, `fix/manual-package-safe-import` dalına gönderildi. Draft PR başlığı ve açıklaması hazırlandı; ancak oluşturma isteği hem GraphQL hem REST üzerinden **Forbidden** ile reddedildi. Bu ortam PR oluşturamadı; bir PR numarası yok. Main birleştirmesi yapılmadı.
+
+[Gönderilen değişiklikler / PR oluşturma ekranı](https://github.com/naman85331/video-ai-app/compare/fix/manual-plan-transition-handles...fix/manual-package-safe-import?expand=1)
+
+Önerilen PR başlığı: **Manuel Plan: geçerli önerileri koruyan güvenli paket ve içe aktarma**. Taban `fix/manual-plan-transition-handles`; kaynak `fix/manual-package-safe-import`; inceleme durumu draft olmalıdır. Bu rapordaki kullanım/destek kapsamı/doğrulama bölümleri inceleme açıklamasını oluşturur.

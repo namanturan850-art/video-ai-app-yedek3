@@ -79,7 +79,7 @@ def cover(picture, w, h, zoom=1., fx=.5, fy=.5):
     return picture.resize((int(w), int(h)), Image.BILINEAR, box=(left, top, left + cw, top + ch))
 
 
-def draw_frame(scene, t, base, maps, pictures=None):
+def draw_frame(scene, t, base, maps, pictures=None, actor_cache=None):
     image = base.copy()
     draw = ImageDraw.Draw(image, 'RGBA')
     name = scene['ease']
@@ -92,10 +92,23 @@ def draw_frame(scene, t, base, maps, pictures=None):
             p=properties(scene,index,p,t)
             if p is None:continue
         if kind == 'documentary_object':
-            from app.animation.scene import draw as draw_actor
-            layer=Image.new('RGBA',image.size,(0,0,0,0));draw_actor(layer,p,t)
-            if image.mode=='RGBA':image.alpha_composite(layer)
-            else:image.paste(layer,(0,0),layer)
+            from app.animation.scene import draw as draw_actor,at
+            obj=p['object'];cache_key=None;cached=None
+            # Static actors often share a scene with procedural flow/particles.
+            # Keep only each actor's last raster, never a frame-by-frame history.
+            if actor_cache is not None and not scene.get('_editor_elements') and obj['kind'] in ('node','box','circle','label','isometric_box'):
+                end=obj['end'] if obj['end'] is not None else p['duration']
+                cache_key=(tuple(sorted(at(obj,t).items())),tuple(sorted(at(p['camera'],t).items())),tuple(p.get(k) for k in ('x','y','fill','stroke','font','opacity')),obj['start']<=t<end)
+                entry=actor_cache.get(index)
+                if entry and entry[0]==cache_key:cached=entry[1]
+            if cached is None:
+                layer=Image.new('RGBA',image.size,(0,0,0,0));draw_actor(layer,p,t)
+                bounds=layer.getbbox();cached=(layer.crop(bounds),bounds[:2]) if bounds else (None,(0,0))
+                if cache_key is not None:actor_cache[index]=(cache_key,cached)
+            patch,position=cached
+            if patch is not None:
+                if image.mode=='RGBA':image.alpha_composite(patch,position)
+                else:image.paste(patch,position,patch)
             draw=ImageDraw.Draw(image,'RGBA');continue
         if kind == 'map':
             image.paste(maps[index].frame(p.get('zoom', 0)))
@@ -268,7 +281,7 @@ def render(scene, output, ffmpeg):
     if any(e['type'] == 'archive' for e in scene['elements']):
         from app.motion.archive import render as archive_render
         return archive_render(scene, output, ffmpeg)
-    frames = 1 if '_sample_time' in scene else max(1, round(scene['duration'] * FPS))
+    frames = 1 if '_sample_time' in scene else max(1, round(scene.get('_render_duration',scene['duration']) * FPS))
     alpha=bool(scene.get('alpha'))
     base = Image.new('RGBA' if alpha else 'RGB', (W, H), (0,0,0,0) if alpha else scene['background'])
     maps = {i: MapLayer(e['props']) for i, e in enumerate(scene['elements']) if e['type'] == 'map'}
@@ -284,11 +297,11 @@ def render(scene, output, ffmpeg):
     with guard(process):
         # Nothing changes after the last keyframe: the settled picture is written again, not redrawn.
         settled = float('inf') if scene.get('_editor_elements') or scene.get('procedural') else max((key[0] for e in scene['elements'] for track in (e.get('tracks') or {}).values() for key in track), default=0)
-        data = None
+        data = None;actor_cache={}
         for i in range(frames):
             check()
-            if data is None or i / FPS <= settled + 1e-6:
-                data = draw_frame(scene, scene.get('_sample_time',i / FPS), base, maps, pictures).tobytes()
+            if data is None or scene.get('_render_start',0)+i / FPS <= settled + 1e-6:
+                data = draw_frame(scene, scene.get('_sample_time',scene.get('_render_start',0)+i / FPS), base, maps, pictures,actor_cache).tobytes()
             process.stdin.write(data)
         process.stdin.close()
         error = process.stderr.read()

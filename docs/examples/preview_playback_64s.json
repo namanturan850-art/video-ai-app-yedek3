@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "duration": 64,
+  "overlapping_layers": 5,
+  "prepare_seconds": [
+    17.93,
+    17.24,
+    17.57,
+    17.11,
+    16.64,
+    16.06,
+    15.36,
+    17.37,
+    17.38,
+    16.28,
+    16.51,
+    18.07,
+    17.28,
+    17.58,
+    17.19,
+    18.31
+  ],
+  "browser": {
+    "frames": 1904,
+    "seconds": 65.3974,
+    "fps": 29.099016168838517,
+    "maxGap": 0.2,
+    "sizes": [
+      "1280x720"
+    ],
+    "samples": 1314
+  },
+  "errors": [],
+  "basis": "Sentetik yerel proje; 64 saniye, beş üst üste katman, 16 hazırlanmış proxy; 720p Chromium başsız oynatma. Canlı AI ve Windows testi değildir."
+}

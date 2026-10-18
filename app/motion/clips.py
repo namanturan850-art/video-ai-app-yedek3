@@ -130,7 +130,7 @@ def shared_render(fn):
 
 @shared_render
 
-def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None, element_edits=None):
+def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None, element_edits=None, render_window=None):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
     from app.rendering.tools import discover
@@ -143,18 +143,23 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         from app.editor.motion_objects import validate_edits
         validate_edits(scene,element_edits)
         scene['_editor_elements']=element_edits
+    if render_window is not None:
+        start,length=render_window
+        if start<0 or length<=0 or start+length>duration+1/30:raise ValueError('Geçersiz animasyon önizleme aralığı.')
+        if not any(e['type'] in ('relief','archive') for e in scene['elements']):
+            scene['_render_start']=start;scene['_render_duration']=length
     if sample_time is not None:scene['_sample_time']=max(0,min(duration,float(sample_time)))
     suffix='.mov' if scene.get('alpha') else '.mp4'
     target = folder / (scene_key(scene) + suffix)
-    if sample_time is not None:
+    if sample_time is not None or render_window is not None:
         cache=folder/'editor-cache'
         if linked(cache):raise RuntimeError('Önizleme önbelleği güvenli bir yerel klasör olmalıdır.')
         cache.mkdir(exist_ok=True)
-        target=cache/('motion-sample-'+scene_key(scene)+suffix)
+        target=cache/(('motion-window-' if render_window is not None else 'motion-sample-')+scene_key(scene)+suffix)
     from app.motion import relief
     relief.LAST_WARNING = relief.LAST_INFO = ''  # only this clip's satellite problem / view is reported
     if target.is_file() and not linked(target) and target.stat().st_size > 0:
-        if sample_time is not None:target.touch()
+        if sample_time is not None or render_window is not None:target.touch()
         return target, scene, 'cache'
     temporary = folder / ('.motion-' + uuid4().hex + suffix)
     engine = 'local'
@@ -162,7 +167,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     token = CANCELLED.set(cancelled or (lambda:False))
     try:
         check()
-        if not element_edits and prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC and not any(e['type'] == 'relief' for e in scene['elements']):  # the nine marker templates: local renderer only
+        if render_window is None and not element_edits and prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC and not any(e['type'] == 'relief' for e in scene['elements']):  # the nine marker templates: local renderer only
             try:
                 openmontage(scene, temporary, bridge, ffmpeg, folder)
                 engine = 'openmontage'
@@ -181,10 +186,11 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     finally:
         CANCELLED.reset(token)
         temporary.unlink(missing_ok=True)
-    if sample_time is not None:
+    if sample_time is not None or render_window is not None:
         # Only disposable sampled previews, never archived source media.
-        cached=sorted([*target.parent.glob('motion-sample-*.mp4'),*target.parent.glob('motion-sample-*.mov')],key=lambda p:p.stat().st_mtime)
-        for stale in cached[:-240]:
+        prefix='motion-window-' if render_window is not None else 'motion-sample-'
+        cached=sorted([*target.parent.glob(prefix+'*.mp4'),*target.parent.glob(prefix+'*.mov')],key=lambda p:p.stat().st_mtime)
+        for stale in cached[:-(48 if render_window is not None else 240)]:
             if stale!=target and not linked(stale):
                 try:stale.unlink(missing_ok=True)
                 except OSError:pass  # Windows may still have this preview open.

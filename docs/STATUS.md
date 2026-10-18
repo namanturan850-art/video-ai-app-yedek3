@@ -1248,3 +1248,11 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - Yeni animasyon, önceki Manuel Plan düzeltme ve kısa geçiş düzeltmesi için **3 gerçek Chromium akışı** başarılı; harici çağrı/tarayıcı çalışma hatası yok. Canlı Gemini, Windows ve gerçek OpenMontage testi yapılmadı. Kullanıcı verisi silme/ücretli API/main merge işlemi yok.
 - [Teslim raporu ve kullanım](DOCUMENTARY_ANIMATIONS_DELIVERY.md), [300 referans raporu](ANIMATION_REFERENCE_REVIEW_300.md), [MIT bildirimi](ANIMATION_REFERENCE_MIT_LICENSE.txt).
 - GitHub teslimi: uygulama ve raporlar **`b14e611`** commit'iyle `feature/manual-documentary-animations` dalına gönderildi. Draft PR oluşturma hem GraphQL (`gh pr create`) hem REST (`POST /repos/naman85331/video-ai-app/pulls`) üzerinden **Forbidden** ile reddedildi; bu ortam PR oluşturamadı. [Gönderilen değişiklikler / PR oluşturma ekranı](https://github.com/naman85331/video-ai-app/compare/fix/manual-package-safe-import...feature/manual-documentary-animations?expand=1). Main merge yapılmadı.
+
+## Oynatma ve AI paketinde referans teknikleri
+
+`fix/smooth-preview-reference-plans`, `27000f7` main sürümündeki mevcut animasyon ve güvenli Manuel Plan çalışmalarını korur. Motion ve geçişler artık dört saniyelik yerel video proxy’sinde çizilir; 720p varsayılan, 1080p seçilebilir. Sonraki kesit önceden yüklenir; mikslenmiş video transport saatidir. Kelime vurgusu parça sınırlarında özgün altyazı saatini korur. İçerik önbelleği, çizim maliyeti, kare sınırları, renk etiketleri ve gereksiz per-frame DOM güncellemeleri düzeltildi.
+
+300 referansın teknik inceleme dizini, anlatıma uygun desteklenen teknikleri sahne bazında AI paketine ekler. Tam kaynak prompt/video kopyalanmaz, serbest AI kodu çalıştırılmaz. Gemini onayı ve taslak/önizleme/seçim/onay zinciri korunur. Yeni editör, veritabanı göçü veya kullanıcı verisi silme yok.
+
+191 Python ve 70 ön yüz testi geçti. 64 saniye / beş katman / 720p Chromium ölçümü 29,10 FPS ve en çok 200 ms kare aralığı verdi; soğuk proxy hazırlığı ayrı bekleme gerektirir. Gerçek FFmpeg, onay/koruma regresyonları, Chromium ve kalan donanım/önbellek sınırları: [teslim raporu](PLAYBACK_REFERENCE_PLANS_DELIVERY.md). Canlı Gemini ve Windows testi yapılmadı. `main`e merge edilmedi.

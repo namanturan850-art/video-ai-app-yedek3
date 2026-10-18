@@ -205,7 +205,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const clipWarning=state?.job?.progress?.clip_warning;clipNote.hidden=!clipWarning;clipNote.textContent=clipWarning?'ℹ '+clipWarning:'';
     const where=state?.job?.progress?.setting,dropped=state?.job?.progress?.setting_rejected||{},redo=state?.job?.progress?.setting_reselected||0;settingNote.hidden=!where?.label;
     settingNote.textContent=where?.label?`Dönem ve yer: ${where.label} · bu döneme/yere uymayan görüntüler elenir${dropped.anachronism?` · dönemle çelişen ${dropped.anachronism}`:''}${dropped.place?` · yanlış coğrafya ${dropped.place} tekil aday (bu işte; eksik yuva sayısı değildir)}`:''}${dropped.style?` · karikatür/3D ${dropped.style}`:''}${redo?` · önceki ${redo} seçim yenilendi`:''}`:'';
-    modeText.textContent='Yerel arşiv → ilgili stok video → ilgili stok görsel aranır. CLIP veya yalnız metadata kontrolünün kapsamı her seçimde gösterilir. '+fallbackText();
+    modeText.textContent='Yerel arşiv → ilgili stok video → ilgili stok görsel aranır. Plandaki haritalar yerel olarak hazırlanabilir. CLIP veya yalnız metadata kontrolünün kapsamı her seçimde gösterilir. '+fallbackText();
     recovery.replaceChildren();const diag=state?.missing_media_diagnostics;if(diag?.unresolved_raw_slots){for(const d of diag.reasons||[])recovery.append(node('p',`${d.count} eksik yuva: ${d.message}`));}
     for(const slot of state?.slots||[])if(!slot.selected_media&&slot.status!=='complete'){
       const detail=node('details','','stock-missing-diagnostic');detail.append(node('summary',`Eksik yuva ${slot.display_order||slot.order} · ${slot.estimated_start.toFixed(1)}–${slot.estimated_end.toFixed(1)} sn`));

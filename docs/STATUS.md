@@ -1191,3 +1191,15 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - Kapsam ve bulgular mevcut tek teslim raporunun ek bölümündedir: `docs/STOCK_MEDIA_RECOVERY_DELIVERY.md`. Aynı geliştirme dalına gönderilir; main'e merge yapılmaz.
 
 - GitHub’da önceki paket PR #94 ile main (`7759877`) üzerinde bulundu. Ek kod `75c2e95` commit’iyle geliştirme dalında; bu tur main’e merge yapılmadı.
+
+## 2026-10-18 — Sade manuel belgesel akışı
+
+- `origin/main` / PR #95 üzerinden `feature/naman-simple-workflow` dalında çalışıldı; PR #90–#95 özellikleri ve eski proje kayıtları temel alındı.
+- Üç üst menü, sade sağ panel, aynı konumda oynatma kontrolleri ve yedi iz korundu. Otomatik kurgu düğmesi kaldırıldı; tek Manuel Plan / AI paketi akışı hazırlandı.
+- Gemini paket talimatlarını gerçek proje bağlamından hazırlıyor; timeline'a yazmıyor. Metin içindeki JSON / JSON dosyası önce taslağa, açık uygulamayla kalıcı kurguya gidiyor.
+- Manuel kaynak hazırlığı video/görsel ve plandaki yerel haritayla sınırlı; otomatik infografik/yaratıcı montaj yok. Uygun kaynak yoksa boş bırakma korunuyor.
+- Snap grup taşıma, altyazı kesme/taşıma/trim ve yanlış klibe işlem gönderme düzeltildi. Harita/infografik temel verileri normal alanlarla düzenleniyor; gelişmiş JSON ayrı.
+- Python test grupları: 85 passed, 141 passed / 3 skipped ve son altyazı/paket grubu 102 passed; örtüşme çıkarıldığında 295 farklı passed / 3 skipped (298 test toplandı). Frontend 70 passed. Yoğun proje Chromium kontrolü ve son manuel akış Chromium kontrolü geçti; altyazı kes/trim/taşı, yeniden açma, plan içe aktarma ve 4 saniyelik gerçek FFmpeg çıktısı doğrulandı.
+- Ayrıntılar, kullanım ve destek sınırları: [Sade iş akışı teslim raporu](SIMPLE_WORKFLOW_DELIVERY.md). Canlı/ücretli API ve kullanıcı verisi silme işlemi yapılmadı; Windows yerel çalıştırması doğrulanmadı.
+
+- GitHub: uygulama commit `6a78399`, `feature/naman-simple-workflow` dalına gönderildi. Draft PR açma hem GraphQL (`gh pr create`) hem REST (`POST /repos/naman85331/video-ai-app/pulls`) üzerinden `403 Forbidden` ile reddedildi. Bu ortam PR oluşturamadı; main merge yapılmadı. [Dal / değişiklikleri incele](https://github.com/naman85331/video-ai-app/compare/main...feature/naman-simple-workflow).

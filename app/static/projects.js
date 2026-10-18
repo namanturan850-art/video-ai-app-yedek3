@@ -239,7 +239,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         ['Durum', project.status_label], ...timestamps(project)
       ]));
       const edit = make('details', '', 'settings-panel');
-      const planning = make('a', 'Görsel / Kurgu Planı ve Kalite Kontrolü', 'back'); planning.href = `/projects/${project.id}/production`; detail.append(planning);
+      const planning = make('a', 'Görsel / Kurgu Hazırlığı', 'back'); planning.href = `/projects/${project.id}/production`; detail.append(planning);
       const editor = make('a', 'NAMAN Kurgu ve Önizleme', 'action-link'); editor.href = `/projects/${project.id}/editor`; detail.append(editor);
       edit.append(make('summary', 'Proje bilgilerini düzenle'));
       const form = make('form'); form.id = 'edit-project-form'; form.noValidate = true;
@@ -259,14 +259,16 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
         } catch (error) { feedback.textContent = error.message; errors(form, error.fields); busy(form, false); }
       });
       if (GEN) detail.append(sourceCard(project));
-      detail.append(make('h2', 'Üretim aşamaları'), make('p', GEN ? 'Senaryo aşamasını açıp metninizi hazırlayabilirsiniz.' : 'Sıra: Metni yapıştır → Seslendirme → Altyazı → Sahne planı → Medyayı Tamamla → Video → YouTube.', 'note'));
+      detail.append(make('h2', 'Üretim aşamaları'), make('p', GEN ? 'Senaryo aşamasını açıp metninizi hazırlayabilirsiniz.' : 'Sıra: Metni yapıştır → Seslendirme → Altyazı → Sahne planı → Medyayı Tamamla → Manuel Kurgu / AI planı → Final render.', 'note'));
       const pipeline = make('ol', '', 'pipeline'); pipeline.id = 'project-pipeline';
       // Owner's flow: Metin → Seslendirme → Altyazı → Sahne planı → Medya → Video.
       const flow = ['Senaryo', 'Seslendirme', 'Altyazı', 'Sahne Planı', 'Stok Medya', 'Render'];
       const stages = GEN ? project.pipeline : [...project.pipeline].sort((a, b) => flow.indexOf(a.name) - flow.indexOf(b.name));
       for (const stage of stages) {
         if (!GEN && (stage.name === 'Konsept' || stage.name === 'Metadata' || stage.name === 'Export')) continue;
-        const item = make('li'); item.append(make('h3', !GEN && stage.name === 'Senaryo' ? 'Metin' : stage.name), make('span', stage.status, 'badge'), make('p', stage.message, 'note'));
+        if(!GEN&&stage.name==='Render'){const manual=make('li');manual.append(make('h3','Kurgu'),make('p','Yedi izde elle düzenleyin. İsterseniz Manuel Plan / AI paketi hazırlayıp dış yapay zekâ cevabını içe aktarın.','note'),link('Kurgu ekranını aç',`/projects/${id}/editor`,'action-link'));pipeline.append(manual);}
+        const titles={'Senaryo':'Metni yapıştır','Sahne Planı':'Görsel / Kurgu Hazırlığı','Stok Medya':'Medya Tamamlama','Render':'Final render'};
+        const item = make('li'); item.append(make('h3', !GEN ? titles[stage.name]||stage.name : stage.name), make('span', stage.status, 'badge'), make('p', stage.message, 'note'));
         if (stage.name === 'Senaryo') item.append(link(GEN ? 'Senaryoyu Aç' : 'Metni Yapıştır', `/projects/${id}/script`, 'action-link'));
         if (stage.name === 'Sahne Planı' || stage.name === 'Stok Medya') item.append(link(stage.name === 'Sahne Planı' ? 'Sahne Planını Aç' : 'Medyayı Tamamla', `/projects/${id}/production`, 'action-link'));
         if(stage.name==='Seslendirme')item.append(link('Seslendirmeyi Aç',`/projects/${id}/narration`,'action-link'));
@@ -279,7 +281,7 @@ if (['/new-project', '/projects'].includes(window.location.pathname) || /^\/proj
       youtube.append(make('h3', 'YouTube'), make('span', 'Başlık · Açıklama · Etiketler', 'badge'),
         make('p', '5 başlık önerisi (en fazla 97 karakter), bölüm zamanlı açıklama ve etiketler (en fazla 500 karakter), yapay zekâ dil kontrolüyle.', 'note'),
         link('YouTube Başlık, Açıklama ve Etiketler', `/projects/${id}/youtube`, 'action-link'));
-      pipeline.append(youtube);
+      if(GEN)pipeline.append(youtube);
       detail.append(pipeline);
       const removeButton = make('button', 'Projeyi Sil', 'danger'); removeButton.type = 'button';
       removeButton.addEventListener('click', () => remove(project, removeButton, async () => window.location.assign('/projects')));

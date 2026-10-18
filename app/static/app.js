@@ -8,7 +8,7 @@ const pages = {
 const path = window.location.pathname;
 if (/^\/projects\/[^/]+$/.test(path)) pages[path] = ['Proje', 'Proje bilgileri ve üretim adımları.'];
 if (/^\/projects\/[^/]+\/script$/.test(path)) pages[path] = document.body.dataset.scriptGeneration === '1' ? ['Senaryo', 'Konuya uygun özgün bir YouTube senaryosu oluşturun, düzenleyin ve onaylayın.'] : ['Metin', 'Kendi metninizi yapıştırın; seslendirme ve altyazı bu metni kelimesi kelimesine kullanır.'];
-if (/^\/projects\/[^/]+\/production$/.test(path)) pages[path] = ['Görsel ve Kurgu Hazırlığı', 'Sahne planı ve her sahnenin medyası (stok video, görsel, infografik).'];
+if (/^\/projects\/[^/]+\/production$/.test(path)) pages[path] = ['Görsel ve Kurgu Hazırlığı', 'Gemini sahne planı → video, görsel ve harita kaynakları → manuel kurgu.'];
 if (/^\/projects\/[^/]+\/narration$/.test(path)) pages[path]=['Seslendirme','Onaylı senaryonuz için ses seçin, görev durumunu izleyin ve ses dosyanızı dinleyin.'];
 if (/^\/projects\/[^/]+\/subtitles$/.test(path)) pages[path]=['Altyazı ve Zamanlama','Yerel sesinizin süresine göre yaklaşık altyazı zamanlarını oluşturun, dinleyin ve düzenleyin.'];
 if (/^\/projects\/[^/]+\/youtube$/.test(path)) pages[path]=['YouTube','Başlık, açıklama ve etiket hazırlığı. Otomatik yükleme yapılmaz.'];

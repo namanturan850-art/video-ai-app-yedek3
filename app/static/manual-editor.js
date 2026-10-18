@@ -47,7 +47,7 @@
       const preview=n('img');preview.alt='Taslağın kaydedilmeden oluşturulan gerçek program karesi';preview.hidden=true;preview.style.maxWidth='100%';
       const additions=[...draft.clips,...(draft.adjustments||[]).map(x=>({id:'adjustment:'+x.slot_id,track:'dönüşüm',text:x.slot_id,start:0})),...(draft.transitions||[]).map(x=>({id:'transition:'+x.slot_id,track:'geçiş',text:x.slot_id+' · '+x.kind+' · '+x.duration.toFixed(3)+' sn',start:0}))];
       const selected=new Set(additions.filter(x=>!(draft.applied_ids||[]).includes(x.id)&&!draft.stale&&(!previousSelection||previousSelection.has(x.id))).map(x=>x.id)),list=n('div');
-      additions.forEach(clip=>{const input=n('input');input.type='checkbox';input.checked=selected.has(clip.id);input.disabled=!!draft.stale||(draft.applied_ids||[]).includes(clip.id);input.onchange=()=>input.checked?selected.add(clip.id):selected.delete(clip.id);const label=n('label',`${c.clock(clip.start)} · ${clip.track} · ${clip.text||clip.motion?.template}`);label.prepend(input);list.append(label);});
+      additions.forEach(clip=>{const source=clip.media&&(c.getArchive()?.items||[]).find(a=>a.provider===clip.media.provider&&a.media_id===clip.media.media_id);const input=n('input');input.type='checkbox';input.checked=selected.has(clip.id);input.disabled=!!draft.stale||(draft.applied_ids||[]).includes(clip.id);input.onchange=()=>input.checked?selected.add(clip.id):selected.delete(clip.id);const label=n('label',`${c.clock(clip.start)} · ${clip.track} · ${clip.text||clip.motion?.template||source?.title||source?.file_name||'Görüntü kesiti'}`);label.prepend(input);list.append(label);});
       const pending=(draft.transition_issues||[]).filter(i=>i.status==='pending'),issues=n('div','','manual-transition-issues');
       pending.forEach(issue=>{
         const row=n('section','','manual-transition-issue'),choices=n('select'),feedback=n('p');
@@ -61,13 +61,22 @@
         });resolve.disabled=!!draft.stale;
         row.append(n('strong',issue.message),n('p','Diğer öneriler korundu. Bu geçiş seçiminiz ve onayınız olmadan uygulanmaz.'),choices,resolve,feedback);issues.append(row);
       });
+      const importIssues=draft.import_issues||[],repair=n('div','','manual-import-issues');
+      if(importIssues.length){
+        importIssues.forEach(issue=>repair.append(n('p',`${issue.section}[${issue.index}] · Sahne ${issue.scene_id} · ${issue.start}–${issue.end} sn: ${issue.message}`)));
+        const message=n('textarea','','naman-json');message.readOnly=true;message.value=draft.correction_message;message.setAttribute('aria-label','Dış yapay zekâ için düzeltme mesajı');
+        repair.append(n('p','Hatalı işlemler saklandı; önizleme ve rendera eklenmez. Cevabı düzenleyerek yeniden doğrulayabilir veya düzeltme mesajını dış yapay zekâya gönderebilirsiniz.'),
+          message,b('Düzeltme mesajını kopyala',async()=>{try{await navigator.clipboard.writeText(message.value);}catch{message.focus();message.select();}}),
+          b('Cevabı düzelt ve yeniden doğrula',()=>jsonImport(JSON.stringify(draft.original_response,null,2))));
+      }
       show('Kurgu taslağı — henüz uygulanmadı',[
         n('p','Kilitler ve mevcut manuel öğeler korunur. Yalnız seçtiklerinizi açıkça uygulayın.'),n('pre',JSON.stringify(draft.changes||[],null,2)),
+        ...(importIssues.length?[repair]:[]),
         ...(pending.length?[n('p',`${pending.length} geçiş düzeltme bekliyor. Önizlemede bekleyen geçişler uygulanmaz; kalan öneriler kaybolmaz.`),issues]:[]),
         n('p',draft.overlapping_manual_ids?.length?'Zaman çakışması: '+draft.overlapping_manual_ids.length+' mevcut katman var; hiçbiri silinmez.':''),list,preview,
         b('Taslağı imleçte önizle — kaydetmez',()=>{if(draft.stale){status('Eski taslak için yeni revizyon oluşturun.');return;}preview.hidden=false;preview.src=endpoint+`/editorial/drafts/${draft.id}/preview?time=${c.getTime()}`;}),
         b('Seçilen önerileri onayla',async()=>{
-          if(pending.length&&!confirm(`${pending.length} geçiş henüz düzeltilmedi ve uygulanmayacak. Bunlar kayıtlı taslakta bekleyecek; yalnız seçili geçerli öneriler uygulansın mı?`))return;
+          if((pending.length||importIssues.length)&&!confirm(`${pending.length} geçiş ve ${importIssues.length} işlem düzeltme bekliyor; uygulanmayacak. Bunlar kayıtlı taslakta kalacak; yalnız seçili geçerli öneriler uygulansın mı?`))return;
           try{await c.api(endpoint+`/editorial/drafts/${draft.id}/approve`,{method:'POST',body:JSON.stringify({confirmed:true,clip_ids:[...selected]})});await c.load();}catch(e){status(e.message);}
         })]);
     }
@@ -120,10 +129,10 @@
     async function subtitleVersions(){try{const state=await c.api(`/api/projects/${c.id}/subtitles`);show('Altyazı sürümleri',state.versions.map(v=>{const row=n('div',`Sürüm ${v.version} · ${v.stale?'Eski kaynak':'Geçerli'}`),srt=n('a','SRT indir'),vtt=n('a','VTT indir');srt.href=`/api/projects/${c.id}/subtitles/versions/${v.id}/files/srt`;vtt.href=srt.href.replace('/srt','/vtt');row.append(b('Bu altyazı sürümüne dön',async()=>{try{await c.api(`/api/projects/${c.id}/subtitles/versions/${v.id}/activate`,{method:'POST',body:'{"confirm":true}'});await c.load();}catch(e){status(e.message);}}),srt,vtt);return row;}));}catch(e){status(e.message);}}
     window.NAMANManual.openPackage=jsonImport;
     clean.push(()=>delete window.NAMANManual.openPackage);
-    async function jsonImport(){try{
+    async function jsonImport(initialText=''){try{
       let pack=await c.api(endpoint+'/manual/package');
       const area=n('textarea','','naman-json'),packageArea=n('textarea','','naman-json'),file=n('input'),result=n('p','','naman-json-message');
-      area.setAttribute('aria-label','Dış yapay zekâ cevabı');area.placeholder='Cevabı metin veya JSON olarak buraya yapıştırın.';
+      area.setAttribute('aria-label','Dış yapay zekâ cevabı');area.placeholder='Cevabı metin veya JSON olarak buraya yapıştırın. Parçalı JSON mesajlarını alt alta ekleyebilirsiniz.';area.value=typeof initialText==='string'?initialText:'';
       packageArea.readOnly=true;packageArea.setAttribute('aria-label','Hazır AI paketi');packageArea.value=JSON.stringify(pack,null,2);
       file.type='file';file.accept='.json,application/json';file.hidden=true;
       file.onchange=async()=>{try{if(file.files[0]){area.value=await file.files[0].text();result.textContent='Dosya yüklendi. Cevabı içe aktar ile taslağı inceleyin.';}}catch{result.textContent='Dosya okunamadı. JSON dosyasını yeniden seçin.';}};

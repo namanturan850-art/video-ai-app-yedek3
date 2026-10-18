@@ -171,7 +171,21 @@ class Editorial:
                         raise EditorError('unsupported_scene','Bu manuel JSON sahnesinin composition/motion alanı desteklenmiyor. Gerçek X/Y, ölçek veya bağımsız metin katmanı kullanın.')
                     text=item.get('overlay_text')
                     if text:clips.append({'id':uuid4().hex,'kind':'text','track':'layers','start':start,'end':end,'text':text,'origin':'json','source_key':source_key})
-                    intervals.add(scene,item,start,end)
+                    if 'media' in item:
+                        # An imported file choice uses existing supplementary
+                        # clips. Never replace/delete the underlying source.
+                        if any(s.get('locked') and start<s['end'] and end>s['start'] for s in slots):
+                            raise EditorError('locked','Bu aralıkta kilitli görüntü yuvası var; arşiv kesiti üzerine eklenmedi.',409)
+                        media_clip={'id':uuid4().hex,'kind':'media','track':'visuals','start':start,'end':end,
+                                    'media':item['media'],'source_start':item.get('source_start',0.),'origin':'json','source_key':source_key}
+                        motion=item.get('motion','none')
+                        if motion in ('pan','slow_zoom','ken_burns'):
+                            prop='x' if motion=='pan' else 'scale';low,high=(-100.,100.) if prop=='x' else (1.,1.12)
+                            media_clip['keyframes']=[{'property':prop,'time':0.,'value':low},
+                                {'property':prop,'time':max(0.,end-start-1/30),'value':high}]
+                            if end-start<=1/30+1e-6:media_clip['keyframes']=media_clip['keyframes'][:1]
+                        clips.append(media_clip)
+                    else:intervals.add(scene,item,start,end)
                     continue
                 track={'infografikler':'infographics','harita_sahneleri':'maps','vurgular':'emphasis','katmanlar':'layers'}[section]
                 clip={'id':uuid4().hex,'kind':'motion' if section in ('infografikler','harita_sahneleri') else 'text',

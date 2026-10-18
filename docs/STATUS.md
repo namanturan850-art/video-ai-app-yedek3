@@ -1139,3 +1139,10 @@ Doğrulama: hedefli backend/başlatıcı paketi **21 geçti**; tam paket sonucu 
 Doğrulama: ilgili Python paketi **11 geçti**; DOM olaylarıyla çalışan iki frontend testi geçti. Testler cetvelde 23. saniyeye tıklamada ses ve videonun 23'e gitmesini, playhead sürüklemeyle 25'e geçmesini ve sağ kesme tutamacının 30→31 saniye sınırını komşu kliple birlikte gerçek `PUT /editor/timeline` isteğine yazmasını doğrular. Render/motion geniş paketinde **69 test geçti**, ardından bu değişikliklerden bağımsız eski `tests/test_rendering.py::test_schema9_upgrade_preserves_sources` testi şema 12 beklerken güncel uygulama şema 13 döndürdüğü için durdu.
 
 Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/Mapbox kamera alanları uydurulmadı; desteklenen şablon verileri düzenlenebilir. Gerçek Mapbox ağ isteği, ücretli Gemini, Windows WebView2, GPU ve 8–10 dakikalık final render çalıştırılmadı. Örnek proje testlerde bellek/geçici SQLite verisiyle kuruldu; gerçek kullanıcı projelerine dokunulmadı.
+
+### 2026-10-18 — Final polish, ilk doğrulanan geliştirme
+
+- Başlangıç: `9a18853` (PR #92 birleşmiş güncel main); dal: `feature/naman-editor-final-polish`.
+- Atomik ek klip grupları, Bezier/Ease/Hold, özgün animasyon alanını koruyan bölme, dört saniyelik yerel FFmpeg proxyleri, kaynak nesnesi düzenlemeleri, yerel metadata denetimi ve onaylı/iptal edilebilir parçalı Gemini kare incelemesi eklendi.
+- İlk ilgili entegrasyon çalıştırması: **64 passed** (93,77 sn), gerçek SQLite/FFmpeg ve mevcut manuel kurgu testleri dahil; ağ bağlantıları offline test korumasıyla kapalı.
+- Sonraki doğrulama sürüyor: Chromium etkileşimleri, proxy durum sorgusu optimizasyonu, Windows test araçları ve kapsamlı teslim raporu. Windows donanımına erişim ve tam render checkpoint desteği henüz doğrulanmış/tamamlanmış değildir.

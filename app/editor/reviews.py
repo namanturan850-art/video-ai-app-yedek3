@@ -15,7 +15,7 @@ class Reviews:
     def get(self,pid):
         with closing(self.projects._connection()) as c:
             self.projects._row(c,pid)
-            rows=c.execute('SELECT sha256,result_json FROM archive_analysis_cache WHERE project_id=? AND analyzer_version=? ORDER BY rowid DESC',(pid,VIDEO_REVIEW_VERSION)).fetchall()
+            rows=c.execute('SELECT sha256,result_json FROM archive_analysis_cache WHERE project_id=? AND analyzer_version IN (?,?,?) ORDER BY rowid DESC',(pid,VIDEO_REVIEW_VERSION,'naman-local-quality-v1','naman-comprehensive-review-v1')).fetchall()
             events=c.execute("SELECT payload_json FROM editorial_events WHERE project_id=? AND kind='review_finding' ORDER BY id",(pid,)).fetchall()
         statuses={}
         for row in events:

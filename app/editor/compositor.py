@@ -8,6 +8,7 @@ from pathlib import Path
 import math
 
 from app.editor.advanced import Document
+from app.editor.curves import progress,progress_expression
 from app.rendering.models import RenderError
 
 
@@ -18,7 +19,7 @@ def value_at(edit,prop,time):
     for a,b in zip(points,points[1:]):
         if time<=b['time']:
             u=(time-a['time'])/(b['time']-a['time'])
-            if b['interpolation']=='ease_in_out':u=u*u*(3-2*u)
+            u=progress(b,u)
             return a['value']+(b['value']-a['value'])*u
     return points[-1]['value']
 
@@ -29,7 +30,7 @@ def expression(edit,prop,var='t'):
     result=str(float(points[-1]['value']))
     for a,b in reversed(list(zip(points,points[1:]))):
         u=f'clip((({var})-{a["time"]})/{b["time"]-a["time"]},0,1)'
-        if b['interpolation']=='ease_in_out':u=f'({u})*({u})*(3-2*({u}))'
+        u=progress_expression(b,u)
         result=f'if(lt(({var}),{b["time"]}),{a["value"]}+({b["value"]-a["value"]})*({u}),{result})'
     return f'if(lt(({var}),{points[0]["time"]}),{points[0]["value"]},{result})'
 
@@ -83,7 +84,7 @@ def motion_asset(clip,folder,kit=None,cancelled=None,language='de',sample_time=N
     spec={**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)}
     from app.motion.places import offline
     with offline():
-        path,_,_=render_clip(folder,spec,style,clip['end']-clip['start'],0,language=language,prefer_openmontage=False,cancelled=cancelled,sample_time=sample_time)
+        path,_,_=render_clip(folder,spec,style,clip.get('animation_duration') or clip['end']-clip['start'],0,language=language,prefer_openmontage=False,cancelled=cancelled,sample_time=(sample_time+clip.get('animation_offset',0) if sample_time is not None else None),element_edits=clip.get('motion_elements'))
     return {'path':path,'type':'video','has_audio':False,'sampled':sample_time is not None}
 
 
@@ -135,13 +136,14 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
         args.extend(['-t',f'{(seconds or duration)*speed+.1:.6f}','-i',str(path)])
         return index
     def audio_chain(index,edit,length,speed,start):
+        offset=edit.get('animation_offset',0);animation_length=edit.get('animation_duration') or length
         al=label();chain=f'[{index}:a]aresample=48000,atrim=duration={length*speed},asetpts=PTS-STARTPTS'
         tempo=speed
         while tempo<.5:chain+=',atempo=0.5';tempo/=.5
         while tempo>2:chain+=',atempo=2';tempo/=2
-        chain+=f',atempo={tempo},asetpts=N/SR/TB,volume=\'{expression(edit,"volume")}\':eval=frame'
-        if edit['fade_in']:chain+=f',afade=t=in:st=0:d={edit["fade_in"]}'
-        if edit['fade_out']:chain+=f',afade=t=out:st={length-edit["fade_out"]}:d={edit["fade_out"]}'
+        chain+=f',atempo={tempo},asetpts=N/SR/TB,volume=\'{expression(edit,"volume",f"t+{offset}")}\':eval=frame'
+        if edit['fade_in']:chain+=f",volume='min(1,(t+{offset})/{edit['fade_in']})':eval=frame"
+        if edit['fade_out']:chain+=f",volume='max(0,min(1,({animation_length}-t-{offset})/{edit['fade_out']}))':eval=frame"
         # Sample counts keep delay/padding exact after atempo, whose last buffer
         # can carry a timestamp beyond its actual sample count.
         samples=round(duration*48000)
@@ -161,10 +163,11 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
     edits+=sorted((c for c in doc['clips'] if c['visible']),key=lambda c:(c['order'],c['id']))
     for edit in edits:
         start,end=edit['start'],edit['end'];length=end-start
+        offset=edit.get('animation_offset',0);animation_length=edit.get('animation_duration') or length
         if frame_time is not None and not start<=frame_time<end:continue
         asset=assets.get(edit['id']);tr=edit['transform'];speed=tr['speed']
-        local=(frame_time-start) if frame_time is not None else None
-        expr=lambda prop,var='t':str(float(value_at(edit,prop,local))) if local is not None else expression(edit,prop,f'{var}-{start}')
+        local=(frame_time-start+offset) if frame_time is not None else None
+        expr=lambda prop,var='t':str(float(value_at(edit,prop,local))) if local is not None else expression(edit,prop,f'{var}-{start}+{offset}')
         if edit.get('track')=='audio':
             i=input_file(asset['path'],'audio',edit.get('source_start',0),speed,length)
             audio_chain(i,edit,length,speed,start);continue
@@ -177,7 +180,7 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
             if edit['kind']=='text':asset={'path':text_image(edit,folder,width,height),'type':'image','has_audio':False}
             if edit['kind']=='shape':asset={'path':shape_image(edit,folder,width,height),'type':'image','has_audio':False}
             if not asset:raise RenderError('advanced_missing','Ek animasyonun yerel önizleme dosyası hazırlanamadı.')
-            source_start=edit.get('source_start',0)+(local*speed if local is not None else 0)
+            source_start=edit.get('source_start',0)+((local-offset)*speed if local is not None else 0)
             if asset.get('sampled'):source_start=0
             i=input_file(asset['path'],asset['type'],source_start,speed,length if local is None else .04)
             source=f'{i}:v'
@@ -208,12 +211,15 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
         if any(k['property']=='opacity' for k in edit['keyframes']):
             chain+=f'geq=r=\'r(X,Y)\':g=\'g(X,Y)\':b=\'b(X,Y)\':a=\'alpha(X,Y)*({expr("opacity","T")})\','
         elif tr['opacity']!=1:chain+=f'colorchannelmixer=aa={tr["opacity"]},'
-        if frame_time is None:
-            if edit['fade_in']:chain+=f'fade=t=in:st={start}:d={edit["fade_in"]}:alpha=1,'
-            if edit['fade_out']:chain+=f'fade=t=out:st={end-edit["fade_out"]}:d={edit["fade_out"]}:alpha=1,'
-        else:
-            alpha=min(1,local/edit['fade_in'] if edit['fade_in'] else 1,(length-local)/edit['fade_out'] if edit['fade_out'] else 1)
-            if alpha<1:chain+=f'colorchannelmixer=aa={alpha},'
+        if edit['fade_in'] or edit['fade_out']:
+            if frame_time is None:
+                clock=f'(T-{start}+{offset})'
+                alpha=f"min(1,{clock}/{edit['fade_in']})" if edit['fade_in'] else '1'
+                if edit['fade_out']:alpha=f"({alpha})*max(0,min(1,({animation_length}-{clock})/{edit['fade_out']}))"
+                chain+=f"geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='alpha(X,Y)*({alpha})',"
+            else:
+                alpha=min(1,local/edit['fade_in'] if edit['fade_in'] else 1,(animation_length-local)/edit['fade_out'] if edit['fade_out'] else 1)
+                if alpha<1:chain+=f'colorchannelmixer=aa={max(0,alpha)},'
         chain=chain.rstrip(',')+f'[{stage}]';graphs.append(chain)
         x=f'(W-w)/2+({expr("x")})*{width}/1920';y=f'(H-h)/2+({expr("y")})*{height}/1080'
         enabled=f"between(t,{start},{end-1/3000})" if frame_time is None else '1'

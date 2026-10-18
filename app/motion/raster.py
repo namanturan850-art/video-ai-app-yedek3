@@ -87,6 +87,10 @@ def draw_frame(scene, t, base, maps, pictures=None):
     for index, element in enumerate(scene['elements']):
         kind = element['type']
         p = props_at(element, t, name)
+        if scene.get('_editor_elements'):
+            from app.editor.motion_objects import properties
+            p=properties(scene,index,p,t)
+            if p is None:continue
         if kind == 'map':
             image.paste(maps[index].frame(p.get('zoom', 0)))
             view = map_view(maps[index].props, p.get('zoom', 0))
@@ -269,7 +273,7 @@ def render(scene, output, ffmpeg):
     from app.motion.control import guard, check
     with guard(process):
         # Nothing changes after the last keyframe: the settled picture is written again, not redrawn.
-        settled = max((key[0] for e in scene['elements'] for track in (e.get('tracks') or {}).values() for key in track), default=0)
+        settled = float('inf') if scene.get('_editor_elements') else max((key[0] for e in scene['elements'] for track in (e.get('tracks') or {}).values() for key in track), default=0)
         data = None
         for i in range(frames):
             check()

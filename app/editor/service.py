@@ -725,7 +725,7 @@ class EditorService:
             connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,media['sha256'],ANALYZER_VERSION,json.dumps(result,ensure_ascii=False),now()))
         return result
 
-    def video_review(self,project_id,payload):
+    def video_review(self,project_id,payload,*,sample_times=None,review_version=None,expected_version=None):
         if set(payload)!={'confirm','data_sharing_confirmed','cost_confirmed'} or any(payload[k] is not True for k in payload):
             raise EditorError('confirmation_required','Gemini için açık kare paylaşımı ve olası maliyet onayı gereklidir. Kurgu içindeki Gemini inceleme panelini kullanın.')
         if not self.rendering: raise EditorError('render_required','Render servisi kullanılamıyor.',409)
@@ -734,12 +734,18 @@ class EditorService:
         view=self.rendering.view(project_id);version=view.get('active')
         if not version or version.get('status')!='completed' or version.get('video_missing'):
             raise EditorError('render_required','Önce tamamlanmış videoyu aktif seçin.',409)
+        if expected_version is not None and version['id']!=expected_version:raise EditorError('stale_review','İncelenen video sürümü değişti; kısmi rapor korundu.',409)
         path=self.rendering.export(project_id,version['id']);identity=sha256_file(path)
+        analyzer=review_version or VIDEO_REVIEW_VERSION
+        if sample_times is not None:
+            if not 1<=len(sample_times)<=8 or any(not finite(t) or t<0 for t in sample_times):raise EditorError('invalid_review','Bir analiz parçasında en fazla sekiz geçerli kare olabilir.')
+            identity=hashlib.sha256((identity+json.dumps(sample_times)).encode()).hexdigest()
         with self.projects.lock,closing(self.projects._connection()) as connection:
-            cached=connection.execute('SELECT result_json FROM archive_analysis_cache WHERE project_id=? AND sha256=? AND analyzer_version=?',(project_id,identity,VIDEO_REVIEW_VERSION)).fetchone()
+            cached=connection.execute('SELECT result_json FROM archive_analysis_cache WHERE project_id=? AND sha256=? AND analyzer_version=?',(project_id,identity,analyzer)).fetchone()
         if cached:return {**json.loads(cached[0]),'cached':True}
         duration=float(version.get('metadata',{}).get('duration') or self.view(project_id)['duration'] or 0)
-        samples=[round(duration*i/9,3) for i in range(1,9)] if duration>0 else []
+        samples=sample_times if sample_times is not None else ([round(duration*i/9,3) for i in range(1,9)] if duration>0 else [])
+        if any(t>=duration for t in samples):raise EditorError('invalid_review','Kare zamanları video süresi içinde olmalıdır.')
         images=[]
         for at in samples:
             try:
@@ -771,7 +777,7 @@ class EditorService:
         result={'cached':False,'basis':context['sampling_notice'],'sample_timecodes':context['samples'],'summary':' '.join(answer['summary'].split())[:1000],
                 'issues':issues,'render_version_id':version['id'],'analysis_scope':'sample_frames','source_sha256':identity}
         with self.projects.lock,closing(self.projects._connection()) as connection,connection:
-            connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,identity,VIDEO_REVIEW_VERSION,json.dumps(result,ensure_ascii=False),now()))
+            connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,identity,analyzer,json.dumps(result,ensure_ascii=False),now()))
         return result
 
     def _gemini_descriptions(self, project_id, provider, media_id, clips):

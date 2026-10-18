@@ -130,7 +130,7 @@ def shared_render(fn):
 
 @shared_render
 
-def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None):
+def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None, element_edits=None):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
     from app.rendering.tools import discover
@@ -139,6 +139,10 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         raise RuntimeError('ffmpeg_missing')
     spec = with_pictures(spec, folder)
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
+    if element_edits:
+        from app.editor.motion_objects import validate_edits
+        validate_edits(scene,element_edits)
+        scene['_editor_elements']=element_edits
     if sample_time is not None:scene['_sample_time']=max(0,min(duration,float(sample_time)))
     target = folder / (scene_key(scene) + '.mp4')
     if sample_time is not None:
@@ -157,7 +161,7 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     token = CANCELLED.set(cancelled or (lambda:False))
     try:
         check()
-        if prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC and not any(e['type'] == 'relief' for e in scene['elements']):  # the nine marker templates: local renderer only
+        if not element_edits and prefer_openmontage and bridge is not None and spec['template'] in templates.BASIC and not any(e['type'] == 'relief' for e in scene['elements']):  # the nine marker templates: local renderer only
             try:
                 openmontage(scene, temporary, bridge, ffmpeg, folder)
                 engine = 'openmontage'

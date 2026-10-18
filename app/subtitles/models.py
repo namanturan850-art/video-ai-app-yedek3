@@ -45,7 +45,7 @@ def validate_cues(payload, duration, *, allow_empty=False):
             raise SubtitleError('invalid_cues', f'{index}. altyazı: Başlangıç negatif olamaz; zamanlar geçerli sayı, metin dolu olmalı.') from None
         if cue['end'] <= cue['start']:
             raise SubtitleError('invalid_cues', f'{index}. altyazı: Bitiş başlangıçtan sonra olmalı.')
-        if cue['start'] < previous:
+        if round(cue['start'], 3) < previous:
             raise SubtitleError('invalid_cues', f'{index}. altyazı: Zamanlar sıralı olmalı ve altyazılar örtüşmemeli.')
         if cue['end'] > duration + .001:
             raise SubtitleError('invalid_cues', f'{index}. altyazı: Bitiş ses süresini aşamaz.')

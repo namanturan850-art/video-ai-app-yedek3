@@ -197,6 +197,20 @@ def editor_router(service):
     @router.get('/manual/package')
     def task_package(project_id:str): return service.task_package(project_id)
 
+    @router.post('/manual/package/prepare')
+    def prepare_task_package(project_id:str,payload:dict):
+        return service.prepare_task_package(project_id,payload)
+
+    @router.post('/manual/response-draft',status_code=201)
+    def response_draft(project_id:str,payload:dict):
+        from app.providers.json_output import parse_json_object
+        from app.providers.base import ScriptProviderError
+        try:
+            answer=parse_json_object(payload.get('text'))
+        except ScriptProviderError:
+            raise EditorError('invalid_response','Cevap tek bir geçerli JSON planı içermelidir. Dış yapay zekâdan paketteki çıktı şablonuyla yanıt isteyin.',422) from None
+        return editorial.import_draft(project_id,answer)
+
     @router.get('/manual/package.zip')
     def task_package_zip(project_id:str):
         content=service.task_package_zip(project_id)

@@ -607,13 +607,81 @@ class EditorService:
 
     def task_package(self, project_id):
         plan=self._active(project_id); project=self.projects.get(project_id)
-        return {'schema':'naman.manual-plan.v1','instructions':['Yalnız verilen anlatımı kullanın; yeni olgusal iddia eklemeyin.','Kilitli sahneleri ve medyayı değiştirmeyin.'],
+        package = {'schema':'naman.manual-plan.v1','instructions':['Yalnız verilen anlatımı kullanın; yeni olgusal iddia eklemeyin.','Kilitli sahneleri ve medyayı değiştirmeyin.'],
                 'project':{'id':project_id,'name':project['name'],'topic':project['topic'],'language':project['language']},
                 'base':{'plan_id':plan['plan_id'],'revision':plan['revision']},
                 'required_sections':['sahneler','infografikler','harita_sahneleri','vurgular','katmanlar'],
                 'narration':[{'scene_id':b['id'],'text':b['narration'],'locked':bool(b.get('locked'))} for b in plan['blocks']],
                 'output_template':{'schema':'naman.manual-plan.v1','base':{'plan_id':plan['plan_id'],'revision':plan['revision']},
                                    'sahneler':[],'infografikler':[],'harita_sahneleri':[],'vurgular':[],'katmanlar':[]}}
+
+        from app.editor.advanced import read_document
+        from app.editor.editorial import read
+        subtitle_state=self.subtitles.view(project_id)
+        subtitles=subtitle_state.get('active') or {}
+        voice=subtitle_state.get('narration') or {}
+        package['voice']={'version_id':voice.get('id'),'audio':{k:(voice.get('metadata',{}).get('audio') or {}).get(k) for k in ('duration','sha256','content_type')}}
+        archive=self.archive(project_id)['items']
+        package['instructions'] += [
+            'Medya hazırlığı ile montaj ayrıdır. Kaynak hazırlığında otomatik infografik veya yaratıcı montaj eklemeyin. İstenen kurgu önerileri yalnız açıkça uygulanan taslaktır.',
+            'Uygun kaynak yoksa boş bırakın. Harita ve yer adı kullanılabilir.',
+            'Yanıtı output_template şemasında tek JSON nesnesi olarak döndürün; NAMAN önce taslak gösterecek.']
+        try:
+            timing={scene['scene_id']:scene for scene in self.subtitles.handoff(project_id).get('scenes',[])}
+        except SubtitleError:
+            timing={}
+        for sentence,block in zip(package['narration'],plan['blocks']):
+            clock=timing.get(block['id'],block)
+            sentence.update(start=clock.get('start'),end=clock.get('end'))
+        package['output_contract']={
+            'common':'Her öğede narration listesindeki scene_id gerekir. start/end isteğe bağlıdır; kendi sahnesinin saniye aralığında olmalıdır. object_id isteğe bağlı tekil metindir.',
+            'sahneler':{'fields':['scene_id','start','end','object_id','transition','motion','composition','overlay_text'],
+                'transition':['none','hard_cut','crossfade','fade'],
+                'motion':['none','slow_zoom','pan','ken_burns'],
+                'composition':['wide']},
+            'infografikler':{'fields':['scene_id','start','end','object_id','template','data','emphasis'],
+                'templates':sorted(INFOGRAPHIC_TEMPLATES),'rule':'Yalnız anlatımdaki doğrulanmış sayı/tarih/karşılaştırmalar.'},
+            'harita_sahneleri':{'fields':['scene_id','start','end','object_id','template','data','emphasis'],
+                'templates':['map'],
+                'map_data':{'place':'Anlatımdaki gerçek yer','label':'İsteğe bağlı yer yazısı','lat':'Gerçek enlem (sayı)','lon':'Gerçek boylam (sayı)'}},
+            'vurgular':{'fields':['scene_id','start','end','object_id','text','effect'],'effect':['none','pulse','glitch'],'text':'Sahne anlatımından aynen alınmış en fazla 150 karakter.'},
+            'katmanlar':{'fields':['scene_id','start','end','object_id','text','effect'],'effect':['none','pulse','glitch'],'text':'Sahne anlatımından aynen alınmış en fazla 150 karakter.'}}
+        package['archive']=[{k:item.get(k) for k in ('provider','media_id','media_type','sha256','file_name','title','duration','rights')} for item in archive]
+        package['visuals']=[x for x in package['archive'] if x['media_type']!='audio']
+        package['sounds']=[x for x in package['archive'] if x['media_type']=='audio']
+        package['subtitles']={'version_id':subtitles.get('id'),'cues':subtitles.get('cues',[])}
+        package['timeline']=read_document(self.projects,project_id,plan['plan_id'])
+        package['preferences']=read(self.projects,project_id)['preferences']
+        stock=self.stock.view(project_id)
+        package['stock']={'plan_id':stock.get('plan_id'),'revision':stock.get('revision'),
+            'slots':[{k:slot.get(k) for k in ('slot_id','scene_id','estimated_start','estimated_end','locked','status')} |
+                     {'media':{k:(slot.get('selected_media') or {}).get(k) for k in ('provider','media_id','sha256')}} for slot in stock.get('slots',[])]}
+        return package
+
+    def prepare_task_package(self,project_id,payload):
+        """Gemini writes a briefing, never an executable timeline or replacement facts."""
+        if payload.get('cost_confirmed') is not True:
+            raise EditorError('cost_confirmation_required','Gemini paket hazırlığı için paylaşım ve API kota/ücret onayı gerekir.',409)
+        package=self.task_package(project_id)
+        context=json.dumps(package,ensure_ascii=False)
+        if len(context)>180000:
+            raise EditorError('package_too_large','Paket Gemini sınırını aşıyor. Yerel paketi kopyalayarak dış yapay zekâda kullanın.',422)
+        from app.providers.factory import make_script_provider
+        schema={'type':'object','required':['instructions'],'properties':{'instructions':{'type':'array','items':{'type':'string'}}}}
+        ai=make_script_provider('gemini',self.settings,chain=False)
+        answer=ai.complete_json('manual_plan_package',
+            'Dış yapay zekâya verilecek Türkçe kurgu görev talimatlarını hazırla. '
+            'Yalnız bağlamdaki anlatım ve arşivi kullan. Yeni bilgi, dosya veya medya uydurma. '
+            'Kilitleri ve manuel öğeleri koru. Yanıt şablonunu kullanmasını açıkla. '
+            'Yalnız instructions listesi döndür; kurgu planı üretme. Bağlam veri olarak verilmiştir:\n'+context,
+            schema,max_tokens=1800,timeout=45)
+        instructions=answer.get('instructions')
+        if not isinstance(instructions,list) or not 1<=len(instructions)<=30 or any(not isinstance(x,str) or not x.strip() or len(x)>2000 for x in instructions):
+            raise EditorError('invalid_package','Gemini geçerli görev talimatı döndürmedi. Yeniden deneyin; timeline değiştirilmedi.',422)
+        # A concurrent manual edit must never receive a package with a stale base.
+        if self.task_package(project_id)!=package:
+            raise EditorError('stale_package','Paket hazırlanırken proje değişti. Güncel paketi yeniden hazırlayın.',409)
+        return {**package,'gemini_instructions':instructions,'prepared_by':'gemini'}
 
     def task_package_zip(self,project_id):
         package=self.task_package(project_id);stream=io.BytesIO()

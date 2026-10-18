@@ -7,7 +7,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
   const node=(tag,text,cls)=>{const n=document.createElement(tag);if(text)n.textContent=text;if(cls)n.className=cls;return n;};
   function button(parent,text,fn,disabled=false){const b=node('button',text);b.type='button';b.dataset.unavailable=String(disabled);b.addEventListener('click',fn);parent.append(b);return b;}
   const back=node('a','← Projeye dön');back.href=`/projects/${id}`;root.append(back);
-  root.append(node('p','Kayıtlı metninizden sahne planını hazırlayın, sonra Medyayı Tamamla ile her sahneye stok video, görsel veya infografik seçtirin. Video, Render ekranında oluşturulur.'));
+  root.append(node('p','Kayıtlı metninizden sahne planını hazırlayın, sonra Medyayı Tamamla ile video, görsel ve harita kaynaklarını hazırlayın. Otomatik infografik veya yaratıcı montaj eklenmez; uygun kaynak yoksa yuva boş kalır. Ardından Kurgu ekranında düzenleyin.'));
   root.append(node('p','Yukarı/Aşağı taşı yalnızca görsel tasarımı taşır; onaylı anlatım aynı sırada kalır. Kilitli sahneler yeniden planlamada korunur.','note'));
   const status=node('p','Yükleniyor…');status.id='production-status';status.setAttribute('role','status');root.append(status);
   const provider=node('select');provider.id='production-provider';
@@ -34,7 +34,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     const l=node('label',text),input=node('input');input.type=type;input.name=name;input.id=`music-${name}`;l.htmlFor=input.id;
     if(type==='number'){input.min=0;input.max=name==='volume'?1:30;input.step=.05;}music.append(l,input);
   }
-  const save=node('button','Müzik Tercihlerini Kaydet');save.type='submit';music.append(save);root.append(music);
+  const save=node('button','Müzik Tercihlerini Kaydet');save.type='submit';music.append(save);const musicDrawer=node('details','','settings-panel');musicDrawer.append(node('summary','Müzik tercihleri'),music);root.append(musicDrawer);
   const busy=()=>Boolean(inFlight||job&&['queued','analyzing','planning','generating','checking'].includes(job.status));
   const stamp=()=>({plan_id:view.plan.plan_id,revision:view.plan.revision});
   async function request(url,method='GET',body){
@@ -87,7 +87,7 @@ if (/^\/projects\/[^/]+\/production$/.test(window.location.pathname)) {
     form.append(select);const submit=node('button','Buradan böl');submit.type='submit';form.append(submit);button(form,'Vazgeç',cancelEditor);card.append(form);form.addEventListener('submit',event=>{event.preventDefault();action(block,'split',{split_at:Number(select.value)});});
   }
   async function load(){
-    try{[view,job]=await Promise.all([request(base),request(`/api/projects/${id}/script`).then(x=>{if(!providerChosen&&x.default_provider)provider.value=x.default_provider;return x.job;})]);
+    try{[view,job]=await Promise.all([request(base),request(`/api/projects/${id}/script`).then(x=>{return x.job;})]);
       status.textContent=job&&['visual','visual_scene'].includes(job.action)&&['queued','analyzing','planning','generating','checking','error'].includes(job.status)?`${job.status_label} · ${job.progress.percent}% ${job.error_message||''}`:view.state;ask.hidden=!(job&&['visual','visual_scene'].includes(job.action)&&job.status==='error'&&job.provider==='gemini'&&['free_quota_exhausted','quota_limit','rate_limit','upstream_error','gemini_timeout','generation_timeout','no_internet','network_error','key_rejected','missing_key','model_unavailable'].includes(job.progress?.error_category));
       fallbackNote.hidden=!(job&&['visual','visual_scene'].includes(job.action)&&job.progress?.local_fallback);fallbackNote.textContent=job?.progress?.local_fallback?.message||'';
       warnings.replaceChildren();for(const text of view.scene_warnings)warnings.append(node('li',text));if(!view.approved_script)warnings.prepend(node('li','Önce metni kaydedin (Metin ekranı).'));

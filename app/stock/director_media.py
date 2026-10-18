@@ -52,6 +52,7 @@ def clock():  # replaced in tests
     return time.monotonic()
 STAGES = {'locked': 'Kilitli (sizin seçiminiz)', 'kept': 'Mevcut seçim · yapay zekâ onayladı',
           'sources_only':'Kaynak hazırlama',
+          'source_map':'Harita kaynağı',
           'local_archive': '1 · Yerel medya arşivi',
           'stock_video': '1 · Stok video (planlanan sorgu)', 'rewritten_video': '2 · Stok video (yapay zekânın yeni sorgusu)',
           'stock_image': '3 · Stok görsel + hafif kamera hareketi', 'broader': '4 · Daha geniş konu medyası',
@@ -1462,7 +1463,7 @@ class MediaDirector:
 
     @timed('motion')
     def motion(self, slot, scene, log, spec=None, stage='motion'):
-        if getattr(self,'sources_only',False) and self.job['action'] not in ('to_motion','motion_edit'):return self.unresolved(slot,log)
+        if getattr(self,'sources_only',False) and self.job['action'] not in ('to_motion','motion_edit') and not (stage=='source_map' and spec and spec.get('template') in ('map','route','zoom','empire','relief')):return self.unresolved(slot,log)
         from app.motion.clips import render_clip, media_record
         from app.motion.layouts import pick
         spec = spec or self.motion_spec(slot, scene)
@@ -1502,7 +1503,7 @@ class MediaDirector:
             slot_note = ''
         from app.motion.templates import TEMPLATES
         why = {'motion_planned': 'yönetmen bu sahneyi motion grafik olarak planladı', 'motion_edit': 'sizin düzenlediğiniz motion grafik',
-               'motion_owner': 'metindeki işaretinize göre'}.get(
+               'source_map': 'sahne planındaki harita kaynağı', 'motion_owner': 'metindeki işaretinize göre'}.get(
             stage, 'onaylanan stok medya bulunamadı')
         slot.update(selected_media=media, status='complete', continuation_of=None, segment_start=None, missing_reasons=[], warnings=[slot_note] if slot_note else [],
                     ai_review=None, message=(f'⚠ {slot_note} ' if slot_note else '') + f'{TEMPLATES[spec["template"]]}: “{media["description"][:80]}” ({why}).')
@@ -1888,7 +1889,15 @@ class MediaDirector:
                     self.register(slot['slot_id'], media, float(slot.get('segment_start') or 0), used_seconds(slot))
                 continue
             if slot['slot_id'] in self.empty_slots and not single:continue
-            hint = None if self.sources_only else self.owner.get(slot['slot_id'])
+            hint = self.owner.get(slot['slot_id'])
+            if self.sources_only:
+                planned=scenes[slot['scene_id']].get('motion_spec') or {}
+                if not slot['locked'] and not slot.get('manual_stock') and not self.valid(slot) and (
+                        hint and hint.get('type') in ('map','route','zoom','empire') or
+                        first[slot['scene_id']]==slot['slot_id'] and planned.get('template') in ('map','route','zoom','empire','relief')):
+                    targets.append((slot,'source_map'))
+                    continue
+                hint=None
             if hint and not slot['locked'] and not slot.get('manual_stock') and not slot.get('motion_edited') and (
                     not self.valid(slot) or not is_generated(media) or (media.get('source_metadata') or {}).get('owner_hint') != hint
                     or UNREACHABLE in slot.get('message', '')):
@@ -1964,6 +1973,15 @@ class MediaDirector:
     def handle(self, slot, scene, why):
         scene = bind_shot(scene, slot, self.language)
         empty = lambda: {'steps': [], 'searches': [], 'judged': {}}
+        if why == 'source_map':
+            hint=self.owner.get(slot['slot_id'])
+            spec=self.owner_spec(hint,scene) if hint and hint.get('type') in ('map','route','zoom','empire') else scene.get('motion_spec')
+            self._release(slot);log=empty()
+            if not spec or spec.get('template') not in ('map','route','zoom','empire','relief'):
+                self.unresolved(slot,log)
+                return log
+            self.motion(slot,scene,log,spec,'source_map')
+            return log
         if why == 'motion_owner':
             hint = self.owner[slot['slot_id']]
             spec = self.owner_spec(hint, scene)

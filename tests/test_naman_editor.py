@@ -74,6 +74,7 @@ def test_manual_import_validation_rejects_stale_and_locked_changes():
 def test_manual_task_zip_contains_full_package_and_output_template():
     editor=service()
     editor.projects.get=lambda _: {'name':'Belgesel','topic':'Konu','language':'tr'}
+    editor.archive=lambda _: {'items':[]}
     import io, json, zipfile
     with zipfile.ZipFile(io.BytesIO(editor.task_package_zip('a'*32))) as archive:
         assert {'NAMAN_GOREV_PAKETI.json','NAMAN_CIKTI_SABLONU.json','OKU.txt'}==set(archive.namelist())

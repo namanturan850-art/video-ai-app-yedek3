@@ -141,7 +141,10 @@ class Editorial:
                 scene=scenes[item['scene_id']];start=item.get('start',scene['start']);end=item.get('end',scene['end'])
                 if type(start) not in (int,float) or type(end) not in (int,float) or not scene['start']<=start<end<=scene['end']:
                     raise EditorError('invalid_time',f'{section}: zamanlar kendi sahne aralığında olmalıdır.')
-                source_key=sha256(json.dumps([section,item],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
+                if 'object_id' in item and (not isinstance(item['object_id'],str) or not 1<=len(item['object_id'])<=160):
+                    raise EditorError('invalid_object_id',f'{section}: object_id 1–160 karakterlik metin olmalıdır.')
+                identity={**item,'start':float(start),'end':float(end)};identity.pop('object_id',None)
+                source_key=sha256(json.dumps([section,identity],sort_keys=True,ensure_ascii=False).encode()).hexdigest()
                 key=item.get('object_id') or source_key
                 if key in seen or source_key in existing:raise EditorError('duplicate','Tekrarlanan JSON nesnesi bulundu. Var olan öğe korunuyor.')
                 seen.add(key)

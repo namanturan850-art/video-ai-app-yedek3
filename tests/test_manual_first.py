@@ -246,6 +246,10 @@ def test_json_is_reviewable_independent_deduplicated_and_keeps_manual_mode(ready
     assert read(editorial.projects,pid)['preferences']['editing_mode']=='manual'
     from app.editor.models import EditorError
     with pytest.raises(EditorError,match='Tekrarlanan'):editorial.import_draft(pid,package)
+    renamed=deepcopy(package);renamed['katmanlar'][0]['object_id']='changed-external-id'
+    with pytest.raises(EditorError,match='Tekrarlanan'):editorial.import_draft(pid,renamed)
+    malformed=deepcopy(package);malformed['katmanlar'][0]['object_id']=['not-a-string']
+    with pytest.raises(EditorError,match='object_id'):editorial.import_draft(pid,malformed)
     bad=deepcopy(package);bad['katmanlar'][0]['start']=-1
     with pytest.raises(EditorError):editorial.import_draft(pid,bad)
 

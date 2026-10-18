@@ -49,12 +49,13 @@ def draw(image,p,t):
     if opacity<=.003:return
     from app.motion.raster import rgba
     from app.motion.templates import _font
-    draw=ImageDraw.Draw(image,'RGBA');w,h=obj['width'],obj['height'];scale=state['scale']*camera['scale']
+    pixel_scale=image.width/1920
+    draw=ImageDraw.Draw(image,'RGBA');w,h=obj['width'],obj['height'];scale=state['scale']*camera['scale']*pixel_scale
     angle=math.radians(state['rotation']);ca,sa=math.cos(angle),math.sin(angle)
     def xy(x,y):
         xx=state['x']+state['scale']*(x*ca-y*sa)
         yy=state['y']+state['scale']*(x*sa+y*ca)
-        return (960+(xx-960-camera['x'])*camera['scale'],540+(yy-540-camera['y'])*camera['scale'])
+        return ((960+(xx-960-camera['x'])*camera['scale'])*pixel_scale,(540+(yy-540-camera['y'])*camera['scale'])*pixel_scale)
     color=rgba(p['fill'],opacity);stroke=rgba(p['stroke'],opacity);lw=max(1,round(obj['line_width']*scale))
     available=max(0,end-obj['start']-1/FPS)
     progress=state['progress'] if any(k['property']=='progress' for k in obj['keyframes']) else (1 if available<=1/FPS else min(1,elapsed/min(.8,available)))
@@ -65,14 +66,14 @@ def draw(image,p,t):
         cx,cy=xy(x,y);rr=max(.5,r*scale)
         draw.ellipse((cx-rr,cy-rr,cx+rr,cy+rr),fill=fill,outline=outline,width=lw)
     def text(value,x,y,size=36,fill=stroke,width=None):
-        cx,cy=xy(x,y);size=max(12,min(768,round(size*scale)))
-        font=_font(p['font'],size,True);limit=min(1760,(width or w)*scale)
+        cx,cy=xy(x,y);minimum=max(4,round(12*pixel_scale));size=max(minimum,min(round(768*pixel_scale),round(size*scale)))
+        font=_font(p['font'],size,True);limit=min(1760*pixel_scale,(width or w)*scale)
         measured=font.getlength(value)
         if measured>limit:
-            size=max(12,math.floor(size*limit/max(1,measured)));font=_font(p['font'],size,True)
-            while size>12 and font.getlength(value)>limit:
+            size=max(minimum,math.floor(size*limit/max(1,measured)));font=_font(p['font'],size,True)
+            while size>minimum and font.getlength(value)>limit:
                 size-=1;font=_font(p['font'],size,True)
-        cx=min(max(cx,80+font.getlength(value)/2),1840-font.getlength(value)/2)
+        cx=min(max(cx,80*pixel_scale+font.getlength(value)/2),1840*pixel_scale-font.getlength(value)/2)
         bounds=font.getbbox(value)
         patch=Image.new('RGBA',(max(1,bounds[2]-bounds[0]+8),max(1,bounds[3]-bounds[1]+8)),(0,0,0,0))
         ImageDraw.Draw(patch).text((4-bounds[0],4-bounds[1]),value,font=font,fill=fill)

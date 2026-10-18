@@ -1256,3 +1256,12 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 300 referansın teknik inceleme dizini, anlatıma uygun desteklenen teknikleri sahne bazında AI paketine ekler. Tam kaynak prompt/video kopyalanmaz, serbest AI kodu çalıştırılmaz. Gemini onayı ve taslak/önizleme/seçim/onay zinciri korunur. Yeni editör, veritabanı göçü veya kullanıcı verisi silme yok.
 
 191 Python ve 70 ön yüz testi geçti. 64 saniye / beş katman / 720p Chromium ölçümü 29,10 FPS ve en çok 200 ms kare aralığı verdi; soğuk proxy hazırlığı ayrı bekleme gerektirir. Gerçek FFmpeg, onay/koruma regresyonları, Chromium ve kalan donanım/önbellek sınırları: [teslim raporu](PLAYBACK_REFERENCE_PLANS_DELIVERY.md). Canlı Gemini ve Windows testi yapılmadı. `main`e merge edilmedi.
+
+
+## Soğuk önbellek ve kesintisiz proxy oynatma
+
+`fix/gapless-cold-preview`, önceki dalı korur. Mevcut proxy parçaları MediaSource destekleyen tarayıcıda tek video/ses tamponuna eklenir; dört saniyede bir video değişmez. Hazırlama hızına göre ileri tampon oluşturulur; eski istekler iptal edilir. 720p aktör çizimi, sabit metinlerin geçici katmanda birleştirilmesi/kırpılması ve proje saatiyle ortak ses miksinin önbelleği eklendi. Normalizasyon/ducking her parçada yeniden başlamaz. Ses ayarı kaydı, belge revizyonu değişmese de mevcut ses tamponunu geçersiz kılar. Ses panelinin boş “Klip seçin” seçeneğini geçersiz SFX kimliği olarak göndermesi düzeltildi; kayıt ve yeni ses tamponu gerçek formdan test edildi. Kullanıcı medyası, kilitler ve yedi iz korunur.
+
+199 Python ve 80 Node testi geçti. Gerçek soğuk önbellek / beş ek katman / 64 saniye Chromium ölçümü 29,98 FPS, parça sınırında en çok 33,4 ms ve oynatma sırasında sıfır yeniden tampon beklemesi verdi. Gerçek 1080p oynatma, onay zinciri ve üç 1080p/30 FPS final MP4 testi geçti. İlk proxy ve ileri tampon hazırlığı hâlâ CPU işi gerektirir; süreleri gizlenmeden raporlandı. Windows CI'ya yeni testler eklendi; gerçek Windows/GPU ve canlı Gemini bu ortamda çalıştırılmadı.
+
+Tam sonuçlar ve sınırlar: [teslim raporu](CONTINUOUS_PREVIEW_DELIVERY.md).

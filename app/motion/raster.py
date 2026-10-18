@@ -110,6 +110,8 @@ def draw_frame(scene, t, base, maps, pictures=None, actor_cache=None):
                 if image.mode=='RGBA':image.alpha_composite(patch,position)
                 else:image.paste(patch,position,patch)
             draw=ImageDraw.Draw(image,'RGBA');continue
+        if scene.get('_render_size') and kind=='text':
+            factor=image.width/W;p={**p,**{key:p[key]*factor for key in ('x','y','size','dy') if key in p}}
         if kind == 'map':
             image.paste(maps[index].frame(p.get('zoom', 0)))
             view = map_view(maps[index].props, p.get('zoom', 0))
@@ -283,10 +285,11 @@ def render(scene, output, ffmpeg):
         return archive_render(scene, output, ffmpeg)
     frames = 1 if '_sample_time' in scene else max(1, round(scene.get('_render_duration',scene['duration']) * FPS))
     alpha=bool(scene.get('alpha'))
-    base = Image.new('RGBA' if alpha else 'RGB', (W, H), (0,0,0,0) if alpha else scene['background'])
+    render_width,render_height=scene.get('_render_size',(W,H))
+    base = Image.new('RGBA' if alpha else 'RGB', (render_width, render_height), (0,0,0,0) if alpha else scene['background'])
     maps = {i: MapLayer(e['props']) for i, e in enumerate(scene['elements']) if e['type'] == 'map'}
     pictures = Pictures()
-    command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
+    command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{render_width}x{render_height}', '-r', str(FPS), '-i', '-',
                '-frames:v', str(frames)]
     # Only transparent documentary layers use a lossless alpha intermediate.
     # Final delivery remains the existing H.264 MP4 pipeline.

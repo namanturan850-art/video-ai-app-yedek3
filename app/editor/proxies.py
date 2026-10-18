@@ -12,6 +12,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import subprocess
 from threading import RLock
 from uuid import uuid4
 
@@ -84,7 +85,7 @@ def snapshot(editor,advanced,pid,time,quality):
         base_ids={s['slot_id'] for s in bases}
         transitions=[t for t in original['transitions'] if t['slot_id'] in base_ids or t['next_slot_id'] in base_ids]
         transition_ids={t['slot_id'] for t in transitions}
-        data={'version':4,'subtitle_style':subtitle_style,'document':doc,'bases':bases,'hashes':hashes,'assets':assets,'cues':cues,'mix':mix,'size':SIZES[quality],
+        data={'version':6,'subtitle_style':subtitle_style,'document':doc,'bases':bases,'hashes':hashes,'assets':assets,'cues':cues,'mix':mix,'size':SIZES[quality],
               'original_adjustments':[a for a in original['adjustments'] if a['slot_id'] in transition_ids],'transitions':transitions,'all_slots':[x for values in view['tracks'].values() for x in values if x.get('slot_id') in transition_ids], 'kit':kit,'language':editor.projects.get(pid).get('language','de'), 'motion_folder':str(editor.projects._path(pid)/'stock'), 'verified_sources':verified_sources,'start':start,'duration':duration,'narration':narration,'full_duration':view['duration'],'slots':slots}
         for transition in original['transitions']:
             for slot in data['all_slots']:
@@ -94,6 +95,9 @@ def snapshot(editor,advanced,pid,time,quality):
                     if expected and expected!=digest:raise EditorError('stale_media','Geçiş kaynağı değişmiş.',409)
                     verified_sources.append((str(path),digest))
                     slot['proxy_path']=str(path)
+        from app.editor.proxy_audio import snapshot as audio_snapshot
+        data['audio_key'],data['audio_data']=audio_snapshot(editor,pid,original,view,narration,mix,verifier)
+        verified_sources.extend(data['audio_data']['sources'])
         key=hashlib.sha256(json.dumps(data,sort_keys=True,default=str).encode()).hexdigest()
         return key,data,state['revision']
 
@@ -101,7 +105,8 @@ def snapshot(editor,advanced,pid,time,quality):
 def request(editor,advanced,pid,time,quality='auto'):
     key,data,revision=snapshot(editor,advanced,pid,time,quality);folder=cache_folder(editor,pid);target=folder/f'proxy-v1-{key}.mp4'
     result={'key':key,'start':data['start'],'duration':data['duration'],'revision':revision,'width':data['size'][0],'height':data['size'][1],
-            'encoded_fps':30,'mode':'local_proxy','audio':'Yerel FFmpeg miks: aynı ducking/eğriler; kısa pencere loudnorm ve compressor başlangıcı finalden farklı olabilir.',
+            'stream_info_url':f'/api/projects/{pid}/editor/advanced/program-stream-info/{key}',
+            'encoded_fps':30,'mode':'local_proxy','audio':'Projenin ortak ses miksinden kesit: normalizasyon ve ducking parça başında yeniden başlamaz.',
             'url':f'/api/projects/{pid}/editor/advanced/program-proxy/{key}',
             'status_url':f'/api/projects/{pid}/editor/advanced/program-proxy-status/{key}'}
     token=(str(folder),key)
@@ -216,14 +221,16 @@ def build(folder,target,data):
             if clip.get('motion_color'):style['palette']['accent']=clip['motion_color']
             offset=clip.get('animation_offset',0);length=clip['end']-clip['start']
             with offline():
-                path,scene,_=render_clip(Path(data['motion_folder']),{**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)},style,clip.get('animation_duration') or length,0,language=data.get('language','de'),prefer_openmontage=False,element_edits=clip.get('motion_elements'),render_window=(offset,length))
+                path,scene,_=render_clip(Path(data['motion_folder']),{**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)},style,clip.get('animation_duration') or length,0,language=data.get('language','de'),prefer_openmontage=False,element_edits=clip.get('motion_elements'),render_window=(offset,length),render_size=(width,height))
             data['assets'][clip['id']]={'path':path,'type':'video','has_audio':False}
             clip['source_start']=0 if '_render_start' in scene else offset
 
-        if data['narration']:
-            run([ffmpeg,'-v','error','-y','-ss',str(data['start']),'-i',str(data['narration']),'-t',str(duration),'-ar','48000','-ac','2',str(narration)])
-        else:run([ffmpeg,'-v','error','-y','-f','lavfi','-i','anullsrc=r=48000:cl=stereo','-t',str(duration),str(narration)])
-        graph,label,audio=compile_graph(args,data['document'],data['assets'],base='base',folder=temporary,duration=duration,width=width,height=height,adjustment_slots=data['slots'],narration=narration)
+        from app.editor.proxy_audio import master
+        mixed=master(folder,data['audio_key'],data['audio_data'],ffmpeg)
+        run([ffmpeg,'-v','error','-y','-ss',str(data['start']),'-i',str(mixed),'-t',str(duration),'-ar','48000','-ac','2','-c:a','pcm_f32le',str(narration)])
+        from app.editor.proxy_layers import flatten
+        proxy_doc,proxy_assets=flatten(data['document'],data['assets'],temporary,width,height)
+        graph,label,audio=compile_graph(args,proxy_doc,proxy_assets,base='base',folder=temporary,duration=duration,width=width,height=height,adjustment_slots=data['slots'],include_audio=False)
         if graph:graphs.append(graph)
         content,_,has_text=ass.create(data['cues'],[],data['full_duration'],subtitles=bool(data['cues']),overlays=False,subtitle_style=data.get('subtitle_style'))
         if has_text:
@@ -232,13 +239,8 @@ def build(folder,target,data):
             caption=str(temporary/'captions.ass').replace('\\','/').replace(':',r'\:').replace("'",r"\'")
             font_path=str(Path(__file__).resolve().parents[1]/'static/fonts').replace('\\','/').replace(':',r'\:').replace("'",r"\'")
             graphs.append(f"[{label}]setpts=PTS+{data['start']}/TB,ass=filename='{caption}':fontsdir='{font_path}',setpts=PTS-STARTPTS[captioned]");label='captioned'
-        index=args.count('-i');args+=['-i',str(narration)];mix=data['mix'];gain=mix.get('narration_volume',1)
-        voice=f'[{index}:a]aresample=48000,apad,atrim=duration={duration},asetpts=PTS-STARTPTS,volume={gain}'
-        fi=mix.get('narration_fade_in',0);fo=mix.get('narration_fade_out',0);start=data['start']
-        if fi:voice+=f",volume='min(1,(t+{start})/{fi})':eval=frame"
-        if fo:voice+=f",volume='max(0,min(1,({data['full_duration']}-t-{start})/{fo}))':eval=frame"
-        graphs.append(voice+','+LOUDNESS+'[master]')
-        graphs.append('[master]'+''.join(f'[{a}]' for a in audio)+(f'amix=inputs={len(audio)+1}:duration=first:normalize=0,alimiter=limit=0.84:level=false' if audio else 'anull')+'[audio]')
+        index=args.count('-i');args+=['-i',str(narration)]
+        graphs.append(f'[{index}:a]anull[audio]')
         script=temporary/'graph.txt';script.write_text(';\n'.join(graphs),encoding='utf-8')
         output=temporary/'preview.mp4'
         args+=['-filter_complex_script',str(script),'-map',f'[{label}]','-map','[audio]','-c:v','libx264','-preset','ultrafast','-crf','20','-pix_fmt','yuv420p','-color_range','tv','-colorspace','bt709','-color_primaries','bt709','-color_trc','bt709','-r','30','-frames:v',str(round(duration*30)),'-threads','1','-c:a','aac','-ar','48000','-ac','2','-t',str(duration),'-movflags','+faststart',str(output)]
@@ -249,3 +251,46 @@ def build(folder,target,data):
         for stale in cached[:-48]:
             if not linked(stale):stale.unlink(missing_ok=True)
     finally:shutil.rmtree(temporary,ignore_errors=True)
+
+
+# Repackage existing, validated proxies for one continuous browser decoder.
+# This copies encoded packets; it does not render again or touch source media.
+_stream_locks=[RLock() for _ in range(32)]
+
+
+def stream(editor,pid,key):
+    source=file(editor,pid,key);folder=source.parent
+    target=folder/f'proxy-stream-v1-{key}.mp4';metadata=target.with_suffix('.json')
+    with _stream_locks[int(key[:8],16)%len(_stream_locks)]:
+        if target.is_file() and metadata.is_file() and not linked(target) and not linked(metadata):
+            return target,json.loads(metadata.read_text(encoding='utf-8'))
+        from app.rendering.tools import discover
+        tools=discover()
+        if not tools.get('ffprobe'):raise EditorError('preview_probe','Kesintisiz önizleme için FFprobe gerekli; FFmpeg kurulumunu kontrol edin.')
+        temp=folder/('stream-work-'+uuid4().hex+'.mp4')
+        try:
+            run([tools['ffmpeg'],'-v','error','-y','-i',str(source),'-map','0:v:0','-map','0:a:0','-c','copy',
+                 '-movflags','+delay_moov+default_base_moof+frag_keyframe+negative_cts_offsets','-frag_duration','1000000',str(temp)])
+            # The signed CTS/edit list preserves AAC priming and uniform video
+            # timestamps; empty_moov alone stretches the first video interval.
+            probe=subprocess.run([tools['ffprobe'],'-v','error','-select_streams','v:0','-show_entries','stream=start_time','-of','json',str(temp)],capture_output=True,text=True,timeout=15,check=True)
+            origin=float(json.loads(probe.stdout)['streams'][0]['start_time'])
+            with temp.open('rb') as handle:header=handle.read(1024*1024)
+            position=header.find(b'avcC')
+            if position<0 or header[position+4]!=1:raise ValueError('avcC')
+            codec=header[position+5:position+8].hex().upper()
+            info={'mime':f'video/mp4; codecs="avc1.{codec}, mp4a.40.2"','origin':origin,
+                  'url':f'/api/projects/{pid}/editor/advanced/program-stream/{key}'}
+            os.replace(temp,target)
+            # Metadata is published last; an incomplete pair is rebuilt safely.
+            stamp=metadata.with_name(uuid4().hex+'.json')
+            try:stamp.write_text(json.dumps(info),encoding='utf-8');os.replace(stamp,metadata)
+            finally:stamp.unlink(missing_ok=True)
+        except (OSError,ValueError,KeyError,IndexError,subprocess.SubprocessError):
+            raise EditorError('preview_stream','Kesintisiz önizleme paketi hazırlanamadı. FFmpeg/FFprobe kurulumunu kontrol edip yeniden deneyin.') from None
+        finally:temp.unlink(missing_ok=True)
+        for stale in sorted(folder.glob('proxy-stream-v1-*.mp4'),key=lambda p:p.stat().st_mtime)[:-48]:
+            if not linked(stale):
+                try:stale.unlink(missing_ok=True);stale.with_suffix('.json').unlink(missing_ok=True)
+                except OSError:pass  # A browser can still hold the file on Windows.
+        return target,info

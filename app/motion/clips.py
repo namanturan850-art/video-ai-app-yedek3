@@ -130,7 +130,7 @@ def shared_render(fn):
 
 @shared_render
 
-def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None, element_edits=None, render_window=None):
+def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', bridge=None, ffmpeg=None, prefer_openmontage=True, cancelled=None, sample_time=None, element_edits=None, render_window=None, render_size=None):
     """Render (or reuse) a clip in `folder` (the project's stock folder).
     Returns (path, scene, engine)."""
     from app.rendering.tools import discover
@@ -148,6 +148,10 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
         if start<0 or length<=0 or start+length>duration+1/30:raise ValueError('Geçersiz animasyon önizleme aralığı.')
         if not any(e['type'] in ('relief','archive') for e in scene['elements']):
             scene['_render_start']=start;scene['_render_duration']=length
+    if render_size is not None and spec['template']=='documentary':
+        width,height=render_size
+        if type(width) is not int or type(height) is not int or not 160<=width<=1920 or width*9!=height*16:raise ValueError('Geçersiz önizleme çözünürlüğü.')
+        scene['_render_size']=[width,height]
     if sample_time is not None:scene['_sample_time']=max(0,min(duration,float(sample_time)))
     suffix='.mov' if scene.get('alpha') else '.mp4'
     target = folder / (scene_key(scene) + suffix)

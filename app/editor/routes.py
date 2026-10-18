@@ -120,6 +120,16 @@ def editor_router(service):
         from app.editor.proxies import file
         return FileResponse(file(service,project_id,key),media_type='video/mp4')
 
+    @router.get('/advanced/program-stream-info/{key}')
+    def advanced_stream_info(project_id:str,key:str):
+        from app.editor.proxies import stream
+        return stream(service,project_id,key)[1]
+
+    @router.get('/advanced/program-stream/{key}')
+    def advanced_stream_file(project_id:str,key:str):
+        from app.editor.proxies import stream
+        return FileResponse(stream(service,project_id,key)[0],media_type='video/mp4')
+
     @router.get('/advanced/program-frame')
     def advanced_frame(project_id:str,time:float=0):
         from app.editor.previews import program_frame

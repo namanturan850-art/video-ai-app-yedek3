@@ -126,7 +126,7 @@ def archive_file(projects,pid,provider,media_id):
     return asset_path(projects,pid,item),item
 
 
-def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,height=1080,adjustment_slots=None,frame_time=None,narration=None):
+def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,height=1080,adjustment_slots=None,frame_time=None,narration=None,audio_only=False,include_audio=True):
     """Append local inputs and return graph, video label, supplemental audio labels.
 
     Base adjustments operate before supplementary layers and before subtitles.
@@ -175,23 +175,29 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
         asset=assets.get(edit['id']);tr=edit['transform'];speed=tr['speed']
         local=(frame_time-start+offset) if frame_time is not None else None
         expr=lambda prop,var='t':str(float(value_at(edit,prop,local))) if local is not None else expression(edit,prop,f'{var}-{start}+{offset}')
+        if audio_only:
+            if asset and (asset.get('type')=='audio' or asset.get('has_audio')) and (tr['volume'] or any(k['property']=='volume' for k in edit['keyframes'])):
+                source_start=asset.get('segment_start',0) if edit['kind']=='adjustment' else edit.get('source_start',0)
+                i=input_file(asset['path'],asset['type'],source_start,speed,length);audio_chain(i,edit,length,speed,start)
+            continue
         if edit.get('track')=='audio':
+            if not include_audio:continue
             i=input_file(asset['path'],'audio',edit.get('source_start',0),speed,length)
             audio_chain(i,edit,length,speed,start);continue
         adjustment=edit['kind']=='adjustment'
         if adjustment:
             keep,source=label(),label();graphs.append(f'[{current}]split[{keep}][{source}]');current=keep
-            if frame_time is None and asset and asset.get('has_audio') and (tr['volume'] or any(k['property']=='volume' for k in edit['keyframes'])):
+            if include_audio and frame_time is None and asset and asset.get('has_audio') and (tr['volume'] or any(k['property']=='volume' for k in edit['keyframes'])):
                 i=input_file(asset['path'],'video',asset.get('segment_start',0),speed,length);audio_chain(i,edit,length,speed,start)
         else:
-            if edit['kind']=='text':asset={'path':text_image(edit,folder,width,height),'type':'image','has_audio':False}
+            if edit['kind']=='text' and not (asset or {}).get('proxy_static'):asset={'path':text_image(edit,folder,width,height),'type':'image','has_audio':False}
             if edit['kind']=='shape':asset={'path':shape_image(edit,folder,width,height),'type':'image','has_audio':False}
             if not asset:raise RenderError('advanced_missing','Ek animasyonun yerel önizleme dosyası hazırlanamadı.')
             source_start=edit.get('source_start',0)+((local-offset)*speed if local is not None else 0)
             if asset.get('sampled'):source_start=0
             i=input_file(asset['path'],asset['type'],source_start,speed,length if local is None else .04)
             source=f'{i}:v'
-            if frame_time is None and asset.get('has_audio') and (tr['volume'] or any(k['property']=='volume' for k in edit['keyframes'])):audio_chain(i,edit,length,speed,start)
+            if include_audio and frame_time is None and asset.get('has_audio') and (tr['volume'] or any(k['property']=='volume' for k in edit['keyframes'])):audio_chain(i,edit,length,speed,start)
         stage=label();chain=f'[{source}]'
         if not adjustment:chain+=f'setpts=(PTS-STARTPTS)/{speed}'+(f'+{start}/TB,' if local is None else ',')
         l,r,t,b=(tr[k] for k in ('crop_left','crop_right','crop_top','crop_bottom'))
@@ -205,7 +211,8 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
             if fx['sharpen']:chain+=f'unsharp=5:5:{fx["sharpen"]},'
             if fx['vignette']:chain+='vignette=PI/5,'
         # Source aspect ratio remains intact; scale is uniform, never a stretch.
-        chain+=f'scale={width}:{height}:force_original_aspect_ratio=decrease,setsar=1,format=rgba,'
+        if not (asset or {}).get('proxy_rect'):chain+=f'scale={width}:{height}:force_original_aspect_ratio=decrease,'
+        chain+='setsar=1,format=rgba,'
         if tr['scale']!=1 or any(k['property']=='scale' for k in edit['keyframes']):
             chain+=f'scale=w=\'max(2,trunc(iw*({expr("scale")} )/2)*2)\':h=\'max(2,trunc(ih*({expr("scale")})/2)*2)\':eval=frame,'
         if tr['rotation'] or any(k['property']=='rotation' for k in edit['keyframes']):
@@ -229,6 +236,7 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
                 if alpha<1:chain+=f'colorchannelmixer=aa={max(0,alpha)},'
         chain=chain.rstrip(',')+f'[{stage}]';graphs.append(chain)
         x=f'(W-w)/2+({expr("x")})*{width}/1920';y=f'(H-h)/2+({expr("y")})*{height}/1080'
+        if (asset or {}).get('proxy_rect'):x,y=map(str,asset['proxy_rect'])
         enabled=f"between(t,{start},{end-1/3000})" if frame_time is None else '1'
         if adjustment:
             black=label();graphs.append(f'color=c=black:s={width}x{height}:r=30:d={duration}[{black}]')

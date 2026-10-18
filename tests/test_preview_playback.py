@@ -89,7 +89,8 @@ def test_720p_multilayer_motion_windows_are_bounded_continuous_and_cached(tmp_pa
         scene=scene_build({'template':'documentary','data':examples()['science']},data.get('kit') or DEFAULT_STYLE,12.,0,'es')
         for t,path in zip((0.,4.,8.),sorted(motion,key=lambda p:p.stat().st_mtime)):
             raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(path),'-frames:v','1','-f','rawvideo','-pix_fmt','rgba','-'])
-            expected=draw_frame(scene,t,Image.new('RGBA',(1920,1080),(0,0,0,0)),{})
+            scene['_render_size']=[1280,720]
+            expected=draw_frame(scene,t,Image.new('RGBA',(1280,720),(0,0,0,0)),{})
             assert raw==expected.tobytes()  # exact alpha and analytical time, not a restarted scene
         assert advanced.get(pid)==before and len(set(keys))==3
         assert snapshot(ed,advanced,pid,4.2,'high')[0]==keys[1]

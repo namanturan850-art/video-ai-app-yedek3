@@ -198,7 +198,7 @@
     let nextProxy=null,nextJob=null,prefetchBusy=false,transportTime=null,lastTransportTime=null;
     // The decoded, muxed video is the master clock. While preparing a segment,
     // hold the transport instead of letting narration outrun the visible image.
-    c.setProgramClock?.(()=>{
+    const legacyClock=()=>{
       if(mode==='source'||quality.value==='frames'||proxyError){if(c.root.dataset.programClock==='1'&&c.narration&&k.play.textContent.includes('Duraklat')){c.narration.currentTime=c.getTime();c.narration.play().catch(()=>{});}delete c.root.dataset.programClock;return undefined;}
       c.root.dataset.programClock='1';
       c.narration?.pause();
@@ -221,7 +221,8 @@
         lastTransportTime=transportTime;return Math.min(transportTime,c.data.duration);
       }
       lastTransportTime=c.getTime();return lastTransportTime;
-    });
+    };
+    c.setProgramClock?.(legacyClock);
     async function prefetch(){
       if(prefetchBusy||nextProxy||!proxyMeta||quality.value==='frames')return;
       const time=proxyMeta.start+proxyMeta.duration,revision=state.revision,requestedQuality=quality.value;
@@ -235,9 +236,11 @@
         }else nextJob=result;
       }catch(e){frameInfo.textContent='Sonraki kesit hazırlanamadı · '+e.message;}finally{prefetchBusy=false;}
     }
-    if(proxyVideo.requestVideoFrameCallback)frameCallback=proxyVideo.requestVideoFrameCallback(measuredFrame);
+    const gapless=globalThis.NAMANProgramPlayer&&typeof MediaSource!=='undefined'?new NAMANProgramPlayer({video:proxyVideo,c,getRevision:()=>NAMANProgramPlayer.revision(state.revision,c),getMode:()=>mode,quality,onState:({active,text})=>{proxyActive=active;frameInfo.textContent=text;if(active)programFrame.hidden=true;}}):null;
+    if(gapless){c.setProgramClock?.(()=>gapless.failed?legacyClock():gapless.clock());clean.push(()=>gapless.destroy());}
+    else if(proxyVideo.requestVideoFrameCallback)frameCallback=proxyVideo.requestVideoFrameCallback(measuredFrame);
     async function proxyTick(){
-      if(!alive)return;if(proxyRevision!==state.revision&&proxyMeta)invalidateProxy();const time=c.getTime(),running=k.play.textContent.includes('Duraklat')&&mode!=='source';
+      if(!alive)return;if(gapless&&!gapless.failed){gapless.tick();return;}if(proxyRevision!==state.revision&&proxyMeta)invalidateProxy();const time=c.getTime(),running=k.play.textContent.includes('Duraklat')&&mode!=='source';
       if(mode==='source'||quality.value==='frames'||time>=c.data.duration){disableProxy();return;}
       if(proxyMeta&&proxyRevision===state.revision&&time>=proxyMeta.start&&time<proxyMeta.start+proxyMeta.duration&&proxyVideo.readyState>=2){
         proxyActive=true;proxyVideo.hidden=false;programFrame.hidden=true;proxyVideo.playbackRate=c.getPlaybackRate?.()||1;

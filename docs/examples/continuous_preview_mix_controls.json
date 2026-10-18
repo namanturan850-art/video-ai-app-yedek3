@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "duration": 12,
+  "overlapping_layers": 5,
+  "initial_proxy_seconds": 8.47,
+  "startup_seconds": 11.78,
+  "cold_cache": true,
+  "browser": {
+    "frames": 359,
+    "seconds": 11.916199999999996,
+    "fps": 30.043134556318297,
+    "maxGap": 0.050100000000002184,
+    "sizes": [
+      "1280x720"
+    ],
+    "samples": 475,
+    "maxBoundaryGap": 0.03339999999999782
+  },
+  "errors": [],
+  "basis": "Gerçek Chromium: soğuk önbellek, oynatma/geri arama ve ses ayarını gerçek formdan kaydetme; belge değişmeden yeni ses tamponu yüklenmesi."
+}

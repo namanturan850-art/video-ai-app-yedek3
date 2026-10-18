@@ -1,5 +1,7 @@
 # Oynatma ve senaryoya uygun referans teknikleri — teslim
 
+**Güncel devam:** Bu rapordaki parça geçişi ve ses durumu sınırları [kesintisiz önizleme düzeltmesinde](CONTINUOUS_PREVIEW_DELIVERY.md) ele alındı. Aşağıdaki ölçümler önceki sürümün tarihsel sonuçlarıdır.
+
 Çalışma dalı: `fix/smooth-preview-reference-plans`.
 Başlangıç: güncel `origin/main` (`27000f7`); `feature/manual-documentary-animations` içindeki `b14e611` ve `81c84c0` bu main sürümünde zaten bulunuyordu. Yedi izli editör, önceki güvenli içe aktarma ve geçiş düzeltmeleri korundu. Veritabanı şeması değiştirilmedi; kullanıcı verileri silinmedi.
 

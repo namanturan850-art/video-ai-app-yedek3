@@ -25,3 +25,9 @@ Bu Linux ortamında gerçek Windows ve GPU çalışması yapılmadı. Canlı Gem
 - JavaScript sözdizimi, Windows iş akışı YAML yükleme ve `git diff --check` kontrolleri geçti.
 - **Dört gerçek MP4 uçtan uca testi geçti** (121,18 sn): üç animasyon örneğinde JSON → doğrulama → taslak → gerçek JPEG → onaysız uygulamanın reddi → seçim/onay → 1080p/30 FPS final; ayrıca tam paket → taklit Gemini yanıtı → içe aktarma → taslak/onay → kısa gerçek render. Gerçek Gemini çağrısı yapılmadı. Bir bağımlılık deprecation uyarısı var; hata veya atlanan test yok.
 - GitHub Actions sonuç sorgusu bu oturumda `Forbidden` yanıtı verdi; uzak Windows işi çalışmış kabul edilmedi.
+
+## GitHub teslimi
+
+Kod/test commit'i `7d5a103`, `fix/long-preview-rebuffer` dalına gönderildi. [GitHub dalı](https://github.com/naman85331/video-ai-app/tree/fix/long-preview-rebuffer).
+
+Draft PR oluşturma isteği GitHub GraphQL API'sinden `Forbidden` yanıtı aldı; PR oluşturulamadı. [Hazır karşılaştırma/PR formu](https://github.com/naman85331/video-ai-app/compare/main...fix/long-preview-rebuffer?expand=1). Bu erişim engeli uygulama koduyla giderilemez. Bu görevde main'e merge yapılmadı.

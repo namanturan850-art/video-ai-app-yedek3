@@ -318,6 +318,17 @@ def test_unified_history_mode_clips_subtitles_and_approved_draft(ready):
     assert editorial.get(pid)['preferences']['subtitle_display']=='none'
 
 
+def test_unified_history_restores_real_narration_and_sfx_mix(ready):
+    from app.editor.history import History
+    setup_manual(ready);editor=ready['client'].app.state.editor;pid=ready['pid'];history=History(editor)
+    original=editor.audio_settings(pid);change={k:v for k,v in original.items() if k!='project_id'}
+    change.update(narration_volume=.6,narration_fade_in=.1,sfx_volume=.1)
+    editor.save_audio_settings(pid,change)
+    assert editor.audio_settings(pid)['narration_volume']==.6
+    history.apply(pid,'undo',history.snapshot(pid));assert editor.audio_settings(pid)==original
+    history.apply(pid,'redo',history.snapshot(pid));assert editor.audio_settings(pid)['narration_fade_in']==.1
+
+
 def test_sources_only_preparation_leaves_missing_without_cards_or_ai(ready,monkeypatch):
     from app.stock.director_media import MediaDirector
     from app.editor.models import EditorError

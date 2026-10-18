@@ -1,4 +1,9 @@
 {
+  "export_and_job_policy_versions": {
+    "shot": 4,
+    "verdict": 7,
+    "single_slot_scope": 1
+  },
   "download": {
     "slots": 32,
     "filename": "NAMAN-medya-tani-2026-10-18.json",

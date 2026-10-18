@@ -220,6 +220,7 @@ class StockService:
                 bound = bind(scene, slot, handoff.get('language'))
                 slot['visual_subject'] = bound.get('visual_subject', {})
                 current_profile=relevance.profile(bound,slot)
+                slot['current_relevance_profile'] = current_profile
                 slot['subject_anchor']=current_profile['subject_anchor']
                 # Read-only display refresh: never replace an existing asset or
                 # overwrite archived history merely because the page is opened.

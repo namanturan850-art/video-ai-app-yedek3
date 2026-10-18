@@ -1181,3 +1181,13 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - 32 sentetik yuvada 3 benzersiz uygun görsel, 29 eksik ve 0 motion; 3 indirme. Sonraki çalıştırma ve tek yuva tekrarında dosyalar/kilit/manual belge korundu. Sağlayıcılar/CLIP puanları sahtedir; canlı stok/model doğruluğu ve kullanıcının gerçek projesinde 32/32 iddiası yoktur.
 - Kod GitHub dalına gönderildi: `fix/naman-stock-media-recovery` (`24eb760`, `4341e35` ve son teslim). Main `3e827cf` olarak korundu. Draft PR oluşturma GraphQL ve REST'te **403 Forbidden** nedeniyle engellendi; PR oluşmadı. Fiziksel Windows/WebView2 doğrulaması açık; native kaydetme ayarı testli ve smoke adımları hazır.
 - Tek Türkçe rapor, kapsam/sınırlar ve hazır PR açıklaması: `docs/STOCK_MEDIA_RECOVERY_DELIVERY.md`. Tarayıcı kanıtı: `docs/stock-recovery-metrics.json`, `docs/stock-recovery.png`.
+
+### 18 Ekim 2026 — kullanıcı tanısına bağlı ek paket
+
+- Tek-yuva işlerinin diğer boş yuvaları işleyip tanı geçmişini yeniden yazması engellendi; diğer yuvaların kalıcı kayıtları birebir korunur. Kaynak bırakılınca eski onay/kalite/bağlam temizlenir; motion ve devam öğeleri stok CLIP onayına sayılmaz.
+- İspanyolca küçük harfli görsel sözcük/şehir eşadlılığı (`lagos`, `corrientes`, `cuenca`) genel sözlük + gazetteer kuralıyla ayrıldı. Gerçek özel yer adları ve çok sözcüklü adlar korunur. Shot 4/verdict 7 eski uygunluk önbelleğini ayırır.
+- Tanıda saklanmış seçim profili ile güncel profil, export politikası ile işte gerçekten kullanılan politika ayrıdır; tek-yuva/proje kapsamı kaydedilir. Raporu indirmek eski işleri yeniden çalıştırmış sayılmaz.
+- **239 farklı Python testi (222 + 17), 70 DOM testi ve Chromium smoke geçti.** Profil geçmişi kontrolü sonrası 7 API testi ayrıca tekrarlandı. Wikimedia invalid_response alt nedeni rapordan anlaşılamadı; canlı/ücretli çağrı yapılmadı. Kullanıcı tanı dosyası ve gerçek proje GitHub'a eklenmedi.
+- Kapsam ve bulgular mevcut tek teslim raporunun ek bölümündedir: `docs/STOCK_MEDIA_RECOVERY_DELIVERY.md`. Aynı geliştirme dalına gönderilir; main'e merge yapılmaz.
+
+- GitHub’da önceki paket PR #94 ile main (`7759877`) üzerinde bulundu. Ek kod `75c2e95` commit’iyle geliştirme dalında; bu tur main’e merge yapılmadı.

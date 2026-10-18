@@ -1,7 +1,7 @@
 """Bind a visual slot to its own immutable narration, without changing timing."""
 import re
 
-VERSION = 3
+VERSION = 4
 
 
 def narration(scene, slot):
@@ -36,7 +36,7 @@ def bind(scene, slot, language=None):
     result['visual_subject'] = subject
     explicit_visual = False
     spoken_language = language or scene.get('stock_query_language') or 'en'
-    query = english_query(spoken, spoken_language, strict=spoken_language != 'en', limit=6)
+    query = english_query(subject.get('query_text', spoken), spoken_language, strict=spoken_language != 'en', limit=6)
     for hint in scene.get('owner_hints') or []:
         sentence = str(hint.get('sentence') or '').strip()
         if hint.get('type') == 'visual' and (not sentence or sentence in spoken or spoken in sentence):
@@ -46,7 +46,7 @@ def bind(scene, slot, language=None):
                 explicit_visual = True
                 result['visual_subject'] = {**subject, 'queries': [], 'subject': explicit, 'explicit_visual': True}
                 break
-    if subject['institutions'] and not explicit_visual:
+    if (subject['institutions'] or subject.get('ambiguous_places')) and not explicit_visual:
         location = str(scene.get('location') or '')
         if location and location.casefold() not in subject['location_text'].casefold():result['location'] = ''
     if subject['queries'] and not explicit_visual:

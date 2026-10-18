@@ -92,3 +92,26 @@ def test_correct_named_archive_can_survive_uncertain_clip_with_explicit_reason()
     verdict=director.local_judge(s,sc,[media])[key(media)]
     assert verdict['approved'] and verdict['local'] and not verdict.get('clip_approved')
     assert 'güçlü' in verdict['reason']
+
+
+def test_spanish_research_does_not_turn_lakes_into_lagos_or_institution_into_brazil():
+    from app.stock.setting import infer, for_scene
+    text=('Un estudio de la Universidad de São Paulo comparó decenas de lagos tropicales. '
+          'Encontró que dos factores pesan mucho: el tamaño del lago y las montañas cercanas.')
+    sc={**scene(text),'entities':['Sao Paulo','Lagos'],'location':'Sao Paulo'}
+    bound=bind(sc,slot(),'es')
+    assert relevance.profile(bound,slot())['subject_anchor']=='lake mountain'
+    assert bound['entities']==[] and bound['location']==''
+    assert 'Lagos' not in bound['primary_stock_query']
+    setting=infer(['Venezuela Maracaibo',text],'Venezuela')
+    assert for_scene(setting,text)['regions']==setting['regions']
+
+
+def test_lowercase_basin_and_currents_are_not_city_names_but_real_places_survive():
+    for word in ('cuenca','corrientes','lagos'):
+        analyzed=analyze('Observamos '+word+' tropicales.')
+        assert word in analyzed['ambiguous_places']
+        assert word not in analyzed['location_text']
+        assert word.title() not in analyzed['query_text']
+    for name in ('Lagos','Corrientes','Cuenca','Black Sea','black sea'):
+        assert name in analyze('Travel to '+name+'.')['location_text']

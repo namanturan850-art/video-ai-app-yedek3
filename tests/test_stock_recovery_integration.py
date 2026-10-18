@@ -105,7 +105,9 @@ def test_32_slot_recovery_preserves_sources_and_manual_document_and_downloads_di
         assert editor.get(pid)==before
         diag=client.get(base+'/diagnostics');assert diag.status_code==200,diag.text
         assert 'attachment' in diag.headers['Content-Disposition'] and diag.headers['Cache-Control']=='no-store'
-        report=diag.json();assert report['schema_version']==2 and len(report['slots'])>=32
+        report=diag.json();assert report['jobs'][0]['progress']['policy_versions']==report['export_policy_versions']
+        assert report['jobs'][0]['progress']['scope']=='single_slot'
+        assert report['schema_version']==2 and len(report['slots'])>=32
         assert 'synthetic-recovery-secret' not in diag.text and 'local_path' not in diag.text and str(tmp_path) not in diag.text
         with closing(client.app.state.projects._connection()) as c:
             saved=json.loads(c.execute('SELECT state_json FROM stock_plans WHERE project_id=?',(pid,)).fetchone()[0])
@@ -168,3 +170,54 @@ def test_source_preparation_never_calls_configured_paid_translation(tmp_path):
         assert not paid
         assert 'otomatik bulut çevirisi yapılmadı' in result['translation_note']
         assert result['slots'][0]['sentence']=='Lake lightning storm.'
+
+
+def test_single_slot_motion_keeps_other_missing_slots_and_their_search_history(tmp_path,monkeypatch):
+    from app.stock.director_media import MediaDirector
+    from app.projects import now
+    with TestClient(create_app(tmp_path/'data'),headers=HEADERS) as client:
+        st,_,_=setup_recovery(client.app,count=5);pid=st['pid'];complete(client,pid)
+        stock=client.app.state.stock
+        def saved():
+            with closing(client.app.state.projects._connection()) as c:
+                return json.loads(c.execute('SELECT state_json FROM stock_plans WHERE project_id=?',(pid,)).fetchone()[0])
+        state=saved();target=next(s for s in state['slots'] if s.get('selected_media'))
+        source=deepcopy(target['selected_media'])
+        # An old CLIP verdict attached to the source must not certify its replacement.
+        target['local_review']={'method':'clip','approved':True,'clip':{'score':8}}
+        with closing(client.app.state.projects._connection()) as c,c:stock._save(c,state)
+        with closing(client.app.state.projects._connection()) as c,c:
+            historical=stock._load(c,pid,state['plan_id'])
+            historical['slots'][-1]['relevance_profile']={'subject_anchor':'Sao Paulo'}
+            stock._save(c,historical)
+        before=saved();others={s['slot_id']:s for s in before['slots'] if s['slot_id']!=target['slot_id']}
+        def draw(self,slot,scene,log,spec=None,stage='motion'):
+            # Isolate scheduling/persistence: stand-in produces an existing valid PNG card.
+            slot.update(selected_media={**source,'provider':'generated','media_id':'test-card'},status='complete')
+            log['steps'].append({'stage':'card','label':'Kart','result':'chosen'});return True
+        monkeypatch.setattr(MediaDirector,'motion',draw)
+        base=f'/api/projects/{pid}/production/stock'
+        response=client.post(base+f'/slots/{target["slot_id"]}/jobs',json={'plan_id':before['plan_id'],'revision':before['revision'],'action':'to_motion'})
+        assert response.status_code==202,response.text
+        stock.futures[response.json()['job_id']].result(timeout=30)
+        after=saved();current=next(s for s in after['slots'] if s['slot_id']==target['slot_id'])
+        assert {s['slot_id']:s for s in after['slots'] if s['slot_id'] in others}==others
+        assert current['selected_media']['provider']=='generated' and current['local_review'] is None
+        assert current['ai_review'] is None and current['selection_context'] is None
+        report=client.get(base+'/diagnostics').json()
+        assert report['slots'][-1]['selection_relevance_profile']['subject_anchor']=='Sao Paulo'
+        assert report['slots'][-1]['relevance_profile']['subject_anchor']!='Sao Paulo'
+
+
+def test_motion_and_empty_slots_do_not_inherit_stock_clip_approval_counts():
+    from app.stock.director_media import summary, MediaDirector
+    verdict={'method':'clip','approved':True,'clip':{'score':8}}
+    def make(i,provider,status='complete'):
+        return {'slot_id':str(i),'status':status,'duration':2,'local_review':verdict,
+                'selected_media':{'provider':provider,'media_type':'video'} if provider else None}
+    slots=[make(1,'pixabay'),make(2,'generated'),make(3,None,'ai_needed')]
+    result=summary(slots)
+    assert '1 yuva yerel görüntü modeliyle (CLIP) onaylandı' in result['text']
+    director=MediaDirector.__new__(MediaDirector)
+    director.unresolved(slots[2],{'searches':[]})
+    assert slots[2]['local_review'] is None and slots[2]['ai_review'] is None

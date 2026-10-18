@@ -43,7 +43,34 @@
     // Implementations below share one API/revision path; no DOM-only edit state.
     async function drafts(){try{const saved=await c.api(endpoint+'/editorial/drafts');show('Kayıtlı taslaklar',[n('p','Başka düzenlemelerden önce oluşturulmuş eski taslaklar uygulanmaz; yeni taslak oluşturun.'),...saved.drafts.map(d=>b(`${d.source} · ${d.created_at} · ${d.stale?'Eski revizyon':d.applied_ids.length+' öğe onaylandı'}`,()=>showDraft(d)))]);}catch(e){status(e.message);}}
     window.NAMANManual.presentDraft=draft=>showDraft(draft);clean.push(()=>{if(alive===false)delete window.NAMANManual.presentDraft;});
-    function showDraft(draft){const preview=n('img');preview.alt='Taslağın kaydedilmeden oluşturulan gerçek program karesi';preview.hidden=true;preview.style.maxWidth='100%';const additions=[...draft.clips,...(draft.adjustments||[]).map(x=>({id:'adjustment:'+x.slot_id,track:'dönüşüm',text:x.slot_id,start:0})),...(draft.transitions||[]).map(x=>({id:'transition:'+x.slot_id,track:'geçiş',text:x.kind,start:0}))],selected=new Set(additions.filter(x=>!(draft.applied_ids||[]).includes(x.id)&&!draft.stale).map(x=>x.id)),list=n('div');additions.forEach(clip=>{const input=n('input');input.type='checkbox';input.checked=selected.has(clip.id);input.disabled=!!draft.stale||(draft.applied_ids||[]).includes(clip.id);input.onchange=()=>input.checked?selected.add(clip.id):selected.delete(clip.id);const label=n('label',`${c.clock(clip.start)} · ${clip.track} · ${clip.text||clip.motion?.template}`);label.prepend(input);list.append(label);});show('Kurgu taslağı — henüz uygulanmadı',[n('p','Kilitler ve mevcut manuel öğeler korunur. Yalnız seçtiklerinizi açıkça uygulayın.'),n('pre',JSON.stringify(draft.changes||[],null,2)),n('p',draft.overlapping_manual_ids?.length?'Zaman çakışması: '+draft.overlapping_manual_ids.length+' mevcut katman var; hiçbiri silinmez.':''),list,preview,b('Taslağı imleçte önizle — kaydetmez',()=>{if(draft.stale){status('Eski taslak için yeni revizyon oluşturun.');return;}preview.hidden=false;preview.src=endpoint+`/editorial/drafts/${draft.id}/preview?time=${c.getTime()}`;}),b('Seçilen önerileri onayla',async()=>{try{await c.api(endpoint+`/editorial/drafts/${draft.id}/approve`,{method:'POST',body:JSON.stringify({confirmed:true,clip_ids:[...selected]})});await c.load();}catch(e){status(e.message);}})]);}
+    function showDraft(draft,previousSelection=null){
+      const preview=n('img');preview.alt='Taslağın kaydedilmeden oluşturulan gerçek program karesi';preview.hidden=true;preview.style.maxWidth='100%';
+      const additions=[...draft.clips,...(draft.adjustments||[]).map(x=>({id:'adjustment:'+x.slot_id,track:'dönüşüm',text:x.slot_id,start:0})),...(draft.transitions||[]).map(x=>({id:'transition:'+x.slot_id,track:'geçiş',text:x.slot_id+' · '+x.kind+' · '+x.duration.toFixed(3)+' sn',start:0}))];
+      const selected=new Set(additions.filter(x=>!(draft.applied_ids||[]).includes(x.id)&&!draft.stale&&(!previousSelection||previousSelection.has(x.id))).map(x=>x.id)),list=n('div');
+      additions.forEach(clip=>{const input=n('input');input.type='checkbox';input.checked=selected.has(clip.id);input.disabled=!!draft.stale||(draft.applied_ids||[]).includes(clip.id);input.onchange=()=>input.checked?selected.add(clip.id):selected.delete(clip.id);const label=n('label',`${c.clock(clip.start)} · ${clip.track} · ${clip.text||clip.motion?.template}`);label.prepend(input);list.append(label);});
+      const pending=(draft.transition_issues||[]).filter(i=>i.status==='pending'),issues=n('div','','manual-transition-issues');
+      pending.forEach(issue=>{
+        const row=n('section','','manual-transition-issue'),choices=n('select'),feedback=n('p');
+        choices.setAttribute('aria-label','Geçiş düzeltmesi · '+issue.slot_id);
+        issue.options.forEach(option=>choices.append(new Option(option.label,option.id)));
+        const resolve=b('Yalnız bu geçişin düzeltmesini onayla',async()=>{
+          resolve.disabled=true;choices.disabled=true;writing(true);feedback.textContent='Düzeltme doğrulanıyor…';
+          try{const next=await c.api(endpoint+`/editorial/drafts/${draft.id}/resolve-transition`,{method:'POST',body:JSON.stringify({confirmed:true,issue_id:issue.id,option_id:choices.value})});
+            const keep=new Set(selected);keep.add('transition:'+issue.slot_id);showDraft(next,keep);
+          }catch(error){feedback.textContent=error.message;resolve.disabled=false;choices.disabled=false;}finally{writing(false);}
+        });resolve.disabled=!!draft.stale;
+        row.append(n('strong',issue.message),n('p','Diğer öneriler korundu. Bu geçiş seçiminiz ve onayınız olmadan uygulanmaz.'),choices,resolve,feedback);issues.append(row);
+      });
+      show('Kurgu taslağı — henüz uygulanmadı',[
+        n('p','Kilitler ve mevcut manuel öğeler korunur. Yalnız seçtiklerinizi açıkça uygulayın.'),n('pre',JSON.stringify(draft.changes||[],null,2)),
+        ...(pending.length?[n('p',`${pending.length} geçiş düzeltme bekliyor. Önizlemede bekleyen geçişler uygulanmaz; kalan öneriler kaybolmaz.`),issues]:[]),
+        n('p',draft.overlapping_manual_ids?.length?'Zaman çakışması: '+draft.overlapping_manual_ids.length+' mevcut katman var; hiçbiri silinmez.':''),list,preview,
+        b('Taslağı imleçte önizle — kaydetmez',()=>{if(draft.stale){status('Eski taslak için yeni revizyon oluşturun.');return;}preview.hidden=false;preview.src=endpoint+`/editorial/drafts/${draft.id}/preview?time=${c.getTime()}`;}),
+        b('Seçilen önerileri onayla',async()=>{
+          if(pending.length&&!confirm(`${pending.length} geçiş henüz düzeltilmedi ve uygulanmayacak. Bunlar kayıtlı taslakta bekleyecek; yalnız seçili geçerli öneriler uygulansın mı?`))return;
+          try{await c.api(endpoint+`/editorial/drafts/${draft.id}/approve`,{method:'POST',body:JSON.stringify({confirmed:true,clip_ids:[...selected]})});await c.load();}catch(e){status(e.message);}
+        })]);
+    }
     let subtitleState=null;
     async function subtitleEditor(item){try{
       subtitle=item;c.inspector.dataset.subtitle='1';subtitleDelete=async()=>status('Altyazı sürümü yükleniyor.');c.advanced.clearSelection();subtitleState=await c.api(`/api/projects/${c.id}/subtitles`);const active=subtitleState.active;if(!active){status('Önce temel altyazı sürümünü oluşturun.');return;}

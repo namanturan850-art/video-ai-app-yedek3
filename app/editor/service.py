@@ -645,6 +645,7 @@ class EditorService:
                     'Bir aralık en az bir karedir. Çakışan kamera önerileri ve mevcut manuel kamera ayarının üzerine yazma reddedilir.',
                     'transition, önerinin end saniyesindeki mevcut bitişik görüntü yuvası sınırına uygulanır; sahne sonuna taşınmaz. Son video bitişinde veya yuva içinde geçiş/kesim desteklenmez; önce Kurgu içinde klibi bölün.',
                     'Mevcut geçişle çakışan öneri reddedilir; aynı kesimde aynı geçiş tek kayda birleşir.',
+                    'Crossfade ilk kaynak videoda klip bitiminden sonra ek süre ister; kaynak başlangıcı ve hız hesaba katılır. Süre yetmiyorsa NAMAN bu geçişi beklemede tutar, uygun daha kısa geçiş / siyaha geçiş / hard_cut seçeneklerini kullanıcı onayına sunar. Hiçbiri sessizce değiştirilmez.',
                     'none işlem eklemez. composition=wide kaynak kadrajını değiştirmez. Öneriler temel medya, seslendirme veya altyazıyı değiştirmez.']},
             'infografikler':{'fields':['scene_id','start','end','object_id','template','data','emphasis'],
                 'templates':sorted(INFOGRAPHIC_TEMPLATES),'rule':'Yalnız anlatımdaki doğrulanmış sayı/tarih/karşılaştırmalar.'},

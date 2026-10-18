@@ -1,6 +1,7 @@
 """Compile imported scene intervals onto the existing, immutable media clock."""
 from copy import deepcopy
 from app.editor.models import EditorError
+from app.editor.transition_handles import frame_floor, issue
 
 
 def upsert_slots(current, incoming):
@@ -35,6 +36,7 @@ class SceneIntervals:
         self.transitions={}
         self.boundary_requests={}
         self.changes=[]
+        self.transition_issues=[]
 
     def add(self, scene, item, start, end):
         sid=scene['scene_id'];where=location(sid,start,end)
@@ -83,7 +85,7 @@ class SceneIntervals:
             raise EditorError('transition_conflict',location(sid,end,end)+f': aynı kesimde {previous} ve {kind} geçişleri çakışıyor.')
         self.boundary_requests[last['slot_id']]=kind
         record={'slot_id':last['slot_id'],'next_slot_id':nxt['slot_id'],'kind':kind,
-            'duration':min(.2,(last['end']-last['start'])/4,(nxt['end']-nxt['start'])/4)}
+            'duration':frame_floor(min(.2,(last['end']-last['start'])/4,(nxt['end']-nxt['start'])/4))}
         manual=self.current_transitions.get(last['slot_id'])
         if manual:
             if manual['kind']!=kind or manual['next_slot_id']!=nxt['slot_id']:
@@ -121,4 +123,13 @@ class SceneIntervals:
             if len(adjustment['keyframes'])>128:
                 raise EditorError('too_many_keyframes',f"{slot['slot_id']}: kurgu önerileri 128 keyframe sınırını aşıyor; planı daha az aralığa ayırın.")
             result.append(adjustment)
-        return result,list(self.transitions.values()),self.changes
+        transitions=[]
+        for record in self.transitions.values():
+            first=next(s for s in self.slots if s['slot_id']==record['slot_id'])
+            second=next(s for s in self.slots if s['slot_id']==record['next_slot_id'])
+            failure=issue(first,second,record,list(self.current.values()))
+            if failure:
+                self.transition_issues.append(failure)
+                self.changes.append(failure['message']+' Geçiş beklemede; onaysız değiştirilmedi.')
+            else:transitions.append(record)
+        return result,transitions,self.changes

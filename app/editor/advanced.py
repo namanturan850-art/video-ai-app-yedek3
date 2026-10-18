@@ -343,13 +343,10 @@ class AdvancedEditor:
         for transition in validated['transitions']:
             first=slots.get(transition['slot_id']);second=slots.get(transition['next_slot_id'])
             if not first or not second or abs(first['end']-second['start'])>.04:raise EditorError('invalid_transition','Geçiş bitişik iki ana klip arasında olmalıdır.')
-            if transition['kind']!='cut' and (transition['duration']<2/30 or transition['duration']>min(first['end']-first['start'],second['end']-second['start'])/4):
-                raise EditorError('invalid_transition','Geçiş süresi komşu kliplerin dörtte birini aşamaz.')
-            if transition['kind'] in ('cross_dissolve','wipe'):
-                source=first.get('media') or {}
-                speed=next((a['transform']['speed'] for a in validated['adjustments'] if a['slot_id']==first['slot_id']),1)
-                if source.get('media_type')=='video' and (not source.get('duration') or (first.get('clip_start') or 0)+(first['end']-first['start']+transition['duration'])*speed>source['duration']+.001):
-                    raise EditorError('short_transition','Geçiş kuyruğu için ilk kaynak videoda yeterli ek süre yok.')
+            from app.editor.transition_handles import problem
+            failure=problem(first,second,transition,validated['adjustments'])
+            if failure:
+                raise EditorError(failure['category'],failure['message'],details=[failure['limits']])
         return validated
 
     def save(self,pid,payload,kind='edit'):

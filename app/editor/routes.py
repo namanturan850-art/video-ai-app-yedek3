@@ -73,6 +73,9 @@ def editor_router(service):
     @router.post('/editorial/import-draft')
     def editorial_import(project_id:str,payload:dict):return editorial.import_draft(project_id,payload)
 
+    @router.post('/editorial/drafts/{draft_id}/resolve-transition')
+    def resolve_transition(project_id:str,draft_id:str,payload:dict):return editorial.resolve_transition(project_id,draft_id,payload)
+
     @router.post('/editorial/drafts/{draft_id}/approve')
     def editorial_approve(project_id:str,draft_id:str,payload:dict):return editorial.approve(project_id,draft_id,payload)
 

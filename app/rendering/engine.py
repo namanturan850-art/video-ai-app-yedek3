@@ -139,11 +139,14 @@ class FFmpegRenderProvider:
                 desired=round(edits[slot['slot_id']]['transition_duration']*30) if smart else 10
                 if custom:desired=round(custom['duration']*30)
                 frames=min(desired,slot['frames']//4,slots[i+1]['frames']//4)
+                if custom and frames!=desired:raise RenderError('transition_unavailable',f"{slot['slot_id']} yuvası: onaylanan geçiş süresi bu kliplere sığmıyor; otomatik kısaltılmadı.")
                 if frames>=2 and 'xfade' in self.tools['filters']:outgoing[i]=incoming[i+1]=frames
+                elif custom:raise RenderError('transition_unavailable',f"{slot['slot_id']} yuvası, {slot['end']:.3f} sn: onaylanan geçiş bu süreyle/FFmpeg desteğiyle uygulanamıyor. Geçiş değiştirilmedi; düzeltip yeniden render alın.")
                 else:self.warnings.append('Kısa veya desteklenmeyen sahne geçişi temiz kesmeye dönüştürüldü.')
             elif transition in ('fade','fade_dark','dip_black'):
                 if 'fade' in self.tools['filters'] and min(slot['frames'],slots[i+1]['frames'])>=4:
                     fades[i]=custom['duration']/2 if custom else edits[slot['slot_id']]['transition_duration']/2 if smart else .15;transitions.add(i)
+                elif custom:raise RenderError('transition_unavailable',f"{slot['slot_id']} yuvası, {slot['end']:.3f} sn: onaylanan siyaha geçiş uygulanamıyor. Geçiş değiştirilmedi; düzeltip yeniden render alın.")
                 else:self.warnings.append('Desteklenmeyen kısa fade geçişi temiz kesmeye dönüştürüldü.')
         done=[0.]*len(slots);gate=Lock()
         def report(i,frames):
@@ -231,6 +234,8 @@ class FFmpegRenderProvider:
             except RenderError as error:
                 has_motion=smart_slot and any(x['motion_effect']!='none' for x in smart_slot['segments'])
                 if media.get('was_graphic'):raise
+                if any(0<=j<len(slots) and (custom_transitions.get(slots[j]['slot_id']) or {}).get('kind')=='dip_black' for j in (i-1,i)):
+                    raise  # An approved fade cannot disappear in a decorative retry.
                 if not smart or not decorate or error.category!='render_failed' or not (has_motion or layout_graph or fades[i] or (i and fades[i-1])):raise
                 self.decorative('adaptive_layout_failed' if layout_graph else 'smart_motion_failed' if has_motion else 'smart_transition_failed',**context)
                 self.warnings.append('Bir dekoratif klip efekti uygulanamadı; aynı medya ve süre normal kadrajla korundu.')
@@ -275,6 +280,8 @@ class FFmpegRenderProvider:
                     self.runner.run(args,folder,encoder=encoder,phase='crossfade',slot_index=i,slot_id=slot['slot_id'],slot_count=len(slots),media_type=plan['media'][slot['slot_id']]['type']);assembly.append(transition);transitions.add(i-1)
                 except RenderError as error:
                     if error.category!='render_failed':raise
+                    if slots[i-1]['slot_id'] in custom_transitions:
+                        raise RenderError('transition_failed',f"{slots[i-1]['slot_id']} yuvası, {slots[i-1]['end']:.3f} sn: onaylanan geçiş render edilemedi. Hard cut ile değiştirilmedi; kayıtlı kurgu ve kaynaklar korundu.",diagnostic=error.diagnostic) from None
                     if smart:self.decorative('smart_transition_failed',encoder=encoder,slot_index=i,slot_id=slot['slot_id'],slot_count=len(slots))
                     self.warnings.append('Bir crossfade uygulanamadı; aynı süre korunarak temiz kesme kullanıldı.')
                     assembly.append(f'head-{i}.mp4')

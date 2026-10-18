@@ -134,7 +134,7 @@ class Editorial:
             try:
                 draft=self._import_draft(pid,payload,persist=False)
                 plan=self.editor._active(pid)
-                return {'valid':True,'errors':[],'correction_message':'','changes':draft['changes'],'base_plan_id':plan['plan_id'],'base_revision':plan.get('revision')}
+                return {'valid':True,'errors':[],'correction_message':'','changes':draft['changes'],'transition_issues':draft.get('transition_issues',[]),'requires_transition_resolution':any(i['status']=='pending' for i in draft.get('transition_issues',[])),'base_plan_id':plan['plan_id'],'base_revision':plan.get('revision')}
             except EditorError as error:
                 return {'valid':False,'errors':[str(error)],'correction_message':str(error),'changes':[]}
 
@@ -186,21 +186,52 @@ class Editorial:
                     if item.get('effect')=='glitch':clip['keyframes']=[{'property':'x','time':0.,'value':0.},{'property':'x','time':duration*.1,'value':8.},{'property':'x','time':duration*.2,'value':-6.},{'property':'x','time':duration*.3,'value':0.}]
                 clips.append(clip)
         adjustments,transitions,interval_changes=intervals.compile()
-        return self.draft(pid,clips,'json',adjustments,transitions,{'import_scope':import_scope(view),'changes':checked['changes']+interval_changes,'overlapping_manual_ids':[c['id'] for c in current['clips'] if any(c['start']<x['end'] and c['end']>x['start'] for x in clips)]},persist=persist)
+        return self.draft(pid,clips,'json',adjustments,transitions,{'transition_issues':intervals.transition_issues,'import_scope':import_scope(view),'changes':checked['changes']+interval_changes,'overlapping_manual_ids':[c['id'] for c in current['clips'] if any(c['start']<x['end'] and c['end']>x['start'] for x in clips)]},persist=persist)
 
-    def drafts(self,pid):
+    def drafts(self,pid,limit=100):
         state=self.advanced.get(pid)
         with closing(self.projects._connection()) as c:
-            rows=c.execute("SELECT kind,payload_json FROM editorial_events WHERE project_id=? AND plan_id=? AND kind IN ('draft','approved') ORDER BY id",(pid,state['plan_id'])).fetchall()
+            rows=c.execute("SELECT kind,payload_json FROM editorial_events WHERE project_id=? AND plan_id=? AND kind IN ('draft','approved','transition_resolution') ORDER BY id",(pid,state['plan_id'])).fetchall()
         drafts={}
         for row in rows:
             value=json.loads(row['payload_json'])
             if row['kind']=='draft':drafts[value['id']]={**value,'applied_ids':[],'expected_revision':value['base_revision']}
             elif value['draft_id'] in drafts:
-                d=drafts[value['draft_id']];d['applied_ids']+=value.get('clip_ids',[]);d['expected_revision']=value['revision']
+                d=drafts[value['draft_id']]
+                if row['kind']=='transition_resolution':
+                    for issue in d.get('transition_issues',[]):
+                        if issue['id']==value['issue_id']:
+                            issue.update(status='resolved',resolution=value['option_id'])
+                    d['transitions'].append(value['transition'])
+                    d['changes'].append(value['message'])
+                else:
+                    d['applied_ids']+=value.get('clip_ids',[]);d['expected_revision']=value['revision']
         scope=import_scope(self.editor.view(pid)) if any(d.get('import_scope') for d in drafts.values()) else None
         for d in drafts.values():d['stale']=d['expected_revision']!=state['revision'] or bool(d.get('import_scope') and d['import_scope']!=scope)
-        return {'drafts':list(reversed(list(drafts.values())))[:100]}
+        values=list(reversed(list(drafts.values())))
+        return {'drafts':values if limit is None else values[:limit]}
+
+    def resolve_transition(self,pid,did,payload):
+        if set(payload)!={'confirmed','issue_id','option_id'} or payload['confirmed'] is not True:
+            raise EditorError('confirmation_required','Yalnız seçtiğiniz geçiş düzeltmesini açıkça onaylayın.')
+        with self.projects.lock:
+            self._idle(pid)
+            draft=next((d for d in self.drafts(pid,limit=None)['drafts'] if d['id']==did),None)
+            if not draft or draft['stale']:raise EditorError('stale_draft','Görüntüler veya kurgu değişti; güncel paketle yeni taslak oluşturun.',409)
+            issue=next((i for i in draft.get('transition_issues',[]) if i['id']==payload['issue_id']),None)
+            if not issue or issue['status']!='pending':raise EditorError('invalid_resolution','Bekleyen bir geçiş sorunu seçin.')
+            option=next((o for o in issue['options'] if o['id']==payload['option_id']),None)
+            if not option:raise EditorError('invalid_resolution','Sunulan geçiş düzeltmelerinden birini seçin.')
+            state=self.advanced.get(pid);doc=deepcopy(state['document']);used=set(draft['applied_ids'])
+            doc['clips'] += [x for x in draft['clips'] if x['id'] not in used]
+            doc['adjustments']=upsert_slots(doc['adjustments'],[x for x in draft.get('adjustments',[]) if 'adjustment:'+x['slot_id'] not in used])
+            doc['transitions'] += [x for x in draft['transitions'] if 'transition:'+x['slot_id'] not in used]+[option['transition']]
+            self.advanced.validate(pid,doc,state['document'])
+            message=f"Sahne {issue['scene_id']}, {issue['time']:.3f} sn: kullanıcı {option['label']} seçeneğini onayladı; yalnız bu geçiş taslakta değiştirildi."
+            event={'draft_id':did,'issue_id':issue['id'],'option_id':option['id'],'transition':option['transition'],'message':message}
+            with closing(self.projects._connection()) as c,c:
+                c.execute('INSERT INTO editorial_events(project_id,plan_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)',(pid,state['plan_id'],'transition_resolution',json.dumps(event),now()))
+            return next(d for d in self.drafts(pid,limit=None)['drafts'] if d['id']==did)
 
     def subtitles_edit(self,pid,payload):
         if set(payload)!={'version_id','cues','important_cues'}:raise EditorError('invalid_subtitles','Altyazı sürümü, metin/zamanlar ve önemli öğe seçimini kontrol edin.')
@@ -229,7 +260,7 @@ class Editorial:
         from types import SimpleNamespace
         from app.editor.previews import program_frame
         with self.projects.lock:
-            draft=next((d for d in self.drafts(pid)['drafts'] if d['id']==did),None)
+            draft=next((d for d in self.drafts(pid,limit=None)['drafts'] if d['id']==did),None)
             if not draft or draft['stale']:raise EditorError('stale_draft','Güncel bir taslak seçin; eski taslak uygulanmaz.',409)
             state=self.advanced.get(pid);doc=deepcopy(state['document']);used=set(draft['applied_ids'])
             doc['clips'] += [x for x in draft['clips'] if x['id'] not in used]
@@ -271,16 +302,12 @@ class Editorial:
         if set(payload)!={'confirmed','clip_ids'} or payload['confirmed'] is not True or not isinstance(payload['clip_ids'],list) or any(not isinstance(x,str) for x in payload['clip_ids']):raise EditorError('confirmation_required','Uygulanacak taslak öğelerini seçip onaylayın.')
         with self.projects.lock:
             state=self.advanced.get(pid)
-            with closing(self.projects._connection()) as c:
-                rows=c.execute("SELECT payload_json FROM editorial_events WHERE project_id=? AND plan_id=? AND kind='draft'",(pid,state['plan_id'])).fetchall()
-                applied=c.execute("SELECT payload_json FROM editorial_events WHERE project_id=? AND plan_id=? AND kind='approved'",(pid,state['plan_id'])).fetchall()
-            draft=next((json.loads(r[0]) for r in rows if json.loads(r[0])['id']==did),None)
-            batches=[json.loads(r[0]) for r in applied if json.loads(r[0])['draft_id']==did]
-            expected=batches[-1]['revision'] if batches else (draft or {}).get('base_revision')
+            draft=next((d for d in self.drafts(pid,limit=None)['drafts'] if d['id']==did),None)
+            expected=(draft or {}).get('expected_revision')
             if draft and draft.get('import_scope') and draft['import_scope']!=import_scope(self.editor.view(pid)):
                 raise EditorError('stale_draft','Taslak hazırlanırken görüntü yuvaları, kaynaklar veya kilitler değişti. Güncel paketle yeni taslak oluşturun.',409)
             if not draft or expected!=state['revision']:raise EditorError('stale_draft','Taslak başka düzenlemelerden önce oluşturulmuş. Güncel kurgu üzerinden yeni taslak oluşturun.',409)
-            used={cid for batch in batches for cid in batch.get('clip_ids',[])}
+            used=set((draft or {}).get('applied_ids',[]))
             selected=set(payload['clip_ids']);available={x['id'] for x in draft['clips']}|{'adjustment:'+x['slot_id'] for x in draft.get('adjustments',[])}|{'transition:'+x['slot_id'] for x in draft.get('transitions',[])}
             if not selected or not selected<=available or selected&used:raise EditorError('invalid_draft','Henüz uygulanmamış geçerli taslak öğelerini seçin.')
             doc=deepcopy(state['document']);doc['clips'] += [x for x in draft['clips'] if x['id'] in selected]

@@ -152,6 +152,8 @@ def test_long_motion_preview_encodes_only_the_requested_frame(tmp_path):
     import shutil
     clip={'motion':{'template':'stat','data':{'value':'40','label':'kilómetros'},'emphasis':''},'start':0.,'end':600.}
     asset=motion_asset(clip,tmp_path,sample_time=300,language='es')
+    assert asset['path'].parent.name=='editor-cache'
+    assert asset['path'].name.startswith('motion-sample-')
     info=metadata(shutil.which('ffprobe'),asset['path'])
     stream=next(s for s in info['streams'] if s['codec_type']=='video')
     assert int(stream['nb_frames'])==1 and float(info['format']['duration'])<.05
@@ -207,6 +209,26 @@ def test_base_preview_infers_mime_for_older_archive_metadata(ready):
         c.execute('UPDATE stock_plans SET state_json=? WHERE project_id=?',(json.dumps(stock),pid))
     response=ready['client'].get(f'/api/projects/{pid}/production/stock/slots/{slot["slot_id"]}/preview')
     assert response.status_code==200 and response.headers['content-type'].startswith('video/')
+
+
+@pytest.mark.parametrize('template',['archive','mark','beforeafter'])
+def test_picture_templates_use_verified_project_archive_and_real_preview(tmp_path,template):
+    from fastapi.testclient import TestClient
+    from app.main import create_app
+    from app.editor.previews import program_frame
+    from app.editor.models import EditorError
+    from app.rendering.models import RenderError
+    from PIL import Image
+    with TestClient(create_app(tmp_path/'data')) as client:
+        st=install_manual_example(client.app);pid=st['pid'];editor=client.app.state.editor;advanced=AdvancedEditor(editor)
+        image=next(a for a in editor.archive(pid)['items'] if a['media_type']=='image');name=image['file_name']
+        data={'image':name,'label':'Imagen','caption':'Archivo','fx':.5,'fy':.5} if template!='beforeafter' else {'images':[name,name],'before':'Antes','after':'Después'}
+        state=advanced.get(pid);state['document']['clips'].append({'id':'c'*32,'kind':'motion','track':'infographics','start':0.,'end':.4,'motion':{'template':template,'data':data}})
+        saved=advanced.save(pid,state);clip=saved['document']['clips'][0]
+        assert len(clip['motion_sources'])==(2 if template=='beforeafter' else 1)
+        with Image.open(program_frame(editor,advanced,pid,.2)) as frame:assert frame.size==(640,360)
+        path,_=editor.archive_file(pid,image['provider'],image['media_id']);original=path.read_bytes();path.write_bytes(original[:-1]+bytes([original[-1]^1]))
+        with pytest.raises((EditorError,RenderError)):program_frame(editor,advanced,pid,.2)
 
 
 def test_subtitle_text_timing_versions_and_undo_keep_narration_clock(ready):

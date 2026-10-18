@@ -1189,3 +1189,5 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - Tanıda saklanmış seçim profili ile güncel profil, export politikası ile işte gerçekten kullanılan politika ayrıdır; tek-yuva/proje kapsamı kaydedilir. Raporu indirmek eski işleri yeniden çalıştırmış sayılmaz.
 - **239 farklı Python testi (222 + 17), 70 DOM testi ve Chromium smoke geçti.** Profil geçmişi kontrolü sonrası 7 API testi ayrıca tekrarlandı. Wikimedia invalid_response alt nedeni rapordan anlaşılamadı; canlı/ücretli çağrı yapılmadı. Kullanıcı tanı dosyası ve gerçek proje GitHub'a eklenmedi.
 - Kapsam ve bulgular mevcut tek teslim raporunun ek bölümündedir: `docs/STOCK_MEDIA_RECOVERY_DELIVERY.md`. Aynı geliştirme dalına gönderilir; main'e merge yapılmaz.
+
+- GitHub’da önceki paket PR #94 ile main (`7759877`) üzerinde bulundu. Ek kod `75c2e95` commit’iyle geliştirme dalında; bu tur main’e merge yapılmadı.

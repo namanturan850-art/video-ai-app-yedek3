@@ -94,3 +94,7 @@ Somut bulgular:
 Ek paketin doğrulaması: 222 semantik/coğrafya/performans/manuel kaynak kontrolü ve 17 yeni/etkilenen API-regresyon testi geçti (**239 farklı Python testi**). Geçmiş/güncel profil ayrımı eklendikten sonra ilgili 7 API testi yeniden geçti; bu tekrar toplam sayıya eklenmez. **70 JavaScript/DOM testi** geçti. Gerçek Chromium JSON indirme/pano/hata/kaydetme/same-origin smoke yeniden geçti; export ve iş politikası alanlarının eşitliği de doğrulandı. Yeni tek-yuva motion testi çizim motorunu PNG kart stand-in'iyle değiştirerek iş kapsamı ve kalıcılığı sınar; yeni bir gerçek motion render başarısı iddiası değildir. Önceki render doğrulamaları korunur.
 
 Kullanıcının gerçek proje dosyaları veya yüklenen tanı JSON'u GitHub'a eklenmedi; bu ortamda gerçek projenin kaynakları yeniden aranmadı. Güncel dalın uygulamasıyla **Medyayı Tamamla** yeniden çalıştırıldığında kilitli kaynaklar korunarak eski uygunluk kararları yeni politikayla kontrol edilir. Ardından yeni tanı, hangi politikayla arandığını gösterebilir. Fiziksel Windows/WebView2 ve PR oluşturmadaki API 403 sınırı sürer; main'e merge yapılmaz.
+
+GitHub son kontrolü: önceki paket PR #94 ile `7759877` main commit’ine alınmış. Bu ek paket `75c2e95` kod commit’iyle aynı geliştirme dalına gönderildi; bu oturumda main’e merge yapılmadı.
+
+Ek paket için yeni draft PR oluşturma denemesi de GitHub GraphQL API’de `403 Forbidden` ile engellendi; yeni PR oluşturulmadı.

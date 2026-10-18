@@ -71,6 +71,10 @@ def _validate(spec, narration, entities=(), *, trusted=False):
     trusted=True: the owner's own marker in the text ([SAYI: …], [HARİTA: …]);
     only the shape is checked."""
     from app.motion.numbers import is_spoken
+    if isinstance(spec,dict) and spec.get('template')=='documentary':
+        from app.animation.schema import validate as validate_animation
+        try:return {'template':'documentary','data':validate_animation(spec.get('data'),narration),'emphasis':''}
+        except (ValueError,TypeError):raise MotionError('Animasyon bileşenleri veya anlatım verileri geçersiz.') from None
     if not isinstance(spec, dict) or spec.get('template') not in TEMPLATES or not isinstance(spec.get('data'), dict):
         raise MotionError('template')
     t, d = spec['template'], spec['data']
@@ -294,6 +298,17 @@ class Scene:
 
 
 def build(spec, kit, duration, emphasis_offset, language='de'):
+    if spec.get('template')=='documentary':
+        from app.animation.schema import Animation
+        from app.animation.scene import build as animation_scene
+        # Facts were checked against narration at import/save. Recheck structure
+        # and clock here without inventing or fetching any new content.
+        data=Animation.model_validate(spec['data']).model_dump(by_alias=True)
+        for obj in data['objects']:
+            if not 1/30<=duration<=30 or obj['start']>= (obj['end'] if obj['end'] is not None else duration) or (obj['end'] or duration)>duration+1e-6 or any(k['time']>duration+1e-6 for k in obj['keyframes']):
+                raise ValueError(f"{obj['id']}: animasyon nesnesi/keyframe zamanı sahneyi aşıyor.")
+        if any(k['time']>duration+1e-6 for k in data['camera']['keyframes']):raise ValueError('Kamera zamanı sahneyi aşıyor.')
+        return animation_scene(data,kit,duration)
     from app.motion.layouts import arrange
     if spec.get('clean_source'):return keep_text_safe(_build(spec,kit,duration,emphasis_offset,language))
     return keep_text_safe(arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit))

@@ -19,6 +19,8 @@ def validate_edits(scene,edits):
         if edit.get('source_signature') and edit['source_signature']!=signature(scene):raise ValueError('Motion kaynağı değişmiş; nesne düzenlemelerini sıfırlayıp yeniden seçin.')
         if edit['index']>=len(scene['elements']):raise ValueError('Motion nesnesi artık bu şablonda yok; nesneleri yeniden açın.')
         kind=scene['elements'][edit['index']]['type']
+        if scene['elements'][edit['index']]['props'].get('required_notice'):
+            raise EditorError('protected_animation_notice','Demo/şematik veri açıklaması gizlenemez veya değiştirilemez.')
         if edit['start']>=duration or (edit['end'] is not None and edit['end']>duration+.001) or any(k['time']>duration for k in edit['keyframes']):raise ValueError('Nesne zamanı animasyon kaynağını aşıyor.')
         if kind in ('map','relief') and (edit['x'] or edit['y'] or edit['opacity']!=1 or edit['color'] or edit['text'] is not None or edit['keyframes']):raise ValueError('Harita arka planında yalnız göster/gizle ve zaman aralığı desteklenir; konum ana klipten düzenlenir.')
         if edit['text'] is not None and kind=='counter':
@@ -39,8 +41,8 @@ def scene_for(advanced,pid,cid):
     from app.motion.clips import with_pictures
     with offline():scene=build(with_pictures({**clip['motion'],'local_only':True,'clean_source':clip.get('clean_map',False)},advanced.projects._path(pid)/'stock'),kit,clip.get('animation_duration') or clip['end']-clip['start'],0,advanced.projects.get(pid)['language'])
     return {'source_type':'editable_naman','revision':state['revision'],'duration':scene['duration'],'source_signature':signature(scene),
-            'elements':[{'index':i,'type':e['type'],'label':str(e['props'].get('text') or e['props'].get('target') or e['type'])[:160],
-                         'controls':['visibility','time'] if e['type'] in ('map','relief') else ['visibility','time','x','y','opacity','color','keyframes']+(['text'] if e['type'] in ('text','counter') else [])} for i,e in enumerate(scene['elements'])]}
+            'elements':[{'index':i,'type':e['type'],'label':str(e['props'].get('label') or e['props'].get('text') or e['props'].get('target') or e['type'])[:160],
+                         'controls':['visibility','time'] if e['type'] in ('map','relief') else ['visibility','time','x','y','opacity','color','keyframes']+(['text'] if e['type'] in ('text','counter') else [])} for i,e in enumerate(scene['elements']) if not e['props'].get('required_notice')]}
 
 
 def properties(scene,index,p,t):

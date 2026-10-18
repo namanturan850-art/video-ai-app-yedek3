@@ -91,6 +91,12 @@ def draw_frame(scene, t, base, maps, pictures=None):
             from app.editor.motion_objects import properties
             p=properties(scene,index,p,t)
             if p is None:continue
+        if kind == 'documentary_object':
+            from app.animation.scene import draw as draw_actor
+            layer=Image.new('RGBA',image.size,(0,0,0,0));draw_actor(layer,p,t)
+            if image.mode=='RGBA':image.alpha_composite(layer)
+            else:image.paste(layer,(0,0),layer)
+            draw=ImageDraw.Draw(image,'RGBA');continue
         if kind == 'map':
             image.paste(maps[index].frame(p.get('zoom', 0)))
             view = map_view(maps[index].props, p.get('zoom', 0))
@@ -263,17 +269,21 @@ def render(scene, output, ffmpeg):
         from app.motion.archive import render as archive_render
         return archive_render(scene, output, ffmpeg)
     frames = 1 if '_sample_time' in scene else max(1, round(scene['duration'] * FPS))
-    base = Image.new('RGB', (W, H), scene['background'])
+    alpha=bool(scene.get('alpha'))
+    base = Image.new('RGBA' if alpha else 'RGB', (W, H), (0,0,0,0) if alpha else scene['background'])
     maps = {i: MapLayer(e['props']) for i, e in enumerate(scene['elements']) if e['type'] == 'map'}
     pictures = Pictures()
-    command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
-               '-frames:v', str(frames), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p',
-               '-movflags', '+faststart', str(output)]
+    command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgba' if alpha else 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',
+               '-frames:v', str(frames)]
+    # Only transparent documentary layers use a lossless alpha intermediate.
+    # Final delivery remains the existing H.264 MP4 pipeline.
+    command += (['-c:v','qtrle','-pix_fmt','argb'] if alpha else ['-c:v','libx264','-preset','veryfast','-crf','18','-pix_fmt','yuv420p'])
+    command += ['-movflags','+faststart',str(output)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
     from app.motion.control import guard, check
     with guard(process):
         # Nothing changes after the last keyframe: the settled picture is written again, not redrawn.
-        settled = float('inf') if scene.get('_editor_elements') else max((key[0] for e in scene['elements'] for track in (e.get('tracks') or {}).values() for key in track), default=0)
+        settled = float('inf') if scene.get('_editor_elements') or scene.get('procedural') else max((key[0] for e in scene['elements'] for track in (e.get('tracks') or {}).values() for key in track), default=0)
         data = None
         for i in range(frames):
             check()

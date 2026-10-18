@@ -1,5 +1,7 @@
 # NAMAN Premiere Dark çalışma alanı
 
+Güncel manuel kurgu, kalıcı ek katmanlar, silme/geçmiş ve altyazı akışı için [manuel kurgu teslim raporunu](MANUAL_FIRST_DELIVERY.md) okuyun. Aşağıdaki metin önceki çalışma alanı aşamasının kapsamını belgeler; yeni rapor desteklenen işlevler için güncel kaynaktır.
+
 Bu sürüm mevcut FastAPI/SQLite düzenleyicisini kullanır. Yeni varsayılan tema koyu gri/mordur; daha önce kaydedilen turkuaz, mor, mavi, turuncu, açık tema ve özel vurgu tercihleri korunur. Tema video renklerini değiştirmez.
 
 ## Kullanım

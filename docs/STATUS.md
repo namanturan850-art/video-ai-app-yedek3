@@ -1,3 +1,11 @@
+## 2026-10-18 — Manuel kurgu: son teslim doğrulaması
+
+- Ana Python paketi **454 geçti / 3 atlandı** (428,62 sn). Son manuel paket **26 geçti** (68,27 sn); kalite/performans **73**, eski stok seçim/onay/reuse kabulü **17**, çalışma alanı/frontend/masaüstü birim paketi **5**, DOM paketi **7** testle geçti. Hedefli tekrarlar örtüşür; toplam olarak toplanmaz. Atlamalar kurulu olmayan yerel Remotion ve iki görselsiz eski marker fikstürüdür; gerçek resimli şablonlar ayrı geçen testlerde doğrulanır.
+- Üç gerçek Chromium paketi geçti: eski çalışma alanı; PR #91 gelişmiş kurgu; yeni manuel/JSON/taslak/Gemini-kayıtlı-bulgu akışı. Yeni akış gerçek **4,000 sn / 1920×1080 / 30 fps / 120 kare / AAC 48 kHz** çıktı üretti. Motion önizleme tek kare encode eder; 240 örnek dosya ile sınırlı ayrı önbellek kullanır.
+- Uzun render yapılmadı. Eski üç dakikalık stok kabul fikstürü aynı sahne/onay/yeniden kullanım/kota kontrollerini koruyarak çizici taklidinde yalnız tek kare üretir. Kaynak seçimlerinin eski davranışı açık legacy politikasıyla, yeni manuel kaynak-only davranışı ayrı testlerle doğrulanır.
+- Kod ayrı dala gönderildi; main `f4fa91c` olarak korundu. `gh pr create --draft` çağrısı `api.github.com/graphql: Forbidden` ile engellendi; draft PR açılmış sayılmaz. Hazır açıklama/karşılaştırma bağlantısı ve 19 bölümlü [Türkçe teslim raporu](MANUAL_FIRST_DELIVERY.md), sentetik ekran görüntüleri ve render SHA/ffprobe kanıtı eklendi.
+- Canlı ücretli API, gerçek Windows WebView2/DPI/NVENC ve harici motor denemesi yapılmadı; kalan ortam sınırları raporda açıkça ayrılır.
+
 ## 2026-10-17 — Manuel kurgu arayüzü ve uçtan uca doğrulama
 
 - Beyaz müzik paneli tema değişkenlerine bağlandı; kontroller Program'ın altına ve 10 timeline aracı sola taşındı. Manuel mod, taslaklar/JSON, harita/infografik, gerçek altyazı ve müzik/SFX panelleri mevcut editöre bağlandı.

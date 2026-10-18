@@ -44,3 +44,9 @@ Hazırlama süreleri özellikle gizlenmedi: ilk görüntünün hazır olması ve
 Mevcut eski otomatik dekorasyonlar ve güvenlik/katman sınırları korunur; desteklenmeyen işlem sessizce atılmaz. Harita/infografik ve AI planı için mevcut destek sınırları geçerlidir. Serbest AI kodu çalıştırılmaz; yeni editör veya 300 ayrı efekt/3D motoru eklenmedi.
 
 Bu Linux bulutunda **gerçek Windows, gerçek GPU ve canlı Gemini testi çalıştırılmadı**. Windows otomasyonu eklendi; sonucu ancak Windows işi çalışınca doğrulanabilir. Ücretli API çağrısı yapılmadı; önceki açık ücret onayı kuralı korundu. Saatler süren gerçek kullanıcı projeleri kullanılmadı. `main`e birleştirme yapılmadı.
+
+## GitHub teslimi
+
+Uygulama/test commit’i `3d7efe0`, `fix/gapless-cold-preview` dalına gönderildi; uzak SHA `git ls-remote` ile doğrulandı. Kod: https://github.com/naman85331/video-ai-app/tree/fix/gapless-cold-preview . `main` bu çalışmada birleştirilmedi.
+
+Draft PR oluşturma denemesi GitHub GraphQL API’sinde `Forbidden` yanıtıyla engellendi. PR oluşturulmuş değildir; bu erişim engeli uygulama koduyla giderilemez. Hazır karşılaştırma/PR formu: https://github.com/naman85331/video-ai-app/compare/main...fix/gapless-cold-preview?expand=1 . Windows CI işi de ancak GitHub üzerinde çalıştırıldığında gerçek Windows sonucu verebilir.

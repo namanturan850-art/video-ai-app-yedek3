@@ -26,3 +26,7 @@ Mevcut render motorunda transition kaydı, bitişik iki **mevcut** ana görünt�
 - Gerçek HTTP/SQLite/FFmpeg testi: doğrulama → JSON cevap → taslak → JPEG önizleme → açık onay → 4 saniyelik yerel final render. Kamera aralıkları uygulanırken temel görüntü/altyazı/medya revizyonu korunur.
 - `NAMAN_2_0_Kurgu_Plani(1).json` bu oturumda ekli değildi; workspace/attachments içinde bulunamadı. Gerçek dosyanın işlendiği iddia edilmez. `tests/fixtures/manual_plan_16_intervals_6_scenes.json` yalnız kullanıcının tarif ettiği yapıyı yeniden üreten, anonim ve sentetik regresyondur. Gerçek dosyaya karşı birebir test için dosyanın eklenmesi gerekir.
 - UI dosyasında değişiklik yok. Python derleme ve `git diff --check` geçti. Canlı Gemini ve uzun/kullanıcı projesi renderı yapılmadı.
+
+## GitHub teslimi
+
+Uygulama commit'i `983041c`, [fix/manual-plan-interval-import](https://github.com/naman85331/video-ai-app/tree/fix/manual-plan-interval-import) dalına gönderildi. Son manuel kurgu/paket tekrarında 32 test geçti. Draft PR oluşturma hem `gh pr create` / GraphQL hem REST `POST /pulls` ile `403 Forbidden` yanıtı aldı; bu ortamdan PR açılamadı. [Değişiklikleri incele / PR aç](https://github.com/naman85331/video-ai-app/compare/main...fix/manual-plan-interval-import). Main'e merge yapılmadı. Gerçek JSON eklenmeden birebir dosya regresyonu tamamlanmış sayılmaz.

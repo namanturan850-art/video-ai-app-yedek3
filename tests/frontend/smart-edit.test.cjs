@@ -18,7 +18,7 @@ async function harness({job=null,versions=[],delay=null,responseState={}}={}){
  const fetch=async(url,opts)=>{if(delay)await delay(url);calls.push({url,method:opts.method,body:opts.body});const params=new URL(url,'http://local').searchParams,style=params.get('editing_style')||'balanced',seed=params.get('edit_variation_seed'),chosen=plan(style);
   if(seed){chosen.edit_variation_seed=seed;chosen.fingerprint+=seed;chosen.style_label+=' Varyasyon '+seed;}
   return {ok:true,json:async()=>({ready:true,source_ready:true,summary:null,ffmpeg:{found:true,status:'Hazır'},smart_edit_plan:chosen,music:null,job,versions,active:versions[0]||null,...responseState})};};
- vm.runInContext(source,vm.createContext({location:{pathname:'/projects/abc/render'},document:{querySelector:()=>root,createElement:tag=>new Element(tag)},window:{addEventListener(){}},File:class{},AbortSignal:{timeout(){}},fetch,setTimeout(){}}));
+ vm.runInContext(source,vm.createContext({location:{pathname:'/projects/abc/render'},document:{querySelector:()=>root,createElement:tag=>new Element(tag),createTextNode:text=>new Element('#text',String(text))},window:{addEventListener(){}},File:class{},AbortSignal:{timeout(){}},fetch,setTimeout(){}}));
  await new Promise(resolve=>setImmediate(resolve));return {root,calls,find:id=>root.find(n=>n.id===id)};
 }
 test('adaptive is default and nonzero local editing plan appears before render',async()=>{
@@ -51,7 +51,7 @@ test('subtitle profile follows each style without exposing ASS internals',async(
 });
 
 test('variation uses only local GET, subtitle modes reach preview and render',async()=>{
- const {calls,find}=await harness();const modes=find('render-subtitles');assert.equal(modes.value,'emphasis');
+ const {calls,find}=await harness();const modes=find('render-subtitles');assert.equal(modes.value,'full');
  await find('render-variation').listeners.click();assert.equal(calls.at(-1).method,'GET');assert.match(calls.at(-1).url,/edit_variation_seed=1/);
  modes.value='none';await modes.listeners.change();assert.match(calls.at(-1).url,/subtitle_display=none/);
  await find('render-create').listeners.click();const body=JSON.parse(calls.find(c=>c.method==='POST').body);
@@ -81,9 +81,9 @@ test('incomplete stock explains blocker, count and safe action above disabled cr
  await find('render-variation').listeners.click();assert.match(find('render-variation-feedback').textContent,/Kurgu varyasyonu hazırlandı ancak 3 medya alanı tamamlanmadan render başlatılamaz/);
  assert.match(root.textContent,/Kurgu Varyasyonu/);
 });
-test('complete defaults enable create and choose primary OpenMontage, emphasis and auto without music',async()=>{
+test('complete defaults enable create and choose primary OpenMontage, full subtitles and auto without music',async()=>{
  const {find,calls}=await harness();assert.equal(find('render-create').disabled,false);assert.equal(find('render-engine').value,'openmontage');
- await find('render-create').listeners.click();const body=JSON.parse(calls.find(c=>c.method==='POST').body);assert.equal(body.montage_engine,'openmontage');assert.equal(body.subtitle_display,'emphasis');assert.equal(body.music_enabled,false);
+ await find('render-create').listeners.click();const body=JSON.parse(calls.find(c=>c.method==='POST').body);assert.equal(body.montage_engine,'openmontage');assert.equal(body.subtitle_display,'full');assert.equal(body.music_enabled,false);
 });
 test('explicit unavailable OpenMontage never starts a hidden native job',async()=>{
  const {root,find,calls}=await harness({responseState:{ready:false,readiness:{blockers:[{code:'openmontage_missing',message:'OpenMontage hazır değil. Ayarlar bölümünden kurulumu tamamlayın veya Yerel Adaptif motorunu seçin.',screen:'settings'}]},openmontage:{ready:false,status:'Kurulu değil'}}});

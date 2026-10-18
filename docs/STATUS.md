@@ -1139,3 +1139,25 @@ Doğrulama: hedefli backend/başlatıcı paketi **21 geçti**; tam paket sonucu 
 Doğrulama: ilgili Python paketi **11 geçti**; DOM olaylarıyla çalışan iki frontend testi geçti. Testler cetvelde 23. saniyeye tıklamada ses ve videonun 23'e gitmesini, playhead sürüklemeyle 25'e geçmesini ve sağ kesme tutamacının 30→31 saniye sınırını komşu kliple birlikte gerçek `PUT /editor/timeline` isteğine yazmasını doğrular. Render/motion geniş paketinde **69 test geçti**, ardından bu değişikliklerden bağımsız eski `tests/test_rendering.py::test_schema9_upgrade_preserves_sources` testi şema 12 beklerken güncel uygulama şema 13 döndürdüğü için durdu.
 
 Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/Mapbox kamera alanları uydurulmadı; desteklenen şablon verileri düzenlenebilir. Gerçek Mapbox ağ isteği, ücretli Gemini, Windows WebView2, GPU ve 8–10 dakikalık final render çalıştırılmadı. Örnek proje testlerde bellek/geçici SQLite verisiyle kuruldu; gerçek kullanıcı projelerine dokunulmadı.
+
+### 2026-10-18 — Final polish, ilk doğrulanan geliştirme
+
+- Başlangıç: `9a18853` (PR #92 birleşmiş güncel main); dal: `feature/naman-editor-final-polish`.
+- Atomik ek klip grupları, Bezier/Ease/Hold, özgün animasyon alanını koruyan bölme, dört saniyelik yerel FFmpeg proxyleri, kaynak nesnesi düzenlemeleri, yerel metadata denetimi ve onaylı/iptal edilebilir parçalı Gemini kare incelemesi eklendi.
+- İlk ilgili entegrasyon çalıştırması: **64 passed** (93,77 sn), gerçek SQLite/FFmpeg ve mevcut manuel kurgu testleri dahil; ağ bağlantıları offline test korumasıyla kapalı.
+- Sonraki doğrulama sürüyor: Chromium etkileşimleri, proxy durum sorgusu optimizasyonu, Windows test araçları ve kapsamlı teslim raporu. Windows donanımına erişim ve tam render checkpoint desteği henüz doğrulanmış/tamamlanmış değildir.
+
+### 2026-10-18 — Final polish arayüzü ve regresyon doğrulaması
+
+- Gerçek Chromium: grup taşıma/undo, yeniden açılan Bezier kolu, proxy ses/video oynatma, Kaynak/Program geçişi, kaynak imzalı motion nesnesi düzenleme ve gerçek program karesi geçti.
+- Yoğun arşivde kartların 10 px yüksekliğe sıkışması düzeltildi; gerçek kart 112,5 px, thumbnail 67,5 px ölçüldü. Arşiv araması debounce, kaldırılan thumbnail gözlemcilerinin temizlenmesi ve yinelenen dosya yolu tarama önbelleği eklendi.
+- Ana yuva bölmesi artık ilgili animasyon belgeleriyle aynı transaction/geçmiş olayında kaydedilir; kaynak başlangıcı, Ease/fade zamanı, boş/devre dışı durumu ve tek undo/redo korunur.
+- Kaynak hazırlamada erken yerel moda geçişte eksik `label` alanı ve eski stok kayıtlarının eksik `warnings` alanı düzeltildi. Çalışan manuel varsayılanlar korunur; eski otomatik çeviri testleri açıkça legacy fixture kullanır.
+- **491 passed / 3 skipped**, 538,48 sn: editör, manuel kurgu, altyazı, FFmpeg render, restart, motion, stok/arşiv, proje/şema, workspace ve desktop birim testleri. Remotion kurulumu ve iki eski marker fixture verisi nedeniyle üç test atlandı.
+- **65 JavaScript/DOM testi geçti.** Gerçek FFmpeg'de Bezier başlangıç/orta/son örnek kareleri ile final grafiği karşılaştırması ayrıca geçti.
+- Windows CPU/WebView2 tanı aracı, çift tıklanan kontrol dosyası ve PR/manüel Windows CI dosyası hazır; fiziksel Windows/NVENC ve kurulu OpenMontage doğrulanmadı. Tam checkpoint devamı eklenmedi; verified_restart korunur.
+- Ayrıntılı kapsam ve açık kalanlar: `docs/EDITOR_FINAL_POLISH_DELIVERY.md`.
+- Son ek kanıt: 480 saniyelik sentetik PCM/timeline üzerinde 200 klip ve 503 arşiv kaydı; düşük proxy 29,0 FPS, seçim 59,5 ms, 230. saniyeye UI seek 15,6 ms. Ayrı gerçek örnek kare isteği soğuk 1120,2 ms / önbellekli 774,0 ms. İkinci açılış daha yavaş ölçüldü; iyileşme garantisi verilmez. Tam ölçümler `docs/editor-polish-metrics.json`.
+- 480 saniye fixture güncellemesinden sonra **53 passed** odaklı tekrar (98,42 sn); ek gerçek başlangıç/orta/son FFmpeg kare karşılaştırması **1 passed** (5,17 sn). Bu tekrarlar geniş kapsamla örtüşür.
+
+- Yayın: `feature/naman-editor-final-polish` GitHub'a push edildi. Draft PR denemesi GitHub GraphQL API tarafından 403 Forbidden ile reddedildi; PR oluşturulmadı. Karşılaştırma bağlantısı/hazır açıklama teslim raporundadır. Main değiştirilmedi.

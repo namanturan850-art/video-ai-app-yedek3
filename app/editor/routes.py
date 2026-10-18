@@ -26,6 +26,26 @@ def editor_router(service):
     @router.post('/history/{direction}')
     def history_apply(project_id:str,direction:str,payload:dict):return history.apply(project_id,direction,payload)
 
+    @router.post('/quality/comprehensive')
+    def comprehensive_start(project_id:str,payload:dict):
+        from app.editor.comprehensive import start
+        return start(service,project_id,payload)
+
+    @router.get('/quality/comprehensive/{key}')
+    def comprehensive_status(project_id:str,key:str):
+        from app.editor.comprehensive import status
+        return status(service,project_id,key)
+
+    @router.post('/quality/comprehensive/{key}/cancel')
+    def comprehensive_cancel(project_id:str,key:str):
+        from app.editor.comprehensive import status
+        return status(service,project_id,key,cancel=True)
+
+    @router.post('/quality/local')
+    def local_quality(project_id:str):
+        from app.editor.local_quality import inspect
+        return inspect(service,project_id)
+
     @router.get('/quality/reviews')
     def review_reports(project_id:str):return reviews.get(project_id)
 
@@ -70,6 +90,32 @@ def editor_router(service):
 
     @router.post('/advanced/history/{direction}')
     def advanced_history(project_id:str,direction:str,payload:dict):return advanced.history(project_id,direction,payload)
+
+    @router.get('/advanced/motion-elements/{clip_id}')
+    def advanced_motion_elements(project_id:str,clip_id:str):
+        from app.editor.motion_objects import scene_for
+        return scene_for(advanced,project_id,clip_id)
+
+    @router.post('/advanced/operations')
+    def advanced_operations(project_id:str,payload:dict):
+        from app.editor.operations import operate
+        return operate(advanced,project_id,payload)
+
+    @router.post('/advanced/program-proxy')
+    def advanced_proxy(project_id:str,payload:dict):
+        from app.editor.proxies import request
+        if set(payload)!={'time','quality'} or type(payload['time']) not in (int,float) or not isinstance(payload['quality'],str):raise EditorError('invalid_proxy','Önizleme zamanı ve kalitesini kontrol edin.')
+        return request(service,advanced,project_id,payload['time'],payload['quality'])
+
+    @router.get('/advanced/program-proxy-status/{key}')
+    def advanced_proxy_status(project_id:str,key:str):
+        from app.editor.proxies import status
+        return status(service,project_id,key)
+
+    @router.get('/advanced/program-proxy/{key}')
+    def advanced_proxy_file(project_id:str,key:str):
+        from app.editor.proxies import file
+        return FileResponse(file(service,project_id,key),media_type='video/mp4')
 
     @router.get('/advanced/program-frame')
     def advanced_frame(project_id:str,time:float=0):

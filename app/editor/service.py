@@ -370,6 +370,12 @@ class EditorService:
             plan=self._active(project_id);scene=next((s for s in plan['blocks'] if s['id']==slot['scene_id']),None)
             if not scene or scene.get('locked'): raise EditorError('locked','Kilitli sahne değiştirilemez.',409)
             before=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
+            from app.editor.advanced import Document
+            extra=None;doc_row=None
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='editor_documents'").fetchone():
+                doc_row=connection.execute('SELECT * FROM editor_documents WHERE project_id=? AND plan_id=?',(project_id,state['plan_id'])).fetchone()
+            previous=Document.model_validate(json.loads(doc_row['payload_json'])).model_dump() if doc_row else Document().model_dump()
+            following=deepcopy(previous)
             if action=='lock':
                 if type(payload.get('locked')) is not bool: raise EditorError('invalid_clip_edit','Kilit seçimini kontrol edin.')
                 slot['locked']=payload['locked']
@@ -390,19 +396,37 @@ class EditorService:
                     fraction=(at-actual_start)/(actual_end-actual_start)
                 else: fraction=.5
                 boundary=estimate_start+(estimate_end-estimate_start)*fraction;copy=deepcopy(slot);copy['slot_id']=uuid4().hex
-                old_source_start=float(slot.get('segment_start') or 0);old_source_end=slot.get('segment_end')
-                if action=='split' and finite(old_source_end):
-                    source_boundary=old_source_start+(float(old_source_end)-old_source_start)*fraction
+                old_source_start=float(slot.get('segment_start') or 0)
+                adjustment=next((a for a in following['adjustments'] if a['slot_id']==slot_id),None)
+                speed=(adjustment or {}).get('transform',{}).get('speed',1)
+                if action=='split':
+                    source_boundary=old_source_start+(at-actual_start)*speed
                     slot['segment_end']=source_boundary;copy['segment_start']=source_boundary
+                    if adjustment:
+                        right_edit=deepcopy(adjustment);right_edit['slot_id']=copy['slot_id']
+                        adjustment['animation_duration']=right_edit['animation_duration']=adjustment.get('animation_duration') or actual_end-actual_start
+                        right_edit['animation_offset']=adjustment.get('animation_offset',0)+at-actual_start
+                        following['adjustments'].append(right_edit)
+                    for transition in following['transitions']:
+                        if transition['kind']!='cut' and ((transition['slot_id']==slot_id and transition['duration']>(actual_end-at)/4) or (transition['next_slot_id']==slot_id and transition['duration']>(at-actual_start)/4)):
+                            raise EditorError('split_transition','Bölme komşu geçişi çok kısaltıyor. Önce geçiş süresini azaltın.')
+                        if transition['slot_id']==slot_id:transition['slot_id']=copy['slot_id']
+                elif adjustment:
+                    raise EditorError('duplicate_adjusted_base','Animasyonlu ana klibi çoğaltmak için önce Böl kullanın veya ek katman olarak kopyalayın; kaynak saatini koruyarak ikiye ayrılır.')
+                for field in ('empty_slots','disabled_slots'):
+                    if slot_id in following[field]:following[field].append(copy['slot_id'])
                 slot.update(duration=boundary-estimate_start,estimated_end=boundary)
                 copy.update(duration=estimate_end-boundary,estimated_start=boundary,estimated_end=estimate_end,locked=False)
                 index=state['slots'].index(slot);state['slots'].insert(index+1,copy)
                 ordered=sorted((s for s in state['slots'] if s['scene_id']==slot['scene_id']),key=lambda s:(s.get('estimated_start',0),s.get('order',0)))
                 for number,item in enumerate(ordered,1): item['order']=number
+            if previous!=following:
+                following=Document.model_validate(following).model_dump();extra={'before':previous,'after':following}
+                connection.execute('UPDATE editor_documents SET revision=revision+1,payload_json=?,updated_at=? WHERE project_id=? AND plan_id=?',(json.dumps(following),now(),project_id,state['plan_id']))
             self.stock._save(connection,state)
             after=[deepcopy(s) for s in state['slots'] if s['scene_id']==slot['scene_id']]
             connection.execute('INSERT INTO editor_revisions VALUES (?,?,?,?,?,?,?)',
-                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',json.dumps({'request':payload,'before':before,'after':after},ensure_ascii=False),now()))
+                (uuid4().hex,project_id,state['plan_id'],state['plan_id'],'timeline_edit',json.dumps({'request':payload,'before':before,'after':after,**({'advanced':extra} if extra else {})},ensure_ascii=False),now()))
         self.stock._mirror(state)
         return self.view(project_id)
 
@@ -411,13 +435,16 @@ class EditorService:
         with self.projects.lock, closing(self.projects._connection()) as connection:
             rows = connection.execute('SELECT * FROM stock_assets WHERE project_id=? ORDER BY provider,media_id',(project_id,)).fetchall()
             ranges = {(r['provider'], r['media_id']): dict(r) for r in connection.execute('SELECT * FROM media_clip_ranges WHERE project_id=?',(project_id,))}
-        result=[];skipped=0
+        result=[];skipped=0;validated_paths={}
         for row in rows:
             try:
                 meta=json.loads(row['metadata_json'])
                 if not isinstance(meta,dict):raise ValueError('metadata')
                 item={'provider':row['provider'],'media_id':row['media_id'],'media_type':row['media_type'],**meta}
-                path=asset_path(self.projects,project_id,item)
+                file_identity=(item.get('local_path'),item.get('file_size'))
+                path=validated_paths.get(file_identity)
+                if path is None:
+                    path=asset_path(self.projects,project_id,item);validated_paths[file_identity]=path
                 identity=item.get('sha256')
                 if not isinstance(identity,str) or not re.fullmatch(r'[a-f0-9]{64}',identity):raise ValueError('identity')
             except Exception:
@@ -725,7 +752,7 @@ class EditorService:
             connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,media['sha256'],ANALYZER_VERSION,json.dumps(result,ensure_ascii=False),now()))
         return result
 
-    def video_review(self,project_id,payload):
+    def video_review(self,project_id,payload,*,sample_times=None,review_version=None,expected_version=None):
         if set(payload)!={'confirm','data_sharing_confirmed','cost_confirmed'} or any(payload[k] is not True for k in payload):
             raise EditorError('confirmation_required','Gemini için açık kare paylaşımı ve olası maliyet onayı gereklidir. Kurgu içindeki Gemini inceleme panelini kullanın.')
         if not self.rendering: raise EditorError('render_required','Render servisi kullanılamıyor.',409)
@@ -734,12 +761,18 @@ class EditorService:
         view=self.rendering.view(project_id);version=view.get('active')
         if not version or version.get('status')!='completed' or version.get('video_missing'):
             raise EditorError('render_required','Önce tamamlanmış videoyu aktif seçin.',409)
+        if expected_version is not None and version['id']!=expected_version:raise EditorError('stale_review','İncelenen video sürümü değişti; kısmi rapor korundu.',409)
         path=self.rendering.export(project_id,version['id']);identity=sha256_file(path)
+        analyzer=review_version or VIDEO_REVIEW_VERSION
+        if sample_times is not None:
+            if not 1<=len(sample_times)<=8 or any(not finite(t) or t<0 for t in sample_times):raise EditorError('invalid_review','Bir analiz parçasında en fazla sekiz geçerli kare olabilir.')
+            identity=hashlib.sha256((identity+json.dumps(sample_times)).encode()).hexdigest()
         with self.projects.lock,closing(self.projects._connection()) as connection:
-            cached=connection.execute('SELECT result_json FROM archive_analysis_cache WHERE project_id=? AND sha256=? AND analyzer_version=?',(project_id,identity,VIDEO_REVIEW_VERSION)).fetchone()
+            cached=connection.execute('SELECT result_json FROM archive_analysis_cache WHERE project_id=? AND sha256=? AND analyzer_version=?',(project_id,identity,analyzer)).fetchone()
         if cached:return {**json.loads(cached[0]),'cached':True}
         duration=float(version.get('metadata',{}).get('duration') or self.view(project_id)['duration'] or 0)
-        samples=[round(duration*i/9,3) for i in range(1,9)] if duration>0 else []
+        samples=sample_times if sample_times is not None else ([round(duration*i/9,3) for i in range(1,9)] if duration>0 else [])
+        if any(t>=duration for t in samples):raise EditorError('invalid_review','Kare zamanları video süresi içinde olmalıdır.')
         images=[]
         for at in samples:
             try:
@@ -771,7 +804,7 @@ class EditorService:
         result={'cached':False,'basis':context['sampling_notice'],'sample_timecodes':context['samples'],'summary':' '.join(answer['summary'].split())[:1000],
                 'issues':issues,'render_version_id':version['id'],'analysis_scope':'sample_frames','source_sha256':identity}
         with self.projects.lock,closing(self.projects._connection()) as connection,connection:
-            connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,identity,VIDEO_REVIEW_VERSION,json.dumps(result,ensure_ascii=False),now()))
+            connection.execute('INSERT INTO archive_analysis_cache VALUES (?,?,?,?,?)',(project_id,identity,analyzer,json.dumps(result,ensure_ascii=False),now()))
         return result
 
     def _gemini_descriptions(self, project_id, provider, media_id, clips):

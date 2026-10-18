@@ -129,3 +129,6 @@ Başlatıcı, sunucuyu yalnızca `127.0.0.1` adresinde açar. `/api/health` baş
 Geliştirme makinesinde Node.js varsa pytest, Settings HTTP yardımcısının 24 zaman aşımı/hata sınıflandırma testini de çalıştırır. Node yoksa yalnızca bu ek kontrol atlanır; Windows başlatıcısı Node gerektirmez.
 
 Proje kuralları: [AGENTS.md](AGENTS.md). Kapsam: [ROADMAP.md](ROADMAP.md). Tamamlananlar: [docs/STATUS.md](docs/STATUS.md).
+
+
+Kurgu geliştirmelerinin güncel kapsamı, ölçümleri ve açık donanım kontrolleri: [Final polish teslim raporu](docs/EDITOR_FINAL_POLISH_DELIVERY.md). Windows üzerinde güvenli sentetik kontrol için `CHECK_NAMAN_WINDOWS.bat` dosyasını açabilirsiniz.

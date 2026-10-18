@@ -1,0 +1,33 @@
+name: Windows NAMAN CPU smoke
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cpu-editor:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      AVS_OFFLINE_TESTS: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install pinned test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Install FFmpeg with Chocolatey
+        run: choco install ffmpeg --no-progress -y
+      - name: CPU API SQLite FFmpeg checks
+        run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py -q
+      - name: Windows local diagnostics
+        run: python scripts/windows_editor_check.py --output windows-editor-report.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-editor-report
+          path: windows-editor-report.json

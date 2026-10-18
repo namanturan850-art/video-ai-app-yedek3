@@ -60,14 +60,39 @@ class Effects(Strict):
 
 
 class Keyframe(Strict):
+    curve_version: Literal[1]=1
     property: Literal['x','y','scale','rotation','opacity','volume']
     time: float=Field(ge=0)
     value: float
-    interpolation: Literal['linear','ease_in_out']='linear'
+    interpolation: Literal['linear','ease_in','ease_out','ease_in_out','hold','bezier']='linear'
+    bezier: list[float]=Field(default_factory=lambda:[1/3,0.,2/3,1.],min_length=4,max_length=4)
 
     @model_validator(mode='after')
     def valid(self):
         Transform.model_validate({self.property:self.value})
+        x1,y1,x2,y2=self.bezier
+        if not (0<=x1<=x2<=1 and 0<=y1<=1 and 0<=y2<=1):raise ValueError("Bezier kolları 0–1 aralığında, zaman kolları sıralı olmalıdır.")
+        return self
+
+
+class MotionElementEdit(Strict):
+    source_signature: str|None=Field(default=None,pattern=r'^[a-f0-9]{64}$')
+    index: int=Field(ge=0,le=2000)
+    visible: bool=True
+    x: float=Field(default=0,ge=-1920,le=1920)
+    y: float=Field(default=0,ge=-1080,le=1080)
+    opacity: float=Field(default=1,ge=0,le=1)
+    color: str|None=Field(default=None,pattern=r'^#[0-9A-Fa-f]{6}$')
+    text: str|None=Field(default=None,max_length=400)
+    start: float=Field(default=0,ge=0)
+    end: float|None=Field(default=None,gt=0)
+    keyframes: list[Keyframe]=Field(default_factory=list,max_length=128)
+
+    @model_validator(mode='after')
+    def valid(self):
+        if self.end is not None and self.end<=self.start:raise ValueError('Nesne zaman aralığı geçersiz.')
+        if any(k.property not in ('x','y','opacity') for k in self.keyframes):raise ValueError('Nesnede yalnız X/Y ve saydamlık keyframe desteklenir.')
+        if len({(k.property,k.time) for k in self.keyframes})!=len(self.keyframes):raise ValueError('Yinelenen nesne keyframe.')
         return self
 
 
@@ -78,6 +103,8 @@ class Media(Strict):
 
 
 class Editable(Strict):
+    animation_offset: float=Field(default=0,ge=0)
+    animation_duration: float|None=Field(default=None,gt=0)
     transform: Transform=Field(default_factory=Transform)
     effects: Effects=Field(default_factory=Effects)
     keyframes: list[Keyframe]=Field(default_factory=list,max_length=128)
@@ -115,6 +142,7 @@ class Clip(Editable):
     ducking: bool=False
     origin: Literal['manual','automatic','json']='manual'
     source_key: str|None=Field(default=None,max_length=64)
+    motion_elements: list[MotionElementEdit]=Field(default_factory=list,max_length=2000)
     motion: dict | None=None
     motion_sources: list[Media]=Field(default_factory=list,max_length=2)
     visible: bool=True
@@ -125,15 +153,19 @@ class Clip(Editable):
     @model_validator(mode='after')
     def valid(self):
         if self.end-self.start<1/30: raise ValueError('Klip en az bir kare olmalı.')
+        if self.motion_elements and self.kind!='motion':raise ValueError('Düz kaynakta bağımsız motion nesnesi bulunmaz.')
+        if len({e.index for e in self.motion_elements})!=len(self.motion_elements):raise ValueError('Yinelenen motion nesnesi.')
         if self.kind=='media' and self.media is None:raise ValueError('Medya kimliği eksik.')
         if self.kind=='text' and (not self.text.strip() or self.track=='audio'):raise ValueError('Metin ve iz geçersiz.')
         if self.kind=='motion' and (not self.motion or self.track=='audio'):raise ValueError('Motion ve iz geçersiz.')
         if self.kind=='shape' and self.track=='audio':raise ValueError('Görsel işaret Ses izine eklenemez.')
         if self.ducking and self.track!='audio':raise ValueError('Ducking yalnız ek ses klibinde desteklenir.')
         if self.clean_map and (self.kind!='motion' or self.motion.get('template')!='map'):raise ValueError('Temiz kaynak modu yalnız yerel map şablonunda desteklenir.')
-        if any(k.time>self.end-self.start+.001 for k in self.keyframes):raise ValueError('Keyframe klip süresini aşıyor.')
+        if self.animation_duration is not None and self.animation_offset+self.end-self.start>self.animation_duration+.001:raise ValueError('Animasyon kesiti kaynak zamanını aşıyor.')
+        if self.animation_offset and self.animation_duration is None:raise ValueError('Animasyon kaynak süresi eksik.')
+        if any(k.time>(self.animation_duration or self.end-self.start)+.001 for k in self.keyframes):raise ValueError('Keyframe klip süresini aşıyor.')
         if len({(k.property,k.time) for k in self.keyframes})!=len(self.keyframes):raise ValueError('Aynı özellik/zamanda iki keyframe olamaz.')
-        if self.fade_in+self.fade_out>self.end-self.start:raise ValueError('Fade süreleri klibi aşıyor.')
+        if self.fade_in+self.fade_out>(self.animation_duration or self.end-self.start):raise ValueError('Fade süreleri klibi aşıyor.')
         return self
 
 
@@ -192,6 +224,7 @@ class AdvancedEditor:
             return read_document(self.projects,pid,plan['plan_id'])
 
     def validate(self,pid,document,old):
+        old=Document.model_validate(old).model_dump()
         try: validated=Document.model_validate(document).model_dump()
         except ValidationError as error:
             detail='; '.join('.'.join(map(str,e['loc']))+': '+e['msg'] for e in error.errors(include_input=False)[:6])
@@ -211,6 +244,7 @@ class AdvancedEditor:
                 if not slot or slot['locked']:raise EditorError('locked','Bu yuva eksik veya kilitli. Önce kilidini açın.',409)
         old_clips={c['id']:c for c in old['clips']}
         for clip in validated['clips']:
+            if clip.get('animation_duration') and clip['animation_duration']>duration+.001:raise EditorError('invalid_animation','Animasyon kaynak süresi ana anlatımı aşamaz.')
             if clip['end']>duration+.001:raise EditorError('clip_outside','Ek klip anlatım süresinin dışına çıkamaz.')
             previous=old_clips.get(clip['id'])
             changed=previous!=clip
@@ -265,8 +299,14 @@ class AdvancedEditor:
                 try:
                     with offline():
                         spec=with_pictures({**clip['motion'],'local_only':True},self.projects._path(pid)/'stock')
-                        build(spec,DEFAULT_STYLE,clip['end']-clip['start'],0,self.projects.get(pid)['language'])
-                except (ValueError,RuntimeError,KeyError,TypeError,IndexError):raise EditorError('invalid_motion','Animasyonun gerekli veri alanları veya yerel görseli eksik. Şablon örneğini ve arşivi kontrol edin.') from None
+                        channels=getattr(getattr(self.editor,'rendering',None),'channels',None)
+                        kit=deepcopy(channels.for_project(pid)['style'] if channels else DEFAULT_STYLE)
+                        if clip.get('motion_color'):kit['palette']['accent']=clip['motion_color']
+                        spec={**spec,'clean_source':clip.get('clean_map',False)}
+                        scene=build(spec,kit,clip.get('animation_duration') or clip['end']-clip['start'],0,self.projects.get(pid)['language'])
+                        from app.editor.motion_objects import validate_edits
+                        validate_edits(scene,clip['motion_elements'])
+                except (ValueError,RuntimeError,KeyError,TypeError,IndexError):raise EditorError('invalid_motion','Animasyon verisi, görseli veya nesne kaynağı değişmiş/geçersiz. Şablonu/arşivi kontrol edin; kaynak değiştiyse nesne düzenlemelerini sıfırlayın.') from None
         for previous in old['clips']:
             if previous['id'] not in {c['id'] for c in validated['clips']} and (previous['locked'] or any(s['locked'] and previous['start']<s['end'] and previous['end']>s['start'] for s in view['scenes'])):
                 raise EditorError('locked','Kilitli ek klip silinemez.',409)
@@ -279,8 +319,10 @@ class AdvancedEditor:
             item=after.get(sid)
             if item:
                 duration=slot['end']-slot['start']
-                if item['fade_in']+item['fade_out']>duration:raise EditorError('invalid_fade','Fade süreleri ana klibi aşıyor.')
-                if any(k['time']>duration+.001 for k in item['keyframes']):raise EditorError('invalid_keyframe','Keyframe ana klip süresini aşıyor.')
+                animation_length=item.get('animation_duration') or duration
+                if item.get('animation_offset',0)+duration>animation_length+.001 or animation_length>view['duration']+.001:raise EditorError('invalid_animation','Ana klibin animasyon kaynak saati geçersiz.')
+                if item['fade_in']+item['fade_out']>animation_length:raise EditorError('invalid_fade','Fade süreleri ana klibi aşıyor.')
+                if any(k['time']>animation_length+.001 for k in item['keyframes']):raise EditorError('invalid_keyframe','Keyframe ana klip süresini aşıyor.')
                 # Main-clock speed is applied only with enough actual source coverage.
                 asset=slot.get('media') or {}
                 if asset.get('media_type')!='video' and item['transform']['speed']!=1:raise EditorError('still_speed','Yalnız kaynak videonun oynatma hızı değiştirilebilir.')

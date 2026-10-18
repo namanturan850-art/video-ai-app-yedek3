@@ -46,3 +46,6 @@ data/external-tools/
 data/openmontage.json
 data/.openmontage-*
 *.enc
+
+# Local Windows smoke report
+/windows-editor-report.json

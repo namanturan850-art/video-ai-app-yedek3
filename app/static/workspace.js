@@ -91,7 +91,8 @@
     ['Arşiv','Görseller','Ekran','Sesler','Motion'].forEach(name=>libraryTabs.append(button(name,()=>{archiveTab=name;page=1;drawArchive();})));
     const more=button('Daha fazla göster',()=>{page++;drawArchive();});
     library.append(libraryTabs,libraryFilters,importButton,c.upload,source,items,more);
-    search.oninput=()=>{page=1;drawArchive();};provider.onchange=()=>{page=1;drawArchive();};
+    let searchTimer;c.onDispose(()=>clearTimeout(searchTimer));
+    search.oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{page=1;drawArchive();},120);};provider.onchange=()=>{page=1;drawArchive();};
     function drawArchive(){
       const archive=c.getArchive();const previous=provider.value;
       provider.replaceChildren(new Option('Tüm kaynaklar',''),...[...new Set(archive.items.map(x=>x.provider))].map(p=>new Option(p,p)));provider.value=previous;

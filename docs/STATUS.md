@@ -1203,3 +1203,13 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 - Ayrıntılar, kullanım ve destek sınırları: [Sade iş akışı teslim raporu](SIMPLE_WORKFLOW_DELIVERY.md). Canlı/ücretli API ve kullanıcı verisi silme işlemi yapılmadı; Windows yerel çalıştırması doğrulanmadı.
 
 - GitHub: uygulama commit `6a78399`, `feature/naman-simple-workflow` dalına gönderildi. Draft PR açma hem GraphQL (`gh pr create`) hem REST (`POST /repos/naman85331/video-ai-app/pulls`) üzerinden `403 Forbidden` ile reddedildi. Bu ortam PR oluşturamadı; main merge yapılmadı. [Dal / değişiklikleri incele](https://github.com/naman85331/video-ai-app/compare/main...feature/naman-simple-workflow).
+
+## 2026-10-18 — Manuel Plan zaman aralığı içe aktarma düzeltmesi
+
+- `feature/naman-simple-workflow` / `7d0a0c3` üzerinden ayrı `fix/manual-plan-interval-import` dalı.
+- Aynı sahnenin farklı `start/end` önerileri yalnız kesişen yuvalarda işleniyor. Her yuva için tek adjustment; geçişler önerinin gerçek bitiş sınırında, tek kayıt. Çakışmalar sahne/saniye/öneri ile açıklanıyor; manuel ayarlar korunuyor.
+- Doğrulama salt okunur; taslak, gerçek önizleme, açık/kısmi onay ve undo korundu. Kaynak/kesit/kilit değişmiş taslak uygulanmıyor. Gemini paketi gerçek yuva saatlerini ve mevcut kesim sınırı kuralını içeriyor. UI değişmedi.
+- 119 farklı Python testi passed: örtüşen 95, 53 ve yeni 18 testlik gruplar; yeni HTTP/SQLite/JPEG önizleme/4 saniyelik FFmpeg render geçti. Derleme/diff kontrolleri geçti.
+- Gerçek `NAMAN_2_0_Kurgu_Plani(1).json` eklerde yok; birebir testi henüz yapılamadı. 16 kayıt / 6 sahne sentetik ve anonim regresyonu eklendi. Yuva içindeki yeni kesim sessizce kaydırılmaz/atlanmaz; mevcut motor sınırı açıklanır.
+- Ayrıntılar: [Manuel Plan aralık düzeltmesi](MANUAL_PLAN_INTERVAL_IMPORT_FIX.md). Main merge ve kullanıcı verisi silme işlemi yapılmadı.
+- Son güvenlik kontrolünden sonra manuel kurgu/paket grubu tekrar **32 passed**. Kod commit `983041c` ile GitHub'a gönderildi. Draft PR oluşturma GraphQL ve REST üzerinden `403 Forbidden` ile reddedildi; PR oluşturulduğu iddia edilmez. [Değişiklikleri incele / PR aç](https://github.com/naman85331/video-ai-app/compare/main...fix/manual-plan-interval-import). Gerçek JSON dosyası regresyonu, dosya eklenene kadar açık kalır.

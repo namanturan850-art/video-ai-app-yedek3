@@ -217,7 +217,9 @@ def editor_router(service):
         return Response(content,media_type='application/zip',headers={'Content-Disposition':'attachment; filename="naman-manuel-plan.zip"'})
 
     @router.post('/manual/validate')
-    def validate(project_id:str,payload:dict): return service.validate_import(project_id,payload)
+    def validate(project_id:str,payload:dict):
+        from app.editor.editorial import manual
+        return editorial.validate_response(project_id,payload) if manual(service.projects,project_id) else service.validate_import(project_id,payload)
 
     @router.post('/manual/import',status_code=201)
     def import_plan(project_id:str,payload:dict): return service.import_plan(project_id,payload)

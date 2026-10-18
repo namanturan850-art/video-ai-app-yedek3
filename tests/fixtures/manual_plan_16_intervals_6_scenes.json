@@ -1,0 +1,157 @@
+{
+  "schema": "naman.manual-plan.v1",
+  "base": {
+    "plan_id": "p",
+    "revision": 1
+  },
+  "sahneler": [
+    {
+      "object_id": "camera-1-1",
+      "scene_id": "scene-1",
+      "start": 0,
+      "end": 4,
+      "motion": "slow_zoom",
+      "transition": "crossfade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-1-2",
+      "scene_id": "scene-1",
+      "start": 4,
+      "end": 8,
+      "motion": "pan",
+      "transition": "hard_cut",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-1-3",
+      "scene_id": "scene-1",
+      "start": 8,
+      "end": 12,
+      "motion": "ken_burns",
+      "transition": "fade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-2-1",
+      "scene_id": "scene-2",
+      "start": 12,
+      "end": 16,
+      "motion": "slow_zoom",
+      "transition": "crossfade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-2-2",
+      "scene_id": "scene-2",
+      "start": 16,
+      "end": 20,
+      "motion": "pan",
+      "transition": "hard_cut",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-2-3",
+      "scene_id": "scene-2",
+      "start": 20,
+      "end": 24,
+      "motion": "ken_burns",
+      "transition": "fade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-3-1",
+      "scene_id": "scene-3",
+      "start": 24,
+      "end": 28,
+      "motion": "slow_zoom",
+      "transition": "crossfade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-3-2",
+      "scene_id": "scene-3",
+      "start": 28,
+      "end": 32,
+      "motion": "pan",
+      "transition": "hard_cut",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-3-3",
+      "scene_id": "scene-3",
+      "start": 32,
+      "end": 36,
+      "motion": "ken_burns",
+      "transition": "fade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-4-1",
+      "scene_id": "scene-4",
+      "start": 36,
+      "end": 40,
+      "motion": "slow_zoom",
+      "transition": "crossfade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-4-2",
+      "scene_id": "scene-4",
+      "start": 40,
+      "end": 44,
+      "motion": "pan",
+      "transition": "hard_cut",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-4-3",
+      "scene_id": "scene-4",
+      "start": 44,
+      "end": 48,
+      "motion": "ken_burns",
+      "transition": "fade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-5-1",
+      "scene_id": "scene-5",
+      "start": 48,
+      "end": 52,
+      "motion": "slow_zoom",
+      "transition": "crossfade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-5-2",
+      "scene_id": "scene-5",
+      "start": 52,
+      "end": 60,
+      "motion": "pan",
+      "transition": "hard_cut",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-6-1",
+      "scene_id": "scene-6",
+      "start": 60,
+      "end": 64,
+      "motion": "slow_zoom",
+      "transition": "crossfade",
+      "composition": "wide"
+    },
+    {
+      "object_id": "camera-6-2",
+      "scene_id": "scene-6",
+      "start": 64,
+      "end": 72,
+      "motion": "pan",
+      "transition": "none",
+      "composition": "wide"
+    }
+  ],
+  "infografikler": [],
+  "harita_sahneleri": [],
+  "vurgular": [],
+  "katmanlar": []
+}

@@ -46,7 +46,7 @@
       this.video.pause();this.video.removeAttribute('src');this.video.load();
       if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.objectUrl=null;
       this.anchor=Math.floor(time/4)*4;this.next=this.anchor;this.lastClock=time;this.seekTime=time;
-      this.blocked='';this.retryAt=0;this.retryMessage='';this.revision=this.getRevision();this.chosen=this.quality.value;this.ratios=[];this.fpsAt=0;
+      this.blocked='';this.retryAt=0;this.retryMessage='';this.revision=this.getRevision();this.chosen=this.quality.value;this.ratios=[];this.fpsAt=0;this.waitSince=0;this.startupSeconds=undefined;
     }
     fail(message){if(this.disposed||this.failed)return;this.clearHold();this.failed=true;this.active=false;this.abort.abort();this.video.pause();this.video.removeAttribute('src');this.video.load();if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.onState({active:false,text:message+' Standart parça önizlemesi kullanılacak.'});}
     clock(){
@@ -127,9 +127,11 @@
       this.active=this.positioned&&this.video.readyState>=2;
       const available=this.ahead(),goal=this.warmup();
       if(this.running){
-        if(!this.started&&available>=goal-.04&&this.active)this.started=true;
+        // Measure how long Play really waited (shown in the status text so slow starts can be reported with a number).
+        if(!this.started&&!this.waitSince)this.waitSince=performance.now();
+        if(!this.started&&available>=goal-.04&&this.active){this.started=true;if(this.waitSince){this.startupSeconds=(performance.now()-this.waitSince)/1000;this.waitSince=0;}}
         if(this.started&&this.active&&this.video.paused&&!this.video.ended){this.video.playbackRate=this.c.getPlaybackRate?.()||1;const generation=this.generation;this.video.play().catch(e=>{if(e.name==='AbortError'||generation!==this.generation||!this.running)return;this.fail('Oynat düğmesine yeniden basın: '+e.message);});}
-      }else{this.video.pause();this.started=false;if(this.positioned&&Math.abs(this.video.currentTime-desired)>.001)this.video.currentTime=desired;}
+      }else{this.waitSince=0;this.video.pause();this.started=false;if(this.positioned&&Math.abs(this.video.currentTime-desired)>.001)this.video.currentTime=desired;}
       if(this.active){this.shown=true;this.clearHold();}
       // An in-buffer seek or short stall keeps the browser's last frame; only a
       // stream that never produced a picture is hidden.
@@ -138,7 +140,7 @@
       const speed=this.ratios.length?` · hazırlık ${Math.max(...this.ratios.slice(-3)).toFixed(1)}× gerçek süre`:'';
       const progress=`${Math.min(available,goal).toFixed(1)} / ${goal.toFixed(1)} sn`;
       const text=!this.active&&!this.running?`Önizleme hazırlanıyor · duraklatıldı · ${progress}${speed}`:this.running&&!this.started?`Önizleme hazırlanıyor · ${progress} · duraklatılabilir${speed}`:
-        `Kesintisiz proxy · ${this.video.videoWidth||0}×${this.video.videoHeight||0} · ${this.video.paused?'duraklatıldı':this.fps?this.fps.toFixed(1)+' fps':'30 fps hedefi'}`;
+        `Kesintisiz proxy · ${this.video.videoWidth||0}×${this.video.videoHeight||0} · ${this.video.paused?'duraklatıldı':this.fps?this.fps.toFixed(1)+' fps':'30 fps hedefi'}${this.startupSeconds!==undefined?` · başlama ${this.startupSeconds.toFixed(1)} sn`:''}${speed}`;
       this.onState({active:this.active,text});
     }
     destroy(){this.disposed=true;this.clearHold();this.abort.abort();this.generation++;this.video.pause();this.video.removeEventListener('waiting',this.waiting);this.video.removeEventListener('error',this.error);if(this.frameId)this.video.cancelVideoFrameCallback?.(this.frameId);if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);}

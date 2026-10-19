@@ -122,6 +122,13 @@ test('paused preparation is capped so a slow machine is not buffered for minutes
   await Object.getPrototypeOf(p).pump.call(p);
   assert.equal(p.next,20);
 });
+test('the status text reports how long Play waited before the picture started',()=>{
+  const {p,video,c}=setup();let shown='';p.onState=s=>{shown=s.text;};
+  p.ratios=[.9];p.tick();assert.equal(p.started,false);
+  video.ranges=[[0,44]];p.next=44;p.tick();
+  assert.equal(p.started,true);assert.ok(p.startupSeconds>=0);
+  assert.match(shown,/başlama \d+\.\d sn/);assert.match(shown,/hazırlık 0\.9× gerçek süre/);
+});
 test('waiting text shows buffer progress and the measured preparation speed',()=>{
   const {p,c}=setup();let shown='';p.onState=s=>{shown=s.text;};
   p.ratios=[1.8];p.tick();

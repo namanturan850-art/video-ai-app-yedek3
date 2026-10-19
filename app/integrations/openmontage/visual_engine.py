@@ -121,6 +121,7 @@ def score_frames(root,inputs):
     metrics = {'text_vector_hits': sum(k in _EMBEDDINGS for k in text_keys),
                'text_vectors_encoded': len({k for k in text_keys if k not in _EMBEDDINGS})}
     texts=embedded(labels,text_keys,embed_texts,clip_embedder,torch)
+    metrics['device']='cuda' if str(getattr(clip_embedder,'_DEVICE','cpu'))=='cuda' else 'cpu'
     split=1+len(negatives)
     results=[]
     grouped = []

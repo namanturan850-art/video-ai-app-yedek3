@@ -294,7 +294,8 @@ def render(scene, output, ffmpeg):
                '-frames:v', str(frames)]
     # Only transparent documentary layers use a lossless alpha intermediate.
     # Final delivery remains the existing H.264 MP4 pipeline.
-    command += (['-c:v','qtrle','-pix_fmt','argb'] if alpha else ['-c:v','libx264','-preset','veryfast','-crf','18','-pix_fmt','yuv420p'])
+    preview = bool(scene.get('_render_size')) and '_sample_time' not in scene  # editor monitor only: speed matters more than polish
+    command += (['-c:v','qtrle','-pix_fmt','argb'] if alpha else ['-c:v','libx264','-preset','ultrafast' if preview else 'veryfast','-crf','24' if preview else '18','-pix_fmt','yuv420p'])
     command += ['-movflags','+faststart',str(output)]
     process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, shell=False)
     from app.motion.control import guard, check
@@ -304,7 +305,7 @@ def render(scene, output, ffmpeg):
         data = None;actor_cache={}
         for i in range(frames):
             check()
-            if data is None or scene.get('_render_start',0)+i / FPS <= settled + 1e-6:
+            if data is None or (not preview or i % 2 == 0) and scene.get('_render_start',0)+i / FPS <= settled + 1e-6:  # the monitor draws motion at 15 pictures/s: half the work, real-time playback
                 data = draw_frame(scene, scene.get('_sample_time',scene.get('_render_start',0)+i / FPS), base, maps, pictures,actor_cache).tobytes()
             process.stdin.write(data)
         process.stdin.close()

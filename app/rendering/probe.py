@@ -27,9 +27,11 @@ def stock(probe,path,media_type,**context):
         if type(video.get('width')) is not int or type(video.get('height')) is not int or min(video['width'],video['height'])<=0:raise ValueError()
         if media_type=='video':
             if not isinstance(data.get('format',{}),dict):raise ValueError()
-            duration=float(data.get('format',{}).get('duration',video.get('duration')))
+            from app.rendering.source_timing import video_duration
+            duration=video_duration(data)
             if not math.isfinite(duration) or duration<=0:raise ValueError()
             data['stock_duration']=duration
+            data['stock_start_offset']=max(0.,float(video.get('start_time') or 0)-float(data.get('format',{}).get('start_time') or 0))
         return data
     except (RenderError,KeyError,ValueError,TypeError,StopIteration):
         safe=diagnostic('input_decode_failed',phase='input_preflight',media_type=media_type,**context)

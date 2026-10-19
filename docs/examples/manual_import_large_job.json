@@ -1,0 +1,17 @@
+{
+  "passed": true,
+  "characters": 352841,
+  "operations": 150,
+  "approved": 1,
+  "seconds": 21.6,
+  "browser_errors": [],
+  "checks": [
+    "real JSON file upload",
+    "202 background job and status polling",
+    "draft only before consent",
+    "real JPEG preview",
+    "only selected proposal applied",
+    "media narration subtitles preserved",
+    "no paid call"
+  ]
+}

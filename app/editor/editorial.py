@@ -153,6 +153,9 @@ class Editorial:
         view=self.editor.view(pid);scenes={s['scene_id']:s for s in view['scenes']};clips=[];adjustments=[];transitions=[];seen=set()
         current=self.advanced.get(pid)['document'];existing={c.get('source_key') for c in current['clips'] if c.get('source_key')}
         slots=sorted([x for values in view['tracks'].values() for x in values if x.get('slot_id')],key=lambda x:x['start'])
+        from app.rendering.source_timing import verified_slot
+        handle_scenes={item['scene_id'] for item in payload.get('sahneler',[]) if item.get('transition')=='crossfade'}
+        slots=[verified_slot(self.editor,pid,slot) if slot['scene_id'] in handle_scenes else slot for slot in slots]
         intervals=SceneIntervals(slots,current,view.get('fps',30))
         for section in sections:
             for item in payload.get(section,[]):

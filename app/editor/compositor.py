@@ -105,6 +105,11 @@ def resolve(projects,pid,document,archive_file,*,kit=None,draw=False,verify=None
             ref=clip['media'];path,asset=archive_file(pid,ref['provider'],ref['media_id'])
             digest=verify(path,ref['sha256']) if verify else sha256_file(path)
             if digest!=ref['sha256']:raise RenderError('source_stale','Ek kurgu kaynak dosyası değişmiş.')
+            if asset['media_type']=='video':
+                from app.rendering.source_timing import duration,coverage
+                from app.rendering.tools import discover
+                coverage(duration(path,discover().get('ffprobe')),clip.get('source_start',0),None,clip['transform']['speed'],clip['end']-clip['start'],
+                         where=f"Ek görüntü {clip['id']}, {clip['start']:.3f} sn")
             assets[clip['id']]={'path':path,'type':asset['media_type'],'sha256':ref['sha256'],'has_audio':asset.get('has_audio',asset['media_type']=='audio')}
         elif clip['kind']=='motion':
             for ref in clip.get('motion_sources',[]):
@@ -139,6 +144,10 @@ def compile_graph(args,document,assets,base='0:v',*,folder,duration,width=1920,h
     def input_file(path,kind,source_start=0,speed=1,seconds=None):
         index=args.count('-i');args.extend(['-threads','1'])
         if kind=='image':args.extend(['-loop','1','-framerate','30'])
+        elif kind=='video':
+            from app.rendering.source_timing import input_time
+            from app.rendering.tools import discover
+            args.extend(['-ss',f'{input_time(path,discover().get("ffprobe"),source_start):.6f}'])
         elif source_start:args.extend(['-ss',f'{source_start:.6f}'])
         args.extend(['-t',f'{(seconds or duration)*speed+.1:.6f}','-i',str(path)])
         return index

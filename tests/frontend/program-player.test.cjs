@@ -91,3 +91,18 @@ test('long sessions retain only the preparation measurements used by the schedul
   await Object.getPrototypeOf(p).pump.call(p);
   assert.equal(p.ratios.length,3);assert.ok(p.ratios.every(n=>n<1));
 });
+test('invalid source pauses native clock without falling back to unsynchronized narration',async()=>{
+  const {p,c,video}=setup();video.ranges=[[0,4]];p.positioned=true;p.active=true;video.currentTime=1;
+  let stopped=0;c.pause=()=>stopped++;
+  c.api=async()=>{throw Object.assign(Error('Kaynak 3 sn; kesiti düzeltin'),{category:'short_source'});};
+  await Object.getPrototypeOf(p).pump.call(p);
+  assert.ok(p.blocked);assert.equal(p.failed,false);assert.equal(video.paused,true);assert.equal(stopped,1);
+  p.clock();assert.equal(c.narration.paused,true);assert.equal(c.narration.muted,true);
+  p.tick();assert.equal(video.paused,true);
+});
+test('a proxy network timeout cannot release the narration clock into a black clip',async()=>{
+  const {p,c,video}=setup();
+  c.api=async()=>{throw Error('20 saniye içinde yanıt alınamadı.');};
+  await Object.getPrototypeOf(p).pump.call(p);
+  p.clock();p.tick();assert.equal(p.failed,false);assert.ok(p.blocked);assert.equal(video.paused,true);assert.equal(c.narration.paused,true);
+});

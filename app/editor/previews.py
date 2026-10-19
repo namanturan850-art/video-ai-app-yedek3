@@ -69,7 +69,7 @@ def program_frame(editor,advanced,pid,time):
     state=advanced.get(pid);document=state['document'];folder=cache_folder(editor,pid)
     # UI is frame sampled; don't generate a full long-documentary proxy on a seek.
     time=min(time,max(0,view['duration']-1/30));frame=round(time*30)/30
-    media=[item for track in view['tracks'].values() for item in track if item.get('slot_id')]
+    media=[{**item,'start':round(item['start']*30)/30,'end':round(item['end']*30)/30} for track in view['tracks'].values() for item in track if item.get('slot_id')]
     verifier=getattr(getattr(editor.stock,'downloader',None),'verified_hash',None)
     item=next((x for x in media if x['start']<=frame<x['end']),None)
     hashes=[];path=None
@@ -93,7 +93,7 @@ def program_frame(editor,advanced,pid,time):
                 if expected and digest!=expected:raise EditorError('stale_media','Geçiş kaynağı değişmiş. Arşivi kontrol edin.',409)
                 hashes.append(digest)
     key=hashlib.sha256(json.dumps([document,view['stock_revision'],frame,hashes,kit],sort_keys=True).encode()).hexdigest()
-    target=folder/f'frame-v1-{key}.jpg'
+    target=folder/f'frame-v2-{key}.jpg'
     if target.is_file() and not linked(target):return target
     ffmpeg=discover()['ffmpeg'];temp=folder/(uuid4().hex+'.jpg')
     args=[ffmpeg,'-v','error','-y','-filter_complex_threads','1','-filter_threads','1','-threads','1']
@@ -102,9 +102,12 @@ def program_frame(editor,advanced,pid,time):
         speed=(adjustment or {}).get('transform',{}).get('speed',1)
         if item['media']['media_type']=='video':
             source_time=(item.get('clip_start') or 0)+(frame-item['start'])*speed
-            source_duration=item['media'].get('duration')
-            if source_duration and source_time>=source_duration:source_time%=source_duration  # existing legacy short-clip loop
-            args+=['-ss',str(source_time)]
+            from app.rendering.source_timing import editor_coverage
+            tail=next((t['duration'] for t in document['transitions'] if t['slot_id']==item['slot_id'] and t['kind'] in ('cross_dissolve','wipe')),0.)
+            editor_coverage(path,discover().get('ffprobe'),item.get('clip_start') or 0,item.get('clip_end'),speed,item['end']-item['start']+tail,
+                            f"Sahne {item['scene_id']}, {item['start']:.3f} sn ({item['slot_id']})")
+            from app.rendering.source_timing import input_time
+            args+=['-ss',str(input_time(path,discover().get('ffprobe'),source_time))]
         args+=['-i',str(path)]
     else:args+=['-f','lavfi','-i','color=c=black:s=640x360:r=30:d=0.04']
     normalize='scale=640:360:force_original_aspect_ratio=increase:out_range=tv,crop=640:360,setsar=1,format=yuv420p,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709'
@@ -117,8 +120,14 @@ def program_frame(editor,advanced,pid,time):
             if previous and previous.get('media'):
                 previous_path=asset_path(editor.projects,pid,previous['media'])
                 speed=next((a['transform']['speed'] for a in document['adjustments'] if a['slot_id']==previous['slot_id']),1)
+                if previous['media']['media_type']=='video':
+                    from app.rendering.source_timing import editor_coverage
+                    editor_coverage(previous_path,discover().get('ffprobe'),previous.get('clip_start') or 0,previous.get('clip_end'),speed,
+                                    previous['end']-previous['start']+incoming['duration'],f"Sahne {previous['scene_id']}, {previous['end']:.3f} sn")
                 index=args.count('-i');offset=(previous.get('clip_start') or 0)+(previous['end']-previous['start']+frame-item['start'])*speed
-                if previous['media']['media_type']=='video':args+=['-ss',str(offset)]
+                if previous['media']['media_type']=='video':
+                    from app.rendering.source_timing import input_time
+                    args+=['-ss',str(input_time(previous_path,discover().get('ffprobe'),offset))]
                 args+=['-i',str(previous_path)]
                 blend_duration=max(1/30,(round(incoming['duration']*30)-1)/30)
                 u=min(1,max(0,(frame-item['start'])/blend_duration))
@@ -128,7 +137,7 @@ def program_frame(editor,advanced,pid,time):
         if dip:
             half=dip['duration']/2
             gain=min(1,max(0,(item['end']-frame)/half if dip['slot_id']==item['slot_id'] else (frame-item['start'])/half))
-            base=base.replace('[base]',f',colorchannelmixer=rr={gain}:gg={gain}:bb={gain}[base]')
+            base=base.replace('[base]',f",geq=lum='16+(lum(X,Y)-16)*{gain}':cb='128+(cb(X,Y)-128)*{gain}':cr='128+(cr(X,Y)-128)*{gain}'[base]")
     # Audio layers don't appear in a still image; their independent players remain synchronized.
     doc={**document,'clips':[c for c in document['clips'] if c['track']!='audio']}
     graph,label,_=compile_graph(args,doc,assets,base='base',folder=folder,duration=.04,width=640,height=360,
@@ -143,7 +152,7 @@ def program_frame(editor,advanced,pid,time):
         os.replace(temp,target)
     finally:temp.unlink(missing_ok=True)
     # Bound only our own frame cache; thumbnails retain their stable source identity.
-    cached=sorted(folder.glob('frame-v1-*.jpg'),key=lambda p:p.stat().st_mtime)
+    cached=sorted(folder.glob('frame-v2-*.jpg'),key=lambda p:p.stat().st_mtime)
     for stale in cached[:-240]:
         if not linked(stale):stale.unlink(missing_ok=True)
     return target

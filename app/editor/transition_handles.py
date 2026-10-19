@@ -19,6 +19,7 @@ def capacity(first, second, adjustments):
     tail=None;duration_known=True
     if source.get('media_type')=='video':
         duration=source.get('duration')
+        if type(first.get('clip_end')) in (int,float) and type(duration) in (int,float):duration=min(duration,first['clip_end'])
         if type(duration) not in (int,float) or not math.isfinite(duration) or duration<=0:
             tail=0.;duration_known=False
         else:tail=max(0.,(duration-(first.get('clip_start') or 0))/speed-source_length)

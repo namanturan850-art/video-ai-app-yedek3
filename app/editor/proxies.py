@@ -60,13 +60,20 @@ def snapshot(editor,advanced,pid,time,quality):
         for slot in sorted((x for values in view['tracks'].values() for x in values if x.get('slot_id') and x['start']<end and x['end']>start),key=lambda s:s['start']):
             local={**slot,'start':round(max(start,slot['start'])*30)/30-start,'end':round(min(end,slot['end'])*30)/30-start};sid=slot['slot_id'];slots[sid]=local
             adjustment=offsets.get(sid);speed=(adjustment or {}).get('transform',{}).get('speed',1)
-            cut=(slot.get('clip_start') or 0)+(max(start,slot['start'])-slot['start'])*speed
+            cut=(slot.get('clip_start') or 0)+(round(max(start,slot['start'])*30)-round(slot['start']*30))/30*speed
             path=None;kind='empty'
             if slot.get('media'):
                 path=asset_path(editor.projects,pid,slot['media']);expected=slot['media'].get('sha256');digest=verifier(path,expected) if verifier and expected else sha256_file(path)
                 if expected and digest!=expected:raise EditorError('stale_media','Proxy kaynağı değişmiş; arşivi kontrol edin.',409)
                 hashes.append(digest);verified_sources.append((str(path),digest));kind=slot['media']['media_type']
-            bases.append({'start':local['start'],'end':local['end'],'path':path,'type':kind,'cut':cut,'speed':speed,'slot_id':sid,'original_start':slot['start']-start,'original_end':slot['end']-start})
+                if kind=='video':
+                    from app.rendering.source_timing import editor_coverage
+                    from app.rendering.tools import discover
+                    tail=next((t['duration'] for t in original['transitions'] if t['slot_id']==sid and t['kind'] in ('cross_dissolve','wipe')),0.)
+                    editor_coverage(path,discover().get('ffprobe'),slot.get('clip_start') or 0,slot.get('clip_end'),speed,
+                                    (round(slot['end']*30)-round(slot['start']*30))/30+tail,
+                                    f"Sahne {slot['scene_id']}, {slot['start']:.3f} sn ({sid})")
+            bases.append({'start':local['start'],'end':local['end'],'path':path,'type':kind,'cut':cut,'source_end':slot.get('clip_end'),'speed':speed,'slot_id':sid,'original_start':round(slot['start']*30)/30-start,'original_end':round(slot['end']*30)/30-start})
             if adjustment:
                 edit=restrict({**adjustment,'start':slot['start'],'end':slot['end']},start,end)
                 doc['adjustments'].append({k:v for k,v in edit.items() if k not in ('start','end','source_start')})
@@ -85,8 +92,8 @@ def snapshot(editor,advanced,pid,time,quality):
         base_ids={s['slot_id'] for s in bases}
         transitions=[t for t in original['transitions'] if t['slot_id'] in base_ids or t['next_slot_id'] in base_ids]
         transition_ids={t['slot_id'] for t in transitions}
-        data={'version':6,'subtitle_style':subtitle_style,'document':doc,'bases':bases,'hashes':hashes,'assets':assets,'cues':cues,'mix':mix,'size':SIZES[quality],
-              'original_adjustments':[a for a in original['adjustments'] if a['slot_id'] in transition_ids],'transitions':transitions,'all_slots':[x for values in view['tracks'].values() for x in values if x.get('slot_id') in transition_ids], 'kit':kit,'language':editor.projects.get(pid).get('language','de'), 'motion_folder':str(editor.projects._path(pid)/'stock'), 'verified_sources':verified_sources,'start':start,'duration':duration,'narration':narration,'full_duration':view['duration'],'slots':slots}
+        data={'version':7,'subtitle_style':subtitle_style,'document':doc,'bases':bases,'hashes':hashes,'assets':assets,'cues':cues,'mix':mix,'size':SIZES[quality],
+              'original_adjustments':[a for a in original['adjustments'] if a['slot_id'] in transition_ids],'transitions':transitions,'all_slots':[{**x,'start':round(x['start']*30)/30,'end':round(x['end']*30)/30} for values in view['tracks'].values() for x in values if x.get('slot_id') in transition_ids], 'kit':kit,'language':editor.projects.get(pid).get('language','de'), 'motion_folder':str(editor.projects._path(pid)/'stock'), 'verified_sources':verified_sources,'start':start,'duration':duration,'narration':narration,'full_duration':view['duration'],'slots':slots}
         for transition in original['transitions']:
             for slot in data['all_slots']:
                 if slot['slot_id']==transition['slot_id'] and slot.get('media'):
@@ -95,6 +102,13 @@ def snapshot(editor,advanced,pid,time,quality):
                     if expected and expected!=digest:raise EditorError('stale_media','Geçiş kaynağı değişmiş.',409)
                     verified_sources.append((str(path),digest))
                     slot['proxy_path']=str(path)
+                    if slot['media']['media_type']=='video':
+                        from app.rendering.source_timing import editor_coverage
+                        from app.rendering.tools import discover
+                        speed=next((a['transform']['speed'] for a in original['adjustments'] if a['slot_id']==slot['slot_id']),1.)
+                        editor_coverage(path,discover().get('ffprobe'),slot.get('clip_start') or 0,slot.get('clip_end'),speed,
+                                        (round(slot['end']*30)-round(slot['start']*30))/30+(transition['duration'] if transition['kind'] in ('cross_dissolve','wipe') else 0.),
+                                        f"Sahne {slot['scene_id']}, {slot['end']:.3f} sn ({slot['slot_id']})")
         from app.editor.proxy_audio import snapshot as audio_snapshot
         data['audio_key'],data['audio_data']=audio_snapshot(editor,pid,original,view,narration,mix,verifier)
         verified_sources.extend(data['audio_data']['sources'])
@@ -121,7 +135,8 @@ def request(editor,advanced,pid,time,quality='auto'):
         job=_jobs.get(token)
         if job and job.done():
             try:job.result()
-            except Exception:raise EditorError('proxy_fallback','Proxy bu kaliteyle hazırlanamadı; örnek kare moduna geçildi. Daha düşük kaliteyi deneyin.') from None
+            except Exception as error:
+                raise EditorError(getattr(error,'category','preview_failed'),str(error) if hasattr(error,'category') else 'Proxy hazırlanamadı. Kaynağı kontrol edip yeniden deneyin; oynatma bekletildi.') from None
             return {**result,'status':'ready','cache_hit':False}
         if job is None:
             # Drop completed futures; never accumulate a queue while scrubbing.
@@ -154,7 +169,8 @@ def status(editor,pid,key):
     if result is None:raise EditorError('proxy_missing','Önizlemeyi yeniden isteyin.',404)
     if job and job.done():
         try:job.result()
-        except Exception:raise EditorError('proxy_fallback','Proxy hazırlanamadı; daha düşük kaliteyi veya örnek kare modunu kullanın.') from None
+        except Exception as error:
+            raise EditorError(getattr(error,'category','preview_failed'),str(error) if hasattr(error,'category') else 'Proxy hazırlanamadı. Kaynağı kontrol edip yeniden deneyin; oynatma bekletildi.') from None
     ready=(cache_folder(editor,pid)/f'proxy-v1-{key}.mp4').is_file()
     return {**result,'status':'ready' if ready else 'preparing','cache_hit':ready}
 
@@ -174,9 +190,13 @@ def build(folder,target,data):
         label=f'base{index}';n=args.count('-i')
         if part['path']:
             if part['type']=='image':args.extend(['-loop','1','-framerate','30'])
-            else:args.extend(['-stream_loop','-1','-ss',str(part['cut'])])
-            args.extend(['-t',str(length*part['speed']+.1),'-i',str(part['path'])])
-            graphs.append(f'[{n}:v]setpts=(PTS-STARTPTS)/{part["speed"]},scale={width}:{height}:force_original_aspect_ratio=increase:out_range=tv,crop={width}:{height},setsar=1,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,fps=30,trim=duration={length},setpts=PTS-STARTPTS,format=yuv420p[{label}]')
+            else:
+                from app.rendering.source_timing import input_time
+                args.extend(['-ss',str(input_time(part['path'],discover().get('ffprobe'),part['cut']))])
+            decode_length=length*part['speed']+.1
+            if part.get('source_end') is not None:decode_length=min(decode_length,part['source_end']-part['cut'])
+            args.extend(['-t',str(decode_length),'-i',str(part['path'])])
+            graphs.append(f'[{n}:v]setpts=(PTS-STARTPTS)/{part["speed"]},scale={width}:{height}:force_original_aspect_ratio=increase:out_range=tv,crop={width}:{height},setsar=1,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,fps=30,tpad=stop_mode=clone:stop_duration=0.034,trim=duration={length},setpts=PTS-STARTPTS,format=yuv420p[{label}]')
         else:
             args.extend(['-f','lavfi','-i',f'color=c=black:s={width}x{height}:r=30:d={length}']);graphs.append(f'[{n}:v]null[{label}]')
         incoming=next((t for t in data.get('transitions',[]) if t['next_slot_id']==part.get('slot_id') and t['kind'] in ('cross_dissolve','wipe') and part['original_start']+t['duration']>part['start']),None)
@@ -188,7 +208,9 @@ def build(folder,target,data):
             elapsed=part['start']-part['original_start'];offset=(previous.get('clip_start') or 0)+(previous['end']-previous['start']+elapsed)*speed
             n=args.count('-i')
             if previous['media']['media_type']=='image':args.extend(['-loop','1','-framerate','30'])
-            else:args.extend(['-ss',str(offset)])
+            else:
+                from app.rendering.source_timing import input_time
+                args.extend(['-ss',str(input_time(path,discover().get('ffprobe'),offset))])
             args.extend(['-t',str(min(length,max(1/30,incoming['duration']-elapsed))*speed+.1),'-i',str(path)])
             graphs.append(f'[{n}:v]setpts=(PTS-STARTPTS)/{speed},scale={width}:{height}:force_original_aspect_ratio=increase:out_range=tv,crop={width}:{height},setsar=1,setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709,fps=30,format=yuv420p[tail{index}]')
             u=f'clip((T+{elapsed})/{max(1/30,(round(incoming["duration"]*30)-1)/30)},0,1)'
@@ -203,13 +225,17 @@ def build(folder,target,data):
                 gain=f'clip((T+{part["start"]-part["original_start"]})/{half},0,1)';enabled=f'lt(t,{half-part["start"]+part["original_start"]})'
             else:continue
             out=f'dip{index}_{len(graphs)}'
-            graphs.append(f"[{label}]geq=lum='lum(X,Y)*({gain})':cb='128+(cb(X,Y)-128)*({gain})':cr='128+(cr(X,Y)-128)*({gain})':enable='{enabled}'[{out}]");label=out
+            graphs.append(f"[{label}]geq=lum='16+(lum(X,Y)-16)*({gain})':cb='128+(cb(X,Y)-128)*({gain})':cr='128+(cr(X,Y)-128)*({gain})':enable='{enabled}'[{out}]");label=out
         inputs.append(label);cursor=part['end']
     for part in data['bases']:
         if part['start']>cursor+.001:base({'start':cursor,'end':part['start'],'path':None},len(inputs))
         base(part,len(inputs))
     if cursor<duration-.001:base({'start':cursor,'end':duration,'path':None},len(inputs))
-    graphs.append(''.join(f'[{x}]' for x in inputs)+(f'concat=n={len(inputs)}:v=1:a=0' if len(inputs)>1 else 'null')+'[base]')
+    # concat uses microsecond timebase. Its rounded 1.466666 timestamp can be
+    # one microsecond earlier than a 30fps overlay's 1.466667 timestamp, making
+    # framesync reuse the previous frame every third frame after a cut. Restore
+    # the exact frame clock before any overlays/adjustments consume the base.
+    graphs.append(''.join(f'[{x}]' for x in inputs)+(f'concat=n={len(inputs)}:v=1:a=0' if len(inputs)>1 else 'null')+',settb=1/30,setpts=N/(30*TB)[base]')
     narration=temporary/'narration.wav'
     try:
         from app.motion.clips import render_clip

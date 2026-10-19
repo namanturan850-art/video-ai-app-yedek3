@@ -73,3 +73,26 @@ def test_silent_visual_file_is_not_required_for_audio_only_preparation(tmp_path)
         before=deepcopy(doc)
         key,data=audio_snapshot(editor,st['pid'],doc,{'duration':4.,'tracks':{}},None,editor.audio_settings(st['pid']),None)
         assert data['document']['clips']==[] and not data['assets'] and doc==before and len(key)==64
+
+
+def test_muted_video_with_audio_is_not_probed_or_required_by_narration_mix(tmp_path):
+    from contextlib import closing
+    import json
+    import pytest
+    from app.stock.models import StockError
+    from app.editor.proxy_audio import snapshot as audio_snapshot
+    app=create_app(tmp_path)
+    with TestClient(app):
+        st=install_manual_example(app);editor=app.state.editor;asset=st['assets'][0]
+        metadata={**asset,'has_audio':True}
+        with closing(app.state.projects._connection()) as c,c:
+            c.execute('UPDATE stock_assets SET metadata_json=? WHERE project_id=? AND provider=? AND media_id=?',
+                      (json.dumps(metadata),st['pid'],asset['provider'],asset['media_id']))
+        doc=Document.model_validate({'clips':[{'id':'c'*32,'kind':'media','track':'layers','start':0.,'end':1.,
+            'media':{k:asset[k] for k in ('provider','media_id','sha256')},'transform':{'volume':0.}}]}).model_dump()
+        (st['root']/asset['local_path']).unlink()  # only disposable test data
+        before=deepcopy(doc)
+        _,data=audio_snapshot(editor,st['pid'],doc,{'duration':4.,'tracks':{}},None,editor.audio_settings(st['pid']),None)
+        assert data['document']['clips']==[] and data['assets']=={} and doc==before
+        doc['clips'][0]['transform']['volume']=.2
+        with pytest.raises(StockError):audio_snapshot(editor,st['pid'],doc,{'duration':4.,'tracks':{}},None,editor.audio_settings(st['pid']),None)

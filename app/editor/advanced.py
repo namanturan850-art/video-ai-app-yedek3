@@ -269,7 +269,11 @@ class AdvancedEditor:
                         raise EditorError('audio_controls','Ses klibinde yalnız ses seviyesi/keyframe, hız, kesit ve fade düzenlenir.')
                 if (clip['transform']['volume'] or any(k['property']=='volume' for k in clip['keyframes'])) and not (asset.get('has_audio') or asset['media_type']=='audio'):
                     raise EditorError('no_source_audio','Kaynakta doğrulanmış ses akışı yok. Kaynak ses seviyesi sıfır kalmalıdır.')
-                if asset['media_type'] in ('audio','video'):
+                if asset['media_type']=='video':
+                    from app.rendering.source_timing import editor_coverage
+                    from app.rendering.tools import discover
+                    editor_coverage(path,discover().get('ffprobe'),clip['source_start'],None,clip['transform']['speed'],clip['end']-clip['start'],f"Ek görüntü {clip['id']}, {clip['start']:.3f} sn")
+                elif asset['media_type']=='audio':
                     needed=clip['source_start']+(clip['end']-clip['start'])*clip['transform']['speed']
                     if not asset.get('duration') or needed>asset['duration']+.04:raise EditorError('short_source','Kaynak süresi, kesit ve hız için yetersiz.')
             if clip['kind']=='motion':
@@ -329,8 +333,10 @@ class AdvancedEditor:
                 if (item['transform']['volume'] or any(k['property']=='volume' for k in item['keyframes'])) and not asset.get('has_audio'):
                     raise EditorError('no_source_audio','Kaynakta doğrulanmış ses akışı yok. Kaynak ses seviyesi sıfır kalmalıdır.')
                 if asset.get('media_type')=='video' and item['transform']['speed']!=1:
-                    if not asset.get('duration') or (slot.get('clip_start') or 0)+duration*item['transform']['speed']>asset['duration']+.04:
-                        raise EditorError('short_source','Ana klibin hız değişikliği için kaynak süresi yetersiz.')
+                    from app.stock.download import asset_path
+                    from app.rendering.source_timing import editor_coverage
+                    from app.rendering.tools import discover
+                    editor_coverage(asset_path(self.projects,pid,asset),discover().get('ffprobe'),slot.get('clip_start') or 0,slot.get('clip_end'),item['transform']['speed'],duration,f"Sahne {slot['scene_id']}, {slot['start']:.3f} sn")
         for marker in validated['markers']:
             if marker['time']>view['duration']:
                 raise EditorError('invalid_marker','İşaretleyici anlatım süresini aşıyor.')
@@ -343,6 +349,8 @@ class AdvancedEditor:
         for transition in validated['transitions']:
             first=slots.get(transition['slot_id']);second=slots.get(transition['next_slot_id'])
             if not first or not second or abs(first['end']-second['start'])>.04:raise EditorError('invalid_transition','Geçiş bitişik iki ana klip arasında olmalıdır.')
+            from app.rendering.source_timing import verified_slot
+            if previous_transitions.get(transition['slot_id'])!=transition:first=verified_slot(self.editor,pid,first)
             from app.editor.transition_handles import problem
             failure=problem(first,second,transition,validated['adjustments'])
             if failure:

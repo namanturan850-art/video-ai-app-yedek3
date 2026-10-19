@@ -60,13 +60,13 @@ def install_ready(app,seconds=3.14):
     blocks=visual_blocks({'scenes':[scene(ids[:1]),scene(ids[1:])]},st['source'],'de',135,units=units)
     plan=app.state.production.save_generated(pid,st['sid'],'de',blocks)
     p=app.state.production.handoff(pid);root=app.state.projects._path(pid)
-    clip=synthetic(root/'stock',uuid4().hex+'.mp4',['-f','lavfi','-i','color=c=blue:s=320x240:d=0.4','-f','lavfi','-i','sine=frequency=1000:duration=0.4','-c:v','libx264','-c:a','aac','-shortest'])
+    clip=synthetic(root/'stock',uuid4().hex+'.mp4',['-f','lavfi','-i','color=c=blue:s=320x240:d=4','-f','lavfi','-i','sine=frequency=1000:duration=4','-c:v','libx264','-c:a','aac','-shortest'])
     image=synthetic(root/'stock',uuid4().hex+'.png',['-f','lavfi','-i','color=c=green:s=240x320','-frames:v','1'])
     slots=[]
     for i,s in enumerate(p['scenes']):
         for slot in make_slots(s):
             path=clip if i==0 else image
-            m={'provider':'pixabay','media_id':str(i+1),'media_type':'video' if i==0 else 'image','local_path':'stock/'+path.name,'file_size':path.stat().st_size,'duration':.4 if i==0 else None}
+            m={'provider':'pixabay','media_id':str(i+1),'media_type':'video' if i==0 else 'image','local_path':'stock/'+path.name,'file_size':path.stat().st_size,'duration':4. if i==0 else None}
             slot.update(selected_media=m,locked=True,status='complete');slots.append(slot)
     state={'project_id':pid,'plan_id':plan['plan_id'],'source_version_id':st['sid'],'slots':slots,'revision':1}
     with closing(app.state.projects._connection()) as c,c:
@@ -299,7 +299,7 @@ def test_missing_ffmpeg_disabled(ready,monkeypatch):
     ('webp','pan','fade',1.5,True),('png','ken_burns','none',.2,True),
     ('jpg','none','crossfade',.4,False),
 ])
-def test_real_media_normalization_loop_trim_transitions(tmp_path,kind,motion,transition,clip_duration,with_probe):
+def test_real_media_normalization_rejects_short_sources_and_keeps_valid_transitions(tmp_path,kind,motion,transition,clip_duration,with_probe):
     folder=tmp_path/'Türkçe (spaces)';folder.mkdir()
     clip=synthetic(folder,'clip.mp4',['-f','lavfi','-i',f'color=c=blue:s=240x320:d={clip_duration}','-f','lavfi','-i',f'sine=frequency=1000:duration={clip_duration}','-c:v','libx264','-c:a','aac','-shortest'])
     image=synthetic(folder,'image.'+kind,['-f','lavfi','-i','color=c=green:s=480x240','-frames:v','1'])
@@ -308,7 +308,13 @@ def test_real_media_normalization_loop_trim_transitions(tmp_path,kind,motion,tra
     folder_job=folder/'job';folder_job.mkdir();tool=tools.discover();tool['ffprobe']=tool['ffprobe'] if with_probe else None
     runner=ProcessRunner();progress=[]
     engine=FFmpegRenderProvider(tool,runner,lambda *a:progress.append(a))
-    result=engine.render({'temporary':folder_job,'timeline':timeline.build(h,p),'handoff':h,'options':options({'encoder':'cpu','subtitle_burned':False}),'media':{'1':{'path':clip,'type':'video','duration':clip_duration},'2':{'path':image,'type':'image'}},'audio':voice,'music':None})
+    render_plan={'temporary':folder_job,'timeline':timeline.build(h,p),'handoff':h,'options':options({'encoder':'cpu','subtitle_burned':False}),'media':{'1':{'path':clip,'type':'video','duration':clip_duration},'2':{'path':image,'type':'image'}},'audio':voice,'music':None}
+    if clip_duration<1.5-1/30:
+        with pytest.raises(RenderError) as rejected:engine.render(render_plan)
+        assert rejected.value.category==('short_source' if with_probe else 'input_invalid')
+        assert [f.read_bytes() for f in (clip,image,voice)]==before
+        return
+    result=engine.render(render_plan)
     metadata=probe.validate(shutil.which('ffprobe'),result['path'],3.14)
     assert metadata['width']==1920 and abs(metadata['duration']-3.14)<=.04
     if with_probe:

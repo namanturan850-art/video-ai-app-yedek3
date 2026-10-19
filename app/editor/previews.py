@@ -11,7 +11,7 @@ from uuid import uuid4
 from app.editor.models import EditorError
 from app.projects import linked
 
-_decoders=BoundedSemaphore(2)
+_decoders=BoundedSemaphore(3)  # two overlapping proxy builds + one still preview / stream copy
 
 
 @contextmanager

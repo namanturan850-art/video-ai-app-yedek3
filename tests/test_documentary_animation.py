@@ -270,3 +270,20 @@ def test_text_rotation_is_rendered_instead_of_ignored():
         return box[2]-box[0],box[3]-box[1]
     w,h=bounds(0.);rw,rh=bounds(90.)
     assert w>h*2 and rh>rw*2
+
+
+def test_path_objects_without_points_get_a_straight_default_path():
+    from app.animation.schema import Actor
+    arrow=Actor.model_validate({'id':'a','kind':'arrow','width':60,'height':260,'rotation':-90})
+    assert arrow.data['points']==[{'x':-130.0,'y':0.0},{'x':130.0,'y':0.0}]
+    flow=Actor.model_validate({'id':'f','kind':'flow','width':620,'data':{'speed':100}})
+    assert flow.data['points'][1]=={'x':310.0,'y':0.0} and flow.data['speed']==100
+    own=[{'x':0,'y':0},{'x':5,'y':5}]
+    assert Actor.model_validate({'id':'l','kind':'line','data':{'points':own}}).data['points']==[{'x':0.0,'y':0.0},{'x':5.0,'y':5.0}]
+
+
+def test_duplicates_are_not_listed_in_the_correction_message():
+    from app.editor.manual_review import correction
+    issue=lambda category:{'section':'vurgular','index':0,'scene_id':'s','start':1,'end':2,'message':'m','original':{},'category':category}
+    assert correction([issue('duplicate')])==''
+    assert correction([issue('duplicate'),issue('invalid_time')]).count('\n- ')==1

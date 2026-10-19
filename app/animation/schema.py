@@ -127,6 +127,24 @@ class Actor(Strict):
     keyframes: list[Key]=Field(default_factory=list,max_length=64)
     data: dict=Field(default_factory=dict)
 
+    @model_validator(mode='before')
+    @classmethod
+    def default_points(cls,value):
+        # Outside AI often omits data.points on arrows/flows. The object already says
+        # how long it is (width/height) and where it points (rotation), so derive a
+        # straight path instead of rejecting a scene that is otherwise valid.
+        if isinstance(value,dict) and value.get('kind') in PATH_KINDS:
+            data=value.get('data')
+            if data is None:data={}
+            if isinstance(data,dict) and 'points' not in data:
+                try:
+                    length=max(float(value.get('width',320)),float(value.get('height',180)))
+                    length=min(max(length,8),1800)
+                except (TypeError,ValueError):return value
+                half=round(length/2,1)
+                value={**value,'data':{**data,'points':[{'x':-half,'y':0},{'x':half,'y':0}]}}
+        return value
+
     @model_validator(mode='after')
     def valid(self):
         if len({(k.property,k.time) for k in self.keyframes})!=len(self.keyframes):raise ValueError('Yinelenen nesne keyframe zamanı.')

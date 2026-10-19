@@ -297,3 +297,21 @@ def test_prepared_layer_is_drafted_approved_and_drawn_in_the_program_frame(workf
     assert after.status_code == 200, after.text
     if before.status_code == 200:
         assert after.content != before.content
+
+
+def test_plain_text_proposals_become_designed_layers_without_losing_odd_ones():
+    from app.motion.text_layers import convert
+    from app.motion.html_layer import sanitize, MAX_SECONDS
+    scenes = {'a': {'scene_id': 'a', 'start': 0., 'end': 6.}, 'b': {'scene_id': 'b', 'start': 6., 'end': 12., 'locked': True}}
+    payload = {'vurgular': [{'scene_id': 'a', 'start': 1., 'end': 5., 'text': 'Dijo "hola" & <b>adiós</b>', 'object_id': 'x'},
+                            {'scene_id': 'a', 'start': 1., 'end': 5., 'text': 'pulse kalır', 'effect': 'pulse'},
+                            {'scene_id': 'b', 'text': 'kilitli sahne'},
+                            {'scene_id': 'a', 'start': 1., 'end': 1.5, 'text': 'çok kısa'}],
+               'katmanlar': [{'scene_id': 'a', 'start': 0., 'end': 4., 'text': 'de noche la tierra se enfría rápido'}]}
+    assert convert(payload, scenes, MAX_SECONDS) == 2
+    assert [i['text'] for i in payload['vurgular']] == ['pulse kalır', 'kilitli sahne', 'çok kısa'] and payload['katmanlar'] == []
+    layers = payload['html_katmanlari']
+    assert [l['track'] for l in layers] == ['emphasis', 'layers'] and layers[0]['object_id'] == 'x'
+    assert '<b>' not in layers[0]['html'] and '&lt;b&gt;' in layers[0]['html']
+    for layer in layers:
+        sanitize(layer['html'], layer['css'])

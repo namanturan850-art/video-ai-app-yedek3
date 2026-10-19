@@ -232,13 +232,22 @@ def prepare_html_layers(editorial,pid,payload,progress=None):
     """Render incoming HTML/CSS layers once (Remotion) before the review compiles
     the draft. Not under the project lock: a slow browser render must not block
     the editor. Failures stay per layer and appear as draft issues."""
-    items=payload.get('html_katmanlari') if isinstance(payload,dict) else None
-    if not isinstance(items,list) or not items:return 0
-    from app.motion.html_layer import prerender
+    if not isinstance(payload,dict):return 0
+    from app.motion.html_layer import prerender,MAX_SECONDS
     from app.rendering.tools import discover
     editor=editorial.editor
-    scenes={s['scene_id']:s for s in editor.view(pid)['scenes']}
     bridge=getattr(getattr(editor,'rendering',None),'openmontage',None)
+    # Plain-text proposals look like subtitles. When Remotion is ready they become designed,
+    # animated layers; otherwise they stay ordinary text clips, so nothing is lost.
+    try:ready=bridge is not None and bool(bridge.status().get('ready'))
+    except Exception:ready=False
+    if ready and any(isinstance(payload.get(k),list) and payload[k] for k in ('vurgular','katmanlar')):
+        from app.motion.text_layers import convert
+        known={s['scene_id']:s for s in editor.view(pid)['scenes']}
+        convert(payload,known,MAX_SECONDS)
+    items=payload.get('html_katmanlari')
+    if not isinstance(items,list) or not items:return 0
+    scenes={s['scene_id']:s for s in editor.view(pid)['scenes']}
     report=(lambda done,total,message:progress(done,total,message)) if progress else (lambda *a:None)
     return prerender(bridge,editor.projects._path(pid)/'stock',items,scenes,discover().get('ffmpeg'),progress=report)
 

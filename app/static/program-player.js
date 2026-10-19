@@ -1,5 +1,6 @@
 /* Bounded proxy scheduling and one continuous, muxed Program decoder. */
 (() => {
+  const PAUSED_RUNWAY_MAX=12;
   class ProgramPlayer {
     static revision(revision,c){return JSON.stringify([revision,c.data.audio_settings,c.data.subtitle_version_id,c.data.stock_revision]);}
     constructor({video,c,getRevision,getMode,quality,onState}) {
@@ -26,7 +27,20 @@
       // Never pretend a cold decoder is playing while the narration runs ahead.
       return Math.min(remaining,Math.min(60,Math.max(8,remaining*(1-1/ratio)+8)));
     }
+    // Keep the last decoded picture on screen while a new stream is prepared;
+    // a torn-down MediaSource would otherwise leave the monitor black.
+    holdLast(){
+      const v=this.video,doc=globalThis.document;
+      if(this.hold||!doc||!v.parentNode||!(v.videoWidth>0)||!(v.readyState>=2))return;
+      try{
+        const canvas=doc.createElement('canvas');canvas.width=v.videoWidth;canvas.height=v.videoHeight;
+        canvas.getContext('2d').drawImage(v,0,0);canvas.className='advanced-program-hold';
+        v.parentNode.insertBefore(canvas,v);this.hold=canvas;
+      }catch(e){this.hold=null;}
+    }
+    clearHold(){if(this.hold){this.hold.remove();this.hold=null;}}
     reset(time){
+      this.holdLast();this.shown=false;
       this.abort.abort();this.abort=new AbortController();this.generation++;
       this.sourceBuffer=null;this.source=null;this.positioned=false;this.started=false;this.active=false;
       this.video.pause();this.video.removeAttribute('src');this.video.load();
@@ -34,7 +48,7 @@
       this.anchor=Math.floor(time/4)*4;this.next=this.anchor;this.lastClock=time;this.seekTime=time;
       this.blocked='';this.retryAt=0;this.retryMessage='';this.revision=this.getRevision();this.chosen=this.quality.value;this.ratios=[];this.fpsAt=0;
     }
-    fail(message){if(this.disposed||this.failed)return;this.failed=true;this.active=false;this.abort.abort();this.video.pause();this.video.removeAttribute('src');this.video.load();if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.onState({active:false,text:message+' Standart parça önizlemesi kullanılacak.'});}
+    fail(message){if(this.disposed||this.failed)return;this.clearHold();this.failed=true;this.active=false;this.abort.abort();this.video.pause();this.video.removeAttribute('src');this.video.load();if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.onState({active:false,text:message+' Standart parça önizlemesi kullanılacak.'});}
     clock(){
       if(!this.enabled){this.video.pause();this.active=false;delete this.c.root.dataset.programClock;return undefined;}
       this.c.root.dataset.programClock='1';this.c.narration?.pause();if(this.c.narration)this.c.narration.muted=true;
@@ -80,7 +94,10 @@
       this.pumping=true;const generation=this.generation;
       try{
         while(generation===this.generation&&!this.disposed&&this.enabled){
-          const desired=this.c.getTime(),limit=this.running?Math.min(this.c.data.duration,desired+Math.max(12,this.warmup())):Math.min(this.c.data.duration,desired+4);
+          // While paused keep the same measured runway that Play will require, so
+          // resuming is immediate on hardware that prepares faster than real time.
+          // Capped: a slow machine still waits honestly instead of buffering minutes.
+          const desired=this.c.getTime(),limit=this.running?Math.min(this.c.data.duration,desired+Math.max(12,this.warmup())):Math.min(this.c.data.duration,desired+Math.min(PAUSED_RUNWAY_MAX,Math.max(4,this.warmup())));
           if(this.next>=limit-.001)break;
           const time=this.next,started=performance.now();
           let meta=await this.c.api(`/api/projects/${this.c.id}/editor/advanced/program-proxy`,{method:'POST',body:JSON.stringify({time,quality:this.chosen}),signal:this.abort.signal});
@@ -99,7 +116,7 @@
     }
     tick(){
       if(this.failed||this.disposed)return;
-      if(!this.enabled){this.video.pause();this.active=false;this.onState({active:false,text:'Örnek kare / kaynak önizlemesi'});return;}
+      if(!this.enabled){this.video.pause();this.active=false;this.shown=false;this.clearHold();this.onState({active:false,text:'Örnek kare / kaynak önizlemesi'});return;}
       const desired=this.c.getTime();
       if(this.revision!==this.getRevision()||this.chosen!==this.quality.value)this.reset(desired);
       else if(this.lastClock!==null&&Math.abs(desired-this.lastClock)>1/600){if(this.contains(desired)){this.video.currentTime=desired;this.seekTime=desired;this.lastClock=desired;}else this.reset(desired);}
@@ -113,12 +130,15 @@
         if(!this.started&&available>=goal-.04&&this.active)this.started=true;
         if(this.started&&this.active&&this.video.paused&&!this.video.ended){this.video.playbackRate=this.c.getPlaybackRate?.()||1;const generation=this.generation;this.video.play().catch(e=>{if(e.name==='AbortError'||generation!==this.generation||!this.running)return;this.fail('Oynat düğmesine yeniden basın: '+e.message);});}
       }else{this.video.pause();this.started=false;if(this.positioned&&Math.abs(this.video.currentTime-desired)>.001)this.video.currentTime=desired;}
-      this.video.hidden=!this.active;
+      if(this.active){this.shown=true;this.clearHold();}
+      // An in-buffer seek or short stall keeps the browser's last frame; only a
+      // stream that never produced a picture is hidden.
+      this.video.hidden=!(this.active||this.shown);
       const text=!this.active&&!this.running?'Önizleme hazırlanıyor · duraklatıldı':this.running&&!this.started?`Önizleme hazırlanıyor · ${Math.min(available,goal).toFixed(1)} / ${goal.toFixed(1)} sn · duraklatılabilir`:
         `Kesintisiz proxy · ${this.video.videoWidth||0}×${this.video.videoHeight||0} · ${this.video.paused?'duraklatıldı':this.fps?this.fps.toFixed(1)+' fps':'30 fps hedefi'}`;
       this.onState({active:this.active,text});
     }
-    destroy(){this.disposed=true;this.abort.abort();this.generation++;this.video.pause();this.video.removeEventListener('waiting',this.waiting);this.video.removeEventListener('error',this.error);if(this.frameId)this.video.cancelVideoFrameCallback?.(this.frameId);if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);}
+    destroy(){this.disposed=true;this.clearHold();this.abort.abort();this.generation++;this.video.pause();this.video.removeEventListener('waiting',this.waiting);this.video.removeEventListener('error',this.error);if(this.frameId)this.video.cancelVideoFrameCallback?.(this.frameId);if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);}
   }
   globalThis.NAMANProgramPlayer=ProgramPlayer;
 })();

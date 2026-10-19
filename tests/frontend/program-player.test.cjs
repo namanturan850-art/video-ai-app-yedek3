@@ -3,13 +3,13 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const code=fs.readFileSync('app/static/program-player.js','utf8');
-function setup(){
+function setup(extra={}){
   class Video extends EventTarget {
     constructor(){super();this.currentTime=0;this.paused=true;this.readyState=4;this.playbackRate=1;this.ranges=[];}
     get buffered(){return {length:this.ranges.length,start:i=>this.ranges[i][0],end:i=>this.ranges[i][1]};}
     play(){this.paused=false;return Promise.resolve();}pause(){this.paused=true;}removeAttribute(){}load(){this.ranges=[];}
   }
-  const globals={AbortController,EventTarget,Event,setTimeout,performance,URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},MediaSource:{isTypeSupported:()=>true},fetch:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)})};
+  const globals={AbortController,EventTarget,Event,setTimeout,performance,URL:{createObjectURL:()=>'',revokeObjectURL:()=>{}},MediaSource:{isTypeSupported:()=>true},fetch:async()=>({ok:true,arrayBuffer:async()=>new ArrayBuffer(8)}),...extra};
   vm.runInNewContext(code,globals);
   const video=new Video();let time=0,revision=0,rate=1;
   const c={id:'project',root:{dataset:{}},controls:{play:{textContent:'❚❚ Duraklat'}},data:{duration:64},narration:{paused:false,pause(){this.paused=true;}},getTime:()=>time,getPlaybackRate:()=>rate,api:async()=>{throw Error('unexpected API');}};
@@ -105,4 +105,56 @@ test('a proxy network timeout cannot release the narration clock into a black cl
   c.api=async()=>{throw Error('20 saniye içinde yanıt alınamadı.');};
   await Object.getPrototypeOf(p).pump.call(p);
   p.clock();p.tick();assert.equal(p.failed,false);assert.ok(p.blocked);assert.equal(video.paused,true);assert.equal(c.narration.paused,true);
+});
+
+function paused(c){c.controls.play.textContent='▶ Oynat';}
+function readySegments(c,p,video){
+  c.api=async()=>({status:'ready',start:p.next,duration:4,cache_hit:true});
+  p.append=async meta=>{video.ranges=[[0,meta.start+meta.duration]];};
+}
+test('paused monitor prepares the same runway Play needs on fast hardware',async()=>{
+  const {p,video,c}=setup();paused(c);p.ratios=[.5];readySegments(c,p,video);
+  await Object.getPrototypeOf(p).pump.call(p);
+  assert.equal(p.next,8);
+});
+test('paused preparation is capped so a slow machine is not buffered for minutes',async()=>{
+  const {p,video,c}=setup();paused(c);p.ratios=[3];readySegments(c,p,video);
+  await Object.getPrototypeOf(p).pump.call(p);
+  assert.equal(p.next,12);
+});
+test('Play after Pause resumes at once when the runway was prepared while paused',()=>{
+  const {p,video,c}=setup();paused(c);video.ranges=[[0,8]];p.positioned=true;p.next=8;p.ratios=[.5];
+  p.tick();assert.equal(video.paused,true);
+  c.controls.play.textContent='❚❚ Duraklat';p.tick();
+  assert.equal(p.started,true);assert.equal(video.paused,false);
+});
+function withHold(){
+  const inserted=[];
+  const document={createElement:()=>({className:'',width:0,height:0,removed:false,getContext:()=>({drawImage(){}}),remove(){this.removed=true;}})};
+  const ctx=setup({document});
+  ctx.video.parentNode={insertBefore:node=>inserted.push(node)};ctx.video.videoWidth=1280;ctx.video.videoHeight=720;
+  return {...ctx,inserted};
+}
+test('a seek outside the buffer holds the last decoded frame instead of a black monitor',()=>{
+  const {p,video,setTime,inserted}=withHold();video.ranges=[[0,12]];p.positioned=true;p.next=12;
+  p.tick();assert.equal(video.hidden,false);
+  setTime(40);p.tick();
+  assert.equal(inserted.length,1);assert.equal(p.hold,inserted[0]);assert.equal(inserted[0].removed,false);
+  video.ranges=[[40,52]];p.tick();
+  assert.equal(inserted[0].removed,true);assert.equal(p.hold,null);assert.equal(video.hidden,false);
+});
+test('an in-buffer seek keeps the browser frame visible while the new picture decodes',()=>{
+  const {p,video,setTime}=withHold();video.ranges=[[0,30]];p.positioned=true;p.next=30;
+  p.tick();assert.equal(video.hidden,false);
+  video.readyState=1;setTime(10);p.tick();
+  assert.equal(p.active,false);assert.equal(video.hidden,false);
+});
+test('a stream that never produced a picture stays hidden and leaves no stale frame',()=>{
+  const {p,video,inserted}=withHold();
+  p.tick();assert.equal(video.hidden,true);assert.equal(inserted.length,0);
+});
+test('leaving Program mode and destroying the player release the held frame',()=>{
+  const {p,video,setTime,inserted}=withHold();video.ranges=[[0,12]];p.positioned=true;p.next=12;
+  p.tick();setTime(40);p.tick();assert.equal(inserted.length,1);
+  p.destroy();assert.equal(inserted[0].removed,true);assert.equal(p.hold,null);
 });

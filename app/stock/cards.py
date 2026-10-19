@@ -22,7 +22,12 @@ FONTS = ('C:/Windows/Fonts/segoeuib.ttf', 'C:/Windows/Fonts/arialbd.ttf', 'C:/Wi
 
 def _font(size):
     from PIL import ImageFont
-    for path in FONTS:
+    try:
+        from app.motion.fonts import BOLD_FAMILY, user_fonts
+        mine = user_fonts().get(BOLD_FAMILY)
+    except Exception:
+        mine = None
+    for path in ((str(mine),) if mine else ()) + FONTS:
         if Path(path).is_file():
             try:
                 return ImageFont.truetype(path, size)

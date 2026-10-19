@@ -256,8 +256,8 @@ def bezier(a, b, bend=.22, steps=60):
 
 
 def font(size):
-    from app.motion.templates import _font
-    return _font('Montserrat.ttf', size, True)
+    from app.motion.templates import _font, user_font
+    return _font(user_font('Montserrat.ttf', True), size, True)
 
 
 def label_box(draw, text, x, y, size=48, anchor='mm'):

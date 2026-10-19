@@ -100,7 +100,12 @@ def main():
             page.locator('.workspace-monitor-deck button').filter(has_text='Oynat').first.click()
             page.wait_for_function("Array.from(document.querySelectorAll('.advanced-program-proxy')).some(v=>!v.hidden&&!v.paused&&v.currentTime>.05)",timeout=240000)
             startup_seconds=time.monotonic()-started;PHASE[0]='oynatılıyor'
-            page.wait_for_function("seconds=>document.querySelector('.naman-time-input')?.value.split(':').reduce((sum,n)=>sum*60+Number(n),0)>=seconds-.1",arg=seconds,timeout=(seconds+20)*1000)
+            try:page.wait_for_function("seconds=>document.querySelector('.naman-time-input')?.value.split(':').reduce((sum,n)=>sum*60+Number(n),0)>=seconds-.1",arg=seconds,timeout=(seconds+20)*1000)
+            except Exception:
+                late=page.evaluate('''()=>({time:document.querySelector('.naman-time-input')?.value,status:document.querySelector('.provider-status')?.textContent,info:document.querySelector('.advanced-preview-info')?.textContent,
+                  waiting:(window.playbackEvents||[]).filter(e=>e.name==='waiting').length,log:(window.proxyLog||[]).slice(-12)})''')
+                print('PLAYBACK TOO SLOW:',json.dumps(late,ensure_ascii=False)[:1500])
+                raise SystemExit('Playback did not reach the end in time.')
             # Allow final queued frame callback.
             page.wait_for_timeout(100);PHASE[0]='ölçüm okunuyor'
             measured=page.evaluate('''()=>{clearInterval(window.samplePlayback);window.observePlayback.disconnect();const f=window.playbackFrames;return {frames:f.length,seconds:(f.at(-1).now-f[0].now)/1000,fps:(f.length-1)*1000/(f.at(-1).now-f[0].now),maxGap:Math.max(...f.slice(1).map((x,i)=>(x.now-f[i].now)/1000)),sizes:[...new Set(f.map(x=>`${x.width}x${x.height}`))],samples:window.playbackSamples.length,frames_detail:f,events:window.playbackEvents};}''')

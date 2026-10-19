@@ -41,7 +41,12 @@ def build(data,kit,duration,language='de'):
     words=NOTICES.get(language) or NOTICES['en']
     notice=words[data['basis']]
     if data['basis']=='narration' and any(o['kind'] in ('cloud','flow','lightning','wave','particles') for o in data['objects']):notice+=' · '+words['sketch']
-    s.add('text',text=notice,x=960,y=64,size=24,font=s.body,fill='#FFFFFF',anchor='mm',opacity=1,
+    # The notice sits in a small glass pill with an accent dot (same look as the designed text layers).
+    from app.motion.templates import measure
+    width=min(1760,measure(notice,s.body,24)+88)
+    s.add('rect',x=960-width/2,y=36,w=width,h=56,fill='#0B1220',radius=28,opacity=.72)
+    s.add('circle',cx=960-width/2+30,cy=64,r=6,fill='#F5B84B',opacity=1)
+    s.add('text',text=notice,x=960+12,y=64,size=24,font=s.body,fill='#FFFFFF',anchor='mm',opacity=1,
           shadow=True,required_notice=True)
     result=s.result();result.update(background=data['background'] or '#000000',alpha=data['background'] is None,
                                     procedural=True,animation_engine_version=1)
@@ -75,7 +80,7 @@ def draw(image,p,t):
     def circle(x,y,r,fill=color,outline=None):
         cx,cy=xy(x,y);rr=max(.5,r*scale)
         draw.ellipse((cx-rr,cy-rr,cx+rr,cy+rr),fill=fill,outline=outline,width=lw)
-    def text(value,x,y,size=36,fill=stroke,width=None):
+    def text(value,x,y,size=36,fill=stroke,width=None,panel=False):
         cx,cy=xy(x,y);minimum=max(4,round(12*pixel_scale));size=max(minimum,min(round(768*pixel_scale),round(size*scale)))
         font=_font(p['font'],size,True);limit=min(1760*pixel_scale,(width or w)*scale)
         measured=font.getlength(value)
@@ -85,6 +90,11 @@ def draw(image,p,t):
                 size-=1;font=_font(p['font'],size,True)
         cx=min(max(cx,80*pixel_scale+font.getlength(value)/2),1840*pixel_scale-font.getlength(value)/2)
         bounds=font.getbbox(value)
+        if panel and not state['rotation']:  # glass plate + accent bar behind a caption
+            pad_x,pad_y=round(30*pixel_scale),round(16*pixel_scale);left=cx-font.getlength(value)/2-pad_x;right=cx+font.getlength(value)/2+pad_x
+            top=cy-(bounds[3]-bounds[1])/2-pad_y;bottom=cy+(bounds[3]-bounds[1])/2+pad_y
+            draw.rounded_rectangle((left,top,right,bottom),radius=round(18*pixel_scale),fill=rgba('#0B1220',opacity*.74))
+            draw.rounded_rectangle((left+round(10*pixel_scale),top+round(12*pixel_scale),left+round(16*pixel_scale),bottom-round(12*pixel_scale)),radius=3,fill=rgba('#F5B84B',opacity))
         patch=Image.new('RGBA',(max(1,bounds[2]-bounds[0]+8),max(1,bounds[3]-bounds[1]+8)),(0,0,0,0))
         ImageDraw.Draw(patch).text((4-bounds[0],4-bounds[1]),value,font=font,fill=fill)
         if state['rotation']:
@@ -107,7 +117,7 @@ def draw(image,p,t):
         rect(-w/2,-h/2,w,h)
         if kind=='node':text(d['text'],0,0,d['font_size'])
     elif kind=='circle':circle(0,0,min(w,h)/2)
-    elif kind=='label':text(d['text'],0,0,d['font_size'],color)
+    elif kind=='label':text(d['text'],0,0,d['font_size'],color,panel=True)
     elif kind in ('line','arrow','flow'):
         points=[(q['x'],q['y']) for q in d['points']]
         lengths=[math.dist(a,b) for a,b in zip(points,points[1:])];total=sum(lengths) or 1

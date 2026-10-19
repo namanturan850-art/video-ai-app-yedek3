@@ -36,9 +36,9 @@ def compose(photo, caption, font):
 def render(scene, output, ffmpeg):
     element = next(e for e in scene['elements'] if e['type'] == 'archive')
     props = element['props']
-    from app.motion.templates import _font
+    from app.motion.templates import _font, user_font
     photo = Image.open(props['image_path']).convert('RGB')
-    still = compose(photo, props.get('caption', ''), _font('Montserrat.ttf', 38, True))
+    still = compose(photo, props.get('caption', ''), _font(user_font('Montserrat.ttf', True), 38, True))
     total_frames=max(1,round(scene['duration']*FPS))
     frames = 1 if '_sample_time' in scene else total_frames
     command = [ffmpeg, '-v', 'error', '-y', '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-s', f'{W}x{H}', '-r', str(FPS), '-i', '-',

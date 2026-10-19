@@ -372,3 +372,13 @@ def test_designed_text_never_exceeds_the_html_layer_budget_of_a_plan():
     moved = convert(payload, scenes, MAX_SECONDS)
     assert moved == MAX_LAYERS - 5 and len(payload['html_katmanlari']) == MAX_LAYERS
     assert len(payload['katmanlar']) == 60 - moved and payload['katmanlar'][0]['text'] == f'Frase número {moved} de prueba'
+
+
+def test_every_text_variant_passes_the_sanitizer_and_uses_gilroy_stacks():
+    from app.motion.html_layer import sanitize
+    from app.motion.text_layers import VARIANTS, design
+    for section, names in VARIANTS.items():
+        for index in range(len(names)):
+            html, css = design(section, 'Der Fluss bildet die Grenze zur alten Stadt', 5.0, index, 'de')
+            sanitize(html, css)
+            assert 'NamanBold' in css or 'NamanLight' in css, (section, names[index])

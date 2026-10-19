@@ -87,11 +87,11 @@ class FFmpegRenderProvider:
         if kit.get('palette'):
             # Emphasis texts drawn as graphics in the look's colours and heading font.
             graphic_style={**{k:kit['palette'][k] for k in ('background','accent','primary')},'font':FONTS[kit.get('heading_font','arial')][0]}
-        for font in {f for f in ((sub_style or {}).get('font'),kit.get('heading_font') if graphic_style else None) if f and f!='arial'}:
+        for font in {f for f in ((sub_style or {}).get('font'),kit.get('heading_font') if graphic_style else None) if f and (f!='arial' or FONTS[f][1])}:
             # Bundled OFL font next to the ASS file; libass reads it via fontsdir.
             import shutil
             (folder/'fonts').mkdir(exist_ok=True)
-            shutil.copyfile(Path(__file__).resolve().parent.parent/'static'/'fonts'/FONTS[font][1],folder/'fonts'/FONTS[font][1])
+            shutil.copyfile(Path(__file__).resolve().parent.parent/'static'/'fonts'/FONTS[font][1],folder/'fonts'/Path(FONTS[font][1]).name)
             fontsdir=':fontsdir=fonts'
         assf=lambda name:f'ass=filename={name}{fontsdir}'
         timed=[{**s,**next(m for m in timeline['editing_scenes'] if m['scene_id']==s['scene_id'])} for s in timeline['scenes']]

@@ -240,8 +240,50 @@ def _teletype(text, y, duration, label):
     return html, css + BASE_FRAMES
 
 
-VARIANTS = {'vurgular': ('editorial', 'glass', 'marker', 'focus'),
-            'katmanlar': ('editorial', 'glass', 'teletype')}
+def _ribbon(text, y, duration):
+    """A colour band wipes in from the left, the sentence slides out of it."""
+    size = _hsize(text, 64)
+    html = f"<div class='rb'><span class='rbt'>{escape(text, quote=True)}</span></div>"
+    css = (f".rb{{position:absolute;left:0;top:{y}px;padding:26px 90px 26px 150px;max-width:1500px;background:linear-gradient(90deg,rgba(11,18,32,.92),rgba(11,18,32,.78));"
+           f"border-left:12px solid {ACCENT};border-radius:0 14px 14px 0;animation:wipe .6s cubic-bezier(.2,.8,.2,1) both,fade .5s ease-in {_leave(duration)}s forwards}}"
+           f".rbt{{display:block;color:#fff;font-family:{BOLD};font-weight:700;font-size:{size}px;line-height:1.2;animation:rise .6s ease-out .35s both}}"
+           "@keyframes wipe{from{clip-path:inset(0 100% 0 0)}to{clip-path:inset(0 0 0 0)}}")
+    return html, css + BASE_FRAMES
+
+
+def _stack(text, y, duration):
+    """Words stacked on separate lines: first and last bold, middle light, each lands in turn."""
+    words = text.split()
+    if len(words) < 3 or len(text) > 60:
+        return _focus(text, y + 80, duration)
+    size = _hsize(text, 70)
+    lines = [' '.join(words[:1]), ' '.join(words[1:-1]), ' '.join(words[-1:])]
+    rows = ''.join(f"<span class='sl s{i}'>{escape(t, quote=True)}</span>"
+                   for i, t in enumerate(lines))
+    html = f"<div class='st'>{rows}<span class='sbar'></span></div>"
+    css = (f".st{{position:absolute;left:150px;top:{y}px;width:1400px;color:#fff;text-shadow:0 4px 24px rgba(0,0,0,.7);animation:fade .5s ease-in {_leave(duration)}s forwards}}"
+           f".sl{{display:block;font-size:{size}px;line-height:1.12;opacity:0;animation:slidein .7s cubic-bezier(.2,.8,.2,1) both}}"
+           ".s0{animation-delay:.2s;font-family:" + BOLD + ";font-weight:700}.s1{animation-delay:.45s;font-family:" + LIGHT + ";font-weight:300}.s2{animation-delay:.7s;font-family:" + BOLD + ";font-weight:700;color:" + ACCENT + "}"
+           f".sbar{{display:block;height:5px;width:0;margin-top:24px;background:{ACCENT};animation:rule2 .8s ease-out 1.1s both}}"
+           "@keyframes slidein{from{opacity:0;transform:translateX(-60px)}to{opacity:1;transform:none}}"
+           "@keyframes rule2{from{width:0}to{width:240px}}")
+    return html, css + BASE_FRAMES
+
+
+def _underline(text, y, duration):
+    """Centred sentence, an accent line draws under it from the middle."""
+    size = _hsize(text, 72)
+    html = f"<div class='ul'><span class='ult'>{escape(text, quote=True)}</span><span class='ulr'></span></div>"
+    css = (f".ul{{position:absolute;left:210px;top:{y}px;width:1500px;text-align:center;color:#fff;animation:fade .5s ease-in {_leave(duration)}s forwards}}"
+           f".ult{{display:block;font-family:{LIGHT};font-weight:300;font-size:{size}px;line-height:1.18;text-shadow:0 4px 26px rgba(0,0,0,.75);animation:zoomin .8s cubic-bezier(.2,.8,.2,1) both}}"
+           f".ulr{{display:block;height:5px;width:0;margin:28px auto 0;border-radius:3px;background:{ACCENT};animation:grow .9s ease-out .7s both}}"
+           "@keyframes zoomin{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}"
+           "@keyframes grow{from{width:0}to{width:60%}}")
+    return html, css + BASE_FRAMES
+
+
+VARIANTS = {'vurgular': ('editorial', 'glass', 'marker', 'focus', 'ribbon', 'stack', 'underline'),
+            'katmanlar': ('editorial', 'glass', 'teletype', 'ribbon', 'underline')}
 POSITION = {'vurgular': 300, 'katmanlar': 150}
 
 
@@ -266,6 +308,12 @@ def design(section, text, duration, variant=0, language='en'):
         return _marker(text, y, duration)
     if name == 'focus':
         return _focus(text, y + 80, duration)
+    if name == 'ribbon':
+        return _ribbon(text, y, duration)
+    if name == 'stack':
+        return _stack(text, y, duration)
+    if name == 'underline':
+        return _underline(text, y + 40, duration)
     return _teletype(text, y, duration, label)
 
 

@@ -1283,3 +1283,12 @@ Manuel Plan için sınırlı arka plan doğrulama işi ve mevcut mesaj alanında
 Son kare saati kontrolü: birleştirme çıktısının 30 FPS katman saatine tam oturmaması 2× hızda bir kare gerilik üretiyordu; taban ve ana klip/ses sınırları eşitlendi. 0,5×/2× gerçek video/kare karşılaştırması ve büyük JSON/ses durumunu kapsayan son 21 test geçti. Ek gerçek kaynak payı/taslak/onay için 47 test geçti. Yeni başlık denetimi, son kare süresini eksik bildiren MP4 için yalnız kanıtlanmış tek kare farkını düzeltir.
 
 Son tarayıcı ölçümleri tam kare saati düzeltmesiyle yeniden üretildi; ham JSON dosyaları güncellendi. Sessiz video kaynaklarının anlatım hazırlığını gereksiz bloklamaması için dört ses testi de geçti. İlk proxy/ileri tampon hazırlığı devam ediyor; gerçek Windows sonucu iddia edilmedi.
+
+
+## Program monitörü siyah ekran / duraklat-oynat beklemesi ve Windows CI (PR #105)
+
+`fix/player-freeze-black-screen`. Oynatıcı yeniden kurulurken (tampon dışına atlama, kalite/revizyon değişimi) son çözülmüş kare tutulur; tampon içi aramada video gizlenmez. Duraklatılmışken Oynat'ın istediği ölçülmüş pist (en çok 12 sn) hazırlanır; yavaş donanımda bekleme yine açıkça gösterilir.
+
+Windows CI hiç iş başlatmıyordu: workflow geçersizdi (`runner` bağlamı job-level `env` içinde kullanılamaz). Düzeltildi; başarısız testler artık açıklama (annotation) olarak okunur, tarayıcı adımları birbirinden bağımsız çalışır, oynatma testleri H.264 destekli kurulu Chrome ile yapılır.
+
+93 Node testi geçti (yeni 5 test eski oynatıcıda başarısız). İlk gerçek Windows koşularında: büyük JSON içe aktarma testi geçti; oynatma testlerinde kesintisiz proxy 180 sn içinde görünmedi (nedeni inceleniyor); `test_bezier_ffmpeg_matches_python_samples` Windows FFmpeg'inde çöküyor (bu değişiklikten bağımsız). Windows'ta donma çözüldü denmez; doğrulama sürüyor.

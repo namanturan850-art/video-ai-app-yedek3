@@ -4,7 +4,7 @@ Usage from the repository root:
   .venv\Scripts\python scripts\webview2_editor_smoke.py PROJECT_ID [DATA_DIR]
 
 The script is read-only: it opens an existing project, waits for the editor,
-checks that loading ended and seven tracks exist, then closes the window.
+checks that loading ended and four lanes exist, then closes the window.
 """
 import json
 import platform
@@ -68,7 +68,7 @@ def main():
                           allTracksVisible:!!timeline&&tracks.every(n=>n.getBoundingClientRect().bottom<=timeline.bottom),
                           retry:[...document.querySelectorAll('button')].some(x=>x.textContent.includes('Yeniden Dene'))};
                 })()""")
-                if state and state.get('tracks')==7 and 'yükleniyor' not in state.get('status','').lower():
+                if state and state.get('tracks')==4 and 'yükleniyor' not in state.get('status','').lower():
                     ready=(state.get('noPageScroll') and state.get('allTracksVisible') and state.get('menuCount')==9
                            and state.get('manualControls') and state.get('qualityControl') and state.get('timelineTools')==10 and state.get('playbackBelow'))
                     result.update(ok=bool(ready),message='Kurgu WebView2 içinde açıldı; menüler ve yedi iz kontrol edildi.',state=state);break

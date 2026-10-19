@@ -86,7 +86,7 @@ def main():
             }''')
             assert metrics['scroll'] <= height, metrics
             assert not metrics['overflow'], metrics
-            assert len(metrics['tracks']) == 7, metrics
+            assert len(metrics['tracks']) == 4, metrics
             assert all(t['height'] >= 29 and t['bottom'] <= metrics['timeline']['bottom'] for t in metrics['tracks']), metrics
             assert metrics['work']['height'] > 150, metrics
             ratio=page.locator('.workspace-program-surface').evaluate('(n)=>n.clientWidth/n.clientHeight')

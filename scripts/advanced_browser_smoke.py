@@ -148,10 +148,10 @@ def main():
             page.locator('.advanced-monitor-tabs').wait_for();page.locator('.workspace-media-card').filter(has_text='drop-test').wait_for()
             assert len(document()['document']['clips'])==1
             # Blank-lane HTML5 media drop creates a supplementary layer, not a base-slot replacement.
-            lane=page.locator('.naman-track').nth(2).locator('.naman-lane');rect=lane.bounding_box()
+            lane=page.locator('.naman-track').nth(1).locator('.naman-lane');rect=lane.bounding_box()
             transfer=page.evaluate_handle("ref=>{const d=new DataTransfer();d.setData('application/x-naman-media',JSON.stringify(ref));return d;}",{'provider':image['provider'],'media_id':image['media_id']})
             revision=document()['revision'];lane.dispatch_event('drop',{'dataTransfer':transfer,'clientX':rect['x']+20,'clientY':rect['y']+10});saved_after(revision)
-            assert len(document()['document']['clips'])==2 and document()['document']['clips'][-1]['track']=='maps'
+            assert len(document()['document']['clips'])==2 and document()['document']['clips'][-1]['track']=='layers'
             # Restore the single animated clip, split it at the playhead, then undo.
             page.locator('.workspace-overflow summary').click();revision=document()['revision'];page.get_by_role('button',name='Ek kurgu geri al',exact=True).click();saved_after(revision)
             original=document()['document']['clips'][0];middle=(original['start']+original['end'])/2
@@ -163,7 +163,7 @@ def main():
             for width,height in [(1366,768),(1600,900),(1920,1080),(1093,614)]:
                 page.set_viewport_size({'width':width,'height':height})
                 metrics=page.evaluate("""()=>({scroll:document.documentElement.scrollHeight,height:innerHeight,tracks:[...document.querySelectorAll('.naman-track')].map(n=>n.getBoundingClientRect().bottom),bottom:document.querySelector('.naman-timeline').getBoundingClientRect().bottom})""")
-                assert metrics['scroll']<=height and len(metrics['tracks'])==7 and max(metrics['tracks'])<=metrics['bottom'],metrics
+                assert metrics['scroll']<=height and len(metrics['tracks'])==4 and max(metrics['tracks'])<=metrics['bottom'],metrics
                 page.screenshot(path=str(output/f'advanced-{width}x{height}.png'))
             assert not errors,errors
             browser.close()

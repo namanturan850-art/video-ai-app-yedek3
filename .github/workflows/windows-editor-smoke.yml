@@ -15,7 +15,7 @@ permissions:
 jobs:
   cpu-editor:
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       AVS_OFFLINE_TESTS: '1'
       # Turkish output must not crash on the Windows cp1252 console.
@@ -86,6 +86,7 @@ jobs:
           python -m playwright install chromium
       - name: Cold-cache continuous playback
         if: ${{ !cancelled() }}
+        timeout-minutes: 10
         env:
           # `runner` is not available in job-level env, only in step-level env.
           NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-playback-results.json
@@ -94,6 +95,7 @@ jobs:
         run: python scripts/ci_annotated_run.py "Cold-cache playback" -- python scripts/preview_playback_browser_smoke.py
       - name: Real video sources at 720p
         if: ${{ !cancelled() }}
+        timeout-minutes: 10
         env:
           NAMAN_PLAYBACK_SECONDS: '12'
           NAMAN_PLAYBACK_REAL_VIDEOS: '1'
@@ -102,6 +104,7 @@ jobs:
         run: python scripts/ci_annotated_run.py "Real video 720p" -- python scripts/preview_playback_browser_smoke.py
       - name: Real video sources at 1080p
         if: ${{ !cancelled() }}
+        timeout-minutes: 10
         env:
           NAMAN_PLAYBACK_SECONDS: '12'
           NAMAN_PLAYBACK_REAL_VIDEOS: '1'
@@ -111,6 +114,7 @@ jobs:
         run: python scripts/ci_annotated_run.py "Real video 1080p" -- python scripts/preview_playback_browser_smoke.py
       - name: Real Remotion HTML/CSS layer render
         if: ${{ !cancelled() }}
+        timeout-minutes: 10
         shell: pwsh
         run: |
           # Minimal stand-in for an OpenMontage install: only Remotion + its browser.
@@ -125,9 +129,10 @@ jobs:
           python scripts/ci_annotated_run.py "Remotion HTML layer" -- python scripts/html_layer_remotion_smoke.py $om
       - name: Large JSON file and explicit draft approval
         if: ${{ !cancelled() }}
+        timeout-minutes: 10
         env:
           NAMAN_MANUAL_IMPORT_REPORT: ${{ runner.temp }}/naman-manual-import-ui.json
-        run: python scripts/manual_import_browser_smoke.py
+        run: python scripts/ci_annotated_run.py "Manual import" -- python scripts/manual_import_browser_smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

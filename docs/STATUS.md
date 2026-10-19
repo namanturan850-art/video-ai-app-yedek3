@@ -1303,3 +1303,12 @@ Görev paketi: "1. Görev paketi / 2. Cevabı içe aktar" penceresi; ücretsiz y
 300 referans: sahne anlatımının amacına göre (veri, harita, zaman çizelgesi, karşılaştırma, süreç, doğa) sahne başına en çok 2, pakette en çok 40 referans; kısa, bağlantısız prompt özetleri ve 24 NAMAN fikri. Three.js/WebGL/3D referansları önerilmez; amacı olmayan sahneye referans konmaz.
 
 Bu oturumda yerel olarak 26 yeni test ve güncellenen zip testi geçti (sahte Remotion köprüsü + gerçek FFmpeg ile tam kare alfa klip ve kare örneği dahil). Uygulama/onay/önizleme uçtan uca testleri ve gerçek Remotion render testi Windows CI'da çalışır; sonuçları PR'da.
+
+
+## Aşama 3: 4 izli zaman çizelgesi, sade Medya Tamamla, belgesel başlığı
+
+Zaman çizelgesi ekranda dört iz gösterir: **Video / Motion / Ses / Altyazı**. Veri modeli değişmedi (yedi kayıtlı iz, eski projeler aynen açılır); Vurgu, Katman, Harita ve İnfografik klipleri Motion izinde görünür, çakışanlar alt alta dizilir. Sürükle-bırak ve iz değiştirme Video ↔ Motion arasında çalışır; Ses ve Altyazı izleri karışmaz. Yeni Motion öğeleri `layers` izine yazılır.
+
+Medya Tamamla: otomatik metin/infografik önerisi (`suggest_infographics`) planlamadan çıkarıldı; yapay zekâ planı yalnız gerçek yer anlatımı için harita (`map`) önerebilir. Yazı, infografik ve HTML/CSS katmanları sahibin işaretlerinden veya Manuel Plan (AI paketi) yolundan gelir. Ana sayfa başlığı "YouTube" yerine belgesel kurgu atölyesine göre değişti.
+
+Bu oturumda yalnız 93 Node testi çalıştırıldı (geçti). Python/tarayıcı testleri ve duman betikleri (artık dört iz bekler) Windows CI'da doğrulanacak. Medya Tamamla hız ölçümü/iyileştirmesi bu aşamaya dahil değil; önce `tools/benchmark_media_preparation.py` ile ölçülecek.

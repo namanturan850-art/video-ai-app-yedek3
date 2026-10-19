@@ -35,10 +35,10 @@ test('right trim handle changes adjacent boundary and persists the revision',asy
   const request=requests.find(x=>x.url.endsWith('/editor/timeline'));assert.ok(request);const body=JSON.parse(request.options.body);
   assert.equal(body.slots[0].end,31);assert.equal(body.slots[1].start,31);assert.equal(body.revision,1);
 });
-test('archive failure leaves the seven-track timeline usable and offers retry',async()=>{
+test('archive failure leaves the four-lane timeline usable and offers retry',async()=>{
   const {root}=await page({archiveError:true});
   assert.ok(find(root,'naman-ruler'));
-  assert.equal(root.querySelectorAll('.naman-track').length,7);
+  assert.equal(root.querySelectorAll('.naman-track').length,4);
   assert.match(find(root,'provider-status').textContent,/Zaman çizelgesi hazır.*Arşiv testi hatası/);
   assert.ok(root.children.some(node=>node.textContent==='Arşivi Yeniden Dene'));
 });

@@ -680,8 +680,8 @@ class ProductionService:
         from app.moments.plan import apply_moments
         switches=self.scripts.settings.moments() if hasattr(self.scripts.settings,'moments') else {}
         blocks=apply_moments(blocks,language,intro=switches.get('intro_card',False),outro=switches.get('outro_card',False))  # [GİRİŞ]/[KAPANIŞ] veya videonun dilindeki karşılama/abone ol/veda cümleleri: stok aranmaz
-        from app.scripts.query_refine import suggest_infographics
-        blocks=suggest_infographics(blocks,language)  # after the markers: they count toward the 25% share
+        # No automatic text/infographic suggestions: Medya Tamamla prepares video, images and real map sources only.
+        # Text, infographics and HTML/CSS layers come from the owner's markers or the Manual Plan (AI package).
         image_config = self.scripts.settings.image_config()
         from app.stock.setting import infer
         setting = infer([b.get('narration','') for b in blocks],topic or self.projects.get(project_id).get('name',''))  # e.g. "antik Mezopotamya": every stock pick is checked against it

@@ -23,7 +23,11 @@ def main():
                 page.goto(f'{url}/projects/{pid}/editor');page.locator('.manual-mode-strip').wait_for()
                 page.get_by_role('button',name='Manuel Plan / AI paketi',exact=True).click();dialog=page.locator('.manual-dialog[open]')
                 dialog.locator('input[type=file]').set_input_files({'name':'large-plan.json','mimeType':'application/json','buffer':text.encode()})
-                assert dialog.get_by_label('Dış yapay zekâ cevabı',exact=True).input_value()==text
+                box=dialog.get_by_label('Dış yapay zekâ cevabı',exact=True)
+                for _ in range(100):  # the browser reads the chosen file asynchronously
+                    if box.input_value()==text:break
+                    page.wait_for_timeout(100)
+                assert box.input_value()==text,len(box.input_value())
                 started=time.monotonic()
                 with page.expect_response(lambda r:r.url.endswith('/manual/response-jobs') and r.request.method=='POST') as submitted:
                     dialog.get_by_role('button',name='Planı içe aktar',exact=True).click()

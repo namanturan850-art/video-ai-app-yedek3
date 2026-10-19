@@ -361,3 +361,14 @@ def test_user_fonts_are_embedded_and_change_the_layer_cache_key(tmp_path, monkey
     assert "font-family:'NamanBold'" in css and "font-family:'NamanLight'" in css and 'format(\'opentype\')' in css
     assert html_layer.layer_key({'html': '<div>a</div>'}, 2.0) != before
 
+
+
+def test_designed_text_never_exceeds_the_html_layer_budget_of_a_plan():
+    from app.motion.text_layers import convert
+    from app.motion.html_layer import MAX_LAYERS, MAX_SECONDS
+    scenes = {'a': {'scene_id': 'a', 'start': 0., 'end': 600.}}
+    items = [{'scene_id': 'a', 'start': float(i * 5), 'end': float(i * 5 + 4), 'text': f'Frase número {i} de prueba'} for i in range(60)]
+    payload = {'katmanlar': list(items), 'html_katmanlari': [{'scene_id': 'a', 'html': '<div>x</div>'}] * 5}
+    moved = convert(payload, scenes, MAX_SECONDS)
+    assert moved == MAX_LAYERS - 5 and len(payload['html_katmanlari']) == MAX_LAYERS
+    assert len(payload['katmanlar']) == 60 - moved and payload['katmanlar'][0]['text'] == f'Frase número {moved} de prueba'

@@ -44,3 +44,9 @@ Gerçek tarayıcıda soğuk önbellek, iki farklı video ve beş eşzamanlı ek 
 Testler geçici yerel projeler, üretilmiş hareketli video dosyaları ve gerçek FFmpeg/Chromium ile yapıldı; kullanıcının orijinal projesi veya saatler süren gerçek çekimleri çalıştırılmış değildir. Kaynağın kendisinde bulunan bilerek çekilmiş siyah kareler otomatik silinmez. İstenerek boş bırakılmış yuvalar korunur. İlk proxy ve ileri tampon hazırlığı anlık değildir; ölçümler yukarıda ayrı verildi. Yaklaşık 30 FPS ölçümü, her donanımda sınırsız katman/çözünürlük garantisi değildir.
 
 Bu ortam Linux'tur. **Gerçek Windows ve GPU testi yapılmadı.** Mevcut Windows işine yeni Python/ön yüz testleri, gerçek videolarla 720p/1080p ve büyük dosya/onay tarayıcı adımları eklendi; yapılandırmanın hazırlanması çalıştırılmış Windows sonucu değildir. Canlı/ücretli Gemini çağrısı, uzun kullanıcı renderı veya kullanıcı verilerinde silme yapılmadı. Bu görevde `main`e merge yapılmadı.
+
+## GitHub teslimi
+
+Kod ve test commit'i **`1c17ecb`**, `fix/source-timing-manual-import` dalına gönderildi; uzak SHA `git ls-remote` ile doğrulandı. [Kod dalı](https://github.com/naman85331/video-ai-app/tree/fix/source-timing-manual-import). Çalışma ağacı temizdi; main hâlâ `b74e902` idi ve bu görevde birleştirilmedi.
+
+Draft PR açma isteği GitHub GraphQL API'sinden `Forbidden` yanıtı aldı; PR oluşturulmuş değildir. [Hazır karşılaştırma/PR formu](https://github.com/naman85331/video-ai-app/compare/main...fix/source-timing-manual-import?expand=1). Bu API erişim engeli kod düzeltmesiyle giderilemez; kodun GitHub dalına gönderilmesini engellemedi.

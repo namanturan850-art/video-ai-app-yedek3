@@ -18,7 +18,9 @@ jobs:
     timeout-minutes: 30
     env:
       AVS_OFFLINE_TESTS: '1'
-      NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-playback-results.json
+      # Turkish output must not crash on the Windows cp1252 console.
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
       NAMAN_PLAYBACK_SECONDS: ${{ inputs.playback_seconds || '64' }}
     steps:
       - uses: actions/checkout@v4
@@ -36,32 +38,79 @@ jobs:
           node --test $testFiles
       - name: Install pinned test dependencies
         run: python -m pip install -r requirements-dev.txt
-      - name: Install FFmpeg with Chocolatey
-        run: choco install ffmpeg --no-progress -y
+      - name: Install pinned FFmpeg 7.1.1 (9.0.2 crashes on the editor's filter graphs)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $zip = Join-Path $env:RUNNER_TEMP 'ffmpeg.zip'
+          $url = 'https://github.com/GyanD/codexffmpeg/releases/download/7.1.1/ffmpeg-7.1.1-essentials_build.zip'
+          $ok = $false
+          foreach ($try in 1, 2, 3) {
+            try { Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing; $ok = $true; break }
+            catch { Write-Host "::warning title=FFmpeg download try $try::$($_.Exception.Message)"; Start-Sleep -Seconds 5 }
+          }
+          if ($ok) {
+            Expand-Archive -Path $zip -DestinationPath (Join-Path $env:RUNNER_TEMP 'ffmpeg') -Force
+            $bin = (Get-ChildItem (Join-Path $env:RUNNER_TEMP 'ffmpeg') -Directory | Select-Object -First 1).FullName + '\bin'
+            Add-Content -Path $env:GITHUB_PATH -Value $bin
+            $env:PATH = "$bin;$env:PATH"
+          } else {
+            choco install ffmpeg --no-progress -y
+          }
+          Write-Host "::notice title=FFmpeg in use::$((ffmpeg -version | Select-Object -First 1))"
+          exit 0
       - name: CPU API SQLite FFmpeg checks
-        run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py tests/test_preview_playback.py tests/test_continuous_preview.py tests/test_proxy_audio_state.py tests/test_source_timing.py tests/test_manual_jobs.py -q
+        run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py tests/test_preview_playback.py tests/test_continuous_preview.py tests/test_proxy_audio_state.py tests/test_source_timing.py tests/test_manual_jobs.py -q -rf --tb=short --junitxml=pytest-report.xml
+      - name: Failed test summary
+        if: failure()
+        shell: python
+        run: |
+          import os, xml.etree.ElementTree as ET
+          if not os.path.exists('pytest-report.xml'):
+              print('::error title=pytest::pytest-report.xml was not produced; pytest did not finish collecting.')
+          else:
+              root = ET.parse('pytest-report.xml').getroot()
+              bad = [(case, child) for case in root.iter('testcase') for child in case if child.tag in ('failure', 'error')]
+              print(f'{len(bad)} failing test(s)')
+              for case, child in bad[:10]:
+                  text = (child.get('message') or '') + ' | ' + (child.text or '')[-600:]
+                  text = text.replace('%', '%25').replace('\r', '').replace('\n', '%0A')[:900]
+                  print(f"::error title={case.get('classname')}.{case.get('name')}::{text}")
       - name: Windows local diagnostics
+        if: ${{ !cancelled() }}
         run: python scripts/windows_editor_check.py --output windows-editor-report.json
       - name: Install browser test tools
+        if: ${{ !cancelled() }}
         run: |
           python -m pip install playwright==1.62.0
           python -m playwright install chromium
       - name: Cold-cache continuous playback
-        run: python scripts/preview_playback_browser_smoke.py
+        if: ${{ !cancelled() }}
+        env:
+          # `runner` is not available in job-level env, only in step-level env.
+          NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-playback-results.json
+          # Playwright's bundled Chromium has no H.264; the installed Chrome (like WebView2) does.
+          NAMAN_BROWSER_EXECUTABLE: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        run: python scripts/ci_annotated_run.py "Cold-cache playback" -- python scripts/preview_playback_browser_smoke.py
       - name: Real video sources at 720p
+        if: ${{ !cancelled() }}
         env:
           NAMAN_PLAYBACK_SECONDS: '12'
           NAMAN_PLAYBACK_REAL_VIDEOS: '1'
           NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-real720.json
-        run: python scripts/preview_playback_browser_smoke.py
+          NAMAN_BROWSER_EXECUTABLE: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        run: python scripts/ci_annotated_run.py "Real video 720p" -- python scripts/preview_playback_browser_smoke.py
       - name: Real video sources at 1080p
+        if: ${{ !cancelled() }}
         env:
           NAMAN_PLAYBACK_SECONDS: '12'
           NAMAN_PLAYBACK_REAL_VIDEOS: '1'
           NAMAN_PLAYBACK_QUALITY: full
           NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-real1080.json
-        run: python scripts/preview_playback_browser_smoke.py
+          NAMAN_BROWSER_EXECUTABLE: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        run: python scripts/ci_annotated_run.py "Real video 1080p" -- python scripts/preview_playback_browser_smoke.py
       - name: Large JSON file and explicit draft approval
+        if: ${{ !cancelled() }}
         env:
           NAMAN_MANUAL_IMPORT_REPORT: ${{ runner.temp }}/naman-manual-import-ui.json
         run: python scripts/manual_import_browser_smoke.py

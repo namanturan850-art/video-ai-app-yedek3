@@ -339,7 +339,8 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
         return animation_scene(data,kit,duration,language)
     from app.motion.layouts import arrange
     if spec.get('clean_source'):return keep_text_safe(_build(spec,kit,duration,emphasis_offset,language))
-    return keep_text_safe(arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit))
+    from app.motion.looks import restyle
+    return keep_text_safe(restyle(arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit), spec, kit))
 
 
 def keep_text_safe(scene, margin_x=80, margin_y=64):

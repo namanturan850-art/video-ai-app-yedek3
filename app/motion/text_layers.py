@@ -269,9 +269,13 @@ def design(section, text, duration, variant=0, language='en'):
     return _teletype(text, y, duration, label)
 
 
-def convert(payload, scenes, max_seconds, language='en'):
-    """Move eligible plain-text records of `payload` into html_katmanlari. Returns how many moved."""
+def convert(payload, scenes, max_seconds, language='en', budget=None):
+    """Move eligible plain-text records of `payload` into html_katmanlari. Returns how many moved.
+    `budget` caps how many may be added (a plan holds at most MAX_LAYERS HTML layers); the rest stay plain text."""
     moved = 0
+    if budget is None:
+        from app.motion.html_layer import MAX_LAYERS
+        budget = MAX_LAYERS - len([x for x in payload.get('html_katmanlari', []) if isinstance(x, dict)])
     for section, track in SECTION_TRACK.items():
         items = payload.get(section)
         if not isinstance(items, list):
@@ -280,6 +284,9 @@ def convert(payload, scenes, max_seconds, language='en'):
         for item in items:
             scene = scenes.get(item.get('scene_id')) if isinstance(item, dict) else None
             text = item.get('text') if isinstance(item, dict) else None
+            if moved >= budget:
+                keep.append(item)
+                continue
             if (scene is None or not isinstance(text, str) or not text.strip() or len(text) > 160 or set(item) - TEXT_KEYS
                     or item.get('effect') not in (None, 'none') or scene.get('locked') or scene.get('start') is None):
                 keep.append(item)

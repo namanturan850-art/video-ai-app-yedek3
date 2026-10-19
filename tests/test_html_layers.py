@@ -315,3 +315,28 @@ def test_plain_text_proposals_become_designed_layers_without_losing_odd_ones():
     assert '<b>' not in layers[0]['html'] and '&lt;b&gt;' in layers[0]['html']
     for layer in layers:
         sanitize(layer['html'], layer['css'])
+
+
+def test_designed_text_enters_word_by_word_and_underlines_the_key_word():
+    from app.motion.text_layers import design
+    from app.motion.html_layer import sanitize
+    html, css = design('vurgular', 'el sol calienta 28 grados la tierra', 4.0)
+    assert html.count("class='w ") == 7 and html.count(' hl') == 1 and "hl'>28<" in html
+    html, css = design('katmanlar', 'el aire frío baja desde las montañas', 4.0, 1)
+    assert 'right:0' in css and "hl'>montañas" in html
+    for section in ('vurgular', 'katmanlar'):
+        for variant in (0, 1):
+            sanitize(*design(section, 'Dijo "hola" & <b>adiós</b>', 4.0, variant))
+
+
+def test_every_text_variant_passes_the_sanitizer_and_teletype_falls_back_for_long_text():
+    from app.motion.text_layers import design, VARIANTS
+    from app.motion.html_layer import sanitize
+    for section, names in VARIANTS.items():
+        for variant in range(len(names) + 1):
+            for text in ('28 grados', 'el sol calienta la tierra más rápido que el agua', 'Dijo "hola" & <b>adiós</b>', 'x' * 150):
+                sanitize(*design(section, text, 4.0, variant))
+    html, _ = design('katmanlar', 'y' * 80, 4.0, 2)
+    assert "class='ty'" not in html and "class='k'" in html
+    html, _ = design('katmanlar', 'corto y claro', 4.0, 2)
+    assert "class='ty'" in html

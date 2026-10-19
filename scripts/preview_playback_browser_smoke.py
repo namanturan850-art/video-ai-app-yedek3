@@ -53,7 +53,20 @@ def main():
             page.goto(f'{url}/projects/{pid}/editor')
             page.wait_for_function("document.querySelectorAll('.naman-track').length===7&&!document.querySelector('#editor-content').inert")
             if os.environ.get('NAMAN_PLAYBACK_QUALITY')=='full':page.get_by_label('Program önizleme kalitesi',exact=True).select_option('full')
-            page.wait_for_function("Array.from(document.querySelectorAll('.advanced-program-proxy')).some(v=>!v.hidden&&v.readyState>=2)",timeout=180000)
+            try:page.wait_for_function("Array.from(document.querySelectorAll('.advanced-program-proxy')).some(v=>!v.hidden&&v.readyState>=2)",timeout=180000)
+            except Exception:
+                # Report what the monitor actually showed instead of a bare timeout.
+                state=page.evaluate('''()=>({info:document.querySelector('.advanced-preview-info')?.textContent,
+                  status:document.querySelector('.provider-status')?.textContent,
+                  h264:typeof MediaSource!=='undefined'&&MediaSource.isTypeSupported('video/mp4; codecs="avc1.640028,mp4a.40.2"'),
+                  player:typeof NAMANProgramPlayer,
+                  videos:Array.from(document.querySelectorAll('.advanced-program-proxy')).map(v=>({hidden:v.hidden,ready:v.readyState,network:v.networkState,error:v.error&&v.error.code,src:(v.src||'').slice(0,40)}))})''')
+                print('MONITOR STATE:',json.dumps(state,ensure_ascii=False))
+                print('PAGE ERRORS:',errors[-5:])
+                probe=page.request.post(base+'/advanced/program-proxy',data={'time':0,'quality':'high'})
+                print('PROXY API:',probe.status,probe.text()[:600])
+                log.flush();print('SERVER LOG TAIL:',(Path(tempfile.gettempdir())/'naman-playback-browser.log').read_text(errors='replace')[-1500:])
+                raise
             initial_proxy_seconds=time.monotonic()-opened
             # Observe every dynamically preloaded video, and count frames only when visible.
             page.evaluate('''()=>{

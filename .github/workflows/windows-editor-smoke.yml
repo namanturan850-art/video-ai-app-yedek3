@@ -18,6 +18,9 @@ jobs:
     timeout-minutes: 30
     env:
       AVS_OFFLINE_TESTS: '1'
+      # Turkish output must not crash on the Windows cp1252 console.
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
       NAMAN_PLAYBACK_SECONDS: ${{ inputs.playback_seconds || '64' }}
     steps:
       - uses: actions/checkout@v4

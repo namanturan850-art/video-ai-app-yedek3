@@ -34,7 +34,7 @@ CLAUDE_DIRECTOR_VISUAL = (
     'libraries such as isolated tribes, deep-sea creatures, black holes, specific historical events; more '
     'shots for common subjects such as cities, oceans, aircraft). Scene type via media_type: stock_video '
     '(default), stock_image (when stills are more likely to exist, e.g. historical photos, maps), or '
-    'motion_graphic with motion_spec for numbers, dates, places, lists, comparisons and key sentences. '
+    'motion_graphic with motion_spec ONLY for a spoken real place (template map); never for numbers, dates, lists, comparisons or sentences - the owner adds text and infographics separately. '
     'motion_spec = {"template": one of stat|map|quote|timeline|compare|list, "data": {...}, "emphasis": the one '
     'word/number of the narration where the animation peaks}. data: stat {"value": "1945" or "40 %", "label": '
     'short context}; map {"place": spoken place name, "lat": number, "lon": number, "label": short}; quote '
@@ -42,8 +42,7 @@ CLAUDE_DIRECTOR_VISUAL = (
     'short}] 2-5}; compare {"title": short, "items": [{"label": short, "value": spoken number or ""}] 2-5}; '
     'list {"title": short, "items": 2-4 short items}. Every number, date, place and quote MUST appear in that '
     'scene narration; never invent facts. Give motion_graphic scenes shot_count 1. Use motion_graphic only '
-    'where a number, date, place, list or comparison is spoken: at most about 20% of the scenes (80% stock footage), '
-    'spread out, never two motion scenes in a row. Prefer stat/map/timeline/compare/list; quote is the last choice. stock_query and 2-3 alternative_stock_queries: English, concrete, filmable '
+    'where a real place is spoken (template map), spread out, never two motion scenes in a row; all other scenes are stock footage or images. stock_query and 2-3 alternative_stock_queries: English, concrete, filmable '
     '(e.g. "airplane cockpit night", "ancient roman forum ruins") in THREE tiers: stock_query very specific, the first '
     'alternative medium, the last alternative general.')
 RATINGS = ('Güçlü', 'Orta', 'Geliştirilebilir')

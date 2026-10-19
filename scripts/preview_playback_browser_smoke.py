@@ -51,7 +51,7 @@ def main():
             prepare=[]  # Deliberately cold: the UI schedules every proxy itself.
             opened=time.monotonic()
             page.goto(f'{url}/projects/{pid}/editor')
-            page.wait_for_function("document.querySelectorAll('.naman-track').length===7&&!document.querySelector('#editor-content').inert")
+            page.wait_for_function("document.querySelectorAll('.naman-track').length===4&&!document.querySelector('#editor-content').inert")
             if os.environ.get('NAMAN_PLAYBACK_QUALITY')=='full':page.get_by_label('Program önizleme kalitesi',exact=True).select_option('full')
             try:page.wait_for_function("Array.from(document.querySelectorAll('.advanced-program-proxy')).some(v=>!v.hidden&&v.readyState>=2)",timeout=180000)
             except Exception:

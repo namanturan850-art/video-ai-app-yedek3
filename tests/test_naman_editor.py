@@ -89,7 +89,7 @@ def test_frontend_contains_brand_logo_timeline_and_preview_contract():
     html=(root/'app/static/index.html').read_text(encoding='utf-8')
     js=(root/'app/static/editor.js').read_text(encoding='utf-8')
     assert 'naman-logo.png' in html and 'editor-content' in html
-    for label in ('Vurgu','Katman','Harita','İnfografik','Görüntü','Ses','Altyazı'):
+    for label in ('Video','Motion','Ses','Altyazı'):
         assert label in js
     for behavior in ('currentTime','requestAnimationFrame','Oynat','Saniyeye git','manual/validate'):
         assert behavior in js

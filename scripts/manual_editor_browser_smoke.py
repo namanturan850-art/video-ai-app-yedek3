@@ -107,16 +107,16 @@ def main():
             page.get_by_role('button',name='Manuel Plan / AI paketi',exact=True).click();dialog=page.locator('.manual-dialog[open]')
             before=state();package=page.request.get(endpoint+'/manual/package').json()
             page.route('**/manual/package/prepare',lambda route:route.fulfill(json={**package,'prepared_by':'gemini','gemini_instructions':['Sentetik paket görevi']}))
-            page.once('dialog',lambda d:d.accept());dialog.get_by_role('button',name='Paketi Hazırla',exact=True).click()
+            page.once('dialog',lambda d:d.accept());dialog.get_by_role('button',name='Gemini ile talimat ekle (ücretli)',exact=True).click()
             page.wait_for_function("document.querySelector('[aria-label=\"Hazır AI paketi\"]')?.value.includes('gemini_instructions')")
             assert state()==before
-            dialog.get_by_label('Dış yapay zekâ cevabı',exact=True).fill('{bad json');dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).click()
+            dialog.get_by_label('Dış yapay zekâ cevabı',exact=True).fill('{bad json');dialog.get_by_role('button',name='Planı içe aktar',exact=True).click()
             page.wait_for_function("document.querySelector('.manual-dialog[open] .naman-json-message')?.textContent.includes('geçerli JSON')")
             dialog.get_by_role('button',name='Kapat',exact=True).click()
             pack=page.request.get(endpoint+'/manual/package').json()['output_template']
             for key in ('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar'):pack[key]=[]
             scene=view['scenes'][0];pack['katmanlar']=[{'scene_id':scene['scene_id'],'text':scene['narration'].split('.')[0],'start':scene['start'],'end':scene['end']}]
-            page.get_by_role('button',name='Manuel Plan / AI paketi',exact=True).click();dialog=page.locator('.manual-dialog[open]');dialog.get_by_label('Dış yapay zekâ cevabı',exact=True).fill('Plan hazır:\n```json\n'+json.dumps(pack)+'\n```');dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).click();dialog.get_by_role('button',name='Seçilen önerileri onayla',exact=True).wait_for()
+            page.get_by_role('button',name='Manuel Plan / AI paketi',exact=True).click();dialog=page.locator('.manual-dialog[open]');dialog.get_by_label('Dış yapay zekâ cevabı',exact=True).fill('Plan hazır:\n```json\n'+json.dumps(pack)+'\n```');dialog.get_by_role('button',name='Planı içe aktar',exact=True).click();dialog.get_by_role('button',name='Seçilen önerileri onayla',exact=True).wait_for()
             assert len(state()['document']['clips'])==count
             revision=state()['revision'];dialog.get_by_role('button',name='Seçilen önerileri onayla',exact=True).click();saved(revision);ready()
             assert len(state()['document']['clips'])==count+1

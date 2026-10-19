@@ -76,6 +76,7 @@ def render_with_progress(args,cwd,timeout):
                 buffer+=char
                 if len(buffer)>400:buffer=buffer[-200:]
                 continue
+            state['tail']=(state['tail']+buffer+'\n')[-2000:]  # in-process diagnostics only; main() never returns it
             match=FRAMES.search(buffer);buffer=''
             if match and int(match.group(3)):
                 part=int(match.group(2))/int(match.group(3))
@@ -93,7 +94,7 @@ def render_with_progress(args,cwd,timeout):
     finally:
         if process.poll() is None:process.kill()
         reader.join(5)
-    if process.returncode:raise RuntimeError('external_command_failed')
+    if process.returncode:raise RuntimeError('external_command_failed: '+state['tail'][-1500:])
     report(1.)
     return subprocess.CompletedProcess(args,0,'','')
 
@@ -175,6 +176,19 @@ def work(operation,inputs):
         result=execute(VideoCompose(),inputs)
         if not result.success:raise ValueError('compose_failed')
         return {'output':inputs['output_path']}
+    if operation=='html_layer':
+        # NAMAN's own sanitized HTML/CSS layer -> transparent PNG frames.
+        composer=(ROOT/'remotion-composer').resolve();projects=composer/'projects'
+        entry=Path(inputs['entry']).resolve();props=Path(inputs['props_path']).resolve();out=Path(inputs['output_dir']).resolve()
+        if entry.name!='index.tsx' or props.name!='props.json' or not entry.is_relative_to(projects) or not props.is_relative_to(projects):raise ValueError('path_invalid')
+        if out.is_relative_to(ROOT) or not out.is_dir():raise ValueError('path_invalid')
+        frames=inputs['frames']
+        if type(frames) is not int or not 1<=frames<=30*30:raise ValueError('frames_invalid')
+        command(['npx','remotion','render',str(entry),'NAMANHtmlLayer',str(out),'--sequence','--image-format=png',
+                 '--props='+str(props),'--concurrency=1'],timeout=1800,cwd=composer)
+        made=[p for p in out.iterdir() if p.suffix.lower()=='.png']
+        if len(made)!=frames:raise ValueError('frames_missing')
+        return {'output':str(out),'frames':len(made)}
     raise ValueError('operation_invalid')
 
 

@@ -60,7 +60,7 @@ jobs:
           Write-Host "::notice title=FFmpeg in use::$((ffmpeg -version | Select-Object -First 1))"
           exit 0
       - name: CPU API SQLite FFmpeg checks
-        run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py tests/test_preview_playback.py tests/test_continuous_preview.py tests/test_proxy_audio_state.py tests/test_source_timing.py tests/test_manual_jobs.py -q -rf --tb=short --junitxml=pytest-report.xml
+        run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py tests/test_preview_playback.py tests/test_continuous_preview.py tests/test_proxy_audio_state.py tests/test_source_timing.py tests/test_manual_jobs.py tests/test_html_layers.py tests/test_naman_editor.py -q -rf --tb=short --junitxml=pytest-report.xml
       - name: Failed test summary
         if: failure()
         shell: python
@@ -109,6 +109,20 @@ jobs:
           NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-real1080.json
           NAMAN_BROWSER_EXECUTABLE: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
         run: python scripts/ci_annotated_run.py "Real video 1080p" -- python scripts/preview_playback_browser_smoke.py
+      - name: Real Remotion HTML/CSS layer render
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          # Minimal stand-in for an OpenMontage install: only Remotion + its browser.
+          $om = Join-Path $env:RUNNER_TEMP 'om'
+          $composer = Join-Path $om 'remotion-composer'
+          New-Item -ItemType Directory -Force $composer | Out-Null
+          Push-Location $composer
+          npm init -y | Out-Null
+          npm install --no-audit --no-fund --loglevel=error remotion@4.0.484 @remotion/cli@4.0.484 react@18.3.1 react-dom@18.3.1
+          npx remotion browser ensure
+          Pop-Location
+          python scripts/ci_annotated_run.py "Remotion HTML layer" -- python scripts/html_layer_remotion_smoke.py $om
       - name: Large JSON file and explicit draft approval
         if: ${{ !cancelled() }}
         env:

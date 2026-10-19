@@ -36,7 +36,7 @@ def main():
             pack['katmanlar']=[{'scene_id':scene['scene_id'],'text':scene['narration'].split('.')[0]}]
             page.get_by_role('button',name='Manuel Plan / AI paketi',exact=True).click()
             dialog=page.locator('.manual-dialog[open]');dialog.get_by_label('Dış yapay zekâ cevabı',exact=True).fill(json.dumps(pack))
-            dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).click()
+            dialog.get_by_role('button',name='Planı içe aktar',exact=True).click()
             dialog.locator('.manual-transition-issue').wait_for();assert 'ek süresi yetersiz' in dialog.locator('.manual-transition-issue strong').inner_text()
             assert page.request.get(base+'/advanced').json()==before
             assert not any('resolve-transition' in r for r in requests)

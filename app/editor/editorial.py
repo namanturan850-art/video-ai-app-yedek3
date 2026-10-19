@@ -141,7 +141,7 @@ class Editorial:
     def _import_draft(self,pid,payload,*,persist=True):
         from hashlib import sha256
         plain=deepcopy(payload)
-        sections=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar','animasyon_sahneleri')
+        sections=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar','animasyon_sahneleri','html_katmanlari')
         if not isinstance(payload,dict):raise EditorError('invalid_json','JSON kökü nesne olmalıdır.')
         for section in sections:
             if isinstance(plain.get(section),list):
@@ -169,6 +169,10 @@ class Editorial:
                 key=item.get('object_id') or source_key
                 if key in seen or source_key in existing:raise EditorError('duplicate','Tekrarlanan JSON nesnesi bulundu. Var olan öğe korunuyor.')
                 seen.add(key)
+                if section=='html_katmanlari':
+                    from app.motion.html_layer import clip_for
+                    clips.append(clip_for(item,scene,start,end,slots,source_key,self.projects._path(pid)/'stock'))
+                    continue
                 if section=='animasyon_sahneleri':
                     from app.animation.importing import clips_for
                     clips+=clips_for(item,scene,start,end,slots,source_key,self.editor,pid)

@@ -26,9 +26,9 @@ def main():
                 assert dialog.get_by_label('Dış yapay zekâ cevabı',exact=True).input_value()==text
                 started=time.monotonic()
                 with page.expect_response(lambda r:r.url.endswith('/manual/response-jobs') and r.request.method=='POST') as submitted:
-                    dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).click()
+                    dialog.get_by_role('button',name='Planı içe aktar',exact=True).click()
                 assert submitted.value.status==202
-                assert dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).is_disabled()
+                assert dialog.get_by_role('button',name='Planı içe aktar',exact=True).is_disabled()
                 dialog.get_by_role('button',name='Seçilen önerileri onayla',exact=True).wait_for()
                 assert len(dialog.locator('input[type=checkbox]').all())==150
                 assert page.request.get(base+'/advanced').json()==before

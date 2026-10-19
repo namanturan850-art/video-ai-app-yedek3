@@ -22,13 +22,18 @@ def main():
             valid={'scene_id':scene['scene_id'],'text':'Roma','object_id':'valid','start':scene['start'],'end':scene['end']}
             plan['katmanlar']=[valid,{**valid,'object_id':'repair','end':999}]
             page.get_by_role('button',name='Manuel Plan / AI paketi',exact=True).click();dialog=page.locator('.manual-dialog[open]')
-            page.once('dialog',lambda d:d.dismiss());dialog.get_by_role('button',name='Paketi Hazırla',exact=True).click()
+            page.once('dialog',lambda d:d.dismiss());dialog.get_by_role('button',name='Gemini ile talimat ekle (ücretli)',exact=True).click()
             assert not any('/package/prepare' in r for r in requests)
-            dialog.get_by_role('button',name='Paketi kopyala',exact=True).click()
-            assert json.loads(page.evaluate('navigator.clipboard.readText()'))['voice']==pack['voice']
+            dialog.get_by_role('button',name='Paketi hazırla',exact=True).click()
+            dialog.get_by_role('button',name='Tek mesajı kopyala',exact=True).wait_for()
+            page.wait_for_function("!document.querySelector('.manual-dialog[open] .manual-secondary')?.disabled")
+            dialog.get_by_role('button',name='Tek mesajı kopyala',exact=True).click()
+            message=page.evaluate('navigator.clipboard.readText()')
+            assert 'NAMAN — BELGESEL KURGU PLANI GÖREVİ' in message and json.dumps(pack['base'],ensure_ascii=False,indent=1).splitlines()[1] in message
+            assert not any('/package/prepare' in r for r in requests)
             dialog.locator('input[type=file]').set_input_files({'name':'plan.json','mimeType':'application/json','buffer':json.dumps(plan).encode()})
             page.wait_for_function("document.querySelector('.naman-json-message')?.textContent.includes('Dosya yüklendi')")
-            dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).click()
+            dialog.get_by_role('button',name='Planı içe aktar',exact=True).click()
             dialog.locator('.manual-import-issues').wait_for()
             assert '999' in dialog.locator('.manual-import-issues').inner_text()
             assert page.request.get(base+'/advanced').json()==before
@@ -42,7 +47,7 @@ def main():
             area=dialog.get_by_label('Dış yapay zekâ cevabı',exact=True)
             repaired=json.loads(area.input_value());assert repaired==plan
             repaired['katmanlar'][1]['end']=scene['end'];repaired['katmanlar'][1]['start']=scene['start']+1/30
-            area.fill(json.dumps(repaired));dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).click()
+            area.fill(json.dumps(repaired));dialog.get_by_role('button',name='Planı içe aktar',exact=True).click()
             dialog.locator('input[type=checkbox]').nth(1).wait_for();assert dialog.locator('.manual-import-issues').count()==0
             dialog.locator('input[type=checkbox]').nth(1).uncheck()
             dialog.get_by_role('button',name='Seçilen önerileri onayla',exact=True).click()

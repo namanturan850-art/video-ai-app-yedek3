@@ -616,7 +616,7 @@ class EditorService:
                 'required_sections':['sahneler','infografikler','harita_sahneleri','vurgular','katmanlar'],
                 'narration':[{'scene_id':b['id'],'text':b['narration'],'locked':bool(b.get('locked'))} for b in plan['blocks']],
                 'output_template':{'schema':'naman.manual-plan.v1','base':{'plan_id':plan['plan_id'],'revision':plan['revision']},
-                                   'sahneler':[],'infografikler':[],'harita_sahneleri':[],'vurgular':[],'katmanlar':[],'animasyon_sahneleri':[]}}
+                                   'sahneler':[],'infografikler':[],'harita_sahneleri':[],'vurgular':[],'katmanlar':[],'animasyon_sahneleri':[],'html_katmanlari':[]}}
 
         from app.editor.advanced import read_document
         from app.editor.editorial import read
@@ -697,11 +697,14 @@ class EditorService:
         from app.animation.references import select_techniques
         package['animation_reference_selection']=select_techniques(package['narration'])
         package['output_contract']['animasyon_sahneleri']=package['animation_capabilities']['record_contract']
+        from app.motion.html_layer import contract as html_contract
+        package['output_contract']['html_katmanlari']=html_contract()
         package['instructions'] += [
             'animasyon_sahneleri isteğe bağlıdır; yalnız anlatımı açıklamak için gerekli yerlerde kullanın. Bileşenleri nesne/katman/keyframe ile birleştirin. Serbest kod, URL veya dosya yolu göndermeyin.',
             'Animasyon başlangıç/bitişi ana sahne saatidir; nesne/kamera zamanları sahne içi saniyelerdir. sentence_indices, sentence_index listesindeki sıfır tabanlı cümle kimlikleridir. Seslendirme ve altyazı saatlerini değiştirmeyin.',
             'Bilimsel şemalar schematic; sayısal veri yalnız anlatımda doğrulanan narration temeliyle, kurmaca örnekler açık demo temeliyle kullanılabilir. Demo/şematik açıklaması otomatik ve kalıcıdır.',
-            'Veri veya uygun arşiv kaynağı yoksa uydurmayın. Mevcut arka planı korumak için background=null kullanın. Yeni kaynak önerilecekse yalnız gerçek arşiv kimliğiyle background_media verin.']
+            'Veri veya uygun arşiv kaynağı yoksa uydurmayın. Mevcut arka planı korumak için background=null kullanın. Yeni kaynak önerilecekse yalnız gerçek arşiv kimliğiyle background_media verin.',
+            'html_katmanlari isteğe bağlıdır: infografik, başlık kartı veya harita etiketi için statik HTML + CSS @keyframes yazın. Kurallar output_contract.html_katmanlari içindedir; JavaScript ve dış dosya kullanılamaz.']
         return package
 
     def prepare_task_package(self,project_id,payload):
@@ -729,19 +732,43 @@ class EditorService:
             raise EditorError('stale_package','Paket hazırlanırken proje değişti. Güncel paketi yeniden hazırlayın.',409)
         return {**package,'gemini_instructions':instructions,'prepared_by':'gemini'}
 
-    def task_package_zip(self,project_id):
-        package=self.task_package(project_id);stream=io.BytesIO()
-        with zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr('NAMAN_GOREV_PAKETI.json',json.dumps(package,ensure_ascii=False,indent=2))
-            archive.writestr('NAMAN_CIKTI_SABLONU.json',json.dumps(package['output_template'],ensure_ascii=False,indent=2))
-            archive.writestr('OKU.txt','Görev paketini yapay zekâya verin. Dönen JSON yalnız NAMAN_CIKTI_SABLONU yapısında olmalıdır. NAMAN içinde Doğrula demeden plan uygulanmaz.\n')
-        return stream.getvalue()
+    def task_package_zip(self,project_id,gemini_instructions=None):
+        from app.editor.manual_brief import zip_bytes,valid_instructions
+        return zip_bytes(self.task_package(project_id),valid_instructions(gemini_instructions))
+
+    def task_brief(self,project_id,payload=None):
+        """Free, local: the single pasteable message and its size. No AI call."""
+        from app.editor.manual_brief import brief,valid_instructions
+        payload=payload or {}
+        if set(payload)-{'gemini_instructions'}:raise EditorError('invalid_package','Yalnız gemini_instructions gönderilebilir.',422)
+        text=brief(self.task_package(project_id),valid_instructions(payload.get('gemini_instructions')))
+        return {'text':text,'characters':len(text),'zip_url':f'/api/projects/{project_id}/editor/manual/package.zip'}
+
+    def open_package_folder(self,project_id,payload=None):
+        """Write the package into the project's 'manuel' folder and open it locally."""
+        from app.editor.manual_brief import files,valid_instructions
+        from app.projects import linked
+        payload=payload or {}
+        if set(payload)-{'gemini_instructions'}:raise EditorError('invalid_package','Yalnız gemini_instructions gönderilebilir.',422)
+        folder=self.projects._path(project_id)/'manuel'
+        if linked(folder):raise EditorError('unsafe_folder','Paket klasörü güvenli bir yerel klasör olmalıdır.',409)
+        folder.mkdir(exist_ok=True)
+        package=self.task_package(project_id);content=files(package,valid_instructions(payload.get('gemini_instructions')))
+        target=folder/'NAMAN_gorev_paketi.zip'
+        from app.editor.manual_brief import zip_bytes
+        target.write_bytes(zip_bytes(package,payload.get('gemini_instructions')))
+        (folder/'TEK_MESAJ.txt').write_text(content['TEK_MESAJ.txt'],encoding='utf-8')
+        opened=False
+        if os.name=='nt':
+            try:os.startfile(str(folder));opened=True
+            except OSError:opened=False
+        return {'folder':str(folder),'opened':opened,'files':['NAMAN_gorev_paketi.zip','TEK_MESAJ.txt']}
 
     def validate_import(self, project_id, payload):
         plan=self._active(project_id); errors=[]
         required={'schema','base','sahneler','infografikler','harita_sahneleri','vurgular','katmanlar'}
         if not isinstance(payload,dict): errors.append('JSON kökü bir nesne olmalıdır.'); payload={}
-        missing=required-set(payload); extra=set(payload)-required-{'animasyon_sahneleri'}
+        missing=required-set(payload); extra=set(payload)-required-{'animasyon_sahneleri','html_katmanlari'}
         if missing: errors.append('Eksik bölümler: '+', '.join(sorted(missing)))
         if extra: errors.append('Bilinmeyen bölümler: '+', '.join(sorted(extra)))
         if payload.get('schema')!='naman.manual-plan.v1': errors.append('schema değeri naman.manual-plan.v1 olmalıdır.')
@@ -796,6 +823,14 @@ class EditorService:
             for index,item in enumerate(animations):
                 try:validate_item(self,project_id,item,known)
                 except (ValueError,TypeError) as error:errors.append(f'animasyon_sahneleri[{index}]: {error}')
+        layers=payload.get('html_katmanlari',[])
+        if not isinstance(layers,list):errors.append('html_katmanlari bir liste olmalıdır.')
+        else:
+            from app.motion.html_layer import validate_shape,LayerError,MAX_LAYERS
+            if len(layers)>MAX_LAYERS:errors.append(f'Bir planda en fazla {MAX_LAYERS} HTML katmanı olabilir.')
+            for index,item in enumerate(layers):
+                try:validate_shape(item,known)
+                except (LayerError,TypeError) as error:errors.append(f'html_katmanlari[{index}]: {error}')
         diff=self._diff(plan,payload) if not errors else []
         correction='\n'.join(f'- {e}' for e in errors)
         return {'valid':not errors,'errors':errors,'correction_message':('JSON düzeltmeleri:\n'+correction) if errors else '',

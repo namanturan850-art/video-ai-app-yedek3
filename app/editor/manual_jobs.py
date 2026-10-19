@@ -8,7 +8,7 @@ from threading import RLock
 from uuid import uuid4
 
 from app.editor.models import EditorError
-from app.editor.manual_review import MAX_RESPONSE_CHARS,parse_response,review
+from app.editor.manual_review import MAX_RESPONSE_CHARS,parse_response,prepare_html_layers,review
 from app.projects import now
 
 VERSION='naman-manual-review-job-v1'
@@ -59,7 +59,9 @@ def _run(editorial,pid,key,text,job):
         # No DB write per proposal: keep the status route independent and cheap.
     try:
         progress(0,0,'JSON okunuyor')
-        draft=review(editorial,pid,parse_response(text),progress=progress)
+        payload=parse_response(text)
+        prepare_html_layers(editorial,pid,payload,progress=progress)
+        draft=review(editorial,pid,payload,progress=progress)
         with _lock:final={**report,'status':'completed','draft_id':draft['id'],'processed':report['total'],'message':'Taslak hazır; onay bekliyor'}
     except EditorError as error:
         with _lock:final={**report,'status':'failed','category':error.category,'message':str(error)}

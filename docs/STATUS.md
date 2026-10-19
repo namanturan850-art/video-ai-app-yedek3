@@ -1292,3 +1292,14 @@ Son tarayıcı ölçümleri tam kare saati düzeltmesiyle yeniden üretildi; ham
 Windows CI hiç iş başlatmıyordu: workflow geçersizdi (`runner` bağlamı job-level `env` içinde kullanılamaz). Düzeltildi; başarısız testler artık açıklama (annotation) olarak okunur, tarayıcı adımları birbirinden bağımsız çalışır, oynatma testleri H.264 destekli kurulu Chrome ile yapılır.
 
 93 Node testi geçti (yeni 5 test eski oynatıcıda başarısız). İlk gerçek Windows koşularında: büyük JSON içe aktarma testi geçti; oynatma testlerinde kesintisiz proxy 180 sn içinde görünmedi (nedeni inceleniyor); `test_bezier_ffmpeg_matches_python_samples` Windows FFmpeg'inde çöküyor (bu değişiklikten bağımsız). Windows'ta donma çözüldü denmez; doğrulama sürüyor.
+
+
+## Manuel Plan: HTML/CSS katmanları, okunur görev paketi, amaç bazlı referanslar (Aşama 2)
+
+`feat/html-css-layers` (PR #105'in üstünde). Dış yapay zekâ artık `html_katmanlari` ile statik HTML + CSS `@keyframes` infografik/başlık/harita etiketi önerebilir. Güvenlik filtresi script, iframe, img, bağlantı, `on...` olayı, `url(...)`, `@import`, `@font-face`, kaçış dizisi içeren öneriyi gizlice temizlemez; nedeniyle reddeder. Her katman kullanıcının OpenMontage kurulumundaki Remotion ile bir kez şeffaf karelere çizilir, yerel animasyonlarla aynı qtrle/argb `.mov` biçiminde önbelleğe alınır; Program önizlemesi, taslak önizlemesi ve final aynı dosyayı kullanır. OpenMontage yoksa öneri kaybolmaz, taslakta nedeniyle sorunlu öneri olarak kalır. Onay kuralı değişmedi.
+
+Görev paketi: "1. Görev paketi / 2. Cevabı içe aktar" penceresi; ücretsiz yerel "Paketi hazırla", "Tek mesajı kopyala", "Paket klasörünü aç", "ZIP indir". Talimat, kendi başına yeterli ve "göndermeden önce kontrol et" listeli (fikir ZADIAQ manuel modundan; metin ve kod NAMAN'ın). Gemini talimatı isteğe bağlı ve ücretli kalır.
+
+300 referans: sahne anlatımının amacına göre (veri, harita, zaman çizelgesi, karşılaştırma, süreç, doğa) sahne başına en çok 2, pakette en çok 40 referans; kısa, bağlantısız prompt özetleri ve 24 NAMAN fikri. Three.js/WebGL/3D referansları önerilmez; amacı olmayan sahneye referans konmaz.
+
+Bu oturumda yerel olarak 26 yeni test ve güncellenen zip testi geçti (sahte Remotion köprüsü + gerçek FFmpeg ile tam kare alfa klip ve kare örneği dahil). Uygulama/onay/önizleme uçtan uca testleri ve gerçek Remotion render testi Windows CI'da çalışır; sonuçları PR'da.

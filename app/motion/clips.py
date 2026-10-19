@@ -137,6 +137,13 @@ def render_clip(folder, spec, kit, duration, emphasis_offset, *, language='de', 
     ffmpeg = ffmpeg or discover().get('ffmpeg')
     if not ffmpeg:
         raise RuntimeError('ffmpeg_missing')
+    if spec.get('template') == 'html':
+        # Prepared once at import by Remotion; preview and export share this file.
+        from app.motion import html_layer
+        path = html_layer.cached(folder, spec['data'], duration)
+        if sample_time is not None:
+            path = html_layer.sample(folder, path, max(0, min(duration, float(sample_time))), ffmpeg)
+        return path, html_layer.scene_stub(duration), 'html'
     spec = with_pictures(spec, folder)
     scene = templates.build(spec, kit, duration, emphasis_offset, language)
     if element_edits:

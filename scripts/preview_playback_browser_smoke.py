@@ -72,6 +72,8 @@ def main():
             # Observe every dynamically preloaded video, and count frames only when visible.
             page.evaluate('''()=>{
               window.playbackFrames=[];window.playbackSamples=[];window.playbackEvents=[];const seen=new WeakSet();
+              // Diagnostics: when each proxy segment was requested and how long the server took.
+              window.proxyLog=[];const realFetch=window.fetch;window.fetch=async function(u,o){const t=performance.now(),url=String(u&&u.url||u);const keep=url.includes('proxy');try{const r=await realFetch.apply(this,arguments);if(keep)window.proxyLog.push({t:Math.round(t),ms:Math.round(performance.now()-t),url:url.slice(-48),body:String(o&&o.body||'').slice(0,48),status:r.status});return r;}catch(e){if(keep)window.proxyLog.push({t:Math.round(t),ms:Math.round(performance.now()-t),url:url.slice(-48),error:String(e).slice(0,80)});throw e;}};
               const watch=()=>document.querySelectorAll('.advanced-program-proxy').forEach(v=>{
                 if(seen.has(v))return;seen.add(v);['playing','pause','ended','waiting','seeking','seeked','loadeddata','error'].forEach(name=>v.addEventListener(name,()=>window.playbackEvents.push({name,now:performance.now(),media:v.currentTime,src:v.src,hidden:v.hidden}))); 
                 const frame=(now,m)=>{if(!v.hidden&&!v.paused)window.playbackFrames.push({now,media:m.mediaTime,width:v.videoWidth,height:v.videoHeight,src:v.src});if(v.isConnected)v.requestVideoFrameCallback(frame);};
@@ -92,6 +94,16 @@ def main():
             assert len({f['src'] for f in detail})==1 and detail[0]['src'].startswith('blob:'), 'Continuous decoder was replaced'
             boundary_gaps=[(b['now']-a['now'])/1000 for a,b in zip(detail,detail[1:]) if int(a['media']/4)!=int(b['media']/4)]
             measured['maxBoundaryGap']=max(boundary_gaps,default=0)
+            pairs=list(zip(detail,detail[1:]))
+            if pairs:
+                a,b=max(pairs,key=lambda p:p[1]['now']-p[0]['now'])
+                if (b['now']-a['now'])/1000>=.067:
+                    # Print where and why the picture stopped (kept short for the CI annotation).
+                    log_entries=page.evaluate('window.proxyLog')
+                    print('STALL:',json.dumps({'from_ms':round(a['now']),'to_ms':round(b['now']),'media':[round(a['media'],3),round(b['media'],3)],
+                          'play_started_ms':round(detail[0]['now']),'startup_s':round(startup_seconds,2)}))
+                    print('EVENTS NEAR STALL:',json.dumps([{**e,'now':round(e['now']),'media':round(e['media'],2),'src':''} for e in events if a['now']-1500<=e['now']<=b['now']+500][:12]))
+                    print('PROXY LOG (segment requests, server ms):',json.dumps([x for x in log_entries if x.get('body') or x['ms']>300][:40]))
             assert measured['maxBoundaryGap']<.067,measured
             assert not any(e['name']=='waiting' and .1<e['media']<seconds-.1 for e in events),events
             assert measured['seconds']>=seconds-2,measured

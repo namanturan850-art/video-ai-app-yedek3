@@ -15,7 +15,7 @@ def main(argv):
     result = subprocess.run(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
     sys.stdout.write(result.stdout)
     if result.returncode:
-        tail = result.stdout.strip()[-1500:].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+        tail = result.stdout.strip()[-6000:].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
         print(f'::error title={title}::{tail}')
     return result.returncode
 

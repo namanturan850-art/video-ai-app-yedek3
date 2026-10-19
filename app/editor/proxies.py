@@ -263,7 +263,8 @@ def build(folder,target,data):
             # ASS PlayRes is the final 1080p plane; libass scales to proxy size.
             (temporary/'captions.ass').write_text(content,encoding='utf-8')
             caption=str(temporary/'captions.ass').replace('\\','/').replace(':',r'\:').replace("'",r"\'")
-            font_path=str(Path(__file__).resolve().parents[1]/'static/fonts').replace('\\','/').replace(':',r'\:').replace("'",r"\'")
+            from app.channels import FONTS
+            font_path=str(Path(__file__).resolve().parents[1]/'static/fonts'/('user' if FONTS['arial'][1] else '')).replace('\\','/').replace(':',r'\:').replace("'",r"\'")
             graphs.append(f"[{label}]setpts=PTS+{data['start']}/TB,ass=filename='{caption}':fontsdir='{font_path}',setpts=PTS-STARTPTS[captioned]");label='captioned'
         index=args.count('-i');args+=['-i',str(narration)]
         graphs.append(f'[{index}:a]anull[audio]')

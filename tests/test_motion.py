@@ -202,3 +202,13 @@ def test_user_gilroy_replaces_the_kit_fonts_of_every_template(tmp_path, monkeypa
     assert used <= {'user/Gilroy-Bold.ttf', 'user/Gilroy-Light.ttf'} and 'user/Gilroy-Bold.ttf' in used
     light = {e['props']['text'] for e in after['elements'] if e['type'] == 'text' and e['props']['font'] == 'user/Gilroy-Light.ttf'}
     assert 'Stürme' in light  # a non-highlighted item is light, the highlighted one stays bold
+
+
+def test_gilroy_replaces_every_font_lookup_for_subtitles_and_graphics(tmp_path, monkeypatch):
+    from app.channels import FONTS
+    from app.motion import fonts
+    monkeypatch.setattr(fonts, 'USER_DIR', tmp_path)
+    assert FONTS['arial'] == ('Arial', None) and FONTS['lora'][1] == 'Lora.ttf'
+    shutil.copyfile(templates.FONT_DIR / 'Montserrat.ttf', tmp_path / 'Gilroy-Bold.ttf')
+    assert FONTS['arial'][1] == FONTS['lora'][1] == 'user/Gilroy-Bold.ttf'
+    assert FONTS['inter'][0]  # the real family name read from the file, used by libass

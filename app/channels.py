@@ -8,6 +8,7 @@ subtitles and thumbnails. Avatars are only reserved (no generation).
 from contextlib import closing
 import json
 import re
+from functools import lru_cache
 import sqlite3
 from typing import Literal
 from uuid import uuid4
@@ -20,9 +21,31 @@ from app.projects import ProjectError, linked, now
 HEX = r'^#[0-9A-Fa-f]{6}$'
 # Bundled OFL fonts (app/static/fonts, licences next to them) + Arial, which
 # keeps the subtitle look of projects made before channels existed.
-FONTS = {'inter': ('Inter', 'Inter.ttf'), 'montserrat': ('Montserrat', 'Montserrat.ttf'),
-         'oswald': ('Oswald', 'Oswald.ttf'), 'bebas': ('Bebas Neue', 'BebasNeue-Regular.ttf'),
-         'lora': ('Lora', 'Lora.ttf'), 'arial': ('Arial', None)}
+class _Fonts(dict):
+    """Every lookup FONTS[name] returns Gilroy Bold instead when the user put it into app/static/fonts/user/
+    (so subtitles, text graphics and the editor all use it); without those files the bundled fonts stay."""
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        try:
+            from app.motion.fonts import BOLD_FAMILY, user_fonts
+            path = user_fonts().get(BOLD_FAMILY)
+        except Exception:
+            path = None
+        return (_family(path), 'user/' + path.name) if path else value
+
+
+@lru_cache(maxsize=8)
+def _family(path):
+    try:
+        from PIL import ImageFont
+        return ImageFont.truetype(str(path), 20).getname()[0]
+    except Exception:
+        return 'Gilroy'
+
+
+FONTS = _Fonts({'inter': ('Inter', 'Inter.ttf'), 'montserrat': ('Montserrat', 'Montserrat.ttf'),
+                'oswald': ('Oswald', 'Oswald.ttf'), 'bebas': ('Bebas Neue', 'BebasNeue-Regular.ttf'),
+                'lora': ('Lora', 'Lora.ttf'), 'arial': ('Arial', None)})
 FONT_LABELS = {'inter': 'Inter — sade, modern', 'montserrat': 'Montserrat — güçlü, geniş', 'oswald': 'Oswald — dar, başlık',
                'bebas': 'Bebas Neue — büyük harf, etkili başlık', 'lora': 'Lora — klasik, ciddi (serif)', 'arial': 'Arial — sistem fontu'}
 EASINGS = {'smooth': 'Yumuşak', 'snappy': 'Çevik', 'bounce': 'Sekmeli', 'linear': 'Düz'}

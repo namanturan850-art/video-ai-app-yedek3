@@ -61,12 +61,22 @@ def references_text(package):
     return '\n'.join(lines)
 
 
+DENSITY_PER_MINUTE = (5, 8)
+
+
+def density(minutes):
+    """Suggested total number of proposals for the whole piece (never fewer than 2)."""
+    low = max(2, round(minutes * DENSITY_PER_MINUTE[0]))
+    return low, max(low + 1, round(minutes * DENSITY_PER_MINUTE[1]))
+
+
 def _instructions(package, gemini_instructions, inline):
     project = package['project']
     language = project.get('language') or 'de'
     scenes = package['narration']
     ends = [s['end'] for s in scenes if s.get('end') is not None]
     minutes = (max(ends) / 60) if ends else 0
+    low, high = density(minutes)
     extra = ''
     if gemini_instructions:
         extra = '\n## EK TALİMATLAR (Gemini tarafından bu proje için hazırlandı)\n' + '\n'.join(f'- {x}' for x in gemini_instructions) + '\n'
@@ -121,7 +131,10 @@ NAMAN önerilerini doğrular ve taslak olarak gösterir. Kullanıcı seçip onay
 - Dil: {LANGUAGES.get(language, language)} ({language}). Ekranda görünen bütün yazılar bu dilde olacak.
 - Süre: yaklaşık {minutes:.1f} dakika, {len(scenes)} sahne, {len(package.get('sentence_index', []))} altyazı cümlesi.
 - Senaryo kullanıcıya ait. Vurgu ve katman yazıları (text) sahne metninde AYNEN geçmeli; NAMAN bunu kontrol eder.
-- Profesyonel, sade belgesel üslubu: gereksiz efekt ve yazı yok. Her sahneye animasyon koymak zorunda değilsin.
+- Profesyonel, sade belgesel üslubu: süs için efekt veya yazı ekleme.
+- YOĞUNLUK HEDEFİ: Bu bölüm için bütün bölümlerde toplam yaklaşık {low}–{high} öneri hazırla (dakikada {DENSITY_PER_MINUTE[0]}–{DENSITY_PER_MINUTE[1]}).
+  Anlatımda geçen her sayı, yüzde, sıcaklık, tarih, yer adı, karşılaştırma ve ana kavram için bir öneri yaz;
+  yalnızca anlatımda dayanağı olmayan öneriyi yazma. Önerileri bölüme yay: aynı anda en fazla 2 katman, her biri 3–6 saniye.
 
 ## ÇIKTI: TEK BİR JSON
 Cevabın yalnızca JSON olsun (açıklama yazma). Aşağıdaki şablonu doldur; "schema" ve "base" değerlerini AYNEN koru:

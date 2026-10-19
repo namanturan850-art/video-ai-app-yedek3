@@ -251,8 +251,11 @@ def ffmpeg_status() -> dict:
     from app.rendering.models import RenderError
     try:
         detected=tools.discover()
-        return {'status':detected['status'],'found':detected['found'],
-                'executable_path':'','message':detected['message']}
+        message=detected['message']
+        path=detected.get('ffmpeg') or detected.get('executable')
+        warning=tools.compat_warning(path) if detected.get('found') and path else ''
+        return {'status':'Uyumsuz sürüm' if warning else detected['status'],'found':detected['found'],
+                'executable_path':'','message':(message+' '+warning).strip() if warning else message}
     except RenderError as error:
         return {'status':'Hata','found':False,'executable_path':'','message':str(error)}
 

@@ -130,18 +130,32 @@
     window.NAMANManual.openPackage=jsonImport;
     clean.push(()=>delete window.NAMANManual.openPackage);
     async function jsonImport(initialText=''){try{
-      let pack=await c.api(endpoint+'/manual/package');
-      const area=n('textarea','','naman-json'),packageArea=n('textarea','','naman-json'),file=n('input'),result=n('p','','naman-json-message');
-      area.setAttribute('aria-label','Dış yapay zekâ cevabı');area.placeholder='Cevabı metin veya JSON olarak buraya yapıştırın. Parçalı JSON mesajlarını alt alta ekleyebilirsiniz.';area.value=typeof initialText==='string'?initialText:'';
-      packageArea.readOnly=true;packageArea.setAttribute('aria-label','Hazır AI paketi');packageArea.value=JSON.stringify(pack,null,2);
-      file.type='file';file.accept='.json,application/json';file.hidden=true;
-      file.onchange=async()=>{try{if(file.files[0]){if(file.files[0].size>8000000)throw Error('Dosya en fazla 8 MB olmalıdır. Planı daha küçük parçalara ayırın.');area.value=await file.files[0].text();result.textContent='Dosya yüklendi. Cevabı içe aktar ile taslağı inceleyin.';}}catch(e){result.textContent=e.message||'Dosya okunamadı. JSON dosyasını yeniden seçin.';}};
-      const prepare=b('Paketi Hazırla',async()=>{
+      let pack=await c.api(endpoint+'/manual/package'),brief=null,gemini=null;
+      const sec=(text,run)=>{const node=b(text,run);node.className='manual-secondary';return node;};
+      const area=n('textarea','','naman-json'),packageArea=n('textarea','','naman-json'),briefArea=n('textarea','','naman-json'),file=n('input'),result=n('p','','naman-json-message'),info=n('span','','manual-package-info');
+      area.setAttribute('aria-label','Dış yapay zekâ cevabı');area.placeholder='Yapay zekânın cevabını buraya yapıştır. Birden fazla mesaj geldiyse hepsini alt alta yapıştır.';area.value=typeof initialText==='string'?initialText:'';
+      packageArea.readOnly=briefArea.readOnly=true;packageArea.setAttribute('aria-label','Hazır AI paketi');briefArea.setAttribute('aria-label','Tek mesaj');packageArea.value=JSON.stringify(pack,null,2);
+      file.type='file';file.accept='.json,application/json,.txt,text/plain';file.hidden=true;
+      file.onchange=async()=>{try{if(file.files[0]){if(file.files[0].size>8000000)throw Error('Dosya en fazla 8 MB olmalıdır. Planı daha küçük parçalara ayırın.');area.value=await file.files[0].text();result.textContent='Dosya yüklendi. Planı içe aktar ile taslağı inceleyin.';}}catch(e){result.textContent=e.message||'Dosya okunamadı. JSON dosyasını yeniden seçin.';}};
+      const raw=n('details','','manual-raw-package');raw.append(n('summary','Ham paket (JSON) ve tek mesaj metni'),packageArea,briefArea);
+      const body=()=>JSON.stringify(gemini?{gemini_instructions:gemini}:{});
+      const copy=sec('Tek mesajı kopyala',async()=>{if(!brief)return;try{await navigator.clipboard.writeText(brief.text);result.textContent='Tek mesaj kopyalandı. Yapay zekâya yapıştırın.';}catch{raw.open=true;briefArea.focus();briefArea.select();result.textContent='Panoya erişilemedi. Seçili metni Ctrl+C ile kopyalayın.';}});
+      const folder=sec('Paket klasörünü aç',async()=>{try{const r=await c.api(endpoint+'/manual/package/open-folder',{method:'POST',body:body()});result.textContent=(r.opened?'Klasör açıldı: ':'Paket kaydedildi: ')+r.folder;}catch(e){result.textContent=e.message;}});
+      const zip=sec('ZIP indir',()=>{location.href=endpoint+'/manual/package.zip';});
+      copy.disabled=folder.disabled=zip.disabled=true;
+      const ready=()=>{copy.disabled=folder.disabled=zip.disabled=false;briefArea.value=brief.text;info.textContent=`${brief.characters.toLocaleString('tr')} karakter${gemini?' · Gemini talimatlı':''}`;};
+      const make=b('Paketi hazırla',async()=>{
+        make.disabled=true;result.textContent='Paket hazırlanıyor…';
+        try{brief=await c.api(endpoint+'/manual/package/brief',{method:'POST',body:body()});pack=await c.api(endpoint+'/manual/package');packageArea.value=JSON.stringify(pack,null,2);ready();result.textContent='Paket hazır. Tek mesajı kopyalayın ya da klasördeki dosyaları yapay zekâya yükleyin. Kurgu değiştirilmedi.';}
+        catch(e){result.textContent=e.message;}finally{make.disabled=false;}
+      });
+      const prepare=sec('Gemini ile talimat ekle (ücretli)',async()=>{
         if(!confirm('Gemini’ye proje metni, altyazılar ve arşiv listesi gönderilecek. API kotası veya ücret kullanabilir. Devam edilsin mi?'))return;
         prepare.disabled=true;result.textContent='Gemini görev talimatlarını hazırlıyor…';
-        try{pack=await c.api(endpoint+'/manual/package/prepare',{method:'POST',body:JSON.stringify({cost_confirmed:true}),timeout:60000});packageArea.value=JSON.stringify(pack,null,2);result.textContent='Gemini paketi hazır. Kopyalayıp dış yapay zekâya verin. Timeline değiştirilmedi.';}catch(e){result.textContent=e.message;}finally{prepare.disabled=false;}
+        try{pack=await c.api(endpoint+'/manual/package/prepare',{method:'POST',body:JSON.stringify({cost_confirmed:true}),timeout:60000});packageArea.value=JSON.stringify(pack,null,2);gemini=pack.gemini_instructions||null;brief=await c.api(endpoint+'/manual/package/brief',{method:'POST',body:body()});ready();result.textContent='Gemini talimatları pakete eklendi. Kurgu değiştirilmedi.';}
+        catch(e){result.textContent=e.message;}finally{prepare.disabled=false;}
       });
-      const importButton=b('Cevabı içe aktar',async()=>{
+      const importButton=b('Planı içe aktar',async()=>{
         if(area.value.length>2000000){result.textContent='Cevap en fazla 2.000.000 karakter olmalıdır. Planı parçalara ayırın.';return;}
         importButton.disabled=true;result.textContent='JSON doğrulama işi başlatılıyor…';
         try{
@@ -157,11 +171,14 @@
         }catch(e){result.textContent=e.message+' İşi yeniden başlatmadan aynı cevabı tekrar içe aktararak süren doğrulamaya bağlanabilirsiniz.';}
         finally{importButton.disabled=false;}
       });
-      show('Manuel Plan / AI paketi',[
-        n('p','Paketi hazırlayın, dış yapay zekâya verin, cevabı içe aktarın. Plan önce taslak olarak gösterilir; seçtiklerinizi uyguladığınızda kurguya kaydedilir.'),
-        b('Kayıtlı plan taslakları',drafts),prepare,packageArea,b('Paketi kopyala',async()=>{try{await navigator.clipboard.writeText(packageArea.value);result.textContent='Paket kopyalandı.';}catch{packageArea.focus();packageArea.select();result.textContent='Panoya erişilemedi. Seçili paketi Ctrl+C ile kopyalayın.';}}),
-        n('label','Dış yapay zekâ cevabı'),area,b('Dosyadan yükle (.json)',()=>file.click()),file,result,
-        importButton
+      make.className=importButton.className='manual-primary';
+      const step=(title,text,...children)=>{const box=n('section','','manual-step');box.append(n('h3',title));if(text)box.append(n('p',text,'manual-step-note'));box.append(...children);return box;};
+      const row=(...children)=>{const node=n('div','','manual-actions');node.append(...children);return node;};
+      show('Manuel plan',[
+        step('1. Görev paketi','Paket: talimat + sahneler/cümleler + arşiv + mevcut kurgu + seçilmiş animasyon fikirleri. Dosya yükleyebilen yapay zekâya klasördeki dosyaları yükle; yükleyemiyorsan tek mesajı kopyala-yapıştır.',
+          row(make,copy,folder,zip,info),row(prepare,sec('Kayıtlı plan taslakları',drafts)),raw),
+        step('2. Cevabı içe aktar','Plan önce taslak olarak gösterilir; yalnız seçip onayladıkların kurguya işlenir.',
+          area,row(importButton,sec('Dosyadan yükle (.json)',()=>file.click())),file,result)
       ]);
     }catch(e){status(e.message);}}
     async function motion(map=false){const pictures=c.getArchive().items.filter(x=>x.media_type==='image'),picture=pictures[0]?.file_name||'ARŞİVDEN_GÖRSEL_SEÇİN';const template=n('select'),area=n('textarea','','naman-json'),start=n('input'),end=n('input'),color=n('input'),cleanMap=n('input');start.type=end.type='number';start.step=end.step=1/c.data.fps;start.value=c.getTime();end.value=Math.min(c.data.duration,c.getTime()+3);color.type='color';color.value='#8065E8';cleanMap.type='checkbox';cleanMap.checked=map;const examples={stat:{value:'40',label:'Mesafe'},ratio:{percent:40,value:'40%',label:'Oran'},compare:{title:'Karşılaştırma',items:[{label:'Önce',value:'40'},{label:'Sonra',value:'50'}]},timeline:{events:[{date:'1945',label:'Başlangıç'},{date:'1950',label:'Sonuç'}]},list:{title:'Liste',items:['Birinci','İkinci']},quote:{text:'Anlatımdaki kısa ifade'},map:{place:'Anlatımdaki yer',label:'',lat:0,lon:0},fact:{text:'Kendi doğrulanmış bilgi metniniz'},icons:{value:'40',number:40,object:'kişi',icon:'person'},dynasty:{generations:[['Birinci kişi'],['İkinci kişi']]},mark:{image:picture,label:'İşaret açıklaması',fx:.5,fy:.5},archive:{image:picture,label:'Arşiv görseli',caption:'Kaynak açıklaması'},beforeafter:{images:[picture,pictures[1]?.file_name||picture],before:'Önce',after:'Sonra'},route:{stops:[{name:'Roma',lat:41.9,lon:12.5},{name:'İstanbul',lat:41,lon:29}]},zoom:{place:'Roma',lat:41.9,lon:12.5,region:'Italia',nearby:[]},empire:{name:'Kendi doğrulanmış bölgeniz',area:[[41,12],[42,12],[41,13]],capital:{name:'Roma',lat:41.9,lon:12.5}},relief:{mode:'zoom',target:'Roma',lat:41.9,lon:12.5,title:''},intro:{title:'Kendi başlığınız',channel:''},outro:{mode:'subscribe',channel:''},endscreen:{channel:''}};(map?['map','route','zoom','empire','relief']:['stat','ratio','compare','timeline','list','quote','fact','icons','dynasty','mark','archive','beforeafter','intro','outro','endscreen']).forEach(value=>template.append(new Option(value,value)));const visual=n('div','','manual-motion-fields'),technical=n('details');technical.append(n('summary','Gelişmiş veri (JSON)'),area);

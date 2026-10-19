@@ -210,14 +210,24 @@ def editor_router(service):
     @router.get('/manual/package')
     def task_package(project_id:str): return service.task_package(project_id)
 
+    @router.post('/manual/package/brief')
+    def task_brief(project_id:str,payload:dict|None=None):
+        return service.task_brief(project_id,payload)
+
+    @router.post('/manual/package/open-folder')
+    def open_package_folder(project_id:str,payload:dict|None=None):
+        return service.open_package_folder(project_id,payload)
+
     @router.post('/manual/package/prepare')
     def prepare_task_package(project_id:str,payload:dict):
         return service.prepare_task_package(project_id,payload)
 
     @router.post('/manual/response-draft',status_code=201)
     def response_draft(project_id:str,payload:dict):
-        from app.editor.manual_review import parse_response, review
-        return review(editorial,project_id,parse_response(payload.get('text')))
+        from app.editor.manual_review import parse_response, prepare_html_layers, review
+        plan=parse_response(payload.get('text'))
+        prepare_html_layers(editorial,project_id,plan)
+        return review(editorial,project_id,plan)
 
     @router.post('/manual/response-jobs',status_code=202)
     def response_job(project_id:str,payload:dict):
@@ -231,7 +241,7 @@ def editor_router(service):
 
     @router.get('/manual/package.zip')
     def task_package_zip(project_id:str):
-        content=service.task_package_zip(project_id)
+        content=service.task_package_zip(project_id)  # Gemini instructions travel via the brief/folder routes
         return Response(content,media_type='application/zip',headers={'Content-Disposition':'attachment; filename="naman-manuel-plan.zip"'})
 
     @router.post('/manual/validate')

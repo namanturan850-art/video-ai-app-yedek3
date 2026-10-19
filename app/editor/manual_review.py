@@ -10,7 +10,7 @@ import re
 from app.editor.models import EditorError
 from app.providers.json_output import _unique_object, _reject_constant
 
-SECTIONS=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar','animasyon_sahneleri')
+SECTIONS=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar','animasyon_sahneleri','html_katmanlari')
 MAX_RESPONSE_CHARS=2_000_000
 
 
@@ -73,6 +73,7 @@ def legacy_item(section,item,package):
     """Map exact sentence clocks only. Unsupported content is an explicit issue."""
     if not isinstance(item,dict):return item
     if 'scene_id' in item:return item
+    if section=='html_katmanlari':raise EditorError('invalid_scene','HTML katmanı paketteki scene_id ve start/end ile gönderilmelidir.')
     cues=package['subtitles']['cues'];narration=package['narration']
     if 'cumleler' in item:
         numbers=item['cumleler']
@@ -223,6 +224,21 @@ def review(editorial,pid,payload,*,persist=True,progress=None):
                 processed+=1
         draft=editorial._import_draft(pid,accepted,persist=False)
         return finish(draft,accepted)
+
+
+def prepare_html_layers(editorial,pid,payload,progress=None):
+    """Render incoming HTML/CSS layers once (Remotion) before the review compiles
+    the draft. Not under the project lock: a slow browser render must not block
+    the editor. Failures stay per layer and appear as draft issues."""
+    items=payload.get('html_katmanlari') if isinstance(payload,dict) else None
+    if not isinstance(items,list) or not items:return 0
+    from app.motion.html_layer import prerender
+    from app.rendering.tools import discover
+    editor=editorial.editor
+    scenes={s['scene_id']:s for s in editor.view(pid)['scenes']}
+    bridge=getattr(getattr(editor,'rendering',None),'openmontage',None)
+    report=(lambda done,total,message:progress(done,total,message)) if progress else (lambda *a:None)
+    return prerender(bridge,editor.projects._path(pid)/'stock',items,scenes,discover().get('ffmpeg'),progress=report)
 
 
 def review_validation(editorial,pid,payload):

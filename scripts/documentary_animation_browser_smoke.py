@@ -28,7 +28,7 @@ def main():
             plan['animasyon_sahneleri']=[record,bad]
             dialog.locator('input[type=file]').set_input_files({'name':'animation.json','mimeType':'application/json','buffer':json.dumps(plan).encode()})
             page.wait_for_function("document.querySelector('.naman-json-message')?.textContent.includes('Dosya yüklendi')")
-            dialog.get_by_role('button',name='Cevabı içe aktar',exact=True).click()
+            dialog.get_by_role('button',name='Planı içe aktar',exact=True).click()
             dialog.locator('.manual-import-issues').wait_for();assert 'kind' in dialog.locator('.manual-import-issues').inner_text()
             assert 'Belgesel animasyonu · 5 nesne · DEMO' in dialog.inner_text()
             assert page.request.get(base+'/advanced').json()==before

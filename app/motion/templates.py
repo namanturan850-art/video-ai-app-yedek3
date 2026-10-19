@@ -71,6 +71,13 @@ def _validate(spec, narration, entities=(), *, trusted=False):
     trusted=True: the owner's own marker in the text ([SAYI: …], [HARİTA: …]);
     only the shape is checked."""
     from app.motion.numbers import is_spoken
+    if isinstance(spec,dict) and spec.get('template')=='html':
+        from app.motion.html_layer import sanitize,LayerError
+        data=spec.get('data')
+        if not isinstance(data,dict) or set(data)-{'html','css'}:raise MotionError('HTML katmanı verisi yalnız html ve css içerir.')
+        try:html,css=sanitize(data.get('html'),data.get('css',''))
+        except LayerError as error:raise MotionError('HTML katmanı güvenli değil: '+str(error)) from None
+        return {'template':'html','data':{'html':html,'css':css},'emphasis':''}
     if isinstance(spec,dict) and spec.get('template')=='documentary':
         from app.animation.schema import validate as validate_animation
         try:return {'template':'documentary','data':validate_animation(spec.get('data'),narration),'emphasis':''}
@@ -298,6 +305,9 @@ class Scene:
 
 
 def build(spec, kit, duration, emphasis_offset, language='de'):
+    if spec.get('template')=='html':
+        from app.motion.html_layer import scene_stub
+        return scene_stub(duration)
     if spec.get('template')=='documentary':
         from app.animation.schema import Animation
         from app.animation.scene import build as animation_scene

@@ -77,7 +77,9 @@ def test_manual_task_zip_contains_full_package_and_output_template():
     editor.archive=lambda _: {'items':[]}
     import io, json, zipfile
     with zipfile.ZipFile(io.BytesIO(editor.task_package_zip('a'*32))) as archive:
-        assert {'NAMAN_GOREV_PAKETI.json','NAMAN_CIKTI_SABLONU.json','OKU.txt'}==set(archive.namelist())
+        assert {'NAMAN_GOREV_PAKETI.json','NAMAN_CIKTI_SABLONU.json','OKU_BENI.txt','00_TALIMAT.md','01_sahneler_ve_cumleler.txt',
+                '02_arsiv.json','03_mevcut_kurgu.json','04_referanslar.md','05_cikti_sablonu.json','TEK_MESAJ.txt'}==set(archive.namelist())
+        assert 'NAMAN — BELGESEL KURGU PLANI GÖREVİ' in archive.read('TEK_MESAJ.txt').decode('utf-8')
         package=json.loads(archive.read('NAMAN_GOREV_PAKETI.json'))
         assert package['required_sections']==['sahneler','infografikler','harita_sahneleri','vurgular','katmanlar']
 

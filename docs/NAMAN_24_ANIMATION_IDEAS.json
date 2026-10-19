@@ -1,0 +1,194 @@
+[
+ {
+  "id": "01",
+  "ad": "Sıcak–soğuk hava karşılaşması",
+  "kategori": "Bilimsel mekanizma",
+  "naman_izi": "Katman / Görüntü",
+  "animasyon_tarifi": "Hava kütlelerini renkli şeffaf bantlarla, yukarı yönlü oklarla ve doğrulanmış yıldırım anında kısa ışık darbesiyle anlat.",
+  "dogruluk_kurali": "Hava yönü ve mekanizma sahne metninde doğrulanmalı; fotogerçekçi efekt fizik modeli değildir."
+ },
+ {
+  "id": "02",
+  "ad": "Deprem fay hattı kesiti",
+  "kategori": "Bilimsel mekanizma",
+  "naman_izi": "Katman / Görüntü",
+  "animasyon_tarifi": "Kesit boyunca iki plaka hareketi; gerilim, kırılma, yayılan dalga; görünüşü aşama aşama göster.",
+  "dogruluk_kurali": "Gerçek deprem tarihi/büyüklüğü üretilmez."
+ },
+ {
+  "id": "03",
+  "ad": "Volkan püskürme şeması",
+  "kategori": "Bilimsel mekanizma",
+  "naman_izi": "Katman",
+  "animasyon_tarifi": "Magma odası, yükseliş kanalı, lav ve kül bulutu için farklı hareketli nesneler.",
+  "dogruluk_kurali": "Jeolojik ilişki yalnız gerçek kaynaklarla."
+ },
+ {
+  "id": "04",
+  "ad": "Okyanus akıntıları",
+  "kategori": "Harita ve coğrafya",
+  "naman_izi": "Harita",
+  "animasyon_tarifi": "Gerçek koordinatlar üzerinde hareketli rota çizgileri, yön okları ve yer etiketleri.",
+  "dogruluk_kurali": "Kaynak desteklemiyorsa akıntı yönü icat edilmez."
+ },
+ {
+  "id": "05",
+  "ad": "Dünya → ülke → bölge yakınlaşması",
+  "kategori": "Harita ve coğrafya",
+  "naman_izi": "Harita",
+  "animasyon_tarifi": "Geniş dünya görünümünden gerçek yeri konumlandırıp yavaşça yakınlaş; yer etiketi sabit okunur kalsın.",
+  "dogruluk_kurali": "Gerçek koordinat/harita kaynağı gerekli."
+ },
+ {
+  "id": "06",
+  "ad": "İki yer arası rota",
+  "kategori": "Harita ve coğrafya",
+  "naman_izi": "Harita",
+  "animasyon_tarifi": "İki doğrulanmış nokta arasına akıcı rota ve iz bırakan işaret animasyonu.",
+  "dogruluk_kurali": "Rota gerçek yolculuğu ima ediyorsa kanıt gerekli."
+ },
+ {
+  "id": "07",
+  "ad": "Tarihsel olay zaman çizelgesi",
+  "kategori": "Tarih ve zaman",
+  "naman_izi": "İnfografik",
+  "animasyon_tarifi": "Doğrulanmış olayları yıllara göre sıralayıp vurgu göstergesi ile birer birer aç.",
+  "dogruluk_kurali": "Tarih ve sıralama anlatımdan veya kaynaklardan."
+ },
+ {
+  "id": "08",
+  "ad": "Dönemler arası karşılaştırma",
+  "kategori": "Tarih ve zaman",
+  "naman_izi": "Katman / İnfografik",
+  "animasyon_tarifi": "İki zaman damgalı paneli sade geçişle karşılaştır.",
+  "dogruluk_kurali": "Görselin tarihsel temsil mi kayıt mı olduğu açıklanmalı."
+ },
+ {
+  "id": "09",
+  "ad": "Yıllara göre çizgi grafik",
+  "kategori": "Veri ve infografik",
+  "naman_izi": "İnfografik",
+  "animasyon_tarifi": "Doğrulanmış noktalara çizgi geçişi, eksen etiketleri ve son değer vurgusu.",
+  "dogruluk_kurali": "Veri yoksa grafik üretme."
+ },
+ {
+  "id": "10",
+  "ad": "Çubuk grafik karşılaştırması",
+  "kategori": "Veri ve infografik",
+  "naman_izi": "İnfografik",
+  "animasyon_tarifi": "Barlar sırayla yükselir; değer ve ölçü birimi görünür.",
+  "dogruluk_kurali": "Sıfır/baz/birim çarpıtılmamalı."
+ },
+ {
+  "id": "11",
+  "ad": "Oransal pasta/halka grafik",
+  "kategori": "Veri ve infografik",
+  "naman_izi": "İnfografik",
+  "animasyon_tarifi": "Yalnız doğrulanmış yüzde değerlerinden halka segmentleri oluştur.",
+  "dogruluk_kurali": "Parçaların toplamı ve dönemleri doğrula."
+ },
+ {
+  "id": "12",
+  "ad": "Sayaç ve sayı kartı",
+  "kategori": "Veri ve infografik",
+  "naman_izi": "İnfografik",
+  "animasyon_tarifi": "Kısa giriş, sayısal artış, vurgulu nihai değer ve birim.",
+  "dogruluk_kurali": "Nihai sayı anlatımdan birebir alınmalı."
+ },
+ {
+  "id": "13",
+  "ad": "İşleyiş akış şeması",
+  "kategori": "Diyagram ve süreç",
+  "naman_izi": "Katman / İnfografik",
+  "animasyon_tarifi": "Düğümleri ve bağlantıları sırayla aç; basit bir süreç anlatımı oluştur.",
+  "dogruluk_kurali": "İşlem sırası anlatımla örtüşmeli."
+ },
+ {
+  "id": "14",
+  "ad": "3D parça ayrıştırma",
+  "kategori": "Diyagram ve süreç",
+  "naman_izi": "Katman",
+  "animasyon_tarifi": "Mekanik nesneyi bileşenlerine ayırıp geri birleştir; bileşen adlarını ekle.",
+  "dogruluk_kurali": "3D hazır model yoksa 2.5D şema; gerçek model sanılmamalı."
+ },
+ {
+  "id": "15",
+  "ad": "Katmanlı yer kesiti",
+  "kategori": "Diyagram ve süreç",
+  "naman_izi": "Katman",
+  "animasyon_tarifi": "Toprak/kaya/yeraltı suyu gibi katmanları sırayla görünür yap.",
+  "dogruluk_kurali": "Katman kalınlıkları şematik ise belirtilmeli."
+ },
+ {
+  "id": "16",
+  "ad": "Konuşmayla eşleşen vurgu",
+  "kategori": "Metin ve vurgu",
+  "naman_izi": "Vurgu",
+  "animasyon_tarifi": "Anlatımdaki aynı kelimeyi tam söylendiği saniyede kısa, sade animasyonla öne çıkar.",
+  "dogruluk_kurali": "Orijinal altyazı zamanı değişmez."
+ },
+ {
+  "id": "17",
+  "ad": "Belgesel başlık kartı",
+  "kategori": "Metin ve vurgu",
+  "naman_izi": "Katman",
+  "animasyon_tarifi": "Kısa başlık, alt açıklama ve kontrollü giriş/çıkış; arka plan hareketi hafif.",
+  "dogruluk_kurali": "Sürekli yazı göstermemeli."
+ },
+ {
+  "id": "18",
+  "ad": "Kaynak belge üzerinde işaretleme",
+  "kategori": "Metin ve vurgu",
+  "naman_izi": "Katman",
+  "animasyon_tarifi": "Arşiv fotoğrafındaki ilgili yeri daire veya okla işaretle, hafif yakınlaş.",
+  "dogruluk_kurali": "Kaynak medya korunmalı; işaret edilen yer doğru olmalı."
+ },
+ {
+  "id": "19",
+  "ad": "Sinematik yavaş yaklaşma",
+  "kategori": "Kamera ve 3D",
+  "naman_izi": "Görüntü",
+  "animasyon_tarifi": "Gerçek kaynak üzerinde dengeli pan, ölçek 1.00→1.08, odak noktası konu.",
+  "dogruluk_kurali": "Görüntü kesit sınırlarına uy; yeni görüntü uydurma."
+ },
+ {
+  "id": "20",
+  "ad": "Paralaks katmanlı anlatım",
+  "kategori": "Kamera ve 3D",
+  "naman_izi": "Katman",
+  "animasyon_tarifi": "Ön-orta-arka katmanlara az farklı hız vererek mekân derinliği oluştur.",
+  "dogruluk_kurali": "Katmanların kaynağı/provenansı belli olmalı."
+ },
+ {
+  "id": "21",
+  "ad": "Sis ve yağış görselleştirmesi",
+  "kategori": "Doğa ve atmosfer",
+  "naman_izi": "Katman",
+  "animasyon_tarifi": "Şeffaf parçacık/yoğunluk katmanı zamanla artar, kısa açıklama okları belirir.",
+  "dogruluk_kurali": "Bilimsel simülasyon değil şematik anlatım olabilir."
+ },
+ {
+  "id": "22",
+  "ad": "Su döngüsü",
+  "kategori": "Doğa ve atmosfer",
+  "naman_izi": "Katman / İnfografik",
+  "animasyon_tarifi": "Buharlaşma, yoğunlaşma, yağış ve yüzey akışı dört aşamada, tek sahnede görünür.",
+  "dogruluk_kurali": "Coğrafi/fiziksel detaylar anlatımla tutarlı."
+ },
+ {
+  "id": "23",
+  "ad": "Önce-sonra kaydırmalı kıyas",
+  "kategori": "Geçiş ve hareket dili",
+  "naman_izi": "Katman / Görüntü",
+  "animasyon_tarifi": "İki gerçek medya kaynağını kaydırmalı perdede göster, kolay anlaşılır etiket ekle.",
+  "dogruluk_kurali": "Aynı nesne/zaman bağlamında gerçek kaynaklar gerekli."
+ },
+ {
+  "id": "24",
+  "ad": "Kare keskinliğinde sonuç üretimi",
+  "kategori": "Kare tabanlı render",
+  "naman_izi": "Önizleme / Render",
+  "animasyon_tarifi": "Her nesnenin transformu yalnız frame_index/fps fonksiyonudur, aynı kare önizleme ve renderda aynıdır.",
+  "dogruluk_kurali": "Serbest JS/Python çalıştırma yok; 30 fps sınırları açık."
+ }
+]

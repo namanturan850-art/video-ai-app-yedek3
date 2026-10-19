@@ -20,6 +20,26 @@ def inspect(executable,arguments):
         raise RenderError('ffmpeg_invalid','FFmpeg çalıştırılamadı. Kurulumunu ve Tanılama ekranını kontrol edin.') from None
 
 
+_COMPAT_CACHE={}
+INCOMPATIBLE_MAJOR=9
+COMPAT_TEXT=('Kullandığınız FFmpeg 9.x sürümü bu editörün bazı komutlarında çöküyor. FFmpeg 7.1.1 kurun '
+             '(Windows: winget uninstall Gyan.FFmpeg, sonra winget install Gyan.FFmpeg --version 7.1.1).')
+
+
+def compat_warning(executable):
+    """Empty text, or the fix to show when this FFmpeg is a known-incompatible major version."""
+    key=str(executable)
+    if key not in _COMPAT_CACHE:
+        text=''
+        try:
+            match=re.match(r'ffmpeg version n?(\d+)',inspect(executable,['-version']))
+            if match and int(match.group(1))>=INCOMPATIBLE_MAJOR:text=COMPAT_TEXT
+        except RenderError:
+            pass
+        _COMPAT_CACHE[key]=text
+    return _COMPAT_CACHE[key]
+
+
 def local_path(value):
     """Reject URLs/UNC/device paths before AND after resolving a trusted alias."""
     text=str(value)

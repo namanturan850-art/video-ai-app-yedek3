@@ -33,7 +33,10 @@ def run(args):
     with decoder():
         try:
             done=subprocess.run(args,stdin=subprocess.DEVNULL,capture_output=True,timeout=30)
-            if done.returncode:raise EditorError('preview_failed','Yerel dosya için önizleme oluşturulamadı; kaynak dosyanın açıldığını kontrol edin.')
+            if done.returncode:
+                from app.rendering.tools import compat_warning
+                hint=compat_warning(args[0]) if args else ''
+                raise EditorError('preview_failed','Yerel dosya için önizleme oluşturulamadı; kaynak dosyanın açıldığını kontrol edin.'+(' '+hint if hint else ''))
         except (OSError,subprocess.SubprocessError):raise EditorError('preview_failed','FFmpeg önizlemesi tamamlanamadı; FFmpeg ve kaynak dosyayı kontrol edin.') from None
 
 

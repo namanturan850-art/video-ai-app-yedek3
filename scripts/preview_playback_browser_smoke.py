@@ -64,9 +64,10 @@ def main():
                 print('MONITOR STATE:',json.dumps(state,ensure_ascii=False))
                 print('PAGE ERRORS:',errors[-5:])
                 probe=page.request.post(base+'/advanced/program-proxy',data={'time':0,'quality':'high'})
-                print('PROXY API:',probe.status,probe.text()[:600])
-                log.flush();print('SERVER LOG TAIL:',(Path(tempfile.gettempdir())/'naman-playback-browser.log').read_text(errors='replace')[-1500:])
-                raise
+                print('PROXY API:',probe.status,probe.text()[:400])
+                log.flush();print('SERVER LOG TAIL:',(Path(tempfile.gettempdir())/'naman-playback-browser.log').read_text(errors='replace')[-700:])
+                # No traceback: keep these lines inside the CI annotation tail.
+                raise SystemExit('Program proxy never became visible within 180 s.')
             initial_proxy_seconds=time.monotonic()-opened
             # Observe every dynamically preloaded video, and count frames only when visible.
             page.evaluate('''()=>{

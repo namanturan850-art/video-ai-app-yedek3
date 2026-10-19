@@ -1265,3 +1265,8 @@ Sınırlar: Mevcut motion motorunun doğrulamadığı serbest renk/yazı boyutu/
 199 Python ve 80 Node testi geçti. Gerçek soğuk önbellek / beş ek katman / 64 saniye Chromium ölçümü 29,98 FPS, parça sınırında en çok 33,4 ms ve oynatma sırasında sıfır yeniden tampon beklemesi verdi. Gerçek 1080p oynatma, onay zinciri ve üç 1080p/30 FPS final MP4 testi geçti. İlk proxy ve ileri tampon hazırlığı hâlâ CPU işi gerektirir; süreleri gizlenmeden raporlandı. Windows CI'ya yeni testler eklendi; gerçek Windows/GPU ve canlı Gemini bu ortamda çalıştırılmadı.
 
 Tam sonuçlar ve sınırlar: [teslim raporu](CONTINUOUS_PREVIEW_DELIVERY.md).
+
+
+## Uzun oynatmada tampon tükenmesi — takip düzeltmesi
+
+Güncel main / PR #102 (`a15f6e8`) korunarak `fix/long-preview-rebuffer` dalında çalışıldı. Yeniden başlatma hesabı gerçek ileri tamponu ve kalan süreyi kullanır; hazırlama ölçüm geçmişi üç kayıtla sınırlanır. Yeni dört regresyon eski kodda hataları yakalayıp güncel kodda geçti; toplam 84 Node testi geçti. Gerçek 180 saniye/720p/beş katman soğuk testinde 29,990 FPS, parça sınırı en uzun 50,1 ms; oynatma içinde waiting ve tarayıcı hatası yok. İlk görüntü 11,58 sn + Oynat sonrası hazırlık 82,21 sn; başlangıç beklemesi devam ediyor. Dört JSON/taslak/onay/gerçek MP4 testi tekrar geçti. Windows otomasyonuna Node testleri ve seçilebilir 180 sn eklendi; gerçek Windows/GPU/canlı Gemini çalıştırılmadı. Ayrıntılar ve ham ölçüm: [takip raporu](LONG_PREVIEW_FOLLOWUP.md). Kullanıcı verisi değiştirilmedi, ücretli çağrı veya main'e merge yapılmadı.

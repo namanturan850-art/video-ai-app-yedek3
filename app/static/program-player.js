@@ -18,7 +18,9 @@
     ahead(){const r=this.video.buffered,t=this.video.currentTime;for(let i=0;i<r.length;i++)if(r.start(i)<=t+.04&&t<r.end(i)+.01)return r.end(i)-t;return 0;}
     contains(t){const r=this.video.buffered;for(let i=0;i<r.length;i++)if(r.start(i)<=t+.001&&t<r.end(i)-.001)return true;return false;}
     warmup(){
-      const remaining=this.c.data.duration-this.anchor;
+      // Recovery must be based on the current playhead, not the first segment.
+      // Played/evicted media cannot provide runway after a decoder underrun.
+      const remaining=Math.max(0,this.c.data.duration-(this.positioned?this.video.currentTime:this.seekTime));
       const ratio=Math.max(1,...this.ratios.slice(-3))*(this.c.getPlaybackRate?.()||1);
       // If preparation is slower than playback, build a measured runway first.
       // Never pretend a cold decoder is playing while the narration runs ahead.
@@ -89,7 +91,7 @@
           }
           if(generation!==this.generation||this.disposed)return;
           await this.append(meta,generation);if(generation!==this.generation)return;
-          if(fresh)this.ratios.push((performance.now()-started)/1000/meta.duration);
+          if(fresh){this.ratios.push((performance.now()-started)/1000/meta.duration);this.ratios=this.ratios.slice(-3);}
           this.next=meta.start+meta.duration;
         }
       }catch(e){if(generation===this.generation&&!this.disposed){if(e.category==='preview_busy'){this.retryAt=performance.now()+500;this.retryMessage='Önceki önizleme işi tamamlanıyor';}else this.fail(e.message);}}
@@ -105,7 +107,7 @@
       this.pump();
       if(!this.positioned&&this.video.readyState>=1&&this.contains(this.seekTime)){this.video.currentTime=this.seekTime;this.positioned=true;}
       this.active=this.positioned&&this.video.readyState>=2;
-      const available=this.next-this.anchor,goal=this.warmup();
+      const available=this.ahead(),goal=this.warmup();
       if(this.running){
         if(!this.started&&available>=goal-.04&&this.active)this.started=true;
         if(this.started&&this.active&&this.video.paused&&!this.video.ended){this.video.playbackRate=this.c.getPlaybackRate?.()||1;const generation=this.generation;this.video.play().catch(e=>{if(e.name==='AbortError'||generation!==this.generation||!this.running)return;this.fail('Oynat düğmesine yeniden basın: '+e.message);});}

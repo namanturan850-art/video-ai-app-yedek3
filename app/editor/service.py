@@ -497,13 +497,16 @@ class EditorService:
             try:
                 from app.rendering.tools import discover
                 probe=discover().get('ffprobe')
-                done=subprocess.run([probe,'-v','error','-show_entries','format=duration:stream=codec_type,width,height','-of','json',str(target)],capture_output=True,text=True,timeout=20,stdin=subprocess.DEVNULL) if probe else None
+                done=subprocess.run([probe,'-v','error','-show_entries','format=duration,start_time:stream=codec_type,width,height,duration,duration_ts,time_base,start_time,r_frame_rate,nb_frames','-of','json',str(target)],capture_output=True,text=True,timeout=20,stdin=subprocess.DEVNULL) if probe else None
                 details=json.loads(done.stdout) if done and done.returncode==0 else {}
                 duration=float(details.get('format',{}).get('duration',0)) or None
+                if media_type=='video':
+                    from app.rendering.source_timing import video_duration
+                    duration=video_duration(details)
                 stream=next((s for s in details.get('streams',[]) if s.get('width') and s.get('height')), {})
                 width,height=int(stream.get('width',0)),int(stream.get('height',0))
                 has_audio=any(s.get('codec_type')=='audio' for s in details.get('streams',[]))
-            except (OSError,ValueError,subprocess.SubprocessError): duration=None
+            except (OSError,ValueError,KeyError,StopIteration,subprocess.SubprocessError): duration=None
         metadata={'provider':'local','media_id':media_id,'media_type':media_type,'title':Path(original_name).stem[:160],
                   'description':Path(original_name).stem[:160],'local_path':'stock/'+target.name,'file_size':target.stat().st_size,
                   'sha256':digest,'content_type':mime,'duration':duration,'width':width,'height':height,'has_audio':has_audio,'downloaded_at':now(),

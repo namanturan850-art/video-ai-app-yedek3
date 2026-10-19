@@ -219,6 +219,16 @@ def editor_router(service):
         from app.editor.manual_review import parse_response, review
         return review(editorial,project_id,parse_response(payload.get('text')))
 
+    @router.post('/manual/response-jobs',status_code=202)
+    def response_job(project_id:str,payload:dict):
+        from app.editor.manual_jobs import start
+        return start(editorial,project_id,payload)
+
+    @router.get('/manual/response-jobs/{key}')
+    def response_job_status(project_id:str,key:str):
+        from app.editor.manual_jobs import status
+        return status(editorial,project_id,key)
+
     @router.get('/manual/package.zip')
     def task_package_zip(project_id:str):
         content=service.task_package_zip(project_id)

@@ -168,24 +168,28 @@ class FFmpegRenderProvider:
                 self.warnings.append('ffprobe bulunamadı; stok medya dekodu kontrol edildi ancak kaynak boyutu ve süresi ön kontrolde ölçülemedi.')
             if media['type']=='empty':args+=['-f','lavfi','-i',f'color=c=black:s=1920x1080:r=30:d={length:.6f}']
             elif media['type']=='video':
-                source_duration=actual['stock_duration'] if actual else media.get('duration') or 0
+                if actual:source_duration=actual['stock_duration']
+                else:
+                    from app.rendering.source_timing import duration as verified_duration
+                    source_duration=verified_duration(media['path'],self.tools.get('ffprobe'))
                 planned=edits.get(slot['slot_id'],{})
-                seek=min(max(0,planned.get('source_in',media.get('segment_start',max(0,(source_duration-length*speed)/2)))),max(0,source_duration-length*speed))
-                if slot['slot_id'] in custom_adjustments:
-                    seek=max(0,media.get('segment_start',0.))
+                seek=planned.get('source_in',media.get('segment_start',0.)) if smart else media.get('segment_start',0.)
+                from app.rendering.source_timing import coverage
+                coverage(source_duration,seek,media.get('segment_end'),speed,length,
+                         where=f"Sahne {slot['scene_id']}, {slot['start']:.3f} sn ({slot['slot_id']})")
                 # The final source-audio mixer must use the identical decoded cut.
                 media['segment_start']=seek
-                # Legacy short assets remain playable; newly acquired normal
-                # B-roll has strict coverage and is never sped up or looped.
-                loop=['-stream_loop','-1'] if source_duration<count/30-.04 else []
-                decode_length=length*speed+.1 if not loop else length*speed
-                args+=loop+['-ss',f'{seek:.6f}','-t',f'{decode_length:.6f}','-i',str(media['path'])]
+                # Coverage was verified above; never loop a short source to
+                # disguise an invalid cut or playback speed.
+                decode_length=length*speed+.1
+                if media.get('segment_end') is not None:decode_length=min(decode_length,media['segment_end']-seek)
+                args+=['-ss',f'{seek+(actual.get("stock_start_offset",0) if actual else 0):.6f}','-t',f'{decode_length:.6f}','-i',str(media['path'])]
             else:args+=['-loop','1','-framerate','30','-t',f'{length:.6f}','-i',str(media['path'])]
             normalize='scale=1920:1080:force_original_aspect_ratio=increase:out_range=tv,crop=1920:1080,setsar=1,fps=30,format=yuv420p'
             # A 25fps seek near EOF can otherwise yield one fewer 30fps frame.
             # Prefetch where possible; this bounded EOF pad supplies only frame
             # alignment/transition handles, never fills an undersized new clip.
-            if media['type']=='video' and not loop:normalize+=f',tpad=stop_mode=clone:stop_duration={outgoing[i]/30+.1:.6f}'
+            if media['type']=='video':normalize+=f',tpad=stop_mode=clone:stop_duration={1/30:.6f}'
             portrait=bool(actual and next((s['width']<=s['height'] for s in actual.get('streams',[]) if s.get('codec_type')=='video'),False))
             if portrait or edits.get(slot['slot_id'],{}).get('fit')=='contain':
                 # Portrait/square source in a 16:9 video: sharp centre over a
@@ -194,8 +198,10 @@ class FFmpegRenderProvider:
                            '[fgsrc]scale=1920:1080:force_original_aspect_ratio=decrease:out_range=tv[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps=30,format=yuv420p')
                 # overlay ends one frame early at EOF; clone the last frame so
                 # frame-exact trims below still get every frame.
-                normalize+=f',tpad=stop_mode=clone:stop_duration={(outgoing[i]/30 if media["type"]=="video" and not loop else 0)+.1:.6f}'
-            if speed!=1:normalize=f'setpts=(PTS-STARTPTS)/{speed},'+normalize
+                normalize+=f',tpad=stop_mode=clone:stop_duration={1/30:.6f}'
+            # Reset source PTS before fps/trim, also at normal speed. A source
+            # with delayed timestamps must not shift the following clip.
+            normalize=f'setpts=(PTS-STARTPTS)/{speed},'+normalize
             motion=slot['editing']['motion']
             if not smart and media['type']=='image' and motion in ('slow_zoom','ken_burns','pan'):
                 if 'zoompan' not in self.tools['filters']:self.warnings.append('Görsel hareketi desteklenmiyor; durağan görsel kullanıldı.')

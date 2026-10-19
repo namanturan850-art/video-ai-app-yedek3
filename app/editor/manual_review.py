@@ -11,6 +11,7 @@ from app.editor.models import EditorError
 from app.providers.json_output import _unique_object, _reject_constant
 
 SECTIONS=('sahneler','infografikler','harita_sahneleri','vurgular','katmanlar','animasyon_sahneleri')
+MAX_RESPONSE_CHARS=2_000_000
 
 
 def _finite_number(value):
@@ -21,8 +22,8 @@ def _finite_number(value):
 
 def parse_response(text):
     """Accept complete JSON parts, never repair syntax or recover nested objects."""
-    if not isinstance(text,str) or not text.strip() or len(text)>200000:
-        raise EditorError('invalid_response','En fazla 200.000 karakterlik geçerli JSON cevabı yapıştırın.')
+    if not isinstance(text,str) or not text.strip() or len(text)>MAX_RESPONSE_CHARS:
+        raise EditorError('invalid_response','En fazla 2.000.000 karakterlik geçerli JSON cevabı yapıştırın.')
     if re.search(r'</?think(?:ing)?\s*>',text,re.I):
         raise EditorError('invalid_response','Düşünme blokları yerine yalnız JSON planını gönderin.')
     decoder=json.JSONDecoder(object_pairs_hook=_unique_object,parse_constant=_reject_constant,parse_float=_finite_number)
@@ -119,7 +120,7 @@ def correction(issues):
             '\n'.join(f"- {i['section']}[{i['index']}] · Sahne {i['scene_id']} · {i['start']}–{i['end']} sn: {i['message']}\n  Özgün işlem: {json.dumps(i['original'],ensure_ascii=False)}" for i in issues))
 
 
-def review(editorial,pid,payload,*,persist=True):
+def review(editorial,pid,payload,*,persist=True,progress=None):
     """Compile isolated operations through the authoritative editor validator.
 
     Invalid records remain in the draft report, never in the render document.
@@ -129,6 +130,7 @@ def review(editorial,pid,payload,*,persist=True):
     except (ValueError,TypeError,RecursionError):
         raise EditorError('invalid_response','JSON yalnız sonlu sayılar ve geçerli veri içermelidir.') from None
     with editorial.projects.lock:
+        if progress:progress(0,0,'Proje ve kaynak bilgileri okunuyor')
         package=editorial.editor.task_package(pid)
         if not isinstance(payload,dict) or set(payload)-{'schema','base',*SECTIONS}:
             raise EditorError('invalid_response','Plan kökü ve bölüm adları çıktı şablonuyla eşleşmelidir.')
@@ -142,6 +144,31 @@ def review(editorial,pid,payload,*,persist=True):
         if sum(len(payload.get(s,[])) for s in SECTIONS)>500:
             raise EditorError('too_many_operations','Tek taslakta en fazla 500 işlem doğrulanabilir.')
         accepted=deepcopy(package['output_template']);issues=[];scenes={s['scene_id']:s for s in package['narration']}
+        total=sum(len(payload.get(s,[])) for s in SECTIONS)
+        def finish(draft,accepted):
+            draft.update(import_issues=issues,correction_message=correction(issues),original_response=deepcopy(payload),
+                         accepted_response=accepted,legacy_converted=legacy)
+            if persist:
+                from contextlib import closing
+                from app.projects import now
+                with closing(editorial.projects._connection()) as c,c:
+                    c.execute('INSERT INTO editorial_events(project_id,plan_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)',(pid,draft['plan_id'],'draft',json.dumps(draft),now()))
+            if progress:progress(total,total,'Taslak hazır; henüz kurguya uygulanmadı')
+            return draft
+        # Valid plans need one authoritative cumulative validation, not N full
+        # recompilations of ever larger prefixes. Fall back to loss-aware review
+        # only when the batch has an invalid/conflicting operation.
+        if progress:progress(0,total,'Plan topluca doğrulanıyor')
+        batch=deepcopy(accepted)
+        try:
+            for section in SECTIONS:
+                batch[section]=[legacy_item(section,item,package) for item in payload.get(section,[])]
+                if any(not isinstance(item,dict) or not isinstance(item.get('scene_id'),str) for item in batch[section]):
+                    raise EditorError('invalid_scene','İşlem geçerli bir scene_id metni içermelidir.')
+            complete=editorial._import_draft(pid,batch,persist=False)
+        except EditorError:pass
+        else:return finish(complete,batch)
+        processed=0
         def failed(section,index,item,error,converted=None):
             source=converted if isinstance(converted,dict) else item if isinstance(item,dict) else {}
             if 'scene_id' not in source:
@@ -158,9 +185,10 @@ def review(editorial,pid,payload,*,persist=True):
             if scene and error.category=='invalid_time':
                 message+=f" Geçerli sahne aralığı: {scene['start']}–{scene['end']} sn."
             if error.category=='short_source':
-                ref=source.get('media')
-                asset=next((a for a in package.get('archive',[]) if isinstance(ref,dict) and all(a.get(k)==ref.get(k) for k in ('provider','media_id','sha256'))),{})
-                message+=f" Kaynak süresi: {asset.get('duration','bilinmiyor')} sn; istenen kaynak başlangıcı: {source.get('source_start',0)} sn. Kaynak başlangıcını veya önerinin end saniyesini azaltıp yeniden doğrulayın."
+                # The validator reports the probed duration. Old archive metadata
+                # may be the longer container/audio duration; do not contradict
+                # the verified error by presenting that value as source length.
+                message+=f" Önerilen kaynak başlangıcı: {source.get('source_start',0)} sn. Kaynak başlangıcını veya önerinin end saniyesini azaltıp yeniden doğrulayın."
 
             issues.append({'section':section,'index':index,'scene_id':source.get('scene_id','cümle '+str(source.get('cumle_no',source.get('cumleler','?')))),
                 'start':source.get('start',scene.get('start','?')),'end':source.get('end',scene.get('end','?')),
@@ -168,6 +196,7 @@ def review(editorial,pid,payload,*,persist=True):
                 'options':['İşlemi düzenleyip yeniden doğrula','Düzeltme mesajını dış yapay zekâya gönder','Bu işlemi uygulamadan geçerli önerileri onayla']})
         for section in SECTIONS:
             for index,original in enumerate(payload.get(section,[])):
+                if progress:progress(processed,total,'Hatalı öneriler ayrılıyor; geçerli öneriler korunuyor')
                 item=original
                 try:
                     item=legacy_item(section,original,package)
@@ -191,15 +220,9 @@ def review(editorial,pid,payload,*,persist=True):
                         issues[-1]['retained_fields']=[k for k in item if k not in ('transition','scene_id','start','end','object_id')]
                         issues[-1]['message']+=' Kamera/yazı/görüntü bölümü taslakta korundu. Yalnız geçişi düzeltin: ayrı öneride motion=none kullanın; overlay_text/media eklemeyin.'
                 else:accepted=candidate
+                processed+=1
         draft=editorial._import_draft(pid,accepted,persist=False)
-        draft.update(import_issues=issues,correction_message=correction(issues),original_response=deepcopy(payload),
-                     accepted_response=accepted,legacy_converted=legacy)
-        if persist:
-            from contextlib import closing
-            from app.projects import now
-            with closing(editorial.projects._connection()) as c,c:
-                c.execute('INSERT INTO editorial_events(project_id,plan_id,kind,payload_json,created_at) VALUES (?,?,?,?,?)',(pid,draft['plan_id'],'draft',json.dumps(draft),now()))
-        return draft
+        return finish(draft,accepted)
 
 
 def review_validation(editorial,pid,payload):

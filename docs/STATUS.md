@@ -1270,3 +1270,16 @@ Tam sonuçlar ve sınırlar: [teslim raporu](CONTINUOUS_PREVIEW_DELIVERY.md).
 ## Uzun oynatmada tampon tükenmesi — takip düzeltmesi
 
 Güncel main / PR #102 (`a15f6e8`) korunarak `fix/long-preview-rebuffer` dalında çalışıldı. Yeniden başlatma hesabı gerçek ileri tamponu ve kalan süreyi kullanır; hazırlama ölçüm geçmişi üç kayıtla sınırlanır. Yeni dört regresyon eski kodda hataları yakalayıp güncel kodda geçti; toplam 84 Node testi geçti. Gerçek 180 saniye/720p/beş katman soğuk testinde 29,990 FPS, parça sınırı en uzun 50,1 ms; oynatma içinde waiting ve tarayıcı hatası yok. İlk görüntü 11,58 sn + Oynat sonrası hazırlık 82,21 sn; başlangıç beklemesi devam ediyor. Dört JSON/taslak/onay/gerçek MP4 testi tekrar geçti. Windows otomasyonuna Node testleri ve seçilebilir 180 sn eklendi; gerçek Windows/GPU/canlı Gemini çalıştırılmadı. Ayrıntılar ve ham ölçüm: [takip raporu](LONG_PREVIEW_FOLLOWUP.md). Kullanıcı verisi değiştirilmedi, ücretli çağrı veya main'e merge yapılmadı.
+
+
+## Kaynak süresi / siyah aralık ve büyük Manuel Plan JSON düzeltmesi
+
+Güncel main / PR #102 ve #103 (`b74e902`) temel alındı; ayrı dal `fix/source-timing-manual-import`. Video akışının gerçek süresi/başlangıç PTS farkı, kaynak başlangıç-bitişi, hız ve kare saati önizleme/final için ortak denetlenir. Kısa ana kaynak otomatik döngü/siyah dolgu ile gizlenmez; sahne ve saniye içeren hata verir, oynatma ve anlatım bekler. Geçişte kare yuvarlama/YUV siyah seviyesi farkı düzeltildi. Eski hatalı önizlemelerin tekrar kullanımı engellendi; kaynaklar/eski çıktılar silinmedi.
+
+Manuel Plan için sınırlı arka plan doğrulama işi ve mevcut mesaj alanında durum sorgusu eklendi. Geçerli büyük plan tek toplu derlemeden geçer; hatalı işlemler için mevcut kayıpsız inceleme yolu korunur. İş/taslak kalıcıdır; seçim/onay olmadan timeline değişmez. 352.841 karakter/150 öneri gerçek tarayıcı dosya akışı, JPEG önizleme ve yalnız bir önerinin onayı geçti.
+
+85 render testi, 36 son etkilenen regresyon testi, 86 Node testi, ek üç tam-kare/kesit testi ve gerçek video yükleme süre testi geçti. İlk geniş 157 testte bulunan tek crossfade farkı düzeltildi ve ilgili üç geçiş son testlerde geçti. Gerçek farklı MP4'ler + beş ek katmanla 12 sn soğuk oynatma: 720p 29,877 FPS, 1080p 29,918 FPS; parça sınırı en uzun 33,4 ms, oynatma içinde waiting ve tarayıcı hatası yok. İlk proxy/ileri tampon hazırlığı devam eder. Gerçek Windows/GPU çalıştırılmadı; Windows otomasyonu genişletildi. Ücretli Gemini çağrısı, kullanıcı verilerinde silme veya main'e merge yapılmadı. [Türkçe teslim raporu ve ölçümler](SOURCE_TIMING_MANUAL_IMPORT_DELIVERY.md).
+
+Son kare saati kontrolü: birleştirme çıktısının 30 FPS katman saatine tam oturmaması 2× hızda bir kare gerilik üretiyordu; taban ve ana klip/ses sınırları eşitlendi. 0,5×/2× gerçek video/kare karşılaştırması ve büyük JSON/ses durumunu kapsayan son 21 test geçti. Ek gerçek kaynak payı/taslak/onay için 47 test geçti. Yeni başlık denetimi, son kare süresini eksik bildiren MP4 için yalnız kanıtlanmış tek kare farkını düzeltir.
+
+Son tarayıcı ölçümleri tam kare saati düzeltmesiyle yeniden üretildi; ham JSON dosyaları güncellendi. Sessiz video kaynaklarının anlatım hazırlığını gereksiz bloklamaması için dört ses testi de geçti. İlk proxy/ileri tampon hazırlığı devam ediyor; gerçek Windows sonucu iddia edilmedi.

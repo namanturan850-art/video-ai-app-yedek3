@@ -32,7 +32,7 @@
       this.video.pause();this.video.removeAttribute('src');this.video.load();
       if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.objectUrl=null;
       this.anchor=Math.floor(time/4)*4;this.next=this.anchor;this.lastClock=time;this.seekTime=time;
-      this.retryAt=0;this.retryMessage='';this.revision=this.getRevision();this.chosen=this.quality.value;this.ratios=[];this.fpsAt=0;
+      this.blocked='';this.retryAt=0;this.retryMessage='';this.revision=this.getRevision();this.chosen=this.quality.value;this.ratios=[];this.fpsAt=0;
     }
     fail(message){if(this.disposed||this.failed)return;this.failed=true;this.active=false;this.abort.abort();this.video.pause();this.video.removeAttribute('src');this.video.load();if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.onState({active:false,text:message+' Standart parça önizlemesi kullanılacak.'});}
     clock(){
@@ -49,7 +49,7 @@
     async append(meta,generation){
       const info=await this.c.api(meta.stream_info_url,{signal:this.abort.signal});
       if(generation!==this.generation||this.disposed)return;
-      if(!MediaSource.isTypeSupported(info.mime))throw Error('Bu tarayıcı proxy codec’ini desteklemiyor.');
+      if(!MediaSource.isTypeSupported(info.mime))throw Object.assign(Error('Bu tarayıcı proxy codec’ini desteklemiyor.'),{category:'proxy_fallback'});
       if(!this.source){
         const source=new MediaSource();this.source=source;
         const opened=new Promise((resolve,reject)=>{source.addEventListener('sourceopen',resolve,{once:true});this.abort.signal.addEventListener('abort',()=>reject(Error('cancelled')),{once:true});});
@@ -57,12 +57,12 @@
         if(generation!==this.generation)return;
         this.sourceBuffer=source.addSourceBuffer(info.mime);this.mime=info.mime;
       }
-      if(info.mime!==this.mime)throw Error('Parçaların codec profilleri eşleşmiyor.');
+      if(info.mime!==this.mime)throw Object.assign(Error('Parçaların codec profilleri eşleşmiyor.'),{category:'proxy_fallback'});
       const response=await fetch(info.url,{signal:this.abort.signal});if(!response.ok)throw Error('Önizleme parçası alınamadı.');
       const bytes=await response.arrayBuffer();if(generation!==this.generation)return;
       const buffer=this.sourceBuffer,signal=this.abort.signal;
       const update=(action)=>new Promise((resolve,reject)=>{
-        const done=()=>{clear();resolve();},error=()=>{clear();reject(Error('Video tamponu eklenemedi.'));},cancel=()=>{clear();reject(Error('cancelled'));};
+        const done=()=>{clear();resolve();},error=()=>{clear();reject(Object.assign(Error('Video tamponu eklenemedi.'),{category:'proxy_fallback'}));},cancel=()=>{clear();reject(Error('cancelled'));};
         const clear=()=>{buffer.removeEventListener('updateend',done);buffer.removeEventListener('error',error);signal.removeEventListener('abort',cancel);};
         buffer.addEventListener('updateend',done,{once:true});buffer.addEventListener('error',error,{once:true});signal.addEventListener('abort',cancel,{once:true});
         try{action();}catch(e){clear();reject(e);}
@@ -94,7 +94,7 @@
           if(fresh){this.ratios.push((performance.now()-started)/1000/meta.duration);this.ratios=this.ratios.slice(-3);}
           this.next=meta.start+meta.duration;
         }
-      }catch(e){if(generation===this.generation&&!this.disposed){if(e.category==='preview_busy'){this.retryAt=performance.now()+500;this.retryMessage='Önceki önizleme işi tamamlanıyor';}else this.fail(e.message);}}
+      }catch(e){if(generation===this.generation&&!this.disposed){if(e.category==='preview_busy'){this.retryAt=performance.now()+500;this.retryMessage='Önceki önizleme işi tamamlanıyor';}else if(e.category==='proxy_fallback'){this.fail(e.message);}else{this.blocked=e.category?e.message:'Önizleme alınamadı; ses ve görüntü bekletildi. Bağlantıyı kontrol edip kaliteyi yeniden seçin.';this.video.pause();this.started=false;this.c.pause?.();}}}
       finally{this.pumping=false;}
     }
     tick(){
@@ -103,6 +103,7 @@
       const desired=this.c.getTime();
       if(this.revision!==this.getRevision()||this.chosen!==this.quality.value)this.reset(desired);
       else if(this.lastClock!==null&&Math.abs(desired-this.lastClock)>1/600){if(this.contains(desired)){this.video.currentTime=desired;this.seekTime=desired;this.lastClock=desired;}else this.reset(desired);}
+      if(this.blocked){this.video.pause();this.onState({active:this.active,text:this.blocked});return;}
       this.video.playbackRate=this.c.getPlaybackRate?.()||1;
       this.pump();
       if(!this.positioned&&this.video.readyState>=1&&this.contains(this.seekTime)){this.video.currentTime=this.seekTime;this.positioned=true;}

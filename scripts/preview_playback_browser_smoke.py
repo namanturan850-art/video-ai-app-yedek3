@@ -16,9 +16,13 @@ from manual_editor_browser_smoke import SERVER
 
 def main():
     seconds=int(os.environ.get("NAMAN_PLAYBACK_SECONDS","64"))
+    real_videos=os.environ.get('NAMAN_PLAYBACK_REAL_VIDEOS')=='1'
+    if real_videos and seconds!=12:raise ValueError('Real video fixture uses exactly 12 seconds.')
     log=(Path(tempfile.gettempdir())/'naman-playback-browser.log').open('w')
     server_python=Path('.venv')/('Scripts/python.exe' if os.name=='nt' else 'bin/python')
-    server=subprocess.Popen([str(server_python) if server_python.is_file() else sys.executable,'-u','-c',SERVER.replace('install_manual_example(app)',f'install_manual_example(app,seconds={seconds})')],stdout=subprocess.PIPE,stderr=log,text=True)
+    fixture=SERVER.replace('install_manual_example(app)',f'install_manual_example(app,seconds={seconds})')
+    if real_videos:fixture=fixture.replace('from test_manual_first import install_manual_example','from test_source_timing import install_videos as install_manual_example')
+    server=subprocess.Popen([str(server_python) if server_python.is_file() else sys.executable,'-u','-c',fixture],stdout=subprocess.PIPE,stderr=log,text=True)
     try:
         details=json.loads(server.stdout.readline());url=f'http://127.0.0.1:{details["port"]}';pid=details['pid'];base=f'{url}/api/projects/{pid}/editor'
         with sync_playwright() as p:
@@ -100,7 +104,7 @@ def main():
             assert page.request.get(base).json()['audio_settings']['narration_volume']==.5
             assert page.request.get(base+'/advanced').json()['document']==before_mix['document']
             assert not errors,errors
-            result={'passed':True,'duration':seconds,'overlapping_layers':5,'initial_proxy_seconds':round(initial_proxy_seconds,2),'startup_seconds':round(startup_seconds,2),'cold_cache':True,'browser':measured,'errors':errors}
+            result={'passed':True,'duration':seconds,'real_video_sources':real_videos,'overlapping_layers':5,'initial_proxy_seconds':round(initial_proxy_seconds,2),'startup_seconds':round(startup_seconds,2),'cold_cache':True,'browser':measured,'errors':errors}
             Path(os.environ.get('NAMAN_PLAYBACK_REPORT',str(Path(tempfile.gettempdir())/'naman-playback-results.json'))).write_text(json.dumps(result),encoding='utf-8')
             print(json.dumps(result))
             browser.close()

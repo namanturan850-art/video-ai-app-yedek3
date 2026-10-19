@@ -260,6 +260,7 @@ class RenderService:
                 path=asset_path(self.projects,pid,m);digest=self._hash(path,force)
                 originals[str(path)]=digest;media[slot['slot_id']]={'path':path,'type':m['media_type'],'duration':m.get('duration'),'width':m.get('width',0),'height':m.get('height',0),'description':m.get('description',''),'sha256':digest,'has_audio':bool(m.get('has_audio'))}
                 if selected.get(owner,{}).get('segment_start') is not None:media[slot['slot_id']]['segment_start']=float(selected[owner]['segment_start'])
+                media[slot['slot_id']]['segment_end']=selected.get(owner,{}).get('segment_end')
                 if recovery:
                     proof=selected[owner].get('local_validation',{})
                     media[slot['slot_id']].update({k:proof[k] for k in ('duration','width','height') if k in proof})
@@ -279,6 +280,7 @@ class RenderService:
             sfx['volume']=audio_settings['sfx_volume']
             endscreen=None if manual_mode else self._endscreen(pid,t,h,selected,kit,force,draw,pending,originals,cancelled)
             fingerprint_data={'contract':h,'editing':t['editing_scenes'],'media':identities,'audio_sha256':audio_hash,'originals':{str(Path(k).relative_to(self.projects._path(pid))):v for k,v in originals.items()},'options':opts,'music':music_identity}
+            fingerprint_data['source_timing']='verified-video-stream-v1'
             if audio_settings_saved:fingerprint_data['editor_audio_settings']=audio_settings
             from app.editor.advanced import read_document
             from app.editor.compositor import resolve,archive_file
@@ -328,7 +330,7 @@ class RenderService:
             if manual_mode:inputs['editorial']=editorial
             if advanced_active:
                 inputs.update(advanced_document=advanced_render,advanced_assets=advanced_assets,advanced_stock=self.projects._path(pid)/'stock',
-                              advanced_slots={s['slot_id']:{'start':s['start'],'end':s['end']} for s in t['slots']})
+                              advanced_slots={s['slot_id']:{'start':s['start_frame']/30,'end':s['end_frame']/30} for s in t['slots']})
             inputs['motion_pending']=len(pending)  # motion clips the render job still has to draw (not part of the fingerprint)
             reflow.apply_graphics(inputs)
             if plan and any(s.get('graphic_text') for s in h['stock_slots']):inputs['fingerprint']=smart_edit.digest({'source':base_fingerprint,'smart_edit_plan':plan})

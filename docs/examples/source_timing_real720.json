@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "duration": 12,
+  "real_video_sources": true,
+  "overlapping_layers": 5,
+  "initial_proxy_seconds": 9.25,
+  "startup_seconds": 15.26,
+  "cold_cache": true,
+  "browser": {
+    "frames": 360,
+    "seconds": 12.016099999999998,
+    "fps": 29.87658225214504,
+    "maxGap": 0.09990000000000146,
+    "sizes": [
+      "1280x720"
+    ],
+    "samples": 544,
+    "maxBoundaryGap": 0.03339999999999782
+  },
+  "errors": []
+}

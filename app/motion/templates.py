@@ -438,6 +438,8 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         width = min(W - 160, max(measure(row, s.head, fs) for row in rows) + 80)
         box_y = min(cy + 90, H - 100 - fs * (1.7 + 1.25 * (len(rows) - 1)))
         s.add('rect', s.appear(at + .1, 30), x=cx - width / 2, y=box_y, w=width, h=fs * (1.7 + 1.25 * (len(rows) - 1)), fill=s.bg, radius=16, opacity=0)
+        box_h = fs * (1.7 + 1.25 * (len(rows) - 1))
+        s.add('rect', s.appear(at + .1, 30), x=cx - width / 2 + 14, y=box_y + 16, w=8, h=box_h - 32, fill=s.accent, radius=4, opacity=0, dy=30)
         for i, row in enumerate(rows):
             s.text(row, cx, box_y + fs * .8 + i * fs * 1.25, fs, start=at + .1 + i * .05, dy=30)
         s.sound('rise', at - .9); s.sound('hit', at)
@@ -449,7 +451,8 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
         hit = next((i for i, w in enumerate(flat) if target and w.casefold().strip(',.;:!?') == target.strip(',.;:!?')), len(flat) - 1)
         step = max(.06, min(.35, (E - .3) / max(1, hit)))
         top = H / 2 - (len(rows) - 1) * fs * .65
-        s.add('text', s.appear(.0, 20), text='“', x=150, y=top - fs * .5, size=fs * 2.4, font=s.head, fill=s.accent, anchor='mm', bold=True, opacity=0)
+        block = max(measure(row, s.head, fs) for row in rows)
+        s.add('rect', {'h': [[.0, 0], [.0 + md, fs * 1.3 * len(rows)]]}, x=W / 2 - block / 2 - 60, y=top - fs * .65, w=12, h=0, fill=s.accent, radius=6, opacity=1)
         index = 0
         for r, row in enumerate(rows):
             x = W / 2 - measure(row, s.head, fs) / 2
@@ -474,6 +477,8 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
             date_size, date_rows = fit(e['date'], s.head, 70 if i == key else 56, (right - left) / len(events) - 24, 1, 24)
             s.text(date_rows[0], x, y - 90, date_size, fill=s.accent if i == key else s.primary, start=at, dy=30)
             fs, rows = fit(e['label'], s.body, 40, 1500 / len(events), 2, 28)
+            plate = (right - left) / len(events) - 24
+            s.add('rect', s.appear(at, 20), x=x - plate / 2, y=y + 44, w=plate, h=60 + len(rows) * fs * 1.25, fill=mix(s.bg, s.primary, .10), radius=22, opacity=0, dy=20)
             for j, row in enumerate(rows):
                 s.text(row, x, y + 80 + j * fs * 1.25, fs, font=s.body, start=at + .1, dy=20, bold=False)
             s.sound('click', at)
@@ -496,6 +501,7 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
             for i, (it, v) in enumerate(zip(items, values)):
                 y = top + i * gap
                 at = .3 + i * .15 if i != key else E - md
+                s.add('rect', s.appear(.1 + i * .1, 20), x=150, y=y - 14, w=W - 300, h=88, fill=mix(s.bg, s.primary, .08), radius=26, opacity=0, dy=20)
                 s.text(it['label'], 180, y + 30, 46, font=s.body, anchor='lm', start=.15 + i * .1, bold=False)
                 length = room * v / biggest
                 s.add('rect', {'w': [[at, 0], [at + md if i != key else E, length]]}, x=640, y=y, w=0, h=60, fill=s.accent if i == key else s.primary, radius=10, opacity=1)

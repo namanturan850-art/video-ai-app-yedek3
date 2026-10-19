@@ -90,10 +90,23 @@ def install(root,git,node,npm):
         semantic(root,python)
 
 
+def gpu(root,python):
+    """NVIDIA kartı varsa CUDA'lı torch (RTX 50 serisi dahil, cu128): CLIP kontrolü işlemciye göre kat kat hızlanır."""
+    smi=shutil.which('nvidia-smi')
+    if not smi:return
+    try:
+        if not run([smi,'-L'],timeout=20).strip():return
+    except Exception:return
+    print('NVIDIA ekran kartı bulundu: CLIP için CUDA destekli torch kuruluyor…')
+    try:run([str(python),'-m','pip','install','--upgrade','--force-reinstall','--no-deps','torch','--index-url','https://download.pytorch.org/whl/cu128'],root)
+    except Exception as error:print('CUDA sürümü kurulamadı, işlemci sürümüyle devam edilir:',error)
+
+
 def semantic(root,python):
     if input('Yerel CLIP analizi için paketler (birkaç GB olabilir) ve yaklaşık 350 MB model indirilsin mi? (E/H; varsayılan H): ').strip().lower()!='e':return
     print('Ayrı ortamda semantik paketler ve doğrulanmış upstream CLIP modeli hazırlanıyor…')
     run([str(python),'-m','pip','install','torch','transformers','opencv-python-headless'],root)
+    gpu(root,python)
     code="""import hashlib,json,sys
 from pathlib import Path
 from huggingface_hub import snapshot_download

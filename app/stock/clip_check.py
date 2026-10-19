@@ -67,6 +67,7 @@ class ClipCheck:
                 for metric, value in result.get('metrics', {}).items():
                     if metric in ('text_vector_hits', 'text_vectors_encoded', 'image_vector_hits', 'image_vectors_encoded') and type(value) is int and value >= 0:
                         self.metrics[metric] = self.metrics.get(metric, 0) + value
+                if result.get('metrics', {}).get('device') in ('cpu', 'cuda'): self.metrics['device'] = result['metrics']['device']
                 for item in result.get('results', []):
                     if item.get('verdict') in ('match', 'mismatch', 'uncertain') and isinstance(item.get('score'), int):
                         out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin', 'conflict', 'setting_margin', 'setting_closest') if k in item}

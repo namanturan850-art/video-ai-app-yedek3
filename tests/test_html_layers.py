@@ -315,3 +315,15 @@ def test_plain_text_proposals_become_designed_layers_without_losing_odd_ones():
     assert '<b>' not in layers[0]['html'] and '&lt;b&gt;' in layers[0]['html']
     for layer in layers:
         sanitize(layer['html'], layer['css'])
+
+
+def test_designed_text_enters_word_by_word_and_underlines_the_key_word():
+    from app.motion.text_layers import design
+    from app.motion.html_layer import sanitize
+    html, css = design('vurgular', 'el sol calienta 28 grados la tierra', 4.0)
+    assert html.count("class='w ") == 6 and html.count(' hl') == 1 and "hl'>28<" in html
+    html, css = design('katmanlar', 'el aire frío baja desde las montañas', 4.0, 1)
+    assert "class='k r'" in html and 'montañas</span>' in html and "hl'>montañas" in html
+    for section in ('vurgular', 'katmanlar'):
+        for variant in (0, 1):
+            sanitize(*design(section, 'Dijo "hola" & <b>adiós</b>', 4.0, variant))

@@ -110,8 +110,9 @@ def draw_frame(scene, t, base, maps, pictures=None, actor_cache=None):
                 if image.mode=='RGBA':image.alpha_composite(patch,position)
                 else:image.paste(patch,position,patch)
             draw=ImageDraw.Draw(image,'RGBA');continue
-        if scene.get('_render_size') and kind=='text':
-            factor=image.width/W;p={**p,**{key:p[key]*factor for key in ('x','y','size','dy') if key in p}}
+        if scene.get('_render_size') and kind in ('text','rect','circle'):  # native-size drawing keeps the 1920x1080 coordinates
+            factor=image.width/W;scaled={'text':('x','y','size','dy'),'rect':('x','y','w','h','radius','dy'),'circle':('cx','cy','r','width')}[kind]
+            p={**p,**{key:p[key]*factor for key in scaled if key in p}}
         if kind == 'map':
             image.paste(maps[index].frame(p.get('zoom', 0)))
             view = map_view(maps[index].props, p.get('zoom', 0))

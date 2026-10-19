@@ -127,7 +127,7 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           NAMAN_MANUAL_IMPORT_REPORT: ${{ runner.temp }}/naman-manual-import-ui.json
-        run: python scripts/manual_import_browser_smoke.py
+        run: python scripts/ci_annotated_run.py "Manual import" -- python scripts/manual_import_browser_smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:

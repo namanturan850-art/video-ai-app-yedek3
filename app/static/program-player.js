@@ -1,6 +1,6 @@
 /* Bounded proxy scheduling and one continuous, muxed Program decoder. */
 (() => {
-  const PAUSED_RUNWAY_MAX=12;
+  const PAUSED_RUNWAY_MAX=20;
   class ProgramPlayer {
     static revision(revision,c){return JSON.stringify([revision,c.data.audio_settings,c.data.subtitle_version_id,c.data.stock_revision]);}
     constructor({video,c,getRevision,getMode,quality,onState}) {
@@ -134,7 +134,10 @@
       // An in-buffer seek or short stall keeps the browser's last frame; only a
       // stream that never produced a picture is hidden.
       this.video.hidden=!(this.active||this.shown);
-      const text=!this.active&&!this.running?'Önizleme hazırlanıyor · duraklatıldı':this.running&&!this.started?`Önizleme hazırlanıyor · ${Math.min(available,goal).toFixed(1)} / ${goal.toFixed(1)} sn · duraklatılabilir`:
+      // Preparation speed (seconds of work per second of video): >1 means slower than real time, so Play must wait.
+      const speed=this.ratios.length?` · hazırlık ${Math.max(...this.ratios.slice(-3)).toFixed(1)}× gerçek süre`:'';
+      const progress=`${Math.min(available,goal).toFixed(1)} / ${goal.toFixed(1)} sn`;
+      const text=!this.active&&!this.running?`Önizleme hazırlanıyor · duraklatıldı · ${progress}${speed}`:this.running&&!this.started?`Önizleme hazırlanıyor · ${progress} · duraklatılabilir${speed}`:
         `Kesintisiz proxy · ${this.video.videoWidth||0}×${this.video.videoHeight||0} · ${this.video.paused?'duraklatıldı':this.fps?this.fps.toFixed(1)+' fps':'30 fps hedefi'}`;
       this.onState({active:this.active,text});
     }

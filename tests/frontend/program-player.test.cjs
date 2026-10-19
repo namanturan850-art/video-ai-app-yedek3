@@ -120,7 +120,14 @@ test('paused monitor prepares the same runway Play needs on fast hardware',async
 test('paused preparation is capped so a slow machine is not buffered for minutes',async()=>{
   const {p,video,c}=setup();paused(c);p.ratios=[3];readySegments(c,p,video);
   await Object.getPrototypeOf(p).pump.call(p);
-  assert.equal(p.next,12);
+  assert.equal(p.next,20);
+});
+test('waiting text shows buffer progress and the measured preparation speed',()=>{
+  const {p,c}=setup();let shown='';p.onState=s=>{shown=s.text;};
+  p.ratios=[1.8];p.tick();
+  assert.match(shown,/\/ .* sn/);assert.match(shown,/hazırlık 1\.8× gerçek süre/);
+  c.controls.play.textContent='▶ Oynat';p.tick();
+  assert.match(shown,/duraklatıldı · .* \/ .* sn/);
 });
 test('Play after Pause resumes at once when the runway was prepared while paused',()=>{
   const {p,video,c}=setup();paused(c);video.ranges=[[0,8]];p.positioned=true;p.next=8;p.ratios=[.5];

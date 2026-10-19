@@ -49,3 +49,7 @@ data/.openmontage-*
 
 # Local Windows smoke report
 /windows-editor-report.json
+
+# User-supplied (commercial) fonts
+app/static/fonts/user/*
+!app/static/fonts/user/OKU_BENI.txt

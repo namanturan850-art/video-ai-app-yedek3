@@ -244,7 +244,9 @@ def prepare_html_layers(editorial,pid,payload,progress=None):
     if ready and any(isinstance(payload.get(k),list) and payload[k] for k in ('vurgular','katmanlar')):
         from app.motion.text_layers import convert
         known={s['scene_id']:s for s in editor.view(pid)['scenes']}
-        convert(payload,known,MAX_SECONDS)
+        try:language=editor.projects.get(pid).get('language') or 'en'
+        except Exception:language='en'
+        convert(payload,known,MAX_SECONDS,language)
     items=payload.get('html_katmanlari')
     if not isinstance(items,list) or not items:return 0
     scenes={s['scene_id']:s for s in editor.view(pid)['scenes']}

@@ -1,0 +1,8 @@
+Gilroy gibi kendi yazı tiplerinizi buraya koyun (ticari fontlar NAMAN ile dağıtılmaz).
+
+  Gilroy-Bold.ttf      -> başlıklar (kalın)
+  Gilroy-Light.ttf     -> ikinci satır (ince); yoksa Gilroy-Regular.ttf, o da yoksa Montserrat
+
+Dosyaları koyduktan sonra NAMAN'ı yeniden başlatın ve planı yeniden içe aktarın
+(yazı tipi önbellek anahtarına dahildir; yeni yazı tipiyle katmanlar yeniden çizilir).
+Windows'a ayrıca kurmanıza gerek yoktur.

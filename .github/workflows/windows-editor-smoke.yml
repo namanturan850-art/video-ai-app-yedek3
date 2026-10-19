@@ -44,12 +44,19 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
+          $done = $false
           foreach ($v in '7.1.1', '7.0.2', '6.1.1') {
-            choco install ffmpeg --version $v --force --no-progress -y 2>&1 | Out-Null
-            $version = (ffmpeg -version | Select-Object -First 1)
-            Write-Host "::notice title=FFmpeg $v::$version"
-            if ($version -match "version $([regex]::Escape($v))") { break }
+            foreach ($try in 1, 2) {
+              $log = choco install ffmpeg --version $v --force --no-progress -y 2>&1 | Out-String
+              $version = (ffmpeg -version | Select-Object -First 1)
+              if ($version -match "version $([regex]::Escape($v))") { $done = $true; break }
+              $tail = ($log -split "`n" | Select-Object -Last 3) -join ' | '
+              Write-Host "::warning title=FFmpeg $v try $try::$tail"
+            }
+            if ($done) { break }
           }
+          Write-Host "::notice title=FFmpeg in use::$version"
+          exit 0
       - name: CPU API SQLite FFmpeg checks
         run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py tests/test_preview_playback.py tests/test_continuous_preview.py tests/test_proxy_audio_state.py tests/test_source_timing.py tests/test_manual_jobs.py -q -rf --tb=short --junitxml=pytest-report.xml
       - name: Failed test summary

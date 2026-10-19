@@ -249,6 +249,22 @@ def _font(file, size, bold):
     return font
 
 
+def user_font(file, bold=True):
+    """Gilroy (put by the user into app/static/fonts/user/) replaces every kit font for motion graphics;
+    without those files nothing changes. The result is a path relative to the font folder."""
+    try:
+        from app.motion.fonts import BOLD_FAMILY, LIGHT_FAMILY, user_fonts
+        found = user_fonts()
+    except Exception:
+        return file
+    path = found.get(BOLD_FAMILY)
+    if not path:
+        return file
+    if not bold and LIGHT_FAMILY in found:
+        path = found[LIGHT_FAMILY]
+    return 'user/' + path.name
+
+
 def measure(text, file, size, bold=True):
     try:
         return _font(file, size, bold).getlength(text)
@@ -276,12 +292,14 @@ class Scene:
         self.md = min(.6, float(kit.get('motion_duration', .6)))
         p = kit['palette']
         self.bg, self.primary, self.accent, self.fg = p['background'], p['primary'], p['accent'], p['text']
-        self.head = FONTS[kit.get('heading_font', 'montserrat')][1]
-        self.body = FONTS[kit.get('body_font', 'inter')][1]
+        self.head = user_font(FONTS[kit.get('heading_font', 'montserrat')][1])
+        self.body = user_font(FONTS[kit.get('body_font', 'inter')][1])
         self.ease = kit.get('easing', 'smooth')
         self.elements, self.sfx = [], []
 
     def add(self, kind, tracks=None, **props):
+        if props.get('font') and str(props['font']).startswith('user/'):
+            props['font'] = user_font(props['font'], props.get('bold', True))  # light text uses Gilroy Light when present
         self.elements.append({'type': kind, 'props': props, 'tracks': tracks or {}})
         return self.elements[-1]
 
@@ -390,11 +408,16 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
                           'scale': [[E, 1], [E + .15, 1.08], [E + .35, 1]]},
               target=d['value'], x=W / 2, y=440, size=size, font=s.head, fill=s.accent, anchor='mm', bold=True, opacity=0, language=language,
               from_year=bool(re.fullmatch(r'1\d{3}|20\d{2}', match.group(2))) and not match.group(3).strip())
-        s.add('rect', {'w': [[E - .05, 0], [E + md, 520]], 'x': [[E - .05, W / 2], [E + md, W / 2 - 260]]}, x=W / 2, y=620, w=0, h=10, fill=s.accent, opacity=1)
+        s.add('rect', {'w': [[E - .05, 0], [E + md, 520]], 'x': [[E - .05, W / 2], [E + md, W / 2 - 260]]}, x=W / 2, y=620, w=0, h=10, fill=s.accent, radius=5, opacity=1)
+        # Four corner brackets frame the figure (the same language as the glass cards of the text layers).
+        left, right, up, down, arm = 330, W - 330, 190, 890, 70
+        for sx, sy, px, py in ((left, up, 1, 1), (right, up, -1, 1), (left, down, 1, -1), (right, down, -1, -1)):
+            for x2, y2 in ((sx + px * arm, sy), (sx, sy + py * arm)):
+                s.add('line', s.appear(.15, 0), x1=sx, y1=sy, x2=x2, y2=y2, stroke=s.accent, width=6, opacity=0)
         if d['label']:
-            fs, rows = fit(d['label'], s.body, 66, 1500, 2, 40)
+            fs, rows = fit(d['label'], s.body, 66, 1300, 2, 40)
             for i, row in enumerate(rows):
-                s.text(row, W / 2, 720 + i * fs * 1.25, fs, font=s.body, start=.15 + i * .1, bold=False)
+                s.text(row, W / 2, 740 + i * fs * 1.25, fs, font=s.body, start=.15 + i * .1, bold=False)
         s.sound('rise', E - .9); s.sound('hit', E)
     elif t == 'map':
         span_from, span_to = 140., 46.
@@ -492,23 +515,35 @@ def _build(spec, kit, duration, emphasis_offset, language='de'):
             s.add('circle', {'r': [[.4, 0], [.4 + md, 70]]}, cx=W / 2, cy=540, r=0, fill=s.accent, opacity=1)
             s.text('VS', W / 2, 540, 60, fill=s.bg, start=.4 + md * .5, dy=0)
             s.sound('hit', E)
-    else:  # list
+    else:  # list: editorial title with an accent bar + one glass row per item, numbered
         items, title = d['items'], d.get('title')
-        top = 200 if title else 260
+        glass, count = mix(s.bg, s.primary, .10), len(items)
+        top = 190 if title else 150
+        title_size, title_rows = fit(title, s.head, 88, W - 480, 2, 40) if title else (0, [])
+        rise = (len(title_rows) - 1) * title_size * 1.15 if title else 0
+        first = top + rise + 170 if title else 300
+        gap = min(160, (H - 110 - first) / max(1, count))
+        row_h = min(128, gap - 22)
+        # The whole block (title + rows) sits in the vertical middle of the frame.
+        shift = max(0., (H - ((first + (count - 1) * gap + row_h / 2) - (top - 80))) / 2 - (top - 80))
+        top, first = top + shift, first + shift
         if title:
-            title_size, title_rows = fit(title, s.head, 84, W - 400, 2, 38)
             for i, row in enumerate(title_rows):
-                s.text(row, 200, top + i * title_size * 1.15, title_size, anchor='lm', start=.1 + i * .05, fill=s.primary)
-            top += (len(title_rows) - 1) * title_size * 1.15
+                s.text(row, 250, top + i * title_size * 1.15, title_size, anchor='lm', start=.1 + i * .05, fill=s.fg)
+            s.add('rect', {'h': [[.05, 0], [.05 + md, title_size * 1.2 + rise]]}, x=190, y=top - title_size * .6, w=14, h=0, fill=s.accent, radius=7, opacity=1)
         target = spec.get('emphasis', '')
         key = next((i for i, it in enumerate(items) if target and target in it), len(items) - 1)
-        gap = 175
         for i, it in enumerate(items):
-            y = top + 160 + i * gap
+            y = first + i * gap
             at = E if i == key else .3 + (E - .3) * i / max(1, key) if i < key else E + (i - key) * .35
-            s.add('rect', s.appear(at, 0), x=200, y=y - 22, w=44, h=44, fill=s.accent if i == key else s.primary, radius=8, opacity=0)
-            fs, rows = fit(it, s.body, 72, 1400, 1, 40)
-            s.text(rows[0], 290, y, fs, font=s.body, anchor='lm', start=at, dy=30, fill=s.accent if i == key else s.fg, bold=i == key)
+            at = min(at, max(.3, D - 2.6))
+            hot = i == key
+            s.add('rect', s.appear(at, 30), x=250, y=y - row_h / 2, w=1420, h=row_h, fill=mix(s.bg, s.accent, .20) if hot else glass, radius=24, opacity=0, dy=30)
+            s.add('rect', s.appear(at, 30), x=250, y=y - row_h / 2 + 14, w=8, h=row_h - 28, fill=s.accent if hot else mix(s.bg, s.primary, .45), radius=4, opacity=0, dy=30)
+            s.add('circle', {'r': [[at, 0], [at + md * .6, row_h * .30], [at + md, row_h * .26]]}, cx=330, cy=y, r=0, fill=s.accent if hot else mix(s.bg, s.primary, .22), opacity=1)
+            s.text(str(i + 1), 330, y, row_h * .32, start=at + md * .5, dy=0, fill=s.bg if hot else s.fg)
+            fs, rows = fit(it, s.body, 66, 1180, 1, 38)
+            s.text(rows[0], 400, y, fs, font=s.body, anchor='lm', start=at, dy=30, fill=s.accent if hot else s.fg, bold=hot)
             s.sound('click', at)
     return s.result()
 

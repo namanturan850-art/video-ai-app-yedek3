@@ -178,3 +178,27 @@ def test_render_anchors_motion_to_the_spoken_word_and_mixes_kit_sounds_under_the
         image = Image.open(frame).convert('RGB')
         accent = tuple(int(DEFAULT_STYLE['palette']['accent'][i:i + 2], 16) for i in (1, 3, 5))
         assert sum(1 for x in range(0, 1920, 8) for y in range(0, 1080, 8) if sum(abs(a - b) for a, b in zip(image.getpixel((x, y)), accent)) < 60) > 50
+
+
+def test_list_and_stat_use_the_designed_cards_not_plain_text():
+    listing = build(validate(SPECS['list'], NARRATION), DEFAULT_STYLE, 8.0, 4.0, 'de')
+    kinds = [e['type'] for e in listing['elements']]
+    assert kinds.count('circle') == 3  # one numbered badge per item
+    assert sum(1 for e in listing['elements'] if e['type'] == 'rect' and e['props'].get('radius', 0) >= 20) == 3  # glass rows
+    assert [e['props']['text'] for e in listing['elements'] if e['type'] == 'text'][:1] == ['Ursachen']
+    stat = build(validate(SPECS['stat'], NARRATION), DEFAULT_STYLE, 6.0, 3.0, 'de')
+    assert sum(1 for e in stat['elements'] if e['type'] == 'line') == 8  # four corner brackets, two arms each
+
+
+def test_user_gilroy_replaces_the_kit_fonts_of_every_template(tmp_path, monkeypatch):
+    from app.motion import fonts
+    monkeypatch.setattr(fonts, 'USER_DIR', tmp_path)
+    before = build(validate(SPECS['list'], NARRATION), DEFAULT_STYLE, 8.0, 4.0, 'de')
+    assert not any(str(e['props'].get('font', '')).startswith('user/') for e in before['elements'])
+    (tmp_path / 'Gilroy-Bold.ttf').write_bytes(b'\x00\x01\x00\x00bold')
+    (tmp_path / 'Gilroy-Light.ttf').write_bytes(b'\x00\x01\x00\x00light')
+    after = build(validate(SPECS['list'], NARRATION), DEFAULT_STYLE, 8.0, 4.0, 'de')
+    used = {e['props']['font'] for e in after['elements'] if e['type'] == 'text'}
+    assert used <= {'user/Gilroy-Bold.ttf', 'user/Gilroy-Light.ttf'} and 'user/Gilroy-Bold.ttf' in used
+    light = {e['props']['text'] for e in after['elements'] if e['type'] == 'text' and e['props']['font'] == 'user/Gilroy-Light.ttf'}
+    assert 'Stürme' in light  # a non-highlighted item is light, the highlighted one stays bold

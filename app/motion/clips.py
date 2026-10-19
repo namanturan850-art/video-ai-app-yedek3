@@ -35,6 +35,7 @@ def for_remotion(scene, public):
     for element in scene['elements']:
         file = element['props'].get('font')
         if file and file not in families and (templates.FONT_DIR / file).is_file():
+            (public / file).parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(templates.FONT_DIR / file, public / file)
             families[file] = 'AVS' + Path(file).stem.replace('-', '')
         if element['type'] == 'counter':

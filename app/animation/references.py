@@ -3,7 +3,7 @@
 Each scene's narration is matched to a visual *purpose* (data, map, timeline,
 comparison, process, nature). Scenes without a clear purpose get no reference:
 not every sentence needs an animation. For a purpose the package carries the
-matching NAMAN design ideas and at most two short, URL-free prompt excerpts that
+matching NAMAN design ideas and a few short, URL-free prompt excerpts that
 NAMAN can actually realise (CSS/SVG first; Three.js/WebGL references are never
 offered). Selection is local and deterministic; no source video, URL or
 executable code is sent to the AI.
@@ -14,8 +14,8 @@ from pathlib import Path
 import re
 
 DOCS = Path(__file__).resolve().parents[2] / 'docs'
-PER_SCENE = 2
-PACKAGE_LIMIT = 40
+PER_SCENE = 4
+PACKAGE_LIMIT = 120
 
 # Purpose -> narration terms (tr/en/de/fr/es stems), catalog groups, NAMAN idea ids.
 # Order matters: the first matching purpose is the scene's main purpose.

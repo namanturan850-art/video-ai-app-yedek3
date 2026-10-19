@@ -318,7 +318,7 @@ def build(spec, kit, duration, emphasis_offset, language='de'):
             if not 1/30<=duration<=30 or obj['start']>= (obj['end'] if obj['end'] is not None else duration) or (obj['end'] or duration)>duration+1e-6 or any(k['time']>duration+1e-6 for k in obj['keyframes']):
                 raise ValueError(f"{obj['id']}: animasyon nesnesi/keyframe zamanı sahneyi aşıyor.")
         if any(k['time']>duration+1e-6 for k in data['camera']['keyframes']):raise ValueError('Kamera zamanı sahneyi aşıyor.')
-        return animation_scene(data,kit,duration)
+        return animation_scene(data,kit,duration,language)
     from app.motion.layouts import arrange
     if spec.get('clean_source'):return keep_text_safe(_build(spec,kit,duration,emphasis_offset,language))
     return keep_text_safe(arrange(_build(spec, kit, duration, emphasis_offset, language), spec, kit))

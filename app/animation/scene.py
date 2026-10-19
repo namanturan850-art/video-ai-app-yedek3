@@ -22,15 +22,25 @@ def at(edit,t):
     return result
 
 
-def build(data,kit,duration):
+NOTICES={
+    'tr':{'demo':'DEMO — temsili veriler','schematic':'ŞEMATİK ANLATIM — fizik simülasyonu değildir','narration':'VERİLER: PROJE ANLATIMI','sketch':'ŞEMATİK'},
+    'en':{'demo':'DEMO — illustrative data','schematic':'SCHEMATIC — not a physics simulation','narration':'DATA: FROM THE NARRATION','sketch':'SCHEMATIC'},
+    'de':{'demo':'DEMO — Beispieldaten','schematic':'SCHEMATISCH — keine Physiksimulation','narration':'DATEN: AUS DEM SPRECHTEXT','sketch':'SCHEMATISCH'},
+    'fr':{'demo':'DÉMO — données illustratives','schematic':'SCHÉMA — pas une simulation physique','narration':'DONNÉES : ISSUES DU COMMENTAIRE','sketch':'SCHÉMATIQUE'},
+    'es':{'demo':'DEMO — datos ilustrativos','schematic':'ESQUEMA — no es una simulación física','narration':'DATOS: DEL RELATO','sketch':'ESQUEMÁTICO'},
+}
+
+
+def build(data,kit,duration,language='de'):
     from app.motion.templates import Scene
     # The importer/AdvancedEditor validated context and local keyframe bounds.
     s=Scene(kit,duration,0);s.ease='linear'
     for obj in sorted(data['objects'],key=lambda a:a['layer']):
         s.add('documentary_object',object=obj,label=obj['id']+' · '+obj['kind'],camera=data['camera'],duration=s.D,x=obj['x'],y=obj['y'],opacity=1,
               fill=obj['color'],stroke=obj['stroke'],font=s.body)
-    notice={'demo':'DEMO — temsili veriler','schematic':'ŞEMATİK ANLATIM — fizik simülasyonu değildir','narration':'VERİLER: PROJE ANLATIMI'}[data['basis']]
-    if data['basis']=='narration' and any(o['kind'] in ('cloud','flow','lightning','wave','particles') for o in data['objects']):notice+=' · ŞEMATİK'
+    words=NOTICES.get(language) or NOTICES['en']
+    notice=words[data['basis']]
+    if data['basis']=='narration' and any(o['kind'] in ('cloud','flow','lightning','wave','particles') for o in data['objects']):notice+=' · '+words['sketch']
     s.add('text',text=notice,x=960,y=64,size=24,font=s.body,fill='#FFFFFF',anchor='mm',opacity=1,
           shadow=True,required_notice=True)
     result=s.result();result.update(background=data['background'] or '#000000',alpha=data['background'] is None,

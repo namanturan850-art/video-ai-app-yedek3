@@ -170,7 +170,8 @@ def test_reference_selection_uses_purposes_skips_3d_and_caps_the_package():
              'Und dann ging er nach Hause.'] * 12
     result = select_techniques([{'scene_id': f's{i}', 'text': t, 'start': i, 'end': i + 1} for i, t in enumerate(texts)])
     refs = [r for s in result['scenes'] for r in s['references']]
-    assert len(refs) <= 40 and all(r['renderable'] != 'unsupported_3d' for r in refs)
+    from app.animation.references import PACKAGE_LIMIT
+    assert len(refs) <= PACKAGE_LIMIT and all(r['renderable'] != 'unsupported_3d' for r in refs)
     assert all(excerpts()[r['reference_id']]['renderable'] == r['renderable'] for r in refs)
     assert [s['purpose'] for s in result['scenes'][:4]] == ['İnfografik', 'Coğrafya', 'Zaman çizelgesi', None]
     assert result['scenes'][3]['references'] == [] and result['scenes'][3]['ideas'] == []

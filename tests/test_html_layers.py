@@ -317,16 +317,24 @@ def test_plain_text_proposals_become_designed_layers_without_losing_odd_ones():
         sanitize(layer['html'], layer['css'])
 
 
-def test_designed_text_enters_word_by_word_and_underlines_the_key_word():
+def test_designed_text_splits_headline_highlights_key_word_and_labels_the_category():
     from app.motion.text_layers import design
-    from app.motion.html_layer import sanitize
-    html, css = design('vurgular', 'el sol calienta 28 grados la tierra', 4.0)
-    assert html.count("class='w ") == 7 and html.count(' hl') == 1 and "hl'>28<" in html
-    html, css = design('katmanlar', 'el aire frío baja desde las montañas', 4.0, 1)
-    assert 'right:0' in css and "hl'>montañas" in html
-    for section in ('vurgular', 'katmanlar'):
-        for variant in (0, 1):
-            sanitize(*design(section, 'Dijo "hola" & <b>adiós</b>', 4.0, variant))
+    html, css = design('vurgular', 'el sol calienta 28 grados la tierra', 4.0, 0, 'es')
+    assert html.count("class='w ") == 7 and "hl'>28<" in html and "class='sub'" in html and "class='hd'" in html
+    html, _ = design('katmanlar', 'Der Fluss bildet die Grenze zur Stadt.', 4.0, 0, 'de')
+    assert 'GEOGRAFIE' in html
+    html, _ = design('katmanlar', 'La temperatura sube con el calor del día', 4.0, 0, 'xx')
+    assert 'NATURE' in html
+    html, _ = design('vurgular', 'Y entonces se fue a casa sin decir nada más', 4.0, 0, 'es')
+    assert 'class=\'kick\'' not in html
+
+
+def test_place_and_date_sentences_get_the_pin_card():
+    from app.motion.text_layers import design
+    html, css = design('vurgular', 'Roma, año 1871', 4.0, 1, 'es')
+    assert "class='pin'" in html and 'Roma' in html and 'año 1871' in html
+    html, _ = design('vurgular', 'El sol calienta la tierra más rápido', 4.0, 1, 'es')
+    assert "class='pin'" not in html and "class='g'" in html
 
 
 def test_every_text_variant_passes_the_sanitizer_and_teletype_falls_back_for_long_text():
@@ -334,9 +342,22 @@ def test_every_text_variant_passes_the_sanitizer_and_teletype_falls_back_for_lon
     from app.motion.html_layer import sanitize
     for section, names in VARIANTS.items():
         for variant in range(len(names) + 1):
-            for text in ('28 grados', 'el sol calienta la tierra más rápido que el agua', 'Dijo "hola" & <b>adiós</b>', 'x' * 150):
-                sanitize(*design(section, text, 4.0, variant))
+            for text in ('28 grados', 'el sol calienta la tierra más rápido que el agua', 'Dijo "hola" & <b>adiós</b>', 'x' * 150, 'Roma, año 1871'):
+                sanitize(*design(section, text, 4.0, variant, 'es'))
     html, _ = design('katmanlar', 'y' * 80, 4.0, 2)
-    assert "class='ty'" not in html and "class='k'" in html
+    assert "class='ty'" not in html and "class='e'" in html
     html, _ = design('katmanlar', 'corto y claro', 4.0, 2)
     assert "class='ty'" in html
+
+
+def test_user_fonts_are_embedded_and_change_the_layer_cache_key(tmp_path, monkeypatch):
+    from app.motion import fonts, html_layer
+    monkeypatch.setattr(fonts, 'USER_DIR', tmp_path)
+    before = html_layer.layer_key({'html': '<div>a</div>'}, 2.0)
+    assert 'NamanBold' not in fonts.font_css() and "font-family:'Montserrat'" in fonts.font_css()
+    (tmp_path / 'Gilroy-Bold.ttf').write_bytes(b'\x00\x01\x00\x00fake-bold')
+    (tmp_path / 'Gilroy-Light.otf').write_bytes(b'OTTOfake-light')
+    css = fonts.font_css()
+    assert "font-family:'NamanBold'" in css and "font-family:'NamanLight'" in css and 'format(\'opentype\')' in css
+    assert html_layer.layer_key({'html': '<div>a</div>'}, 2.0) != before
+

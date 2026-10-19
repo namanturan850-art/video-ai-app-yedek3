@@ -213,8 +213,9 @@ def frames_for(duration):
 
 
 def layer_key(data, duration):
+    from app.motion.fonts import signature
     identity = {'v': VERSION, 'html': data['html'], 'css': data.get('css', ''), 'frames': frames_for(duration),
-                'size': [WIDTH, HEIGHT]}
+                'size': [WIDTH, HEIGHT], 'fonts': signature()}
     return sha256(json.dumps(identity, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
@@ -303,8 +304,9 @@ def render(bridge, folder, data, duration, ffmpeg, *, runner=None, progress=lamb
     staging.mkdir()
     frames_dir.mkdir()
     try:
-        (staging / 'props.json').write_text(json.dumps({'html': data['html'], 'css': data.get('css', ''), 'frames': frames},
-                                                       ensure_ascii=False), encoding='utf-8')
+        from app.motion.fonts import font_css
+        (staging / 'props.json').write_text(json.dumps({'html': data['html'], 'css': data.get('css', ''), 'frames': frames,
+                                                        'fonts': font_css()}, ensure_ascii=False), encoding='utf-8')
         shutil.copyfile(Path(__file__).with_name('html_layer.tsx'), staging / 'index.tsx')
         bridge.call('html_layer', {'entry': str(staging / 'index.tsx'), 'props_path': str(staging / 'props.json'),
                                    'output_dir': str(frames_dir), 'frames': frames}, cache, runner=runner, progress=progress)

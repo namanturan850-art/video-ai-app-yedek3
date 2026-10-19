@@ -26,7 +26,8 @@ def test_300_reference_selection_matches_scenes_without_copying_sources():
     result=select_techniques(scenes)
     assert result==select_techniques(scenes) and result['catalog_count']==300
     assert [next(iter(s['reason'])) for s in result['scenes']]==['Bilimsel/doğa','İnfografik','Coğrafya']
-    assert all(1<=len(s['references'])<=3 for s in result['scenes'])
+    from app.animation.references import PER_SCENE
+    assert all(1<=len(s['references'])<=PER_SCENE for s in result['scenes'])
     encoded=json.dumps(result)
     assert 'https://' not in encoded and 'prompt_sha256' not in encoded
     assert len({s['references'][0]['reference_id'] for s in result['scenes']})>=2

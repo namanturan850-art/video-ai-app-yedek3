@@ -297,7 +297,7 @@ def render(bridge, folder, data, duration, ffmpeg, *, runner=None, progress=lamb
         raise RenderError('openmontage_path', 'OpenMontage proje klasörü güvenli değil.')
     parent.mkdir(exist_ok=True)
     staging = parent / ('naman-html-' + uuid4().hex)
-    frames_dir = cache / ('.frames-' + uuid4().hex)
+    frames_dir = cache / ('frames-' + uuid4().hex)
     temporary = cache / ('.html-' + uuid4().hex + '.mov')
     frames = frames_for(duration)
     staging.mkdir()

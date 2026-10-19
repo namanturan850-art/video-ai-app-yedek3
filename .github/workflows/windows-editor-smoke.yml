@@ -67,14 +67,17 @@ jobs:
         env:
           # `runner` is not available in job-level env, only in step-level env.
           NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-playback-results.json
-        run: python scripts/preview_playback_browser_smoke.py
+          # Playwright's bundled Chromium has no H.264; the installed Chrome (like WebView2) does.
+          NAMAN_BROWSER_EXECUTABLE: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        run: python scripts/ci_annotated_run.py "Cold-cache playback" -- python scripts/preview_playback_browser_smoke.py
       - name: Real video sources at 720p
         if: ${{ !cancelled() }}
         env:
           NAMAN_PLAYBACK_SECONDS: '12'
           NAMAN_PLAYBACK_REAL_VIDEOS: '1'
           NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-real720.json
-        run: python scripts/preview_playback_browser_smoke.py
+          NAMAN_BROWSER_EXECUTABLE: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        run: python scripts/ci_annotated_run.py "Real video 720p" -- python scripts/preview_playback_browser_smoke.py
       - name: Real video sources at 1080p
         if: ${{ !cancelled() }}
         env:
@@ -82,7 +85,8 @@ jobs:
           NAMAN_PLAYBACK_REAL_VIDEOS: '1'
           NAMAN_PLAYBACK_QUALITY: full
           NAMAN_PLAYBACK_REPORT: ${{ runner.temp }}/naman-real1080.json
-        run: python scripts/preview_playback_browser_smoke.py
+          NAMAN_BROWSER_EXECUTABLE: 'C:\Program Files\Google\Chrome\Application\chrome.exe'
+        run: python scripts/ci_annotated_run.py "Real video 1080p" -- python scripts/preview_playback_browser_smoke.py
       - name: Large JSON file and explicit draft approval
         if: ${{ !cancelled() }}
         env:

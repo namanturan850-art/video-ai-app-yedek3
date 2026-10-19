@@ -114,6 +114,8 @@ def legacy_item(section,item,package):
 
 
 def correction(issues):
+    # Already-present items are kept as they are; asking the AI to resend them only adds noise.
+    issues=[i for i in issues if i.get('category')!='duplicate']
     if not issues:return ''
     return ('NAMAN bu işlemleri uygulamadı. Geçerli öneriler taslakta korundu. '
             'Aşağıdaki işlemleri düzeltip yalnız düzeltilen önerileri output_template biçiminde gönderin. '

@@ -102,6 +102,11 @@ DATA={'cloud':Cloud,'flow':Path,'arrow':Path,'line':Path,'lightning':Lightning,'
       'box':Empty,'circle':Empty,'isometric_box':Empty}
 
 
+PATH_KINDS=('flow','arrow','line')
+PATH_HINT=('arrow/flow/line nesnelerinde data.points zorunludur: en az iki {"x":..,"y":..} noktası; koordinatlar nesnenin x,y konumuna göre '
+           'ofsettir. Örnek: "data":{"points":[{"x":-300,"y":0},{"x":300,"y":0}],"speed":160}.')
+
+
 class Actor(Strict):
     id: str=Field(min_length=1,max_length=80,pattern=r'^[A-Za-z0-9_-]+$')
     kind: Literal['cloud','flow','arrow','line','lightning','bar_chart','line_chart','label','node','counter','wave','particles','box','circle','isometric_box']
@@ -122,12 +127,33 @@ class Actor(Strict):
     keyframes: list[Key]=Field(default_factory=list,max_length=64)
     data: dict=Field(default_factory=dict)
 
+    @model_validator(mode='before')
+    @classmethod
+    def default_points(cls,value):
+        # Outside AI often omits data.points on arrows/flows. The object already says
+        # how long it is (width/height) and where it points (rotation), so derive a
+        # straight path instead of rejecting a scene that is otherwise valid.
+        if isinstance(value,dict) and value.get('kind') in PATH_KINDS:
+            data=value.get('data')
+            if data is None:data={}
+            if isinstance(data,dict) and 'points' not in data:
+                try:
+                    length=max(float(value.get('width',320)),float(value.get('height',180)))
+                    length=min(max(length,8),1800)
+                except (TypeError,ValueError):return value
+                half=round(length/2,1)
+                value={**value,'data':{**data,'points':[{'x':-half,'y':0},{'x':half,'y':0}]}}
+        return value
+
     @model_validator(mode='after')
     def valid(self):
         if len({(k.property,k.time) for k in self.keyframes})!=len(self.keyframes):raise ValueError('Yinelenen nesne keyframe zamanı.')
         if self.end is not None and self.end<=self.start:raise ValueError('Nesne bitişi başlangıçtan sonra olmalıdır.')
         try:self.data=DATA[self.kind].model_validate(self.data).model_dump()
-        except ValidationError as error:raise ValueError(f'{self.id}/{self.kind}: '+validation_text(error)) from None
+        except ValidationError as error:
+            text=validation_text(error)
+            if self.kind in PATH_KINDS and 'points' in text:text+=' '+PATH_HINT
+            raise ValueError(f'{self.id}/{self.kind}: '+text) from None
         return self
 
 

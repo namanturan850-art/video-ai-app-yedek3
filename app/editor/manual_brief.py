@@ -58,7 +58,25 @@ def references_text(package):
             lines.append(f"- Referans {ref['reference_id']} «{ref['title']}» — {ref['how_to_use']}\n  Özet: {ref['excerpt']}")
     if len(lines) == 1 + len(selection.get('rules', [])):
         lines.append('\n(Bu senaryoda belirgin animasyon amacı bulunmadı; animasyon eklemek zorunlu değil.)')
+    lines.append(catalog_text())
     return '\n'.join(lines)
+
+
+def catalog_text():
+    """One short line per reviewed reference so the AI can see all 300, not just the selected ones."""
+    from app.animation.references import catalog, excerpts
+    texts = excerpts()
+    rows = []
+    for ref in catalog():
+        status = texts.get(ref['id'], {}).get('renderable', 'idea')
+        if status == 'unsupported_3d':
+            continue
+        title = ' '.join(str(ref.get('title', '')).split())[:70]
+        rows.append(f"- {ref['id']} · {ref.get('catalog_theme', '')} · {status} · {title}")
+    return (f'\n### TÜM REFERANS KATALOĞU ({len(rows)} uygulanabilir referans; 3D/WebGL olanlar listelenmedi)\n'
+            'Yukarıda sahnelere göre ayrıntılı seçilenler var. Aşağıdaki liste kataloğun tamamıdır: sahneye daha uygun bir '
+            'teknik görürsen kimliğini (ilk sütun) kullanarak o tekniği uyarlayabilirsin. Yalnız ilhamdır; kaynak içeriği kopyalama.\n'
+            + '\n'.join(rows))
 
 
 DENSITY_PER_MINUTE = (5, 8)

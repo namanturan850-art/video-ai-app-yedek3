@@ -207,6 +207,13 @@ class Editorial:
                         raise EditorError('duplicate_motion','Bu animasyon zaten temel medya yuvasında. Aynı öğe ikinci kez eklenmedi.')
                 else:
                     clip['text']=item['text'];duration=end-start
+                    # An unstyled white line over footage looks amateur. Give AI-proposed text a
+                    # readable broadcast look; every field stays editable in the inspector.
+                    fade=round(min(.35,duration*.25),3)
+                    clip.update(font='montserrat',font_weight='bold',color='#FFFFFF',text_background='#0C0E12',background_opacity=.72,
+                                text_width=.62,fade_in=fade,fade_out=fade,
+                                font_size=60 if section=='vurgular' else 52,
+                                transform={'y':-170 if section=='vurgular' else 250})
                     if item.get('effect')=='pulse':clip['keyframes']=[{'property':'scale','time':0.,'value':1.},{'property':'scale','time':duration*.2,'value':1.08},{'property':'scale','time':duration*.5,'value':1.}]
                     if item.get('effect')=='glitch':clip['keyframes']=[{'property':'x','time':0.,'value':0.},{'property':'x','time':duration*.1,'value':8.},{'property':'x','time':duration*.2,'value':-6.},{'property':'x','time':duration*.3,'value':0.}]
                 clips.append(clip)

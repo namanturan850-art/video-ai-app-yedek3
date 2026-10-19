@@ -38,7 +38,10 @@ def _words(text):
     return html, delays, .3 + len(words) * step
 
 
-FONT = 'font-family:Arial,Helvetica,sans-serif;color:#fff'
+# Gilroy is a commercial font, so it is not bundled. If the user installs Gilroy Bold in Windows the
+# layers use it; otherwise Montserrat (similar geometric look) or Arial is used.
+FAMILY = "Gilroy,'Gilroy Bold','Gilroy-Bold',Montserrat,Arial,Helvetica,sans-serif"
+FONT = f'font-family:{FAMILY};color:#fff'
 FRAMES = ('@keyframes wordin{from{opacity:0;transform:translateY(34px);filter:blur(10px)}to{opacity:1;transform:none;filter:blur(0)}}'
           '@keyframes sweep{from{background-size:0% .09em}to{background-size:100% .09em}}'
           '@keyframes fade{from{opacity:1}to{opacity:0}}')
@@ -55,7 +58,7 @@ def _statement(text, words, leave):
     return (f"<div class='v'><span class='bar'></span><span class='t'>{words}</span></div>",
             f".v{{position:absolute;left:150px;top:300px;width:1180px;padding-left:40px;{FONT};animation:fade .5s ease-in {leave}s forwards}}"
             f".bar{{position:absolute;left:0;top:8px;bottom:8px;width:9px;background:{ACCENT};box-shadow:0 0 24px rgba(242,140,40,.55);transform-origin:0 0;animation:bar .7s ease-out .05s both}}"
-            f".t{{display:block;font-size:{size}px;font-weight:800;line-height:1.14;letter-spacing:-1px;text-shadow:0 4px 26px rgba(0,0,0,.7)}}"
+            f".t{{display:block;font-size:{size}px;font-weight:700;line-height:1.14;letter-spacing:-1px;text-shadow:0 4px 26px rgba(0,0,0,.7)}}"
             '@keyframes bar{from{transform:scaleY(0)}to{transform:scaleY(1)}}')
 
 
@@ -65,7 +68,7 @@ def _card(text, words, leave):
             f".c{{position:absolute;left:260px;top:330px;width:1400px;text-align:center;{FONT};animation:fade .5s ease-in {leave}s forwards}}"
             f".top,.bottom{{display:block;height:4px;margin:0 auto;width:0;background:{ACCENT};animation:rule .8s ease-out .1s both}}"
             ".top{margin-bottom:34px}.bottom{margin-top:34px;animation-delay:.3s}"
-            f".t{{display:block;font-size:{size}px;font-weight:800;line-height:1.14;letter-spacing:-1px;text-shadow:0 4px 28px rgba(0,0,0,.75)}}"
+            f".t{{display:block;font-size:{size}px;font-weight:700;line-height:1.14;letter-spacing:-1px;text-shadow:0 4px 28px rgba(0,0,0,.75)}}"
             '@keyframes rule{from{width:0}to{width:260px}}')
 
 
@@ -89,7 +92,7 @@ def _marker(text, words, leave, settle):
     paint = f'{settle + .05:.2f}'
     return (f"<div class='m'><span class='t'>{words}</span></div>",
             f".m{{position:absolute;left:150px;top:310px;width:1250px;{FONT};animation:fade .5s ease-in {leave}s forwards}}"
-            f".t{{display:block;font-size:{size}px;font-weight:800;line-height:1.2;text-shadow:0 4px 24px rgba(0,0,0,.65)}}"
+            f".t{{display:block;font-size:{size}px;font-weight:700;line-height:1.2;text-shadow:0 4px 24px rgba(0,0,0,.65)}}"
             f".hl{{background:linear-gradient(#FFD23F,#FFD23F) no-repeat 0 60%/0% 82%;color:#fff;"
             f"animation:wordin .65s cubic-bezier(.2,.8,.2,1) both,paint .6s cubic-bezier(.4,0,.2,1) {paint}s forwards}}"
             '@keyframes paint{0%{background-size:0% 82%;color:#fff}45%{color:#fff}100%{background-size:100% 82%;color:#15171C}}')
@@ -102,7 +105,7 @@ def _block(text, leave):
     return (f"<div class='b'><span class='rv'><span class='rt'>{safe}</span><span class='rb'></span></span></div>",
             f".b{{position:absolute;left:150px;top:320px;width:1300px;{FONT};animation:fade .5s ease-in {leave}s forwards}}"
             ".rv{display:inline-block;position:relative;overflow:hidden;max-width:1300px;padding:6px 6px 10px 0}"
-            f".rt{{display:block;font-size:{size}px;font-weight:800;line-height:1.16;text-shadow:0 4px 24px rgba(0,0,0,.65);opacity:0;animation:show .01s linear .5s forwards}}"
+            f".rt{{display:block;font-size:{size}px;font-weight:700;line-height:1.16;text-shadow:0 4px 24px rgba(0,0,0,.65);opacity:0;animation:show .01s linear .5s forwards}}"
             f".rb{{position:absolute;left:0;top:0;right:0;bottom:0;background:{ACCENT};transform:translateX(-101%);animation:pass 1.1s cubic-bezier(.7,0,.2,1) .1s forwards}}"
             '@keyframes pass{0%{transform:translateX(-101%)}45%{transform:translateX(0)}100%{transform:translateX(101%)}}'
             '@keyframes show{from{opacity:0}to{opacity:1}}')

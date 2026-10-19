@@ -45,7 +45,7 @@
       this.sourceBuffer=null;this.source=null;this.positioned=false;this.started=false;this.active=false;
       this.video.pause();this.video.removeAttribute('src');this.video.load();
       if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.objectUrl=null;
-      this.anchor=Math.floor(time/4)*4;this.next=this.anchor;this.lastClock=time;this.seekTime=time;
+      this.anchor=Math.floor(time/4)*4;this.next=this.anchor;this.lookahead=null;this.lastDone=performance.now();this.lastClock=time;this.seekTime=time;
       this.blocked='';this.retryAt=0;this.retryMessage='';this.revision=this.getRevision();this.chosen=this.quality.value;this.ratios=[];this.fpsAt=0;this.waitSince=0;this.startupSeconds=undefined;
     }
     fail(message){if(this.disposed||this.failed)return;this.clearHold();this.failed=true;this.active=false;this.abort.abort();this.video.pause();this.video.removeAttribute('src');this.video.load();if(this.objectUrl)URL.revokeObjectURL(this.objectUrl);this.onState({active:false,text:message+' Standart parça önizlemesi kullanılacak.'});}
@@ -89,6 +89,20 @@
       const cutoff=this.video.currentTime-8;
       if(cutoff>0&&buffer.buffered.length&&buffer.buffered.start(0)<cutoff)await update(()=>buffer.remove(0,cutoff));
     }
+    prepare(time,generation){
+      const signal=this.abort.signal,at=performance.now();
+      const job=(async()=>{
+        let meta=await this.c.api(`/api/projects/${this.c.id}/editor/advanced/program-proxy`,{method:'POST',body:JSON.stringify({time,quality:this.chosen}),signal});
+        const fresh=!meta.cache_hit;
+        while(meta.status!=='ready'&&generation===this.generation&&!this.disposed){
+          await new Promise(resolve=>setTimeout(resolve,120));if(generation!==this.generation||this.disposed)break;
+          meta=await this.c.api(meta.status_url,{signal});
+        }
+        return {meta,fresh};
+      })();
+      job.catch(()=>{});  // a look-ahead nobody awaits (seek, pause) must not raise an unhandled rejection
+      return {time,generation,at,job};
+    }
     async pump(){
       if(this.pumping||this.failed||this.disposed||!this.enabled||performance.now()<(this.retryAt||0))return;
       this.pumping=true;const generation=this.generation;
@@ -99,19 +113,23 @@
           // Capped: a slow machine still waits honestly instead of buffering minutes.
           const desired=this.c.getTime(),limit=this.running?Math.min(this.c.data.duration,desired+Math.max(12,this.warmup())):Math.min(this.c.data.duration,desired+Math.min(PAUSED_RUNWAY_MAX,Math.max(4,this.warmup())));
           if(this.next>=limit-.001)break;
-          const time=this.next,started=performance.now();
-          let meta=await this.c.api(`/api/projects/${this.c.id}/editor/advanced/program-proxy`,{method:'POST',body:JSON.stringify({time,quality:this.chosen}),signal:this.abort.signal});
-          const fresh=!meta.cache_hit;
-          while(meta.status!=='ready'&&generation===this.generation&&!this.disposed){
-            await new Promise(resolve=>setTimeout(resolve,120));if(generation!==this.generation||this.disposed)break;
-            meta=await this.c.api(meta.status_url,{signal:this.abort.signal});
-          }
+          const time=this.next;
+          // The next 4 s segment is requested while this one is still being prepared, so two
+          // segments build at the same time (the server runs two encoders) and the measured
+          // speed is the real throughput, not the time of one build.
+          const work=this.lookahead&&this.lookahead.generation===generation&&this.lookahead.time===time?this.lookahead:this.prepare(time,generation);
+          this.lookahead=null;
+          const following=time+4;
+          if(following<Math.min(this.c.data.duration,limit)-.001)this.lookahead=this.prepare(following,generation);
+          const {meta,fresh}=await work.job;
           if(generation!==this.generation||this.disposed)return;
           await this.append(meta,generation);if(generation!==this.generation)return;
-          if(fresh){this.ratios.push((performance.now()-started)/1000/meta.duration);this.ratios=this.ratios.slice(-3);}
+          const finished=performance.now();
+          if(fresh){this.ratios.push((finished-Math.max(this.lastDone||0,work.at))/1000/meta.duration);this.ratios=this.ratios.slice(-3);}
+          this.lastDone=finished;
           this.next=meta.start+meta.duration;
         }
-      }catch(e){if(generation===this.generation&&!this.disposed){if(e.category==='preview_busy'){this.retryAt=performance.now()+500;this.retryMessage='Önceki önizleme işi tamamlanıyor';}else if(e.category==='proxy_fallback'){this.fail(e.message);}else{this.blocked=e.category?e.message:'Önizleme alınamadı; ses ve görüntü bekletildi. Bağlantıyı kontrol edip kaliteyi yeniden seçin.';this.video.pause();this.started=false;this.c.pause?.();}}}
+      }catch(e){this.lookahead=null;if(generation===this.generation&&!this.disposed){if(e.category==='preview_busy'){this.retryAt=performance.now()+500;this.retryMessage='Önceki önizleme işi tamamlanıyor';}else if(e.category==='proxy_fallback'){this.fail(e.message);}else{this.blocked=e.category?e.message:'Önizleme alınamadı; ses ve görüntü bekletildi. Bağlantıyı kontrol edip kaliteyi yeniden seçin.';this.video.pause();this.started=false;this.c.pause?.();}}}
       finally{this.pumping=false;}
     }
     tick(){

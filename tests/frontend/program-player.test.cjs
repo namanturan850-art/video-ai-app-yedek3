@@ -34,9 +34,9 @@ test('new editor revision cancels old generation and releases its buffered media
   assert.equal(signal.aborted,true);assert.equal(p.generation,generation+1);assert.equal(p.active,false);assert.equal(video.buffered.length,0);
 });
 test('late response after seek cannot append an old generation',async()=>{
-  const {p,c}=setup();let finish,appended=0;const run=Object.getPrototypeOf(p).pump;
-  c.api=()=>new Promise(resolve=>finish=resolve);p.append=async()=>appended++;
-  const pending=run.call(p);p.reset(8);finish({status:'ready',start:0,duration:4,cache_hit:true});await pending;
+  const {p,c}=setup();const finish=[];let appended=0;const run=Object.getPrototypeOf(p).pump;
+  c.api=()=>new Promise(resolve=>finish.push(resolve));p.append=async()=>appended++;
+  const pending=run.call(p);p.reset(8);finish.forEach(resolve=>resolve({status:'ready',start:0,duration:4,cache_hit:true}));await pending;
   assert.equal(appended,0);assert.equal(p.next,8);
 });
 test('forward preparation never evicts frames that have not played',async()=>{
@@ -86,7 +86,7 @@ test('a discontinuous buffer is never counted as contiguous runway',()=>{
 });
 test('long sessions retain only the preparation measurements used by the scheduler',async()=>{
   const {p,c,video}=setup();c.data.duration=20;p.ratios=[1,2,3];
-  c.api=async()=>({status:'ready',start:p.next,duration:4,cache_hit:false});
+  c.api=async(url,options)=>({status:'ready',start:JSON.parse(options.body).time,duration:4,cache_hit:false});
   p.append=async meta=>{video.ranges=[[0,meta.start+meta.duration]];};
   await Object.getPrototypeOf(p).pump.call(p);
   assert.equal(p.ratios.length,3);assert.ok(p.ratios.every(n=>n<1));
@@ -109,7 +109,7 @@ test('a proxy network timeout cannot release the narration clock into a black cl
 
 function paused(c){c.controls.play.textContent='▶ Oynat';}
 function readySegments(c,p,video){
-  c.api=async()=>({status:'ready',start:p.next,duration:4,cache_hit:true});
+  c.api=async(url,options)=>({status:'ready',start:JSON.parse(options.body).time,duration:4,cache_hit:true});
   p.append=async meta=>{video.ranges=[[0,meta.start+meta.duration]];};
 }
 test('paused monitor prepares the same runway Play needs on fast hardware',async()=>{
@@ -171,4 +171,20 @@ test('leaving Program mode and destroying the player release the held frame',()=
   const {p,video,setTime,inserted}=withHold();video.ranges=[[0,12]];p.positioned=true;p.next=12;
   p.tick();setTime(40);p.tick();assert.equal(inserted.length,1);
   p.destroy();assert.equal(inserted[0].removed,true);assert.equal(p.hold,null);
+});
+
+test('the next segment is requested while the current one is still being prepared',async()=>{
+  const {p,c,video}=setup();c.data.duration=64;const requested=[],resolvers=[];
+  c.api=(url,options)=>{const time=JSON.parse(options.body).time;requested.push(time);return new Promise(resolve=>resolvers.push(()=>resolve({status:'ready',start:time,duration:4,cache_hit:false})));};
+  p.append=async meta=>{video.ranges=[[0,meta.start+meta.duration]];};
+  const running=Object.getPrototypeOf(p).pump.call(p);await new Promise(resolve=>setTimeout(resolve,5));
+  assert.deepEqual(requested.slice(0,2),[0,4]);  // two segments are in preparation at the same time
+  p.reset(40);resolvers.forEach(done=>done());await running;
+});
+test('the measured speed is the throughput of overlapping builds, not one build time',async()=>{
+  const {p,c,video}=setup();c.data.duration=16;paused(c);
+  c.api=async(url,options)=>({status:'ready',start:JSON.parse(options.body).time,duration:4,cache_hit:false});
+  p.append=async meta=>{video.ranges=[[0,meta.start+meta.duration]];};
+  await Object.getPrototypeOf(p).pump.call(p);
+  assert.ok(p.ratios.length>0&&p.ratios.every(n=>n<1));
 });

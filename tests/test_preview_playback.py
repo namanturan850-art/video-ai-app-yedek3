@@ -148,3 +148,9 @@ def test_static_actor_cache_preserves_pixels_with_camera_visibility_and_procedur
         actual=draw_frame(scene,t,base,{},actor_cache=cache)
         assert actual.tobytes()==expected.tobytes()
         assert len(cache)<=3  # bounded per actor; never grows with time
+
+
+def test_two_proxy_segments_can_build_at_once_with_a_free_decoder_slot_left():
+    from app.editor import previews, proxies
+    assert proxies._executor._max_workers == 2  # the browser looks one segment ahead
+    assert previews._decoders._value == 3       # 2 builds + one still preview / stream copy never starve each other

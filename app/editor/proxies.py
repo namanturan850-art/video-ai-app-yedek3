@@ -1,6 +1,6 @@
 """On-demand four-second Program proxies. No archive-wide/full-film rendering.
 
-One background encoder, two decoder limit shared with still previews. Identity
+Two background encoders (never more than two segments in flight), three decoder slots shared with still previews and stream repackaging. Identity
 contains only intersecting timeline content and verified source digests, so an
 edit outside the window does not invalidate an otherwise reusable segment.
 """
@@ -21,7 +21,7 @@ from app.editor.models import EditorError
 from app.editor.previews import cache_folder,run
 from app.projects import linked
 
-_executor=ThreadPoolExecutor(max_workers=1,thread_name_prefix='program-proxy')
+_executor=ThreadPoolExecutor(max_workers=2,thread_name_prefix='program-proxy')  # two builds overlap: the browser asks for the next segment while one is still encoding
 _lock=RLock()
 _jobs={}
 _results={}

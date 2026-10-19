@@ -70,7 +70,7 @@ def main():
             start=time.monotonic();response=page.request.get(api+'/archive');assert response.status==200;metrics['archive_api_ms']=round((time.monotonic()-start)*1000,1);metrics['archive_items']=len(response.json()['items']);metrics['project_duration_seconds']=page.request.get(api).json()['duration'];assert metrics['project_duration_seconds']==480;page.locator('.workspace-media-card').first.wait_for();card=page.locator('.workspace-media-card').first;assert card.bounding_box()['height']>=100;assert card.locator('.workspace-media-thumb').bounding_box()['height']>35;metrics['archive_card_height']=card.bounding_box()['height']
             metrics['js_heap_bytes']=page.evaluate('()=>performance.memory?.usedJSHeapSize||null')
             for width,height in [(1366,768),(1600,900),(1920,1080),(1093,614),(1280,720)]:
-                page.set_viewport_size({'width':width,'height':height});assert page.locator('.naman-track').count()==7
+                page.set_viewport_size({'width':width,'height':height});assert page.locator('.naman-track').count()==4
                 assert page.evaluate('()=>document.documentElement.scrollHeight<=innerHeight'),(width,height)
             page.screenshot(path=str(out/'polish-editor.png'));assert not errors,errors
             metrics['errors']=errors;metrics['platform']='Linux Chromium; Windows/WebView2 değil';metrics['proxy']='320x180 30fps encoded; measured playback field above' 

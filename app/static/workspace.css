@@ -90,7 +90,7 @@ body.naman-editor-page .workspace .naman-inspector h2{font-size:13px;margin:0 0 
 body.naman-editor-page .workspace .naman-layout{grid-row:4;margin:0;min-height:0;min-width:0;height:100%;overflow:hidden}
 body.naman-editor-page .workspace .naman-timeline{height:100%!important;min-height:0;max-height:none;resize:none;padding:0;overflow:auto;border-radius:3px;background:var(--zemin);border-color:var(--cizgi)}
 body.naman-editor-page .workspace .naman-ruler{margin-left:112px;height:27px;min-height:27px;position:relative;top:auto;z-index:3;background:var(--panel);border-color:var(--cizgi)}
-body.naman-editor-page .workspace .naman-track{display:grid;grid-template-columns:112px max-content;height:calc((100% - 28px)/7);min-height:30px;border-color:var(--cizgi)}
+body.naman-editor-page .workspace .naman-track{display:grid;grid-template-columns:112px max-content;height:calc((100% - 28px)/4);min-height:44px;border-color:var(--cizgi)}
 body.naman-editor-page .workspace .naman-track-label{font-size:10px;background:var(--panel);color:var(--yazi);border-color:var(--cizgi);z-index:4;white-space:nowrap}
 body.naman-editor-page .workspace .naman-clip{top:3px;height:calc(100% - 6px);min-height:24px;padding:4px 8px;border-radius:3px;font-size:10px;line-height:14px;color:#fff}
 body.naman-editor-page .workspace .naman-empty-track{padding:8px 12px;font-size:10px;color:var(--soluk)}

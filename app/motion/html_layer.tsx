@@ -23,7 +23,9 @@ const Layer:React.FC<Props>=({html,css})=>{
   },[frame,fps,html,css]);
   return (
     <AbsoluteFill style={{background:'transparent'}}>
-      <style>{css}</style>
+      {/* Animations never run on wall-clock time: a frame captured before the
+          seek below still shows time 0, not a few milliseconds of playback. */}
+      <style>{css+'\n*,*::before,*::after{animation-play-state:paused!important}'}</style>
       <div ref={root} style={{position:'relative',width:1920,height:1080,overflow:'hidden'}}
            dangerouslySetInnerHTML={{__html:html}}/>
     </AbsoluteFill>

@@ -18,7 +18,7 @@ def main():
             page.goto(f'{url}/projects/{pid}/editor');page.locator('.manual-mode-strip').wait_for()
             page.wait_for_function("!document.querySelector('#editor-content').inert")
             before=page.request.get(base+'/advanced').json();view=page.request.get(base).json()
-            assert page.locator('.naman-track').count()==7
+            assert page.locator('.naman-track').count()==4
             page.get_by_role('button',name='Manuel Plan / AI paketi',exact=True).click()
             dialog=page.locator('.manual-dialog[open]');pack=json.loads(dialog.get_by_label('Hazır AI paketi',exact=True).input_value())
             assert pack['animation_capabilities']['canvas']['fps']==30

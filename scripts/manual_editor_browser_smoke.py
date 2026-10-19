@@ -127,7 +127,7 @@ def main():
             page.wait_for_function("rev=>{const image=document.querySelector('.advanced-program-frame');return image?.naturalWidth===640&&+image.dataset.revision===rev;}",arg=revision,timeout=30000)
             for width,height in [(1366,768),(1600,900),(1920,1080),(1650,900),(1093,614)]:
                 page.set_viewport_size({'width':width,'height':height});metrics=page.evaluate("()=>({height:innerHeight,scroll:document.documentElement.scrollHeight,tracks:[...document.querySelectorAll('.naman-track')].map(n=>n.getBoundingClientRect().bottom),bottom:document.querySelector('.naman-timeline').getBoundingClientRect().bottom})")
-                assert metrics['scroll']<=height and len(metrics['tracks'])==7 and max(metrics['tracks'])<=metrics['bottom'],metrics
+                assert metrics['scroll']<=height and len(metrics['tracks'])==4 and max(metrics['tracks'])<=metrics['bottom'],metrics
                 page.screenshot(path=str(output/f'manual-{width}x{height}.png'))
             page.goto(f'{url}/projects/{pid}/render');page.locator('#render-create').wait_for()
             page.wait_for_function("document.querySelector('#render-editing-style')?.disabled===true")

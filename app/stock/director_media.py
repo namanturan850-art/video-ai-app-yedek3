@@ -89,6 +89,9 @@ TRANSIENT = {'rate_limit', 'quota_limit', 'upstream_error', 'gemini_timeout', 'g
 UNUSABLE = {'invalid_response', 'incomplete_response', 'response_schema_mismatch', 'empty_response', 'thought_only_response',
             'output_limit', 'unexpected_finish_reason', 'blocked_response', 'invalid_json', 'refusal'}
 UNUSABLE_LIMIT = 4
+# A source that answered once with something unreadable (or a passing server error) is not gone for the whole job:
+# it is switched off only after this many failures in a row (a good answer resets the count). The rest go off at once.
+SOFT_PROVIDER_FAILURES = {'invalid_response': 3, 'upstream_error': 2}
 PROVIDER_DOWN = {'rate_limit', 'key_rejected', 'missing_key', 'timeout', 'connection_error', 'upstream_error', 'invalid_request', 'invalid_response'}
 ERROR_TEXT = {'rate_limit': 'kullanım sınırı', 'key_rejected': 'anahtar kabul edilmedi', 'missing_key': 'anahtar yok',
               'timeout': 'zaman aşımı', 'connection_error': 'bağlantı kurulamadı', 'upstream_error': 'sunucu hatası',
@@ -857,8 +860,12 @@ class MediaDirector:
                     errors = self.progress.setdefault('api_errors', {})
                     errors[name + ':' + error.category] = errors.get(name + ':' + error.category, 0) + 1
                     if error.category in PROVIDER_DOWN:
-                        self.unavailable[name] = error.category
-                        self.progress['unavailable_providers'] = self.unavailable
+                        strikes = getattr(self, 'provider_strikes', None)
+                        if strikes is None: strikes = self.provider_strikes = {}
+                        strikes[name] = strikes.get(name, 0) + 1
+                        if strikes[name] >= SOFT_PROVIDER_FAILURES.get(error.category, 1):
+                            self.unavailable[name] = error.category
+                            self.progress['unavailable_providers'] = self.unavailable
                     log['searches'].append(entry)
                     continue
                 except Exception:  # an unexpected provider answer never stops the chain
@@ -869,6 +876,7 @@ class MediaDirector:
                     self.progress['unavailable_providers'] = self.unavailable
                     log['searches'].append(entry)
                     continue
+                getattr(self, 'provider_strikes', {}).pop(name, None)  # a good answer: the failure count starts again
                 metric = 'cached_search_reads' if cached else 'provider_searches'
                 self.progress[metric] = self.progress.get(metric, 0) + 1
                 entry.update(results=len(results), cached=cached, normalization=counts)

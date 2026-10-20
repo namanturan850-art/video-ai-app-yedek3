@@ -92,14 +92,17 @@ def install(root,git,node,npm):
 
 def gpu(root,python):
     """NVIDIA kartı varsa CUDA'lı torch (RTX 50 serisi dahil, cu128): CLIP kontrolü işlemciye göre kat kat hızlanır.
-    cmd.exe'nin kendisi kullanılır: 'nvidia-smi -L' kullanıcının komut isteminde çalıştırdığıyla birebir aynı yoldan aranır."""
+    Donanım listesinden (Windows WMI) bakılır: nvidia-smi sürücü o an yanıt vermese bile (uykudan çıkış,
+    "Failed to initialize NVML" gibi geçici durumlar) kart zaten takılıysa CUDA kurulumu engellenmez."""
     try:
-        r=subprocess.run('nvidia-smi -L',shell=True,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=20,env=environment())
+        names=subprocess.run(['powershell','-NoProfile','-NonInteractive','-Command',
+            '(Get-CimInstance Win32_VideoController -ErrorAction Stop).Name'],
+            capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=30,env=environment())
+        found='nvidia' in names.stdout.casefold()
     except Exception as error:
-        print(f'NVIDIA ekran kartı bulunamadı; CLIP işlemcide çalışacak. ({type(error).__name__}: {error})');return
-    if r.returncode!=0 or not r.stdout.strip():
-        detail=[l for l in (r.stderr or r.stdout or '').strip().splitlines() if l.strip()][:1]
-        print('NVIDIA ekran kartı bulunamadı; CLIP işlemcide çalışacak.'+(f' ({detail[0]})' if detail else f' (çıkış kodu {r.returncode})'));return
+        print(f'Ekran kartı listesi okunamadı; CLIP işlemcide çalışacak. ({type(error).__name__}: {error})');return
+    if not found:
+        print('NVIDIA ekran kartı bulunamadı; CLIP işlemcide çalışacak.');return
     print('NVIDIA ekran kartı bulundu: CLIP için CUDA destekli torch kuruluyor (birkaç GB, bekleyin)…')
     try:
         run([str(python),'-m','pip','install','--upgrade','--force-reinstall','--no-deps','torch','--index-url','https://download.pytorch.org/whl/cu128'],root)

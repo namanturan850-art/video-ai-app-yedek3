@@ -69,3 +69,68 @@ def test_a_plain_miss_without_a_setting_conflict_never_tries_relaxed_rules():
     director.fill(slot, scene)
     assert slot['status'] == 'ai_needed'  # relaxed() was offered 'chosen' but never asked, since nothing points to a setting conflict
     assert not slot.get('setting_relaxed')
+
+
+# ---- a dead-end relaxed retry is remembered, so the next "Medya Tamamla" press does not repeat it ----
+def counting_dead_end(director, *, provider_error=None):
+    calls = []
+    director.try_local_archive = lambda *a, **k: None
+    director.extended_search = lambda *a, **k: None
+    director.rewrite = lambda *a, **k: []
+    director.merge = lambda *a, **k: False
+
+    def fake_try_step(slot, scene, stage, kinds, queries, log, exclude):
+        if stage == 'relaxed':
+            calls.append(director.relax)
+            if provider_error:
+                log['searches'].append({'provider': 'pexels', 'media_type': 'video', 'query': 'q', 'page': 1, 'error': provider_error})
+            return None
+        log.setdefault('rejected', {})['setting_conflict'] = 1
+        return None
+    director.try_step = fake_try_step
+    return calls
+
+
+def test_relaxed_dead_end_is_not_repeated_on_the_next_press():
+    director = make_director()
+    calls = counting_dead_end(director)
+    slot, scene = make_slot_and_scene()
+    director.fill(slot, scene)
+    assert calls == [1, 2] and slot['relaxed_failed']['context']
+    director.fill(slot, scene)  # second press, nothing changed
+    assert calls == [1, 2]
+    assert slot['status'] == 'ai_needed' and director.progress['relaxed_skipped'] == 1
+
+
+def test_relaxed_dead_end_caused_by_a_provider_error_is_retried():
+    director = make_director()
+    calls = counting_dead_end(director, provider_error='timeout')
+    slot, scene = make_slot_and_scene()
+    director.fill(slot, scene)
+    assert 'relaxed_failed' not in slot
+    director.fill(slot, scene)
+    assert calls == [1, 2, 1, 2]
+
+
+def test_relaxed_dead_end_is_retried_when_the_sentence_changes_or_the_memory_is_old():
+    from datetime import datetime, timedelta, timezone
+    director = make_director()
+    calls = counting_dead_end(director)
+    slot, scene = make_slot_and_scene()
+    director.fill(slot, scene)
+    scene['narration_text'] = 'Maracaibo köprüsü gece ışıklarıyla görünüyor.'  # a different sentence: a different question
+    director.fill(slot, scene)
+    assert calls == [1, 2, 1, 2]
+    slot['relaxed_failed']['at'] = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    director.fill(slot, scene)
+    assert calls == [1, 2, 1, 2, 1, 2]
+
+
+def test_relaxed_dead_end_is_retried_once_the_picture_judge_starts_working():
+    director = make_director()
+    calls = counting_dead_end(director)
+    slot, scene = make_slot_and_scene()
+    director.fill(slot, scene)
+    director.clip = SimpleNamespace(ready=lambda: True)  # CLIP fixed since the last press
+    director.fill(slot, scene)
+    assert calls == [1, 2, 1, 2]

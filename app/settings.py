@@ -224,8 +224,10 @@ class AI33Settings(KeySettings):
 
 
 class OpenSourceSettings(BaseModel):
-    """A source that needs no key (Wikimedia Commons): nothing to save, only a test."""
+    """A source that needs no key (Wikimedia Commons, NASA, Internet Archive): only an on/off switch for
+    Medyayı Tamamla (a switched-off source saves search time) and a connection test."""
     model_config = ConfigDict(extra='forbid')
+    enabled: bool = True
 
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
@@ -375,6 +377,8 @@ class SettingsService:
                 if name == 'mapbox':
                     from app.providers.satellite import usage_text
                     message = f'{message} · {usage_text()}'
+                if name in ('wikimedia', 'nasa', 'archive') and not config.get('enabled', True):
+                    status, message = 'Kapalı', 'Bu kaynak kapalı: Medyayı Tamamla burada aramaz (zaman kazandırır). Açmak için kutuyu işaretleyip Kaydet deyin.'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
                               message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia','nasa','archive')))

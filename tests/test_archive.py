@@ -62,6 +62,7 @@ def test_documented_requests_and_normalisation():
     search = seen[0]
     assert search.url.host == 'archive.org' and search.url.path == '/advancedsearch.php'
     assert 'mediatype:(movies)' in search.url.params['q'] and 'licenseurl:*publicdomain*' in search.url.params['q']
+    assert r'licenseurl:*licenses\/by\/*' in search.url.params['q'] and 'licenses/by/' not in search.url.params['q']  # unescaped slashes break the live search
     assert search.url.params.get_list('fl[]') == ['identifier', 'title', 'licenseurl'] and search.url.params['output'] == 'json'
     assert {r.url.path for r in seen[1:]} == {f'/metadata/{i}' for i in items}
     assert [m['source_metadata']['identifier'] for m in found] == ['ShipsAtSea1948']  # NC, unlicensed and 320x240 films never offered

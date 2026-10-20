@@ -358,7 +358,7 @@ ARCHIVE_LICENCE = re.compile(r'^https?://(?:www\.)?creativecommons\.org/(publicd
 ARCHIVE_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')
 ARCHIVE_SERVER = re.compile(r'^ia\d{3,7}\.us\.archive\.org$')
 ARCHIVE_DIR = re.compile(r'^/[0-9]{1,3}/items/[A-Za-z0-9._-]{1,100}$')
-ARCHIVE_MAX_BYTES = 200_000_000
+ARCHIVE_MAX_BYTES = 250_000_000  # the downloader's video limit
 
 
 def archive_licence(url):
@@ -393,8 +393,9 @@ class ArchiveStockProvider(APIStockProvider):
 
     def request(self, query, media_type, key):
         words = ' '.join(re.findall(r'[\w-]+', query))[:200] or 'film'
-        q = (f'({words}) AND mediatype:(movies) AND (licenseurl:*publicdomain* OR licenseurl:*licenses/by/* '
-             'OR licenseurl:*licenses/by-sa/*)')
+        # Slashes inside a wildcard term must be escaped, otherwise the search backend fails (checked live 2026-10-20).
+        q = (f'({words}) AND mediatype:(movies) AND (licenseurl:*publicdomain* OR licenseurl:*licenses\\/by\\/* '
+             'OR licenseurl:*licenses\\/by-sa\\/*)')
         params = {'q': q, 'fl[]': ['identifier', 'title', 'licenseurl'], 'rows': self.ROWS, 'output': 'json'}
         return 'https://archive.org/advancedsearch.php', {'User-Agent': USER_AGENT}, params, 'docs'
 

@@ -200,7 +200,7 @@ class PixabayStockProvider(APIStockProvider):
     name, label = 'pixabay', 'Pixabay'
     def request(self, query, media_type, key):
         # Pixabay documents a 100-character query limit and 24-hour caching.
-        params = {'key':key,'q':query[:100],'per_page':40,'safesearch':'true'}
+        params = {'key':key,'q':query[:100],'per_page':80,'safesearch':'true'}  # documented 3-200; the shared answer guard allows 80
         if media_type == 'image': params.update(image_type='photo',orientation='horizontal')
         return 'https://pixabay.com/api/videos/' if media_type == 'video' else 'https://pixabay.com/api/', {}, params, 'hits'
 

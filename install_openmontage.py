@@ -93,15 +93,19 @@ def install(root,git,node,npm):
 def gpu(root,python):
     """NVIDIA kartı varsa CUDA'lı torch (RTX 50 serisi dahil, cu128): CLIP kontrolü işlemciye göre kat kat hızlanır."""
     root_dir=os.environ.get('SystemRoot','C:/Windows')
-    found=[shutil.which('nvidia-smi'),root_dir+'/System32/nvidia-smi.exe','C:/Program Files/NVIDIA Corporation/NVSMI/nvidia-smi.exe']
-    smi=next((p for p in found if p and Path(p).is_file()),None)
+    candidates=['nvidia-smi',shutil.which('nvidia-smi'),root_dir+'/System32/nvidia-smi.exe','C:/Program Files/NVIDIA Corporation/NVSMI/nvidia-smi.exe']
+    seen=set();smi=None;last=''
+    for candidate in candidates:
+        if not candidate or candidate in seen:continue
+        seen.add(candidate)
+        try:
+            r=subprocess.run([candidate,'-L'],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=20,env=environment())
+            if r.returncode==0 and r.stdout.strip():smi=candidate;break
+            last=(r.stderr or r.stdout or f'çıkış kodu {r.returncode}').strip().splitlines()[:1]
+            last=last[0] if last else ''
+        except Exception as error:last=f'{type(error).__name__}: {error}'
     if not smi:
-        print('NVIDIA ekran kartı sürücüsü (nvidia-smi) bulunamadı; CLIP işlemcide çalışacak.');return
-    try:
-        if not run([smi,'-L'],timeout=20).strip():
-            print('NVIDIA kartı listelenemedi; CLIP işlemcide çalışacak.');return
-    except Exception:
-        print('NVIDIA kartı okunamadı; CLIP işlemcide çalışacak.');return
+        print('NVIDIA ekran kartı bulunamadı; CLIP işlemcide çalışacak.'+(f' ({last})' if last else ''));return
     print('NVIDIA ekran kartı bulundu: CLIP için CUDA destekli torch kuruluyor (birkaç GB, bekleyin)…')
     try:
         run([str(python),'-m','pip','install','--upgrade','--force-reinstall','--no-deps','torch','--index-url','https://download.pytorch.org/whl/cu128'],root)

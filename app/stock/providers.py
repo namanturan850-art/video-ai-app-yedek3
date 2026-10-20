@@ -113,11 +113,11 @@ class APIStockProvider:
                     raw = bytearray()
                     for chunk in response.iter_bytes():
                         raw.extend(chunk)
-                        if len(raw) > 4_000_000: raise ValueError()
+                        if len(raw) > 4_000_000: raise ValueError('answer_too_large')
             import json
             data = json.loads(raw)
             results = self.results(data, field)
-            if not isinstance(results, list) or len(results) > 80: raise ValueError()
+            if not isinstance(results, list) or len(results) > 80: raise ValueError('result_list_shape')
             self.last_diagnostic['raw_count'] = len(results)
             normalized = []
             for item in results:
@@ -136,7 +136,7 @@ class APIStockProvider:
                     continue  # A malformed/unsafe item cannot become a download.
             self.last_diagnostic['normalized_count'] = len(normalized)
             if results and not normalized and not self.last_diagnostic['filtered']:
-                raise ValueError()  # every item unreadable (none merely filtered out): the answer's shape changed
+                raise ValueError('all_items_unreadable')  # every item unreadable (none merely filtered out): the answer's shape changed
             return normalized
         except httpx.TimeoutException:
             category = 'timeout'
@@ -147,8 +147,9 @@ class APIStockProvider:
         except StockError as error:
             category = error.category
             raise
-        except (ValueError, TypeError, KeyError, AttributeError):
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
             category = 'invalid_response'
+            self.last_diagnostic['response_category'] = response_reason(error)  # the real cause, for the diagnostics file
             raise StockError(category, self.label+' API yanıtı okunamadı. Daha sonra tekrar deneyin.', 502) from None
         finally:
             LOG.info('stock provider=%s operation=search_%s category=%s elapsed_ms=%.0f',
@@ -158,6 +159,15 @@ class APIStockProvider:
                      self.name,media_type,safe_query(query,tuple(PRIVATE_KEYS)),self.last_diagnostic['raw_count'],
                      self.last_diagnostic['normalized_count'],self.last_diagnostic['rejected']['malformed_result'],
                      self.last_diagnostic['rejected']['unsafe_url'])
+
+
+def response_reason(error):
+    """A short, secret-free label for why an answer could not be read (diagnostics file only)."""
+    import json
+    if isinstance(error, json.JSONDecodeError): return 'not_json'
+    text = str(error)
+    if isinstance(error, ValueError) and re.fullmatch(r'[a-z_]+(:[A-Za-z0-9_.-]{0,60})?', text): return text
+    return type(error).__name__
 
 
 class PexelsStockProvider(APIStockProvider):
@@ -282,7 +292,7 @@ class WikimediaStockProvider(APIStockProvider):
         if 'error' in data:
             if str((data['error'] or {}).get('code', '')) in ('ratelimited', 'maxlag', 'readonly'):
                 raise StockError('rate_limit', self.label + ' kullanım sınırına ulaşıldı. Bir süre bekleyip Devam Et deyin.')
-            raise ValueError()
+            raise ValueError('api_error:' + re.sub(r'[^A-Za-z0-9_.-]', '', str((data['error'] or {}).get('code', '')))[:60])
         pages = (data.get('query') or {}).get('pages', [])  # no hits: no 'query' at all
         return sorted(pages, key=lambda p: p.get('index', 0)) if isinstance(pages, list) else pages
 

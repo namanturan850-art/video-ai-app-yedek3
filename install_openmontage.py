@@ -91,21 +91,15 @@ def install(root,git,node,npm):
 
 
 def gpu(root,python):
-    """NVIDIA kartı varsa CUDA'lı torch (RTX 50 serisi dahil, cu128): CLIP kontrolü işlemciye göre kat kat hızlanır."""
-    root_dir=os.environ.get('SystemRoot','C:/Windows')
-    candidates=['nvidia-smi',shutil.which('nvidia-smi'),root_dir+'/System32/nvidia-smi.exe','C:/Program Files/NVIDIA Corporation/NVSMI/nvidia-smi.exe']
-    seen=set();smi=None;last=''
-    for candidate in candidates:
-        if not candidate or candidate in seen:continue
-        seen.add(candidate)
-        try:
-            r=subprocess.run([candidate,'-L'],capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=20,env=environment())
-            if r.returncode==0 and r.stdout.strip():smi=candidate;break
-            last=(r.stderr or r.stdout or f'çıkış kodu {r.returncode}').strip().splitlines()[:1]
-            last=last[0] if last else ''
-        except Exception as error:last=f'{type(error).__name__}: {error}'
-    if not smi:
-        print('NVIDIA ekran kartı bulunamadı; CLIP işlemcide çalışacak.'+(f' ({last})' if last else ''));return
+    """NVIDIA kartı varsa CUDA'lı torch (RTX 50 serisi dahil, cu128): CLIP kontrolü işlemciye göre kat kat hızlanır.
+    cmd.exe'nin kendisi kullanılır: 'nvidia-smi -L' kullanıcının komut isteminde çalıştırdığıyla birebir aynı yoldan aranır."""
+    try:
+        r=subprocess.run('nvidia-smi -L',shell=True,capture_output=True,text=True,encoding='utf-8',errors='replace',timeout=20,env=environment())
+    except Exception as error:
+        print(f'NVIDIA ekran kartı bulunamadı; CLIP işlemcide çalışacak. ({type(error).__name__}: {error})');return
+    if r.returncode!=0 or not r.stdout.strip():
+        detail=[l for l in (r.stderr or r.stdout or '').strip().splitlines() if l.strip()][:1]
+        print('NVIDIA ekran kartı bulunamadı; CLIP işlemcide çalışacak.'+(f' ({detail[0]})' if detail else f' (çıkış kodu {r.returncode})'));return
     print('NVIDIA ekran kartı bulundu: CLIP için CUDA destekli torch kuruluyor (birkaç GB, bekleyin)…')
     try:
         run([str(python),'-m','pip','install','--upgrade','--force-reinstall','--no-deps','torch','--index-url','https://download.pytorch.org/whl/cu128'],root)

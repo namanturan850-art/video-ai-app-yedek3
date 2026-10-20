@@ -15,8 +15,10 @@ from app.stock.models import StockError
 
 # Hosts in official examples. Unrecognized redirect hosts are refused, not guessed.
 HOSTS = {'pexels': {'images.pexels.com','videos.pexels.com','static-videos.pexels.com','player.vimeo.com'},
-         'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'wikimedia': {'upload.wikimedia.org'}}
-PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'}, 'wikimedia': {'commons.wikimedia.org'}}
+         'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'wikimedia': {'upload.wikimedia.org'},
+         'nasa': {'images-assets.nasa.gov'}}
+PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'},
+         'wikimedia': {'commons.wikimedia.org'}, 'nasa': {'images.nasa.gov'}}
 TYPES = {'video/mp4':('.mp4','video'), 'image/jpeg':('.jpg','image'),
          'image/png':('.png','image'), 'image/webp':('.webp','image'),
          'video/webm':('.mp4','video')}  # Commons WebM is converted to MP4 here, so the rest of the app only sees MP4

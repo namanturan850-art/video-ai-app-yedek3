@@ -153,6 +153,13 @@ class YouTubeService:
                 seen.add(key); out.append({'provider': 'Wikimedia Commons', 'creator': meta.get('author') or m.get('creator_name', ''),
                                            'title': meta.get('title', ''), 'license': meta.get('license', ''), 'url': m.get('page_url', '')})
                 continue
+            if m.get('provider') == 'nasa':  # not copyrighted; NASA still asks for a simple credit
+                meta = m.get('source_metadata') or {}
+                key = ('nasa', m.get('media_id'))
+                if key in seen: continue
+                seen.add(key); out.append({'provider': 'NASA', 'creator': meta.get('center') or 'NASA',
+                                           'title': meta.get('title', ''), 'license': '', 'url': m.get('page_url', '')})
+                continue
             template = ((m.get('source_metadata') or {}).get('motion') or {}).get('template')
             if m.get('provider') == 'generated' and template in ('map', 'route', 'empire', 'zoom') and ('geonames',) not in seen:
                 seen.add(('geonames',))  # place data of the map infographics: CC BY 4.0 asks for this credit

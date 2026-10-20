@@ -771,7 +771,13 @@ class MediaDirector:
         """Pixabay (with a key) and Wikimedia Commons (no key; Pexels is switched
         off). History/archaeology/museum/map scenes ask Wikimedia first."""
         from app.stock.providers import ACTIVE
-        names = [n for n in ACTIVE if n in ('wikimedia', 'nasa', 'archive') or self.service.settings.stock_config(n).get('api_key')]
+        settings = self.service.settings
+        def usable(name):
+            if name in ('wikimedia', 'nasa', 'archive'):  # no key; the owner can switch one off in Settings (saves search time)
+                try: return settings.stock_config(name).get('enabled', True) is not False
+                except Exception: return True
+            return bool(settings.stock_config(name).get('api_key'))
+        names = [n for n in ACTIVE if usable(n)]
         if scene is not None and historic(scene): names.sort(key=lambda n: n not in ('wikimedia', 'archive'))  # archives first for history
         bridge = getattr(self.service, 'openmontage', None)
         if bridge and bridge.config().get('media_search') and bridge.status().get('ready'):names.append('openmontage')

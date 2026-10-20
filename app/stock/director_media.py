@@ -1629,7 +1629,14 @@ class MediaDirector:
         if not chosen and used_seconds(slot) < MERGE_SECONDS and self.merge(slot, log):
             chosen = True
         if not chosen:
-            if getattr(self,'sources_only',False):return self.unresolved(slot,log)
+            if getattr(self,'sources_only',False):
+                # Manuel Kurgu'da yapay zekâ grafik üretmez; ama dönem/coğrafya kuralı
+                # yüzünden boşalan bir yuva, son çare olarak gevşetilmiş kurallarla
+                # tekrar aranır (aynı ücretsiz yerel puanlama, yalnız sıkı kural kalkar).
+                if self.setting_blocked(log, memo):
+                    chosen = self.relaxed(slot, scene, memo, log, exclude, (rewritten + broader + planned)[:8])
+                if not chosen: return self.unresolved(slot,log)
+                return log
             spec = self.motion_spec(slot, scene)
             if spec['template'] == 'quote':
                 # A band over the neighbouring shot beats a full-screen text card.

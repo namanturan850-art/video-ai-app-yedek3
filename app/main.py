@@ -647,6 +647,14 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             except StockError as error:
                 outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test('wikimedia',{},outcome)}
+        if section == 'nasa':  # no key: one small image search against the official API
+            from app.stock.providers import make_stock_provider
+            try:
+                found = make_stock_provider('nasa', settings).search_images('earth')
+                outcome = {'status':'Hazır','message':f'NASA Görsel Kütüphanesi bağlantısı başarılı ({len(found)} görsel bulundu).','category':'none'}
+            except StockError as error:
+                outcome = {'status':'Hata','message':str(error),'category':error.category}
+            return {'result':outcome,'settings':settings.record_stock_test('nasa',{},outcome)}
         if section in ('pexels','pixabay'):
             from app.stock.providers import make_stock_provider
             from datetime import datetime, timedelta, timezone

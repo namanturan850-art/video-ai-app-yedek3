@@ -20,7 +20,7 @@ PRIVATE_KEYS = set()
 # Pexels stopped giving out new API keys: the provider stays in the code and
 # its key field in Settings, but searches use Pixabay and Wikimedia Commons.
 PEXELS_ENABLED = False
-ACTIVE = ('pixabay', 'wikimedia') + (('pexels',) if PEXELS_ENABLED else ())
+ACTIVE = ('pixabay', 'wikimedia', 'nasa') + (('pexels',) if PEXELS_ENABLED else ())
 
 
 class PrivateHTTPFilter(logging.Filter):
@@ -316,9 +316,46 @@ class WikimediaStockProvider(APIStockProvider):
                                 **({'sample_url': download} if media_type == 'video' and info.get('size', 0) <= 15_000_000 else {})}})
 
 
+class NASAStockProvider(APIStockProvider):
+    """NASA Image and Video Library (images-api.nasa.gov, no key; docs/NASA_IMAGE_LIBRARY.md).
+    Images only: the search response gives no duration/size for video files, and probing every
+    candidate would slow Medyayı Tamamla down (see the doc's "Neden video yok")."""
+    name, label, needs_key = 'nasa', 'NASA Görsel Kütüphanesi', False
+
+    def request(self, query, media_type, key):
+        return 'https://images-api.nasa.gov/search', {}, {'q': query[:200], 'media_type': 'image', 'page_size': 40}, 'items'
+
+    def _search(self, query, media_type, *, page=1):
+        if media_type == 'video':
+            return []  # no network call: this source has images only
+        return super()._search(query, media_type, page=page)
+
+    def results(self, data, field):
+        return ((data.get('collection') or {}).get(field) or [])
+
+    def normalize_result(self, item, media_type, query):
+        info = (item.get('data') or [{}])[0]
+        if info.get('copyright'): raise FilteredResult()  # rare non-NASA-owned exception: never offered
+        nasa_id = info.get('nasa_id')
+        if not nasa_id: raise FilteredResult()
+        files = [{'url': l['href'], 'width': l.get('width'), 'height': l.get('height')} for l in (item.get('links') or [])
+                 if l.get('render') == 'image' and isinstance(l.get('width'), int) and isinstance(l.get('height'), int)]
+        chosen = rendition(files)
+        preview = min(files, key=lambda f: f['width'] * f['height'])['url']
+        creator = info.get('secondary_creator') or info.get('center') or 'NASA'
+        description = ' '.join(f"{info.get('title', '')} {info.get('description', '')}".split())[:600]
+        return normalized_media({'provider': self.name, 'media_id': nasa_id, 'media_type': 'image',
+            'source_url': f'https://images.nasa.gov/details/{nasa_id}', 'page_url': f'https://images.nasa.gov/details/{nasa_id}',
+            'creator_name': creator[:300], 'creator_url': '', 'width': chosen['width'], 'height': chosen['height'],
+            'duration': None, 'preview_url': preview, 'download_url': chosen['url'], 'query_used': query,
+            'description': description, 'source_metadata': {'documentation_url': 'https://images.nasa.gov/docs',
+                'title': str(info.get('title', ''))[:300], 'center': str(info.get('center', ''))[:120],
+                'date_created': str(info.get('date_created', ''))[:40], 'keywords': [str(k)[:60] for k in (info.get('keywords') or [])][:12]}})
+
+
 def make_stock_provider(name, settings):
-    providers = {'pexels':PexelsStockProvider,'pixabay':PixabayStockProvider,'wikimedia':WikimediaStockProvider}
+    providers = {'pexels':PexelsStockProvider,'pixabay':PixabayStockProvider,'wikimedia':WikimediaStockProvider,'nasa':NASAStockProvider}
     if name not in providers: raise StockError('invalid_provider','Bu stok sağlayıcısı kullanılamıyor.',422)
     for key in settings.secret_values(): PRIVATE_KEYS.update((key,quote(key,safe='')))
-    if name == 'wikimedia': return WikimediaStockProvider('')
+    if name in ('wikimedia', 'nasa'): return providers[name]('')
     return providers[name](settings.stock_config(name).get('api_key',''))

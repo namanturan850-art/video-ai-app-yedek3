@@ -230,8 +230,8 @@ class OpenSourceSettings(BaseModel):
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
           "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings,
-          "claude": ClaudeSettings, "youtube": KeySettings, "wikimedia": OpenSourceSettings, "mapbox": MapboxSettings}
-PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia", "mapbox")
+          "claude": ClaudeSettings, "youtube": KeySettings, "wikimedia": OpenSourceSettings, "nasa": OpenSourceSettings, "mapbox": MapboxSettings}
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia", "nasa", "mapbox")
 
 
 def stored_secrets(values):
@@ -337,7 +337,7 @@ class SettingsService:
                     public['fallback_custom'] = isinstance(config.get('fallback_models'), list)
                 if name == "openai":
                     configured = configured and config['enabled'] and bool(public['model'])
-                if name == 'wikimedia':
+                if name in ('wikimedia', 'nasa'):
                     configured = True  # no key needed
                 if name == 'pexels':
                     from app.stock.providers import PEXELS_ENABLED
@@ -348,6 +348,8 @@ class SettingsService:
                 message = "Bilgiler kaydedildi; bağlantı henüz doğrulanmadı." if configured else "İsteğe bağlı. Bu hizmeti kullanmadan devam edebilirsiniz."
                 if name == 'wikimedia':
                     message = 'Anahtar gerekmez; Medyayı Tamamla Wikimedia Commons’u kendiliğinden kullanır. İsterseniz Bağlantıyı Test Et ile kontrol edin.'
+                if name == 'nasa':
+                    message = 'Anahtar gerekmez; Medyayı Tamamla NASA Görsel Kütüphanesi’ni kendiliğinden kullanır (yalnız görsel). İsterseniz Bağlantıyı Test Et ile kontrol edin.'
                 if name == 'pexels' and public.get('disabled'):
                     status, message = 'Kullanılmıyor', 'Pexels şu an yeni anahtar vermediği için kapalı; medya Pixabay ve Wikimedia Commons’tan aranır. Anahtar alanı ileride kullanmak için duruyor.'
                 if name == "ai33":
@@ -373,7 +375,7 @@ class SettingsService:
                     message = f'{message} · {usage_text()}'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia','nasa')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result['images'] = self.image_view()
@@ -536,7 +538,7 @@ class SettingsService:
             return self._values()['youtube'].get('api_key', '')
 
     def stock_config(self, provider):
-        if provider not in ('pexels','pixabay','youtube','wikimedia'):
+        if provider not in ('pexels','pixabay','youtube','wikimedia','nasa'):
             raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
         with self.store.lock:
             return dict(self._values()[provider])

@@ -60,7 +60,7 @@ jobs:
           Write-Host "::notice title=FFmpeg in use::$((ffmpeg -version | Select-Object -First 1))"
           exit 0
       - name: CPU API SQLite FFmpeg checks
-        run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py tests/test_preview_playback.py tests/test_continuous_preview.py tests/test_proxy_audio_state.py tests/test_source_timing.py tests/test_manual_jobs.py tests/test_html_layers.py tests/test_naman_editor.py tests/test_density_and_ffmpeg_hint.py tests/test_nasa.py tests/test_wikimedia.py tests/test_looks.py tests/test_clip_device.py -q -rf --tb=short --junitxml=pytest-report.xml
+        run: python -m pytest tests/test_editor_polish.py tests/test_advanced_editing.py tests/test_advanced_render.py tests/test_desktop.py tests/test_preview_playback.py tests/test_continuous_preview.py tests/test_proxy_audio_state.py tests/test_source_timing.py tests/test_manual_jobs.py tests/test_html_layers.py tests/test_naman_editor.py tests/test_density_and_ffmpeg_hint.py tests/test_nasa.py tests/test_wikimedia.py tests/test_looks.py tests/test_clip_device.py tests/test_archive.py -q -rf --tb=short --junitxml=pytest-report.xml
       - name: Failed test summary
         if: failure()
         shell: python

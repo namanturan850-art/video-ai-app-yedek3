@@ -20,7 +20,7 @@ PRIVATE_KEYS = set()
 # Pexels stopped giving out new API keys: the provider stays in the code and
 # its key field in Settings, but searches use Pixabay and Wikimedia Commons.
 PEXELS_ENABLED = False
-ACTIVE = ('pixabay', 'wikimedia', 'nasa') + (('pexels',) if PEXELS_ENABLED else ())
+ACTIVE = ('pixabay', 'wikimedia', 'nasa', 'archive') + (('pexels',) if PEXELS_ENABLED else ())
 
 
 class PrivateHTTPFilter(logging.Filter):
@@ -353,9 +353,124 @@ class NASAStockProvider(APIStockProvider):
                 'date_created': str(info.get('date_created', ''))[:40], 'keywords': [str(k)[:60] for k in (info.get('keywords') or [])][:12]}})
 
 
+# Internet Archive: only these licences (monetised YouTube video): Public Domain Mark, CC0, CC BY, CC BY-SA.
+ARCHIVE_LICENCE = re.compile(r'^https?://(?:www\.)?creativecommons\.org/(publicdomain/(mark|zero)/|licenses/(by|by-sa)/)([\d.]+)?', re.I)
+ARCHIVE_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')
+ARCHIVE_SERVER = re.compile(r'^ia\d{3,7}\.us\.archive\.org$')
+ARCHIVE_DIR = re.compile(r'^/[0-9]{1,3}/items/[A-Za-z0-9._-]{1,100}$')
+ARCHIVE_MAX_BYTES = 200_000_000
+
+
+def archive_licence(url):
+    """(short name, url) for an accepted licence URL, else None (NC, ND, unknown, missing)."""
+    match = ARCHIVE_LICENCE.match(str(url or '').strip())
+    if not match: return None
+    version = f' {match.group(4)}' if match.group(4) else ''
+    name = {'mark': 'Public Domain Mark', 'zero': 'CC0'}.get(match.group(2)) or ('CC BY' if match.group(3) == 'by' else 'CC BY-SA') + version
+    return name, str(url).strip()
+
+
+def archive_seconds(value):
+    """'123.45' or 'HH:MM:SS(.ss)' -> seconds, else None."""
+    try:
+        text = str(value).strip()
+        if ':' in text:
+            total = 0.
+            for part in text.split(':'): total = total * 60 + float(part)
+            return total if total > 0 else None
+        number = float(text)
+        return number if number > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+class ArchiveStockProvider(APIStockProvider):
+    """Internet Archive (no key; docs/INTERNET_ARCHIVE.md): advancedsearch for films with an
+    accepted licence, then the item's metadata (files with width/height/length) for each hit.
+    Videos only. Archive films are often 4:3 and SD: app/stock/quality.py accepts them for this source."""
+    name, label, needs_key = 'archive', 'Internet Archive', False
+    ROWS = 12
+
+    def request(self, query, media_type, key):
+        words = ' '.join(re.findall(r'[\w-]+', query))[:200] or 'film'
+        q = (f'({words}) AND mediatype:(movies) AND (licenseurl:*publicdomain* OR licenseurl:*licenses/by/* '
+             'OR licenseurl:*licenses/by-sa/*)')
+        params = {'q': q, 'fl[]': ['identifier', 'title', 'licenseurl'], 'rows': self.ROWS, 'output': 'json'}
+        return 'https://archive.org/advancedsearch.php', {'User-Agent': USER_AGENT}, params, 'docs'
+
+    def page_params(self, page):
+        return {'page': page}
+
+    def _search(self, query, media_type, *, page=1):
+        if media_type != 'video':
+            return []  # no network call: this source has films only
+        return super()._search(query, media_type, page=page)
+
+    def metadata(self, identifier):
+        try:
+            with httpx.Client(timeout=httpx.Timeout(15, connect=8), transport=self.transport, follow_redirects=False) as client:
+                response = client.get(f'https://archive.org/metadata/{identifier}', headers={'User-Agent': USER_AGENT})
+                if response.status_code != 200 or len(response.content) > 3_000_000: return None
+                data = response.json()
+                return data if isinstance(data, dict) else None
+        except (httpx.HTTPError, ValueError):
+            return None
+
+    def results(self, data, field):
+        docs = (data.get('response') or {}).get(field)
+        if not isinstance(docs, list): raise ValueError()
+        keep = [d for d in docs if isinstance(d, dict) and isinstance(d.get('identifier'), str) and ARCHIVE_ID.match(d['identifier'])]
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            for doc, meta in zip(keep, pool.map(self.metadata, [d['identifier'] for d in keep])):
+                doc['_metadata'] = meta
+        return docs
+
+    def normalize_result(self, doc, media_type, query):
+        identifier = doc.get('identifier')
+        meta = doc.get('_metadata')
+        if not isinstance(identifier, str) or not ARCHIVE_ID.match(identifier) or not isinstance(meta, dict): raise FilteredResult()
+        info = meta.get('metadata') if isinstance(meta.get('metadata'), dict) else {}
+        licence = archive_licence(info.get('licenseurl') or doc.get('licenseurl'))
+        if not licence: raise FilteredResult()  # NC/ND/unknown: never offered
+        server, folder = meta.get('server'), meta.get('dir')
+        if not (isinstance(server, str) and ARCHIVE_SERVER.match(server) and isinstance(folder, str) and ARCHIVE_DIR.match(folder)): raise FilteredResult()
+        files = [f for f in meta.get('files') or [] if isinstance(f, dict) and isinstance(f.get('name'), str) and '..' not in f['name']]
+        videos = []
+        for f in files:
+            if not f['name'].lower().endswith('.mp4'): continue
+            try: width, height, size = int(f['width']), int(f['height']), int(f.get('size') or 0)
+            except (KeyError, TypeError, ValueError): continue
+            length = archive_seconds(f.get('length'))
+            if not length or width < 640 or height < 480 or not 1.25 <= width / height <= 1.95 or not 0 < size <= ARCHIVE_MAX_BYTES: continue
+            videos.append({'name': f['name'], 'width': width, 'height': height, 'size': size, 'length': length})
+        if not videos: raise FilteredResult()  # no usable MP4 (too small, too big, unknown length)
+        hd = [v for v in videos if v['width'] >= 1280]
+        chosen = min(hd, key=lambda v: v['size']) if hd else max(videos, key=lambda v: (v['width'] * v['height'], -v['size']))
+        link = lambda name: f'https://{server}{folder}/' + quote(name, safe='/')
+        thumbs = sorted(f['name'] for f in files if f.get('format') == 'Thumbnail' and f['name'].lower().endswith('.jpg'))
+        picked = [thumbs[i] for i in sorted({0, len(thumbs) // 2, len(thumbs) - 1})] if thumbs else []
+        frames = [link(name) for name in picked]
+        creator = info.get('creator')
+        creator = text_of(creator[0] if isinstance(creator, list) and creator else creator, 300) or 'Internet Archive'
+        title = text_of(info.get('title') or doc.get('title'), 300)
+        about = text_of(info.get('description'), 600)
+        page = f'https://archive.org/details/{identifier}'
+        return normalized_media({'provider': self.name, 'media_id': re.sub(r'[^A-Za-z0-9_-]', '_', identifier)[:100], 'media_type': 'video',
+            'source_url': page, 'page_url': page, 'creator_name': creator, 'creator_url': '',
+            'width': chosen['width'], 'height': chosen['height'], 'duration': chosen['length'],
+            'preview_url': frames[0] if frames else '', 'download_url': link(chosen['name']), 'query_used': query,
+            'description': ' '.join(f'{title} {about}'.split())[:1000],
+            'source_metadata': {'documentation_url': 'https://archive.org/developers/', 'identifier': identifier, 'title': title,
+                                'license': licence[0], 'license_url': licence[1], 'author': creator,
+                                'original_width': chosen['width'], 'original_height': chosen['height'],
+                                **({'preview_frames': frames} if frames else {}),
+                                **({'sample_url': link(chosen['name'])} if not frames and chosen['size'] <= 60_000_000 else {})}})
+
+
 def make_stock_provider(name, settings):
-    providers = {'pexels':PexelsStockProvider,'pixabay':PixabayStockProvider,'wikimedia':WikimediaStockProvider,'nasa':NASAStockProvider}
+    providers = {'pexels':PexelsStockProvider,'pixabay':PixabayStockProvider,'wikimedia':WikimediaStockProvider,'nasa':NASAStockProvider,'archive':ArchiveStockProvider}
     if name not in providers: raise StockError('invalid_provider','Bu stok sağlayıcısı kullanılamıyor.',422)
     for key in settings.secret_values(): PRIVATE_KEYS.update((key,quote(key,safe='')))
-    if name in ('wikimedia', 'nasa'): return providers[name]('')
+    if name in ('wikimedia', 'nasa', 'archive'): return providers[name]('')
     return providers[name](settings.stock_config(name).get('api_key',''))

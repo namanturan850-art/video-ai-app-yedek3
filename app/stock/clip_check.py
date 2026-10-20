@@ -29,6 +29,7 @@ class ClipCheck:
         self._ready = None
         self.model_version = ''
         self.metrics = {}
+        self.error = ''  # the real reason the model stopped, shown in the diagnostics file
 
     def ready(self):
         if self.broken: return False
@@ -72,7 +73,8 @@ class ClipCheck:
                     if item.get('verdict') in ('match', 'mismatch', 'uncertain') and isinstance(item.get('score'), int):
                         out[item['key']] = {k: item[k] for k in ('verdict', 'score', 'similarity', 'contrast_margin', 'conflict', 'setting_margin', 'setting_closest') if k in item}
             except Exception as error:  # the model failed: this job goes on without it
-                LOG.warning('stock operation=clip_frames category=failed exception_class=%s', type(error).__name__)
+                LOG.warning('stock operation=clip_frames category=failed exception_class=%s', type(error).__name__, exc_info=True)
+                self.error = f'{type(error).__name__}: {str(error)[:400]}'
                 self.broken = True
                 return out
             finally:

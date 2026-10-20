@@ -664,6 +664,7 @@ class MediaDirector:
         self.progress['clip_metrics'] = dict(getattr(self.clip, 'metrics', {}))
         if not scores and self.clip.broken:
             self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; seçimin diğer kontrollerini ve gerekçesini yuvada inceleyin.'
+            if getattr(self.clip, 'error', ''): self.progress['clip_error'] = self.clip.error
         decided = {}
         for media in pool:
             result = scores.get(key_text(media))
@@ -2567,7 +2568,7 @@ def diagnostics(service, project_id):
                       'missing_reasons': s.get('missing_reason_messages', [])})
     with closing(service.projects._connection()) as c:
         jobs = [{'id': r['id'], 'action': r['action'], 'status': r['status'], 'error': r['error_message'], 'created_at': r['created_at'],
-                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('policy_versions', 'scope', 'message', 'percent', 'category', 'timings', 'performance', 'search_metrics', 'api_errors', 'preview_cache_hits', 'preview_reads', 'clip_metrics', 'quality_cache_hits', 'provider_searches', 'cached_search_reads', 'motion_cache_hits', 'motion_renders', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
+                'progress': {k: v for k, v in json.loads(r['progress_json']).items() if k in ('policy_versions', 'scope', 'message', 'percent', 'category', 'timings', 'performance', 'search_metrics', 'api_errors', 'preview_cache_hits', 'preview_reads', 'clip_metrics', 'clip_ready', 'clip_warning', 'clip_error', 'quality_cache_hits', 'provider_searches', 'cached_search_reads', 'motion_cache_hits', 'motion_renders', 'ai_error', 'ai_failure', 'review_skipped', 'unavailable_providers', 'review', 'media_summary',
                                                                                     'ai_attempts', 'ai_requests', 'ai_cached', 'ai_requests_total', 'local_mode', 'local_reason')}}
                 for r in c.execute('SELECT * FROM stock_jobs WHERE project_id=? ORDER BY created_at DESC LIMIT 10', (project_id,))]
     from app.providers.gemini_chain import ATTEMPTS

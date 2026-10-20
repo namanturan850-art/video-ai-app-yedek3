@@ -61,13 +61,20 @@ def save(path,value):
 
 def inference(fn,value,clip,torch):
     try:return fn(value)
-    except RuntimeError:
+    except Exception:
         if clip._DEVICE!='cuda':raise
-        # Unsupported CUDA architecture/OOM: retry CPU once, same local model.
+        # Any GPU trouble (unsupported CUDA architecture, OOM, driver/DLL errors that are
+        # not RuntimeError): retry CPU once, same local model.
         clip._MODEL=None;clip._PROCESSOR=None
         original=torch.cuda.is_available;torch.cuda.is_available=lambda:False
         try:return fn(value)
         finally:torch.cuda.is_available=original
+
+
+def actual_device(clip):
+    """'cuda' or 'cpu': where the loaded model really lives (after any CPU fallback)."""
+    try:return 'cuda' if next(clip._MODEL.parameters()).device.type=='cuda' else 'cpu'
+    except Exception:return 'cuda' if str(getattr(clip,'_DEVICE','cpu'))=='cuda' else 'cpu'
 
 
 def model_status(root):
@@ -121,7 +128,6 @@ def score_frames(root,inputs):
     metrics = {'text_vector_hits': sum(k in _EMBEDDINGS for k in text_keys),
                'text_vectors_encoded': len({k for k in text_keys if k not in _EMBEDDINGS})}
     texts=embedded(labels,text_keys,embed_texts,clip_embedder,torch)
-    metrics['device']='cuda' if str(getattr(clip_embedder,'_DEVICE','cpu'))=='cuda' else 'cpu'
     split=1+len(negatives)
     results=[]
     grouped = []
@@ -135,6 +141,7 @@ def score_frames(root,inputs):
     metrics.update(image_vector_hits=sum(k in _EMBEDDINGS for k in image_keys),
                    image_vectors_encoded=len({k for k in image_keys if k not in _EMBEDDINGS}))
     vectors = embedded(all_frames, image_keys, embed_images, clip_embedder, torch)
+    metrics['device']=actual_device(clip_embedder)
     cursor = 0
     for item, frames in grouped:
         images = vectors[cursor:cursor + len(frames)]

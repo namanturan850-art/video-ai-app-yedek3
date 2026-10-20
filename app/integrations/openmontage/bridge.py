@@ -8,6 +8,7 @@ from uuid import uuid4
 from app.projects import linked
 from app.rendering.models import RenderError
 from app.rendering.runner import ProcessRunner
+from app.integrations.openmontage.frames_process import FramesError
 
 PIN='9327439db69021ab4b0e2776729bf3b58fdb5a87'
 OFFICIAL='https://github.com/calesthio/OpenMontage.git'
@@ -138,6 +139,11 @@ class Bridge:
             result=json.loads(response.read_text(encoding='utf-8'));self.settings_guard(result)
             if result.get('success') is not True:raise ValueError()
             return result.get('data',{})
+        except FramesError as error:
+            # CLIP side process: keep the real technical cause for the diagnostics file (never a secret).
+            from app.scripts.engine import SecretGuard
+            detail=SecretGuard(self.settings.secret_values()).clean(error.detail)
+            raise RenderError('openmontage_failed',f'CLIP süreci çalışmadı ({error.reason}): {detail}'.strip()) from None
         except RenderError as error:
             if error.category=='render_cancelled':raise
             raise RenderError('openmontage_failed','OpenMontage kullanılamadı. Yerel Adaptif motorunu seçerek tekrar deneyin; önceki video korundu.') from None

@@ -153,6 +153,13 @@ class YouTubeService:
                 seen.add(key); out.append({'provider': 'Wikimedia Commons', 'creator': meta.get('author') or m.get('creator_name', ''),
                                            'title': meta.get('title', ''), 'license': meta.get('license', ''), 'url': m.get('page_url', '')})
                 continue
+            if m.get('provider') == 'archive':  # PD / CC0 / CC BY / BY-SA: author, licence and link, one line per film
+                meta = m.get('source_metadata') or {}
+                key = ('archive', m.get('media_id'))
+                if key in seen: continue
+                seen.add(key); out.append({'provider': 'Internet Archive', 'creator': meta.get('author') or m.get('creator_name', ''),
+                                           'title': meta.get('title', ''), 'license': meta.get('license', ''), 'url': m.get('page_url', '')})
+                continue
             if m.get('provider') == 'nasa':  # not copyrighted; NASA still asks for a simple credit
                 meta = m.get('source_metadata') or {}
                 key = ('nasa', m.get('media_id'))

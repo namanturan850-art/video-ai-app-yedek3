@@ -16,9 +16,11 @@ from app.stock.models import StockError
 # Hosts in official examples. Unrecognized redirect hosts are refused, not guessed.
 HOSTS = {'pexels': {'images.pexels.com','videos.pexels.com','static-videos.pexels.com','player.vimeo.com'},
          'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'wikimedia': {'upload.wikimedia.org'},
-         'nasa': {'images-assets.nasa.gov'}}
+         'nasa': {'images-assets.nasa.gov'}, 'archive': set()}
 PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'},
-         'wikimedia': {'commons.wikimedia.org'}, 'nasa': {'images.nasa.gov'}}
+         'wikimedia': {'commons.wikimedia.org'}, 'nasa': {'images.nasa.gov'}, 'archive': {'archive.org'}}
+# Internet Archive files live on numbered data nodes (from the item metadata's 'server'), not on one fixed host.
+HOST_PATTERNS = {'archive': re.compile(r'^ia\d{3,7}\.us\.archive\.org$')}
 TYPES = {'video/mp4':('.mp4','video'), 'image/jpeg':('.jpg','image'),
          'image/png':('.png','image'), 'image/webp':('.webp','image'),
          'video/webm':('.mp4','video')}  # Commons WebM is converted to MP4 here, so the rest of the app only sees MP4
@@ -33,7 +35,8 @@ def safe_url(value, provider, *, page=False):
         if (not isinstance(value,str) or len(value)>2000 or any(ord(c)<33 for c in value)
                 or url.scheme!='https' or url.username is not None or url.password is not None
                 or url.port not in (None,443) or url.fragment or '\\' in value
-                or url.hostname not in (PAGES if page else HOSTS).get(provider,set())):
+                or not (url.hostname in (PAGES if page else HOSTS).get(provider,set())
+                        or (not page and provider in HOST_PATTERNS and HOST_PATTERNS[provider].match(url.hostname or '')))):
             raise ValueError()
         if url.path.startswith('/api/') or url.path.startswith('/v1/'):
             raise ValueError()

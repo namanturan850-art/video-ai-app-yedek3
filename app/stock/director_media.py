@@ -770,8 +770,8 @@ class MediaDirector:
         """Pixabay (with a key) and Wikimedia Commons (no key; Pexels is switched
         off). History/archaeology/museum/map scenes ask Wikimedia first."""
         from app.stock.providers import ACTIVE
-        names = [n for n in ACTIVE if n in ('wikimedia', 'nasa') or self.service.settings.stock_config(n).get('api_key')]
-        if scene is not None and historic(scene): names.sort(key=lambda n: n != 'wikimedia')
+        names = [n for n in ACTIVE if n in ('wikimedia', 'nasa', 'archive') or self.service.settings.stock_config(n).get('api_key')]
+        if scene is not None and historic(scene): names.sort(key=lambda n: n not in ('wikimedia', 'archive'))  # archives first for history
         bridge = getattr(self.service, 'openmontage', None)
         if bridge and bridge.config().get('media_search') and bridge.status().get('ready'):names.append('openmontage')
         return [n for n in names if n not in self.unavailable]
@@ -1061,7 +1061,7 @@ class MediaDirector:
     def extended_search(self, slot, scene, queries, log, exclude):
         """Try extra free-source pages; motion remains the final fallback."""
         sources = self.providers(scene)
-        free = [name for name in sources if name in ('pixabay', 'wikimedia', 'nasa')]
+        free = [name for name in sources if name in ('pixabay', 'wikimedia', 'nasa', 'archive')]
 
         def checked(results, stage):
             candidates = self.pool(slot, results, log, exclude, scene)[:CANDIDATES]

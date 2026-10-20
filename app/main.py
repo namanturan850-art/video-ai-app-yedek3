@@ -655,6 +655,14 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             except StockError as error:
                 outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test('nasa',{},outcome)}
+        if section == 'archive':  # no key: one small film search against the official API
+            from app.stock.providers import make_stock_provider
+            try:
+                found = make_stock_provider('archive', settings).search_videos('ocean')
+                outcome = {'status':'Hazır','message':f'Internet Archive bağlantısı başarılı ({len(found)} kullanılabilir film bulundu).','category':'none'}
+            except StockError as error:
+                outcome = {'status':'Hata','message':str(error),'category':error.category}
+            return {'result':outcome,'settings':settings.record_stock_test('archive',{},outcome)}
         if section in ('pexels','pixabay'):
             from app.stock.providers import make_stock_provider
             from datetime import datetime, timedelta, timezone

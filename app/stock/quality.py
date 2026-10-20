@@ -22,8 +22,9 @@ def inspect_media(projects, pid, media, tool, start=0.):
     result = {'sha256': media['sha256'], 'width': width, 'height': height,
               'duration': data.get('stock_duration'), 'quality_version': 1}
     ratio=width/max(1,height)
-    landscape=1.6<=ratio<=1.95 if media['media_type']=='video' else 1.3<=ratio<=2.
-    if not landscape or width < 1280 or height < 720:
+    archive=media.get('provider')=='archive' and media['media_type']=='video'  # old 4:3 / SD films, cropped to 16:9 on render
+    landscape=(1.25<=ratio<=1.95 if archive else 1.6<=ratio<=1.95) if media['media_type']=='video' else 1.3<=ratio<=2.
+    if not landscape or width < (640 if archive else 1280) or height < (480 if archive else 720):
         return {**result, 'accepted': False, 'reason': 'orientation_or_resolution'}
     args = [tool['ffmpeg'], '-v', 'error', '-nostdin', '-threads', '1']
     if media['media_type'] == 'video':args += ['-ss', str(max(0.,start))]

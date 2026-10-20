@@ -14,6 +14,13 @@ SETTINGS = {'X-AI-Video-Studio': 'settings'}
 PD = 'http://creativecommons.org/publicdomain/mark/1.0/'
 
 
+@pytest.fixture(autouse=True)
+def fresh_metadata_cache():
+    ArchiveStockProvider.CACHE.clear()
+    yield
+    ArchiveStockProvider.CACHE.clear()
+
+
 def files(identifier, *, width=640, height=480, length='612.40', size=48_000_000, thumbs=5, extra=()):
     out = [{'name': f'{identifier}.mpeg', 'source': 'original', 'format': 'MPEG2', 'size': '900000000'},
            {'name': f'{identifier}_512kb.mp4', 'source': 'derivative', 'format': 'h.264', 'size': str(size),
@@ -76,6 +83,16 @@ def test_documented_requests_and_normalisation():
     assert 'Ships at sea, 1948.' in m['description'] and '<p>' not in m['description']
     for url in (m['download_url'], m['preview_url']): safe_url(url, 'archive')
     safe_url(m['page_url'], 'archive', page=True)
+
+
+def test_metadata_is_fetched_once_per_film_across_searches():
+    ArchiveStockProvider.CACHE.clear()
+    seen = []
+    items = {'CachedFilm': metadata('CachedFilm')}
+    for _ in range(2):  # a new provider object per search, as the service does
+        ArchiveStockProvider('', transport=httpx.MockTransport(handler(items, seen))).search('film', 'video')
+    assert [r.url.path for r in seen].count('/metadata/CachedFilm') == 1
+    ArchiveStockProvider.CACHE.clear()
 
 
 def test_images_make_no_network_call_and_hd_file_is_preferred():

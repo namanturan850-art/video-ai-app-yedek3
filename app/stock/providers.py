@@ -407,7 +407,21 @@ class ArchiveStockProvider(APIStockProvider):
             return []  # no network call: this source has films only
         return super()._search(query, media_type, page=page)
 
+    CACHE, CACHE_LOCK, CACHE_TTL, CACHE_MAX = {}, __import__('threading').Lock(), 3600, 400  # provider objects are per search: shared across them
+
     def metadata(self, identifier):
+        now = time.monotonic()
+        with self.CACHE_LOCK:
+            hit = self.CACHE.get(identifier)
+        if hit and now - hit[0] < self.CACHE_TTL: return hit[1]
+        data = self._fetch_metadata(identifier)
+        if data is not None:  # a failed fetch is retried next time, never remembered
+            with self.CACHE_LOCK:
+                if len(self.CACHE) >= self.CACHE_MAX: self.CACHE.clear()
+                self.CACHE[identifier] = (now, data)
+        return data
+
+    def _fetch_metadata(self, identifier):
         try:
             with httpx.Client(timeout=httpx.Timeout(15, connect=8), transport=self.transport, follow_redirects=False) as client:
                 response = client.get(f'https://archive.org/metadata/{identifier}', headers={'User-Agent': USER_AGENT})

@@ -7,7 +7,8 @@ Görsel aranmaz (yalnız film).
 ## Kullanılan resmî uç noktalar
 
 1. **Arama:** `https://archive.org/advancedsearch.php` (GET)
-   - `q` = `(<sorgu kelimeleri>) AND mediatype:(movies) AND (licenseurl:*publicdomain* OR licenseurl:*licenses/by/* OR licenseurl:*licenses/by-sa/*)`
+   - `q` = `(<sorgu kelimeleri>) AND mediatype:(movies) AND (licenseurl:*publicdomain* OR licenseurl:*licenses\/by\/* OR licenseurl:*licenses\/by-sa\/*)`
+     (joker içindeki `/` işaretleri `\/` diye yazılmalı; yazılmazsa arama `BACKEND_ERROR` döner — 2026-10-20'de canlı doğrulandı)
    - `fl[]=identifier`, `fl[]=title`, `fl[]=licenseurl`, `rows=12`, `page`, `output=json`
    - Yanıt: `response.docs[]` (her biri `identifier`, varsa `title`, `licenseurl`).
    - Belge: https://archive.org/advancedsearch.php , alanlar: https://archive.org/developers/metadata-schema/index.html
@@ -29,13 +30,13 @@ Görsel aranmaz (yalnız film).
   YouTube açıklamasına “Görsel kaynakları” bölümünde yazılır.
 
 ## Dosya seçimi
-- Yalnız `.mp4` dosyalar; `width`, `height`, `length` ve `size` bilinmeli; en fazla 200 MB.
+- Yalnız `.mp4` dosyalar; `width`, `height`, `length` ve `size` bilinmeli; en fazla 250 MB.
 - Eski filmler çoğu zaman 4:3 ve SD'dir. Bu kaynak için kalite kontrolü 4:3–16:9 oran ve en az 640×480 kabul eder
   (diğer kaynaklar için kural değişmez: 16:9 ve en az 1280×720). Videoda kırpılarak 16:9 ekranı doldurur.
 - HD (genişlik ≥ 1280) varsa en küçük HD dosya, yoksa en yüksek çözünürlüklü dosya seçilir.
 - Önizleme: öğedeki `Thumbnail` biçimli JPG'lerden başlangıç/orta/son üçü (CLIP ve AI kontrolü için).
 
 ## Doğrulama durumu
-Bu ortamdan Internet Archive'a canlı erişim yoktu; alan adları yukarıdaki resmî belgelerden alındı ve testler bu
-biçimi taklit eder. Canlı bağlantıyı **Ayarlar → Internet Archive → Bağlantıyı Test Et** ile bir kez doğrulayın.
-Arama sorgusundaki `licenseurl:*…*` joker sorgusu canlıda çalışmazsa test “Hata” gösterir; bu durumda bildirin.
+2026-10-20'de canlı doğrulandı: arama yanıtı (`response.docs[]` içinde `identifier`, `title`, `licenseurl`) ve
+öğe bilgisi (`server`, `dir`, `files[]` içinde `width`/`height`/`length`/`size` metin olarak, `format: "Thumbnail"`
+önizlemeler, `metadata.licenseurl`/`creator`) beklenen biçimde. Testler bu biçimi taklit eder.

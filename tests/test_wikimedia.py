@@ -161,7 +161,7 @@ def test_history_scenes_ask_commons_first_and_settings_show_sources(tmp_path):
     with TestClient(create_app(tmp_path / 'data'), headers=HEADERS) as client:
         assert client.put('/api/settings/pixabay', json={'api_key': 'synthetic-pixabay-key-2222'}, headers=SETTINGS).status_code == 200
         d = MediaDirector.__new__(MediaDirector); d.service, d.unavailable = client.app.state.stock, {}
-        assert d.providers(rome) == ['wikimedia', 'pixabay'] and d.providers(space) == ['pixabay', 'wikimedia']
+        assert d.providers(rome) == ['wikimedia', 'pixabay', 'nasa'] and d.providers(space) == ['pixabay', 'wikimedia', 'nasa']  # NASA: no key either
         view = client.get('/api/settings', headers=SETTINGS).json()
         assert view['wikimedia']['status'] == 'Hazır' and 'Anahtar gerekmez' in view['wikimedia']['message']
         assert view['pexels']['status'] == 'Kullanılmıyor' and 'API anahtarı' not in view['pexels']['message']  # empty key: no warning

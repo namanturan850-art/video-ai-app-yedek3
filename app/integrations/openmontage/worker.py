@@ -192,6 +192,22 @@ def work(operation,inputs):
     raise ValueError('operation_invalid')
 
 
+def failure_detail(error):
+    """The real reason CLIP stopped (class, short message, where, torch/GPU state).
+    Goes only to the diagnostics file; the frames job sends no credentials."""
+    import traceback
+    text=' '.join(str(error).split())[:240]
+    try:
+        last=traceback.extract_tb(error.__traceback__)[-1];where=f' @ {Path(last.filename).name}:{last.lineno}'
+    except Exception:where=''
+    info=''
+    torch=sys.modules.get('torch')
+    if torch is not None:
+        try:info=f' [torch {torch.__version__}; cuda={bool(torch.cuda.is_available())}]'
+        except Exception:info=' [torch bilgisi okunamadı]'
+    return {'error_class':type(error).__name__,'detail':text+where+info}
+
+
 def serve_frames():
     # One sequential model owner; module/model objects survive between batches.
     for line in sys.stdin:
@@ -200,8 +216,8 @@ def serve_frames():
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 data=work('frames',json.loads(line))
             result={'success':True,'data':data}
-        except Exception:
-            result={'success':False,'category':'external_engine_failed'}
+        except Exception as error:
+            result={'success':False,'category':'external_engine_failed',**failure_detail(error)}
         sys.__stdout__.write(json.dumps(result)+'\n');sys.__stdout__.flush()
 
 

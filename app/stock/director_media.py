@@ -1687,6 +1687,14 @@ class MediaDirector:
         history scene”), level 2 the wrong-place rules too. Candidates dropped before come back through the same
         search; each still has to reach 7/10 (CLIP / AI / words). Verdicts made here never leak into the strict ones."""
         if not queries: return None
+        fingerprint = self.relaxed_fingerprint(slot, scene, queries)
+        if self.relaxed_failed_recently(slot, fingerprint):
+            # Same slot, same sentence, same queries, same judge a short while ago: it found nothing then and
+            # nothing has changed, so a repeat would only burn minutes (#133 measured 64 tries, 0 hits).
+            log['steps'].append({'stage': 'relaxed', 'label': STAGES['relaxed'], 'result': 'skipped_recently_failed'})
+            self.progress['relaxed_skipped'] = self.progress.get('relaxed_skipped', 0) + 1
+            return None
+        searches_before = len(log.get('searches', []))
         for level in (1, 2):
             self.relax = level
             local = {**log, 'judged': {k: v for k, v in memo['judged'].items() if not v.get('setting_conflict')}, 'rejected': {}}
@@ -1697,8 +1705,30 @@ class MediaDirector:
                 slot['setting_relaxed'] = level
                 slot['message'] = f'⚠ Motion oranı yüksek olduğu için {note}. ' + slot.get('message', '')
                 self.progress['relaxed_slots'] = self.progress.get('relaxed_slots', 0) + 1
+                slot.pop('relaxed_failed', None)
                 return chosen
+        # Remember an honest dead end only: a provider that failed or hit its limit proves nothing about the footage.
+        broken = [s for s in log.get('searches', [])[searches_before:] if s.get('error') and s.get('provider') not in self.unavailable]
+        if not broken: slot['relaxed_failed'] = {'context': fingerprint, 'at': now()}
         return None
+
+    def relaxed_fingerprint(self, slot, scene, queries):
+        """What the relaxed retry depends on: the sentence/shot and rules (same as the strict searches), the
+        queries, and whether the local picture judge (CLIP) was working — fixing CLIP must re-open old dead ends."""
+        from app.stock.verdict_cache import context
+        base = context(scene, {**slot, 'quality_setting': {**(self.where(scene) or {}), 'relax': 0}})
+        try: clip_ok = bool(self.clip and self.clip.ready())
+        except Exception: clip_ok = False
+        extra = json.dumps([list(queries), clip_ok], ensure_ascii=False)
+        return base + hashlib.sha256(extra.encode()).hexdigest()[:16]
+
+    def relaxed_failed_recently(self, slot, fingerprint):
+        from datetime import datetime, timezone
+        from app.stock.search_evidence import FAILURE_TTL
+        old = slot.get('relaxed_failed') or {}
+        if old.get('context') != fingerprint: return False
+        try: return datetime.now(timezone.utc) - datetime.fromisoformat(old['at']) < FAILURE_TTL
+        except (KeyError, ValueError, TypeError): return False
 
     def relax_pass(self):
         """After the main pass: still above the motion target → the graphics that only filled an empty slot get

@@ -146,11 +146,11 @@ class YouTubeService:
         seen, out = set(), []
         for slot in state['slots']:
             m = slot.get('selected_media') or {}
-            if m.get('provider') == 'wikimedia':  # CC BY / BY-SA need author, licence and link: one line per file
+            if m.get('provider') in ('wikimedia', 'europeana'):  # CC BY / BY-SA need author, licence and link: one line per file
                 meta = m.get('source_metadata') or {}
-                key = ('wikimedia', m.get('media_id'))
+                key = (m['provider'], m.get('media_id'))
                 if key in seen: continue
-                seen.add(key); out.append({'provider': 'Wikimedia Commons', 'creator': meta.get('author') or m.get('creator_name', ''),
+                seen.add(key); out.append({'provider': 'Europeana' if m['provider']=='europeana' else 'Wikimedia Commons', 'creator': meta.get('author') or m.get('creator_name', ''),
                                            'title': meta.get('title', ''), 'license': meta.get('license', ''), 'url': m.get('page_url', '')})
                 continue
             if m.get('provider') == 'archive':  # PD / CC0 / CC BY / BY-SA: author, licence and link, one line per film

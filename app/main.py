@@ -663,7 +663,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
             except StockError as error:
                 outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test('archive',{},outcome)}
-        if section in ('pexels','pixabay'):
+        if section in ('pexels','pixabay','europeana'):
             from app.stock.providers import make_stock_provider
             from datetime import datetime, timedelta, timezone
             config = settings.stock_config(section)
@@ -674,9 +674,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
                         return {'result':{'status':'Hazır','category':'none','message':'Pixabay: son 24 saat içindeki başarılı test kullanıldı (API önbellek kuralı).'},'settings':settings.safe_view()}
                 except (ValueError,TypeError): pass
             try:
-                make_stock_provider(section,settings).search_images('nature landscape')
+                found = make_stock_provider(section,settings).search_images('nature landscape')
                 outcome = {'status':'Hazır','message':section.title()+' API bağlantısı başarılı. Medya araması kullanılabilir.','category':'none',
                            'checked_at':datetime.now(timezone.utc).isoformat()}
+                if section == 'europeana':
+                    outcome['message'] = f'Europeana bağlantısı başarılı ({len(found)} kullanılabilir görsel bulundu).'
             except StockError as error:
                 outcome = {'status':'Hata','message':str(error),'category':error.category}
             return {'result':outcome,'settings':settings.record_stock_test(section,config,outcome)}

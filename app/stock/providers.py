@@ -20,7 +20,7 @@ PRIVATE_KEYS = set()
 # Pexels stopped giving out new API keys: the provider stays in the code and
 # its key field in Settings, but searches use Pixabay and Wikimedia Commons.
 PEXELS_ENABLED = False
-ACTIVE = ('pixabay', 'wikimedia', 'nasa', 'archive') + (('pexels',) if PEXELS_ENABLED else ())
+ACTIVE = ('pixabay', 'wikimedia', 'nasa', 'archive', 'europeana') + (('pexels',) if PEXELS_ENABLED else ())
 
 
 class PrivateHTTPFilter(logging.Filter):
@@ -126,7 +126,7 @@ class APIStockProvider:
                     SecretGuard((key,)).validate(media)
                     for field in ('source_url','page_url','preview_url','download_url','creator_url'):
                         if media[field]:
-                            try: safe_url(media[field], self.name, page=field in ('source_url','page_url','creator_url'))
+                            try: safe_url(media[field], self.name, page=field in ('source_url','page_url','creator_url'), preview=field=='preview_url')
                             except StockError:
                                 # Which address failed (field + host only, never the path or a key): shown in the diagnostics.
                                 self.last_diagnostic.setdefault('result_category', unsafe_label(field, media[field]))
@@ -382,7 +382,7 @@ class NASAStockProvider(APIStockProvider):
 
 
 # Internet Archive: only these licences (monetised YouTube video): Public Domain Mark, CC0, CC BY, CC BY-SA.
-ARCHIVE_LICENCE = re.compile(r'^https?://(?:www\.)?creativecommons\.org/(publicdomain/(mark|zero)/|licenses/(by|by-sa)/)([\d.]+)?', re.I)
+ARCHIVE_LICENCE = re.compile(r'^https?://(?:www\.)?creativecommons\.org/(publicdomain/(mark|zero)/|licenses/(by|by-sa)/)(\d+\.\d+)/?(?:deed\.[a-zA-Z_-]+|legalcode)?$', re.I)
 ARCHIVE_ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$')
 ARCHIVE_SERVER = re.compile(r'^ia\d{3,7}\.us\.archive\.org$')
 ARCHIVE_DIR = re.compile(r'^/[0-9]{1,3}/items/[A-Za-z0-9._-]{1,100}$')
@@ -511,8 +511,116 @@ class ArchiveStockProvider(APIStockProvider):
                                 **({'sample_url': link(chosen['name'])} if not frames and chosen['size'] <= 60_000_000 else {})}})
 
 
+def europeana_strings(value):
+    """Search metadata can contain either one string or a list of strings."""
+    if isinstance(value, str): return [value] if value.strip() else []
+    if isinstance(value, list): return [v for v in value if isinstance(v, str) and v.strip()]
+    return []
+
+
+class EuropeanaStockProvider(APIStockProvider):
+    """Image-only Search API adapter. Image dimensions come from the actual file."""
+    name, label = 'europeana', 'Europeana'
+
+    def _search(self, query, media_type, *, page=1):
+        # No invented video metadata or undocumented pagination parameters.
+        if media_type == 'video': return []
+        if type(page) is not int or not 1 <= page <= 3:
+            raise StockError('invalid_query', 'Arama sayfası geçersiz.', 422)
+        if page > 1: return []
+        return super()._search(query, media_type, page=page)
+
+    def request(self, query, media_type, key):
+        return ('https://api.europeana.eu/record/v2/search.json',
+                {'X-Api-Key': key, 'User-Agent': USER_AGENT},
+                {'query': query, 'reusability': 'open', 'media': 'true', 'rows': 24,
+                 'qf': ['IMAGE_ASPECTRATIO:landscape', 'IMAGE_SIZE:large']}, 'items')
+
+    def results(self, data, field):
+        if not isinstance(data, dict) or data.get('success') is not True or data.get('error'):
+            # Never echo server error text: it may contain credentials.
+            raise ValueError('api_error')
+        for name in ('itemsCount', 'totalResults'):
+            if type(data.get(name)) is not int or data[name] < 0:
+                raise ValueError('result_count_shape')
+        items = data.get(field, []) if data['itemsCount'] == 0 else data[field]
+        if not isinstance(items, list) or len(items) != data['itemsCount'] or len(items) > 24:
+            raise ValueError('result_list_shape')
+        return items
+
+    def image_dimensions(self, url):
+        from PIL import ImageFile
+        # Read only enough of a bounded image header to obtain its real size.
+        # A separate unauthenticated client never leaks X-Api-Key to a museum.
+        with httpx.Client(timeout=httpx.Timeout(15, connect=8), transport=self.transport,
+                          follow_redirects=False) as client:
+            for redirect in range(4):
+                safe_url(url, self.name)  # DNS rechecked before each request, including redirects
+                with client.stream('GET', url, headers={'User-Agent': USER_AGENT, 'Accept-Encoding': 'identity'}) as response:
+                    if response.status_code in (301, 302, 303, 307, 308):
+                        from urllib.parse import urljoin
+                        if redirect == 3 or not response.headers.get('location'): raise FilteredResult()
+                        url = urljoin(url, response.headers['location'])
+                        continue
+                    if response.status_code != 200: raise FilteredResult()
+                    mime = response.headers.get('content-type', '').split(';')[0].strip().lower()
+                    if mime not in ('image/jpeg', 'image/png', 'image/webp'): raise FilteredResult()
+                    length = response.headers.get('content-length')
+                    if length and (not length.isdigit() or not 12 <= int(length) <= 20_000_000):
+                        raise FilteredResult()
+                    parser, size = ImageFile.Parser(), 0
+                    for chunk in response.iter_bytes(16384):
+                        size += len(chunk)
+                        if size > 262144: raise FilteredResult()
+                        parser.feed(chunk)
+                        if parser.image:
+                            if parser.image.format not in ('JPEG', 'PNG', 'WEBP'): raise FilteredResult()
+                            width, height = parser.image.size
+                            if not (0 < width <= 20000 and 0 < height <= 20000): raise FilteredResult()
+                            return width, height
+                    raise FilteredResult()
+        raise FilteredResult()
+
+    def normalize_result(self, item, media_type, query):
+        import hashlib
+        from PIL import Image
+        if not isinstance(item, dict): raise ValueError('item_shape')
+        SecretGuard((self._key.get_secret_value(),)).validate(item)
+        rights = europeana_strings(item.get('rights'))
+        licences = [archive_licence(right) for right in rights]
+        if not licences or not all(licences): raise FilteredResult()
+        # Conflicting/multiple licences are ambiguous; do not choose a convenient one.
+        if len(set(licences)) != 1: raise FilteredResult()
+        licence = licences[0]
+        author = text_of('; '.join(europeana_strings(item.get('dcCreator'))), 300)
+        if licence[0].startswith('CC BY') and not author: raise FilteredResult()
+        title = text_of('; '.join(europeana_strings(item.get('title'))), 300)
+        pages = europeana_strings(item.get('guid'))
+        if not pages: raise FilteredResult()
+        page = safe_url(pages[0], self.name, page=True)
+        urls = europeana_strings(item.get('edmIsShownBy'))
+        if not urls: raise FilteredResult()
+        download = safe_url(urls[0], self.name)
+        SecretGuard((self._key.get_secret_value(),)).validate(download)
+        try:
+            width, height = self.image_dimensions(download)
+        except (httpx.HTTPError, OSError, ValueError, Image.DecompressionBombError):
+            raise FilteredResult() from None
+        preview = ''
+        for url in europeana_strings(item.get('edmPreview')):
+            try: preview = safe_url(url, self.name, preview=True)
+            except StockError: continue
+            break
+        return normalized_media({'provider': self.name, 'media_id': hashlib.sha256(page.encode()).hexdigest(),
+            'media_type': 'image', 'source_url': page, 'page_url': page, 'creator_name': author,
+            'creator_url': '', 'width': width, 'height': height, 'duration': None,
+            'preview_url': preview, 'download_url': download, 'query_used': query, 'description': title,
+            'source_metadata': {'title': title, 'author': author, 'license': licence[0], 'license_url': licence[1],
+                                'data_provider': text_of('; '.join(europeana_strings(item.get('dataProvider'))), 300)}})
+
+
 def make_stock_provider(name, settings):
-    providers = {'pexels':PexelsStockProvider,'pixabay':PixabayStockProvider,'wikimedia':WikimediaStockProvider,'nasa':NASAStockProvider,'archive':ArchiveStockProvider}
+    providers = {'pexels':PexelsStockProvider,'pixabay':PixabayStockProvider,'wikimedia':WikimediaStockProvider,'nasa':NASAStockProvider,'archive':ArchiveStockProvider,'europeana':EuropeanaStockProvider}
     if name not in providers: raise StockError('invalid_provider','Bu stok sağlayıcısı kullanılamıyor.',422)
     for key in settings.secret_values(): PRIVATE_KEYS.update((key,quote(key,safe='')))
     if name in ('wikimedia', 'nasa', 'archive'): return providers[name]('')

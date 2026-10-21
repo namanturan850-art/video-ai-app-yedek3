@@ -252,6 +252,7 @@ class StockService:
             from app.stock.providers import PEXELS_ENABLED
             public['providers'] = {'pexels':PEXELS_ENABLED and bool(self.settings.stock_config('pexels').get('api_key')),
                                    'pixabay':bool(self.settings.stock_config('pixabay').get('api_key')),
+                                   'europeana':bool(self.settings.stock_config('europeana').get('api_key')),
                                    **{name:self.settings.stock_config(name).get('enabled',True) is not False for name in ('wikimedia','nasa','archive')}}  # no key; Settings can switch one off
             bridge=getattr(self,'openmontage',None)
             public['providers']['openmontage']=bool(bridge and bridge.config().get('media_search') and bridge.status()['ready'])

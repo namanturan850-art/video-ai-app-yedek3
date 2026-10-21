@@ -1,3 +1,16 @@
+## 2026-10-21 — Europeana görsel kaynağı
+
+- Europeana Search API sağlayıcısı, şifreli Ayarlar alanı ve otomatik kaynak
+  seçimi bağlandı. Metin/liste alanları, yanıt sözleşmesi, her sonuçta açık
+  lisans ve CC BY/BY-SA yazar kontrolü uygulanır.
+- İlk sürüm yalnız görseldir; boyut gerçek dosya başlığından okunur. Müze
+  indirmelerinde DNS/özel IP denetimi, yalnız API alanından önizleme ve
+  YouTube yazar/lisans atıfları eklendi. Testler Windows CI komutuna eklendi.
+- Geniş sağlayıcı/ayar/stok/YouTube regresyon turu: **210 geçti / 1 atlandı**
+  (Windows DPAPI). Son Europeana tekrarı: **60 geçti**.
+  Canlı API isteği ağ geçidinde 403 aldı; gerçek örnek yanıt ve canlı anahtarlı
+  test doğrulanamadı. [Kullanım ve sınırlar](EUROPEANA.md).
+
 ## 2026-10-18 — Manuel kurgu: son teslim doğrulaması
 
 - Ana Python paketi **454 geçti / 3 atlandı** (428,62 sn). Son manuel paket **26 geçti** (68,27 sn); kalite/performans **73**, eski stok seçim/onay/reuse kabulü **17**, çalışma alanı/frontend/masaüstü birim paketi **5**, DOM paketi **7** testle geçti. Hedefli tekrarlar örtüşür; toplam olarak toplanmaz. Atlamalar kurulu olmayan yerel Remotion ve iki görselsiz eski marker fikstürüdür; gerçek resimli şablonlar ayrı geçen testlerde doğrulanır.

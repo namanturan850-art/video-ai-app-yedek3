@@ -414,7 +414,7 @@ class MediaDirector:
     def thumbnail(self, url, provider):
         """Cached preview bytes as an image block, or None. Never raises."""
         try:
-            safe_url(url, provider)
+            safe_url(url, provider, preview=True)
             folder = directory(self.service.projects, self.pid) / 'thumbs'
             if linked(folder): return None
             folder.mkdir(exist_ok=True)

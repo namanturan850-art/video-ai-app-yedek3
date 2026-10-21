@@ -1,9 +1,11 @@
 """Bounded, unauthenticated media downloads into a single project's stock folder."""
 from contextlib import closing
 import hashlib
+import ipaddress
 import json
 import os
 import re
+import socket
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 from uuid import uuid4
@@ -19,7 +21,8 @@ HOSTS = {'pexels': {'images.pexels.com','videos.pexels.com','static-videos.pexel
          'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'wikimedia': {'upload.wikimedia.org','thumb.wikimedia.org'},
          'nasa': {'images-assets.nasa.gov'}, 'archive': set()}
 PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'},
-         'wikimedia': {'commons.wikimedia.org'}, 'nasa': {'images.nasa.gov'}, 'archive': {'archive.org'}}
+         'wikimedia': {'commons.wikimedia.org'}, 'nasa': {'images.nasa.gov'}, 'archive': {'archive.org'},
+         'europeana': {'www.europeana.eu', 'europeana.eu'}}
 # Internet Archive files live on numbered data nodes (from the item metadata's 'server'), not on one fixed host.
 HOST_PATTERNS = {'archive': re.compile(r'^ia\d{3,7}\.us\.archive\.org$')}
 TYPES = {'video/mp4':('.mp4','video'), 'image/jpeg':('.jpg','image'),
@@ -30,16 +33,35 @@ USER_AGENT = 'AIVideoStudio/1.0 (local desktop app; https://github.com/naman8533
 WEBM_SECONDS = 60
 
 
-def safe_url(value, provider, *, page=False):
+def public_media_host(host):
+    """Museum hosts vary. Fail closed on literals, DNS failures or any private answer."""
+    if not host:
+        return False
+    try:
+        ipaddress.ip_address(host)
+        return False
+    except ValueError:
+        pass
+    try:
+        answers = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+        addresses = [ipaddress.ip_address(answer[4][0]) for answer in answers]
+        return bool(addresses) and all(ip.is_global and not ip.is_multicast for ip in addresses)
+    except (OSError, ValueError):
+        return False
+
+
+def safe_url(value, provider, *, page=False, preview=False):
     try:
         url = urlsplit(value)
         if (not isinstance(value,str) or len(value)>2000 or any(ord(c)<33 for c in value)
                 or url.scheme!='https' or url.username is not None or url.password is not None
                 or url.port not in (None,443) or url.fragment or '\\' in value
                 or not (url.hostname in (PAGES if page else HOSTS).get(provider,set())
-                        or (not page and provider in HOST_PATTERNS and HOST_PATTERNS[provider].match(url.hostname or '')))):
+                        or (not page and provider in HOST_PATTERNS and HOST_PATTERNS[provider].match(url.hostname or ''))
+                        or (provider == 'europeana' and not page and
+                            (url.hostname == 'api.europeana.eu' if preview else public_media_host(url.hostname))))):
             raise ValueError()
-        if url.path.startswith('/api/') or url.path.startswith('/v1/'):
+        if provider != 'europeana' and (url.path.startswith('/api/') or url.path.startswith('/v1/')):
             raise ValueError()
         return value
     except (ValueError, TypeError, AttributeError):

@@ -231,9 +231,9 @@ class OpenSourceSettings(BaseModel):
 
 
 MODELS = {"general": GeneralSettings, "ollama": OllamaSettings, "openai": OpenAISettings,
-          "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "ai33": AI33Settings,
+          "gemini": GeminiSettings, "pexels": KeySettings, "pixabay": KeySettings, "europeana": KeySettings, "ai33": AI33Settings,
           "claude": ClaudeSettings, "youtube": KeySettings, "wikimedia": OpenSourceSettings, "nasa": OpenSourceSettings, "archive": OpenSourceSettings, "mapbox": MapboxSettings}
-PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia", "nasa", "archive", "mapbox")
+PROVIDERS = ("ollama", "openai", "gemini", "pexels", "pixabay", "ai33", "claude", "youtube", "wikimedia", "nasa", "archive", "mapbox", "europeana")
 
 
 def stored_secrets(values):
@@ -381,7 +381,7 @@ class SettingsService:
                     status, message = 'Kapalı', 'Bu kaynak kapalı: Medyayı Tamamla burada aramaz (zaman kazandırır). Açmak için kutuyu işaretleyip Kaydet deyin.'
                 message = guard.clean(message)
                 public.update(has_api_key=bool(key), masked_api_key=mask_secret(key), status=status,
-                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia','nasa','archive')))
+                              message=message, connection_test_available=(name in ("ollama", "gemini", 'openai','pexels','pixabay','ai33','claude','youtube','wikimedia','nasa','archive','europeana')))
                 result[name] = public
             result["ffmpeg"] = ffmpeg_status()
             result['images'] = self.image_view()
@@ -544,7 +544,7 @@ class SettingsService:
             return self._values()['youtube'].get('api_key', '')
 
     def stock_config(self, provider):
-        if provider not in ('pexels','pixabay','youtube','wikimedia','nasa','archive'):
+        if provider not in ('pexels','pixabay','youtube','wikimedia','nasa','archive','europeana'):
             raise SettingsInputError('Bu stok sağlayıcısı kullanılamıyor.')
         with self.store.lock:
             return dict(self._values()[provider])

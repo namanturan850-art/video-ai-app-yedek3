@@ -79,6 +79,33 @@ ES = {'roca': 'rocks', 'costa': 'coast', 'mar': 'sea', 'océano': 'ocean', 'play
       'ciudad': 'city', 'castillo': 'castle', 'iglesia': 'church', 'ruinas': 'ruins', 'puente': 'bridge', 'mapa': 'map', 'cielo': 'sky',
       'nubes': 'clouds', 'volcán': 'volcano', 'arena': 'sand', 'agua': 'water', 'tormenta': 'storm', 'cueva': 'cave', 'barco': 'ship',
       'soldados': 'soldiers', 'rey': 'king', 'ejército': 'army', 'guerra': 'war', 'antiguo': 'ancient', 'antigua': 'ancient'}
+# The Spanish list above was tiny (about 40 words), so most Spanish sentences found no filmable word and fell back
+# to the same three generic searches. These are common, filmable documentary nouns (nature, weather, places, industry).
+# Words with several or figurative meanings ("cabo", "pico", "carta", "gente", "muralla") are left out on purpose.
+ES.update({
+    'tormenta': 'storm clouds', 'relámpago': 'lightning storm', 'relámpagos': 'lightning storm', 'rayo': 'lightning', 'trueno': 'thunderstorm',
+    'lluvia': 'rain', 'amanecer': 'sunrise', 'atardecer': 'sunset', 'noche': 'night sky', 'luna': 'moon', 'estrellas': 'stars', 'estrella': 'stars',
+    'viento': 'wind', 'niebla': 'fog', 'nieve': 'snow', 'hielo': 'ice', 'glaciar': 'glacier', 'fuego': 'fire', 'incendio': 'wildfire', 'humo': 'smoke',
+    'terremoto': 'earthquake', 'inundación': 'flood', 'inundaciones': 'flood', 'sequía': 'drought', 'huracán': 'hurricane', 'tornado': 'tornado',
+    'golfo': 'gulf coast', 'bahía': 'bay', 'laguna': 'lagoon', 'pantano': 'swamp', 'humedal': 'wetland', 'manglar': 'mangrove', 'delta': 'river delta',
+    'cascada': 'waterfall', 'catarata': 'waterfall', 'manantial': 'spring water', 'orilla': 'shoreline', 'ola': 'ocean waves', 'olas': 'ocean waves',
+    'cordillera': 'mountain range', 'sierra': 'mountain range', 'cima': 'mountain peak', 'colina': 'hills', 'llanura': 'plains', 'pradera': 'grassland',
+    'meseta': 'plateau', 'acantilado': 'cliffs', 'península': 'peninsula', 'arrecife': 'coral reef', 'coral': 'coral reef', 'dunas': 'sand dunes',
+    'duna': 'sand dunes', 'jungla': 'jungle', 'lava': 'lava', 'ríos': 'river', 'cuenca': 'basin valley', 'volcanes': 'volcano',
+    'ballena': 'whale', 'delfín': 'dolphin', 'pez': 'fish', 'peces': 'fish', 'tiburón': 'shark', 'ave': 'birds', 'aves': 'birds', 'pájaro': 'birds',
+    'águila': 'eagle', 'caballo': 'horse', 'ganado': 'cattle', 'ovejas': 'sheep', 'árbol': 'trees', 'árboles': 'trees', 'palmera': 'palm trees',
+    'palmeras': 'palm trees', 'flor': 'flowers', 'flores': 'flowers', 'hierba': 'grass', 'campo': 'countryside fields', 'cultivo': 'farm fields',
+    'agricultor': 'farmer', 'granja': 'farm', 'pueblo': 'village', 'aldea': 'village', 'calle': 'street', 'plaza': 'town square', 'mercado': 'market',
+    'puerto': 'harbor', 'muelle': 'pier', 'faro': 'lighthouse', 'carretera': 'highway', 'camino': 'dirt road', 'tren': 'train', 'avión': 'airplane',
+    'helicóptero': 'helicopter', 'satélite': 'satellite', 'planeta': 'planet', 'espacio': 'outer space', 'galaxia': 'galaxy', 'cohete': 'rocket launch',
+    'petróleo': 'oil', 'pozo': 'oil well', 'refinería': 'oil refinery', 'torre': 'tower', 'fábrica': 'factory', 'chimenea': 'smokestack', 'mina': 'mine',
+    'minería': 'mining', 'oro': 'gold', 'electricidad': 'power lines', 'bandera': 'flag waving', 'pirata': 'pirate ship', 'tesoro': 'treasure chest',
+    'brújula': 'compass', 'velero': 'sailboat', 'submarino': 'submarine', 'fortaleza': 'fortress', 'templo': 'temple',
+    'catedral': 'cathedral', 'palacio': 'palace', 'pirámide': 'pyramid', 'estatua': 'statue', 'museo': 'museum', 'monumento': 'monument',
+    'biblioteca': 'library', 'libro': 'old book', 'manuscrito': 'old manuscript', 'reloj': 'clock', 'laboratorio': 'laboratory',
+    'científico': 'scientist', 'microscopio': 'microscope', 'hospital': 'hospital', 'escuela': 'school', 'niños': 'children', 'multitud': 'crowd',
+    'pescador': 'fisherman', 'pescadores': 'fisherman', 'comida': 'food', 'fruta': 'fruit', 'cacao': 'cocoa', 'maíz': 'corn field', 'nube': 'clouds',
+})
 ENDINGS = {'de': ('en', 'n', 'e', 'er', 's', 'es'), 'fr': ('s', 'x', 'es'), 'es': ('s', 'es'), 'tr': ('lar', 'ler', 'ları', 'leri', 'ı', 'i', 'u', 'ü', 'da', 'de', 'ta', 'te', 'dan', 'den')}
 
 

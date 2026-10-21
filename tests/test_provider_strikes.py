@@ -69,3 +69,11 @@ def test_the_real_reason_of_an_unreadable_answer_is_a_short_safe_label():
     assert response_reason(json.JSONDecodeError('x', 'y', 0)) == 'not_json'
     assert response_reason(ValueError('secret-key-123 leaked in a message')) == 'ValueError'
     assert response_reason(KeyError('mime')) == 'KeyError'
+
+
+def test_unsafe_address_label_names_the_field_and_host_but_no_path_or_key():
+    from app.stock.providers import unsafe_label
+    assert unsafe_label('download_url', 'https://example.org/a/b.jpg?key=SECRET') == 'unsafe_url:download_url@example.org'
+    assert unsafe_label('preview_url', 'http://upload.wikimedia.org/x.jpg') == 'unsafe_url:preview_url@scheme_http'
+    assert unsafe_label('source_url', 'https://commons.wikimedia.org/' + 'a' * 2100) == 'unsafe_url:source_url@too_long'
+    assert 'SECRET' not in unsafe_label('download_url', 'https://example.org/a?key=SECRET')

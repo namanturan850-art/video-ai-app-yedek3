@@ -125,7 +125,12 @@ class APIStockProvider:
                     media = self.normalize_result(item, media_type, query)
                     SecretGuard((key,)).validate(media)
                     for field in ('source_url','page_url','preview_url','download_url','creator_url'):
-                        if media[field]: safe_url(media[field], self.name, page=field in ('source_url','page_url','creator_url'))
+                        if media[field]:
+                            try: safe_url(media[field], self.name, page=field in ('source_url','page_url','creator_url'))
+                            except StockError:
+                                # Which address failed (field + host only, never the path or a key): shown in the diagnostics.
+                                self.last_diagnostic.setdefault('result_category', unsafe_label(field, media[field]))
+                                raise
                     normalized.append(media)
                 except FilteredResult:
                     self.last_diagnostic['filtered'] += 1  # a valid answer that is not usable here (licence, file type): not an error
@@ -159,6 +164,19 @@ class APIStockProvider:
                      self.name,media_type,safe_query(query,tuple(PRIVATE_KEYS)),self.last_diagnostic['raw_count'],
                      self.last_diagnostic['normalized_count'],self.last_diagnostic['rejected']['malformed_result'],
                      self.last_diagnostic['rejected']['unsafe_url'])
+
+
+def unsafe_label(field, value):
+    """'unsafe_url:<field>@<host>' (or why the address is not even a normal one); no path, no query."""
+    try:
+        if not isinstance(value, str): return f'unsafe_url:{field}@not_text'
+        if len(value) > 2000: return f'unsafe_url:{field}@too_long'
+        parts = urlsplit(value)
+        if parts.scheme != 'https': return f'unsafe_url:{field}@scheme_{re.sub(r"[^a-z]", "", parts.scheme.lower())[:8] or "none"}'
+        host = re.sub(r'[^A-Za-z0-9.-]', '', parts.hostname or '')[:60] or 'no_host'
+        return f'unsafe_url:{field}@{host}'
+    except (ValueError, TypeError, AttributeError):
+        return f'unsafe_url:{field}@unreadable'
 
 
 def response_reason(error):

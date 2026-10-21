@@ -79,3 +79,34 @@ def test_device_metric_reports_where_the_model_really_lives():
     on = lambda kind: SimpleNamespace(_DEVICE='cuda', _MODEL=SimpleNamespace(parameters=lambda: iter([SimpleNamespace(device=SimpleNamespace(type=kind))])))
     assert actual_device(on('cpu')) == 'cpu' and actual_device(on('cuda')) == 'cuda'
     assert actual_device(SimpleNamespace(_DEVICE='cuda', _MODEL=None)) == 'cuda'
+
+
+def test_child_env_always_has_a_user_name_so_torch_can_start(monkeypatch, tmp_path):
+    """Real failure (diagnostics 2026-10-21): CLIP died with “OSError: No username set in the environment”
+    because the helper process had no USERNAME. The variable is now passed on, and invented if the app has none."""
+    from app.integrations.openmontage.bridge import child_env
+    monkeypatch.setenv('USERNAME', 'naman')
+    assert child_env(tmp_path)['USERNAME'] == 'naman'
+    for name in ('USERNAME', 'USER', 'LOGNAME', 'LNAME'):
+        monkeypatch.delenv(name, raising=False)
+    import getpass
+    monkeypatch.setattr(getpass, 'getuser', lambda: (_ for _ in ()).throw(OSError('No username set in the environment')))
+    monkeypatch.setenv('USERPROFILE', str(tmp_path / 'Users' / 'ayse'))
+    assert child_env(tmp_path)['USERNAME'] == 'ayse'
+
+
+def test_child_env_still_hides_provider_keys(monkeypatch, tmp_path):
+    from app.integrations.openmontage.bridge import child_env
+    monkeypatch.setenv('PIXABAY_API_KEY', 'secret-value-123')
+    monkeypatch.setenv('USERNAME', 'naman')
+    assert 'PIXABAY_API_KEY' not in child_env(tmp_path)
+
+
+def test_clip_skip_reason_and_real_error_reach_the_diagnostics(tmp_path):
+    from app.stock.director_media import MediaDirector
+    director = MediaDirector(SimpleNamespace(), {'project_id': 'p', 'progress': {}})
+    director.clip = SimpleNamespace(broken=True, error='OSError: No username set in the environment', ready=lambda: False)
+    assert director.clip_judge({}, {}, [object()]) == {}
+    progress = director.progress
+    assert progress['clip_skipped'] == {'not_ready': 1} and progress['clip_error'].startswith('OSError: No username')
+    assert 'CLIP' in progress['clip_warning']

@@ -47,6 +47,12 @@ from app.stock.models import StockError
 LOG = logging.getLogger('uvicorn.error.stock')
 
 
+def prioritized_targets(targets):
+    """Keep chronology within each tier; give empty slots budget before rechecks."""
+    priority = {'motion_owner': 0, 'motion_planned': 0, 'missing': 1, 'retry_card': 1}
+    return sorted(targets, key=lambda target: priority.get(target[1], 2))
+
+
 def clock():  # replaced in tests
     import time
     return time.monotonic()
@@ -1998,7 +2004,8 @@ class MediaDirector:
         if not single: targets += self.recheck_setting(scenes, {t['slot_id'] for t, _ in targets})
         # Infographics need no AI look: they are drawn first, so even if the AI
         # quota runs out later every marked/planned scene already has its graphic.
-        targets.sort(key=lambda t: t[1] not in ('motion_owner', 'motion_planned'))
+        # Already-filled rechecks must not spend the job budget before missing slots.
+        targets = prioritized_targets(targets)
         total = max(1, len(targets))
         prejudged = set()
         for done, (slot, why) in enumerate(targets):

@@ -1,3 +1,10 @@
+## 2026-10-22 — Eksikleri Tamamla: boş yuvalara bütçe önceliği
+
+- Motion-owner/planned önceliği korunarak `missing` ve `retry_card` hedefleri
+  dolu yuvaların yeniden incelemesinden önce işlenir; her grubun mevcut zaman
+  sırası korunur. Geç sıradaki boş yuvanın kısıtlı gerçek arama bütçesini erken
+  sıradaki dolu yuvalardan önce aldığını doğrulayan regresyon testi eklendi.
+
 ## 2026-10-22 — Eksikleri Tamamla: İspanyolca kuyu araması
 
 - `pozo`/`pozos` artık `well` olarak çevrilir; su kuyusu/cenote cümlelerine

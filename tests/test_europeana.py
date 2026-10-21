@@ -258,6 +258,36 @@ def test_image_header_failure_does_not_invent_dimensions(monkeypatch):
     assert provider.search_images('painting') == []
 
 
+def test_key_inside_europeanas_own_links_is_not_a_failure(monkeypatch):
+    # Europeana itself writes the caller's key into its own links (the item page's utm_* tracking
+    # parameters and the record link). The first real connection test failed on exactly this:
+    # every hit was dropped as "contains a secret" and the test said the answer was unreadable.
+    item = search_item(guid='https://www.europeana.eu/item/test/1?utm_source=api&utm_medium=api&utm_campaign=private-europeana-key',
+                       link='https://api.europeana.eu/record/v2/test/1.json?wskey=private-europeana-key')
+    provider, seen = search_provider(monkeypatch, [item])
+    media, = provider.search_images('painting')
+    assert media['page_url'] == media['source_url'] == 'https://www.europeana.eu/item/test/1'
+    assert 'private-europeana-key' not in repr(media)
+    assert media['download_url'] == 'https://museum.example/painting.png'
+    assert [r.url.host for r in seen].count('museum.example') == 1  # the size is read once, not again later
+
+
+def test_museum_sizes_are_read_side_by_side(monkeypatch):
+    import threading, time
+    items = [search_item(guid=f'https://www.europeana.eu/item/test/{n}', edmIsShownBy=[f'https://museum.example/{n}.png'])
+             for n in range(6)]
+    provider, seen = search_provider(monkeypatch, items)
+    active, peak, lock = [0], [0], threading.Lock()
+    def slow(url):
+        with lock: active[0] += 1; peak[0] = max(peak[0], active[0])
+        time.sleep(0.2)
+        with lock: active[0] -= 1
+        return 1600, 900
+    monkeypatch.setattr(provider, 'image_dimensions', slow)
+    assert len(provider.search_images('painting')) == 6
+    assert peak[0] > 1
+
+
 def test_key_never_leaks_via_museum_url(monkeypatch):
     provider, seen = search_provider(monkeypatch, [search_item(
         edmIsShownBy='https://museum.example/painting?key=private-europeana-key')])

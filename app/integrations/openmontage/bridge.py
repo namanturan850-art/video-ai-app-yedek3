@@ -27,8 +27,19 @@ def trusted_root(value):
 
 
 def child_env(root,keys=None):
-    names=('PATH','SystemRoot','WINDIR','TEMP','TMP','LOCALAPPDATA','APPDATA','USERPROFILE','HOME','LANG')
+    # Ordinary, non-secret system variables only (never provider keys). The user name matters: torch asks Python's
+    # getpass.getuser() for its cache folder, which on Windows fails with “No username set in the environment”
+    # when USERNAME is missing — that crashed the local picture model (CLIP) on its first call.
+    names=('PATH','SystemRoot','WINDIR','TEMP','TMP','LOCALAPPDATA','APPDATA','USERPROFILE','HOME','LANG',
+           'USERNAME','USER','LOGNAME','USERDOMAIN','COMPUTERNAME','HOMEDRIVE','HOMEPATH','SystemDrive','ComSpec','PATHEXT',
+           'ProgramData','PROCESSOR_ARCHITECTURE','NUMBER_OF_PROCESSORS')
     env={n:os.environ[n] for n in names if n in os.environ}
+    if not any(env.get(n) for n in ('USERNAME','USER','LOGNAME')):
+        try:
+            import getpass
+            env['USERNAME']=getpass.getuser()
+        except Exception:
+            env['USERNAME']=Path(env.get('USERPROFILE') or env.get('HOME') or '').name or 'user'
     env.update(PYTHONIOENCODING='utf-8',PYTHONNOUSERSITE='1')
     env.update(keys or {})
     return env

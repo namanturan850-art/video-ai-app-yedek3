@@ -650,7 +650,9 @@ class MediaDirector:
         sentence + [GÖRSEL] note. Clear match → approved, clear miss or below
         CLIP_MIN → rejected; the rest stay undecided (marked on the media) for
         Gemini (when switched on) or the local word check."""
-        if not self.clip or not self.clip.ready(): return {}
+        if not self.clip or not self.clip.ready():
+            self.clip_skipped('not_ready')
+            return {}
         items = []
         for media in pool:
             frames = []
@@ -658,7 +660,9 @@ class MediaDirector:
                 try: frames.append(base64.b64decode(block['source']['data']))
                 except (KeyError, ValueError, TypeError): pass
             if frames: items.append((key_text(media), frames))
-        if not items: return {}
+        if not items:
+            self.clip_skipped('no_preview_frames')
+            return {}
         descriptor = descriptor or clip_descriptor(slot, scene, self.language, self.where(scene))
         from app.stock.setting import penalties
         self.progress['message'] = f'Yuva {slot["order"]} · yerel görüntü modeli (CLIP) {len(items)} adayı karşılaştırıyor'
@@ -691,6 +695,15 @@ class MediaDirector:
                 decided[key(media)] = {'score': min(result['score'], 4), 'approved': False, 'local': True, 'clip': clip,
                                        'reason': f'Yerel görüntü modeli (CLIP): kareler cümleyle ilgisiz ({result["score"]}/10), elendi.'}
         return decided
+
+    def clip_skipped(self, why):
+        """The picture model was not asked: say why in the diagnostics (and keep its real error visible)."""
+        counts = self.progress.setdefault('clip_skipped', {})
+        counts[why] = counts.get(why, 0) + 1
+        clip = getattr(self, 'clip', None)
+        if clip is not None and getattr(clip, 'broken', False):
+            self.progress['clip_warning'] = 'Yerel görüntü modeli (CLIP) çalışmadı; seçimin diğer kontrollerini ve gerekçesini yuvada inceleyin.'
+            if getattr(clip, 'error', ''): self.progress['clip_error'] = clip.error
 
     def verdict_cache(self):
         if not hasattr(self, '_verdicts'):

@@ -27,6 +27,13 @@ if(/^\/projects\/[^/]+\/render$/.test(location.pathname)){
   const mapNote=el('p','');mapNote.className='note';mapNote.id='render-map-note';mapNote.hidden=true;
   form.append(mapLabel,mapNote,wordLabel);
   const saveLook=async body=>{lookNote.textContent='Görünüm kaydediliyor…';try{const r=await fetch(`/api/projects/${pid}/look`,{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json','X-AI-Video-Studio':'projects'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw new Error(d.message||'Görünüm kaydedilemedi.');mapStyle.value=d.map_style;wordBox.checked=d.word_highlight;lookNote.textContent='✓ Kaydedildi. Yeni grafikler ve bir sonraki video bu ayarla oluşur.';}catch(e){lookNote.textContent=e.message;}};
+  const stylePanel=el('details');stylePanel.id='render-mapbox-styles';
+  stylePanel.append(el('summary','Mapbox harita görünümünü seç / Studio stili ekle'));
+  const styleHost=el('section');stylePanel.append(styleHost);form.append(stylePanel);let mapboxPicker=null;
+  stylePanel.addEventListener('toggle',()=>{if(stylePanel.open&&!mapboxPicker)mapboxPicker=window.createMapboxStylePicker(styleHost,{onSelected:async()=>{
+    const r=await fetch(`/api/projects/${pid}/look`,{method:'PUT',cache:'no-store',headers:{'Content-Type':'application/json','X-AI-Video-Studio':'projects'},body:JSON.stringify({map_style:'satellite'})});
+    const data=await r.json();if(!r.ok)throw new Error(data.message||'Stil kaydedildi; Mapbox harita kaynağı seçilemedi.');mapStyle.value='satellite';lookNote.textContent='✓ Mapbox stili seçildi. Yeni grafikler ve bir sonraki video bu ayarı kullanır.';
+  }});});
   mapStyle.addEventListener('change',()=>saveLook({map_style:mapStyle.value}));wordBox.addEventListener('change',()=>saveLook({word_highlight:wordBox.checked}));
   const loadLook=()=>fetch(`/api/projects/${pid}/look`,{cache:'no-store'}).then(r=>r.json()).then(d=>{look.replaceChildren(...[['','Varsayılan (sade)'],...d.looks.map(l=>[l.id,l.label])].map(([v,t])=>{const o=el('option',t);o.value=v;return o;}));look.value=d.look||'';
     mapStyle.replaceChildren(...(d.map_styles||[]).map(m=>{const o=el('option',m.label+(m.disabled&&m.note?' — '+m.note:''));o.value=m.id;o.disabled=!!m.disabled;return o;}));mapStyle.value=d.map_style||'dark';

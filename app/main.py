@@ -98,9 +98,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     # Harita stili → Uydu görüntüsü: the key comes from Settings at drawing time (never .env).
     def mapbox_provider():
         config = settings.mapbox_config()
-        return satellite_tiles.MapboxSatelliteProvider(config['api_key'], config['tile_url'], static_url=config['static_url'], cache=storage / 'tile_cache')
+        return satellite_tiles.MapboxSatelliteProvider(config['api_key'], config['tile_url'], static_url=config['static_url'], selected_style=config.get('selected_style', ''), cache=storage / 'tile_cache')
     satellite_tiles.FACTORY = mapbox_provider
     satellite_tiles.OBLIQUE = lambda: settings.mapbox_config()['oblique']
+    satellite_tiles.STYLE_KEY = lambda: settings.mapbox_config().get('selected_style', '')
     satellite_tiles.USAGE_FILE = storage / 'mapbox_usage.json'  # monthly request counter (tiles / tilted pictures)
     satellite_tiles.LIMITS = lambda: {'tiles': settings.mapbox_config()['monthly_tile_limit'], 'static': settings.mapbox_config()['monthly_static_limit']}
     from app.providers import geocoding
@@ -518,7 +519,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         """The 'Uydu görüntüsü' map style is greyed out until a Mapbox key is set."""
         ready = bool(settings.mapbox_config()['api_key'])
         look['map_styles'] = [s for s in look['map_styles'] if s['id'] != 'satellite'] + [
-            {'id': 'satellite', 'label': 'Uydu görüntüsü (Mapbox)', 'disabled': not ready,
+            {'id': 'satellite', 'label': 'Mapbox haritası (stil Ayarlar / bu ekrandan seçilir)', 'disabled': not ready,
              **({} if ready else {'note': 'Mapbox API anahtarı girilmeli (Ayarlar).'})}]
         return look
 
@@ -581,6 +582,35 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     @application.post('/api/settings/ai-diagnostics/{provider}/{test}', status_code=202)
     def run_ai_diagnostic(provider: str, test: str, payload: dict):
         return ai_diagnostics.start(provider, test, payload)
+
+    @application.get('/api/settings/mapbox/styles')
+    def mapbox_styles():
+        from app.providers.mapbox_styles import styles
+        config = settings.mapbox_config()
+        return {'styles': styles(config), 'selected_style': config['selected_style'],
+                'custom_styles': config['custom_styles'], 'has_api_key': bool(config['api_key'])}
+
+    @application.post('/api/settings/mapbox/style-preview')
+    def mapbox_style_preview(payload: dict):
+        from app.providers.mapbox_styles import styles, static_template
+        from app.providers.satellite import MapboxSatelliteProvider, SatelliteError
+        from fastapi.responses import Response
+        config = settings.mapbox_config()
+        uri = payload.get('uri')
+        if not isinstance(uri, str) or uri not in {s['uri'] for s in styles(config)}:
+            raise SettingsInputError('Önizleme için listeden geçerli bir stil seçin.')
+        p = None
+        try:
+            p = MapboxSatelliteProvider(config['api_key'], config['tile_url'],
+                static_url=static_template(uri) if uri else config['legacy_static_url'],
+                cache=storage / 'tile_cache', timeout=15)
+            data = p.static(2.35, 48.86, 4, 0, 0, 300, 170)
+            mime = 'image/png' if data.startswith(b'\x89PNG') else 'image/webp' if data[8:12] == b'WEBP' else 'image/jpeg'
+            return Response(data, media_type=mime, headers={'Cache-Control': 'no-store'})
+        except SatelliteError as error:
+            return JSONResponse(status_code=503, content={'message': str(error), 'category': error.category})
+        finally:
+            if p: p.client.close()
 
     @application.put("/api/settings/{section}")
     def save_settings(section: str, payload: dict):

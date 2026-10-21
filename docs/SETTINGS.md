@@ -87,3 +87,28 @@ Claude bir isteği güvenlik nedeniyle reddederse, aynı istek Anthropic'in öne
 6. Bir adım hata verirse tamamlanan adımlar korunur; **Yönetmeni Devam Ettir** kaldığı yerden sürer. Claude hiç çalışmıyorsa panel **Gemini/Ollama ile devam et** düğmelerini gösterir (yalnız siz seçerseniz).
 
 Kurgu planında her sahne için: görsel türü (stok video / stok görsel / üretilmiş kart: harita, sayı, başlık/alıntı), İngilizce somut arama sözcükleri + 2–3 yedek, **mutlaka göster / gösterme** notları ve çekim sayısı vardır. Az stok bulunan konularda daha az ama daha uzun çekim planlanır (çekim başına 2,5–10 sn). Kart yazısı yalnızca anlatımda geçen bir ifade olabilir; uydurma sayı veya alıntı kabul edilmez. Plan şemaya uymazsa Claude bir kez otomatik düzeltir.
+
+## NAMAN içinde Mapbox stil seçimi
+
+1. **Ayarlar → Mapbox (harita stilleri)** bölümünü açın. Anahtarınızı kaydedin.
+2. Uydu, uydu + yollar, arazi, sokak, koyu, açık veya navigasyon stilinin
+   kartına tıklayın. Seçim hemen kaydedilir; tekrar Kaydet gerekmez.
+3. Görsel karşılaştırma için **Önizlemeleri yükle** düğmesine basın. Bu işlem
+   Mapbox kullanımına sayılır; alınan resimler yerelde önbelleğe alınır.
+4. Kendi stiliniz için Studio’daki yayımlanmış stilin **Share → Style URL**
+   bağlantısını yapıştırıp **Studio stilini ekle** deyin. İsterseniz adını yazın.
+   Özel stil eklenince seçilir; kendi kartından kaldırılabilir.
+5. Projede **Video Oluştur / Render → Mapbox harita görünümünü seç / Studio
+   stili ekle** bölümünden de aynı kartlara ulaşılır. Buradan kart seçmek,
+   projenin harita kaynağını Mapbox’a da geçirir. Ayarlar bölümündeki seçim
+   küreseldir: Mapbox kullanan projelerin yeni haritaları aynı stili kullanır.
+
+Önceden üretilmiş video dosyaları değiştirilmez; yeni grafikler üretildiğinde
+seçilen stil kullanılır. Harita kaynağı koyu/renkli yerel harita olan projeler
+Mapbox’a kendiliğinden geçirilmez. **Mevcut uydu ayarı** kartı, önceki özel
+adres şablonlarını kullanmaya devam eder.
+
+Hesaptaki stilleri otomatik listeleme yoktur; hazır kartlar ve elle eklenen
+Studio bağlantıları kullanılır. `styles:list` izni istemez. Geçerli ve yetkili
+Mapbox anahtarı gerekir; anahtar resim bağlantılarına veya tarayıcıya çıkarılmaz.
+3B Studio görünümü ile statik video haritası aynı özellikleri göstermeyebilir.

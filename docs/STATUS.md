@@ -1,3 +1,19 @@
+## 2026-10-21 — NAMAN içinde Mapbox stil seçimi
+
+- Ayarlar ve Render’da hazır harita kartları, sunucu üzerinden önizleme,
+  kalıcı seçim, Studio URI’siyle özel stil ekleme/kaldırma eklendi. Render’da
+  kart seçimi projenin harita kaynağını da Mapbox’a geçirir.
+- Düz ve eğik haritalar aynı stili kullanır; sahne önbelleği seçilen stili
+  içerir. Eski özel URL ayarları korunur; anahtar tarayıcıya çıkarılmaz.
+- Yeni stil testleri **16 geçti**; ayar/uydu/aylık sınır turu **78 geçti / 1
+  Windows testi atlandı**, ek eğik harita/FFmpeg/frontend turu **32 geçti**.
+  Turlar örtüşür. Gerçek Chromium’da kart seçimi, yeniden açma, özel stil,
+  10 sentetik önizleme, dar ekran seçici ve Render kaynağı geçişi doğrulandı;
+  JavaScript sayfa hatası yok. Yeni testler gerçek native MP4 çıktısında
+  seçilen stilin kullanıldığını da kontrol eder.
+- Canlı Mapbox hesabı/API denenemedi (403). [Kullanım](SETTINGS.md) ve
+  [istek/önbellek sınırları](../MAPBOX_INTEGRATION_NOTES.md) güncellendi.
+
 ## 2026-10-21 — Europeana görsel kaynağı
 
 - Europeana Search API sağlayıcısı, şifreli Ayarlar alanı ve otomatik kaynak

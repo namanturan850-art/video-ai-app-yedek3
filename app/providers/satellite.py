@@ -10,6 +10,7 @@ plain Turkish message; the caller then draws the offline map instead.
 """
 import hashlib
 import json
+import logging
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,16 @@ import httpx
 TILE = 512  # pixels per tile of the @2x template
 # Static Images API (eğik görünüm): the pattern given by the owner; a setting so it can be corrected without code.
 STATIC_URL = 'https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},{zoom},{bearing},{pitch}/{width}x{height}@2x'
+
+
+class MapboxHTTPPrivacy(logging.Filter):
+    def filter(self, record):
+        text = record.getMessage().lower()
+        return 'api.mapbox.com' not in text and 'access_token' not in text
+
+
+for _logger in ('httpx', 'httpcore', 'httpcore.connection', 'httpcore.http11', 'httpcore.http2', 'httpcore.proxy'):
+    logging.getLogger(_logger).addFilter(MapboxHTTPPrivacy())
 
 
 class SatelliteError(Exception):
@@ -58,12 +69,21 @@ class MapboxSatelliteProvider(SatelliteProvider):
     name = 'mapbox'
     attribution = '© Mapbox'
 
-    def __init__(self, api_key, tile_url, *, static_url=STATIC_URL, cache=None, transport=None, timeout=20.):
+    def __init__(self, api_key, tile_url, *, static_url=STATIC_URL, cache=None, transport=None, timeout=20., selected_style=''):
         if not api_key: raise SatelliteError('missing_key', MESSAGES['missing_key'])
         self.api_key, self.tile_url, self.static_url, self.cache = api_key, tile_url, static_url or STATIC_URL, Path(cache) if cache else None
         self.client = httpx.Client(transport=transport, timeout=timeout, follow_redirects=False)
+        self.selected_style = selected_style
 
     def tile(self, z, x, y):
+        if self.selected_style:
+            # Static Images' world is 512*2**zoom logical pixels. A 256px @2x
+            # request at z-1 covers exactly one standard tile and returns 512px.
+            import math
+            n = 2 ** int(z)
+            lon = (int(x) + .5) / n * 360 - 180
+            lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (int(y) + .5) / n))))
+            return self.static(lon, lat, int(z) - 1, 0, 0, 256, 256)
         return self._get(self.tile_url.format(z=int(z), x=int(x), y=int(y)), 'tiles')
 
     def static(self, lon, lat, zoom, bearing, pitch, width, height):
@@ -110,6 +130,7 @@ class MapboxSatelliteProvider(SatelliteProvider):
 
 # Set by the app at start-up: () -> SatelliteProvider (raises SatelliteError when not usable).
 FACTORY = None
+STYLE_KEY = None  # () -> selected style identity, also included in generated-scene cache keys
 
 # ---- monthly safety limit (Ayarlar → Mapbox) ----
 USAGE_FILE = None  # Path of data/mapbox_usage.json, set at start-up; None: nothing counted (tests)
@@ -184,7 +205,9 @@ def mapbox_check(config, transport=None):
 
     def work():
         try:
-            MapboxSatelliteProvider(config['api_key'], config['tile_url'], transport=transport, timeout=TEST_SECONDS).tile(0, 0, 0)
+            p = MapboxSatelliteProvider(config['api_key'], config['tile_url'], static_url=config.get('static_url'), selected_style=config.get('selected_style', ''), transport=transport, timeout=TEST_SECONDS)
+            try: p.tile(1 if config.get('selected_style') else 0, 0, 0)
+            finally: p.client.close()
             box['ok'] = True
         except SatelliteError as error:
             box['error'] = error

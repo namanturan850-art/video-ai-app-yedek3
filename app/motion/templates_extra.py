@@ -90,9 +90,11 @@ def where(name):
 
 def satellite_props(language):
     """Scene props of the satellite map style (+ Ayarlar → Mapbox → Eğik görünüm)."""
-    from app.providers.satellite import oblique
+    from app.providers.satellite import oblique, STYLE_KEY
     # camera 3: north up, pitch 60, no haze, names kept on screen — older tilted clips are drawn again
-    return {'theme': 'satellite', 'lang': language, **({'view': 'oblique', 'camera': 3} if oblique() else {})}
+    try: identity = STYLE_KEY() if STYLE_KEY else ''
+    except Exception: identity = ''  # inaccessible settings retain the existing offline fallback
+    return {'theme': 'satellite', 'lang': language, **({'mapbox_style': identity} if identity else {}), **({'view': 'oblique', 'camera': 3} if oblique() else {})}
 
 
 def near_each_other(stops):

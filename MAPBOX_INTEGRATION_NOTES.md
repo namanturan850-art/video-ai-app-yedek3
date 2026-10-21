@@ -45,3 +45,33 @@ Kullanım: Video ekranı → **Harita stili → Uydu görüntüsü**. Anahtar Ay
 - Adres şablonu Ayarlar → Mapbox → “Uydu karo adresi” alanındadır; Mapbox belgeleri farklıysa kod değiştirmeden düzeltilebilir (yalnız `https://api.mapbox.com/` ile başlayan ve `{z}`, `{x}`, `{y}` içeren adres kabul edilir; anahtar adrese yazılmaz).
 - Karolar `data/tile_cache/` klasöründe önbelleğe alınır (dosya adında anahtar yoktur). Kullanım/kota Mapbox hesabınıza göre ücretlendirilebilir.
 - Eğik görünüm (Static Images API) de bu ortamdan denenemedi: api.mapbox.com'a bağlantı vekil sunucu tarafından engellendi (403) ve gerçek anahtar yok. Testler sahte sağlayıcıyla, aynı kamera modeliyle çizilmiş yapay manzara resmiyle yapıldı.
+
+
+## 2026-10-21 — NAMAN stil kartları
+
+Stiller Ayarlar ve Render ekranlarında aynı seçiciyle kaydedilir. Sabit hazır
+stil kimlikleri ve `mapbox://styles/{owner}/{style}` bağlantısıyla eklenen en
+çok 20 özel stil desteklenir. Bağlantıda sorgu, anahtar, farklı sunucu veya
+fazladan yol kabul edilmez. Önizleme yalnız kayıtlı kart için, aynı köken ve
+ayar başlığı korumalı POST isteğiyle alınır. API anahtarı yalnız sunucudaki
+Mapbox isteğinde kullanılır; HTTP istemci günlüklerinde gizlenir.
+
+Seçili stil için mevcut Static Images şablonunun owner/style kısmı kullanılır.
+Düz görünüm de aynı stilin Static Images yanıtlarından birleştirilir: z/x/y
+karosunun merkezi hesaplanır, 256×256 @2x resim zoom=z-1 ile istenir. Böylece
+512 px karo ve Web Mercator ayak izi korunur; ek bir belgelenmeyen karo uç
+noktası eklenmez. Bu istekler **static** sayacına yazılır. Eğik görünüm aynı
+stilin doğrudan statik görüntüsünü kullanır. Stil URI’si oluşturulan sahne
+kimliğine katılır; farklı stil için eski motion önbelleği yeniden kullanılmaz.
+
+Önizleme örnek konumu Paris’tir; tüm harita konumunu değiştirmez. Önizlemeler
+Mapbox isteğine sayılır, yerel URL tabanlı önbellek tekrar istekleri azaltır.
+Aynı Studio stilini Mapbox’ta yeniden yayımlamak için mevcut dosya önbelleğini
+zorla tazeleme bu sürümde eklenmedi.
+
+Kaynak: Mapbox resmî JavaScript SDK Static Images isteği ve owner/style
+parametreleri: https://github.com/mapbox/mapbox-sdk-js/blob/9680651c01a6ca0f52bd113ce306e016f4fb6d99/services/static.js
+Bu kaynak GitHub üzerinden incelendi. Konsol, docs ve gerçek API bu ortamda
+403 ile engellendi; canlı hesap doğrulaması yapılmadı. Testlerdeki harita
+resimleri açıkça sentetiktir; hazır stillerin hesaptaki erişimi önizleme veya
+Bağlantıyı Test Et ile ayrıca görülür.

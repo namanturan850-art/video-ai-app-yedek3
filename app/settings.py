@@ -102,7 +102,36 @@ class KeySettings(StrictModel):
         return value
 
 
+class CustomMapboxStyle(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    uri: str
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator('uri')
+    @classmethod
+    def style_uri(cls, value):
+        from app.providers.mapbox_styles import validate_uri
+        return validate_uri(value)
+
+
 class MapboxSettings(KeySettings):
+    selected_style: str = ''  # empty preserves the user's existing URL overrides
+    custom_styles: list[CustomMapboxStyle] = Field(default_factory=list, max_length=20)
+
+    @field_validator('selected_style')
+    @classmethod
+    def selected(cls, value):
+        from app.providers.mapbox_styles import validate_uri
+        return validate_uri(value) if value else value
+
+    @field_validator('custom_styles')
+    @classmethod
+    def unique_styles(cls, value):
+        from app.providers.mapbox_styles import BUILTINS
+        identities = [s.uri for s in value]
+        if len(set(identities)) != len(identities) or any(uri in {'mapbox://styles/mapbox/' + i for i, _ in BUILTINS} for uri in identities):
+            raise ValueError('Bu stil zaten listede.')
+        return value
     # Satellite map tiles (Harita stili → Uydu görüntüsü). The key is stored like every other
     # key (never in .env or source files). The URL template is the documented Raster Tiles API
     # pattern (MAPBOX_INTEGRATION_NOTES.md); it is a setting so it can be corrected without code.
@@ -444,6 +473,10 @@ class SettingsService:
                 if 'voice_provider' in updated and updated['voice_provider']!=config['voice_provider']:
                     if not updated.get('voice_id') or updated['voice_id']==config['voice_id']:updated['voice_id']=''
                     config['available_voices']=[];config['voice_name']=''
+            if section == 'mapbox':
+                from app.providers.mapbox_styles import selection_valid
+                if not selection_valid({**values[section], **updated}):
+                    raise SettingsInputError('Önce stili listeye ekleyin. Seçili stili kaldırmak için önce başka stil seçin.')
             values[section].update(updated)
             if isinstance(model, KeySettings) and model.api_key is not None:
                 if section=='ai33' and values[section].get('api_key')!=model.api_key.get_secret_value():
@@ -554,10 +587,14 @@ class SettingsService:
         with self.store.lock:
             config = dict(self._values()['mapbox'])
         default = MapboxSettings()
+        selected = config.get('selected_style', '')
+        from app.providers.mapbox_styles import static_template
         return {'api_key': config.get('api_key') or '', 'tile_url': config.get('tile_url') or default.tile_url,
+                'legacy_static_url': config.get('static_url') or default.static_url,
+                'selected_style': selected, 'custom_styles': config.get('custom_styles', []),
                 'monthly_tile_limit': int(config.get('monthly_tile_limit', default.monthly_tile_limit)),
                 'monthly_static_limit': int(config.get('monthly_static_limit', default.monthly_static_limit)),
-                'static_url': config.get('static_url') or default.static_url, 'geocode_url': config.get('geocode_url') or default.geocode_url, 'oblique': config.get('oblique', default.oblique) is not False}
+                'static_url': static_template(selected) if selected else config.get('static_url') or default.static_url, 'geocode_url': config.get('geocode_url') or default.geocode_url, 'oblique': config.get('oblique', default.oblique) is not False}
 
     def tts_config(self):
         """Private key and legacy values; outbound URL is always the official API."""

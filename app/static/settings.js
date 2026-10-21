@@ -11,7 +11,7 @@ if (window.location.pathname === '/settings') {
     {id: 'ollama', title: 'Ollama', description: 'İsteğe bağlı yerel yapay zekâ (sahne planı için yedek). Kullanmayacaksanız model adını boş bırakın. Testten önce ayarları kaydedin.', fields: [{name: 'base_url', label: 'Yerel adres (Base URL)', type: 'url'}, {name: 'model', label: 'Bilgisayarınızda kurulu modelin adı', type: 'text'}], test: true},
     {id: 'openai', title: 'OpenAI (isteğe bağlı)', description: 'Etkinleştir seçimini açın, anahtarınızı ve Chat Completions modelini Kaydet deyin. Bağlantı testi resmi API’den model erişimini kontrol eder; metin üretmez. Üretim kota/bakiye kontrolü ayrıca yapılır.', fields: [{name: 'enabled', label: 'Etkinleştir', type: 'checkbox'}, {name: 'model', label: 'Model adı', type: 'text'}], secret: true, test: true},
     {id: 'gemini', title: 'Gemini (isteğe bağlı)', description: 'Google Gemini Developer API anahtarınızı kaydedin. Gemini Plus / Google AI Pro web aboneliği API erişimi yerine geçmez. Kullanmak zorunda değilsiniz.', fields: [{name: 'model', label: 'Model (API listesinden seçin)', type: 'select'}], secret: true, test: true},
-    {id: 'mapbox', title: 'Mapbox (uydu haritası, isteğe bağlı)', description: 'Video ekranında Harita stili → “Uydu görüntüsü” için gerekir. Anahtar bu bilgisayarda şifreli saklanır; .env veya proje dosyalarına yazılmaz. Karo adresini yalnız Mapbox belgeleri değişirse düzenleyin.', fields: [{name: 'oblique', label: 'Eğik görünüm (3B his: hafif eğim, rota yönünde açı, sahne sonunda hedefe yaklaşma). Kapalıyken eski düz uydu görünümü.', type: 'checkbox'}, {name: 'tile_url', label: 'Uydu karo adresi (Raster Tiles API, düz görünüm)', type: 'text'}, {name: 'static_url', label: 'Eğik görünüm adresi (Static Images API)', type: 'text'}, {name: 'monthly_tile_limit', label: 'Aylık güvenlik sınırı: karo sayısı (varsayılan 600.000)', type: 'number'}, {name: 'monthly_static_limit', label: 'Aylık güvenlik sınırı: eğik görüntü sayısı (varsayılan 40.000)', type: 'number'}], secret: true, test: true},
+    {id: 'mapbox', title: 'Mapbox (harita stilleri)', description: 'Video ekranında Harita stili → “Uydu görüntüsü” için gerekir. Anahtar bu bilgisayarda şifreli saklanır; .env veya proje dosyalarına yazılmaz. Karo adresini yalnız Mapbox belgeleri değişirse düzenleyin.', fields: [{name: 'oblique', label: 'Eğik görünüm (3B his: hafif eğim, rota yönünde açı, sahne sonunda hedefe yaklaşma). Kapalıyken eski düz uydu görünümü.', type: 'checkbox'}, {name: 'tile_url', label: 'Uydu karo adresi (Raster Tiles API, düz görünüm)', type: 'text'}, {name: 'static_url', label: 'Eğik görünüm adresi (Static Images API)', type: 'text'}, {name: 'monthly_tile_limit', label: 'Aylık güvenlik sınırı: karo sayısı (varsayılan 600.000)', type: 'number'}, {name: 'monthly_static_limit', label: 'Aylık güvenlik sınırı: eğik görüntü sayısı (varsayılan 40.000)', type: 'number'}], secret: true, test: true},
     {id: 'pexels', title: 'Pexels (şu an kullanılmıyor)', description: 'Pexels yeni API anahtarı vermediği için kapalı. Anahtar alanı ileride kullanmak için duruyor; boş bırakabilirsiniz.', fields: [], secret: true, test: true},
     {id: 'youtube', title: 'YouTube Data API (kaynak video analizi)', description: 'İsteğe bağlı. Referans videonun izlenme, beğeni, yorum sayılarını ve en çok beğenilen yorumlarını okumak için. Google Cloud Console’dan ücretsiz anahtar alın (YouTube Data API v3). Anahtar yalnız Google’a gönderilir. Anahtar yoksa analiz Gemini ile sürer.', fields: [], secret: true, test: true},
     {id: 'pixabay', title: 'Pixabay', description: 'Resmî Pixabay API ile video ve görsel arayın. Anahtarı önce Kaydet deyin, ardından Bağlantıyı Test Et düğmesine basın.', fields: [], secret: true, test: true},
@@ -117,6 +117,10 @@ if (window.location.pathname === '/settings') {
         } else perform(definition, 'POST');
       });
       actions.append(test);
+    }
+    if (definition.id === 'mapbox') {
+      const picker = element('section', '', 'mapbox-style-picker');form.append(picker);
+      form.mapboxPicker = window.createMapboxStylePicker(picker, {isDirty: () => form.dataset.dirty === 'true' || form.dataset.busy === 'true', onSettings: data => showSettings(data)});
     }
     if (definition.id === 'gemini') {
       const models = element('button', 'Modelleri Getir', 'secondary'); models.type = 'button';
@@ -322,6 +326,7 @@ if (window.location.pathname === '/settings') {
     for (const definition of definitions) {
       const form = forms.get(definition.id);
       const data = settings[definition.id];
+      if(definition.id==='mapbox')form.mapboxPicker?.draw(data);
       const reset = !loaded || resetSection === definition.id;
       const previousVoice=definition.id==='ai33'?form.elements.namedItem('voice_id').value:'';
       if (definition.id === 'gemini') showGeminiModels(data.models, reset ? data.model : form.elements.namedItem('model').value);

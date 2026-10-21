@@ -546,7 +546,34 @@ class EuropeanaStockProvider(APIStockProvider):
         items = data.get(field, []) if data['itemsCount'] == 0 else data[field]
         if not isinstance(items, list) or len(items) != data['itemsCount'] or len(items) > 24:
             raise ValueError('result_list_shape')
+        # The real size comes from each museum's own file: read those headers side by side,
+        # not one after another (24 slow museum servers in a row made one search take minutes).
+        # Only for a hit that could ever be offered (open, unambiguous licence; an author when the
+        # licence needs one) — the museum is never contacted for one we would reject anyway.
+        from concurrent.futures import ThreadPoolExecutor
+        def size(item):
+            try:
+                self._licence_and_author(item)
+                url = europeana_strings(item.get('edmIsShownBy'))[0]
+                SecretGuard((self._key.get_secret_value(),)).validate(url)
+                return self.image_dimensions(safe_url(url, self.name))
+            except Exception:  # not offerable, unreadable, unsafe, too big, not an image
+                return None
+        usable = [item for item in items if isinstance(item, dict) and europeana_strings(item.get('edmIsShownBy'))]
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            for item, dimensions in zip(usable, pool.map(size, usable)):
+                item['_dimensions'] = dimensions
         return items
+
+    def _licence_and_author(self, item):
+        """(licence, author) for a hit we would ever offer, else raises FilteredResult. No network."""
+        rights = europeana_strings(item.get('rights'))
+        licences = [archive_licence(right) for right in rights]
+        if not licences or not all(licences) or len(set(licences)) != 1: raise FilteredResult()
+        licence = licences[0]
+        author = text_of('; '.join(europeana_strings(item.get('dcCreator'))), 300)
+        if licence[0].startswith('CC BY') and not author: raise FilteredResult()
+        return licence, author
 
     def image_dimensions(self, url):
         from PIL import ImageFile
@@ -585,27 +612,31 @@ class EuropeanaStockProvider(APIStockProvider):
         import hashlib
         from PIL import Image
         if not isinstance(item, dict): raise ValueError('item_shape')
-        SecretGuard((self._key.get_secret_value(),)).validate(item)
-        rights = europeana_strings(item.get('rights'))
-        licences = [archive_licence(right) for right in rights]
-        if not licences or not all(licences): raise FilteredResult()
-        # Conflicting/multiple licences are ambiguous; do not choose a convenient one.
-        if len(set(licences)) != 1: raise FilteredResult()
-        licence = licences[0]
-        author = text_of('; '.join(europeana_strings(item.get('dcCreator'))), 300)
-        if licence[0].startswith('CC BY') and not author: raise FilteredResult()
+        # Not the whole item: Europeana itself writes the caller's key into some of its own links
+        # (the item page's tracking parameters, the record link). Those are never used; every field
+        # that is used is checked below, and the final record is checked again by the shared search code.
+        licence, author = self._licence_and_author(item)
         title = text_of('; '.join(europeana_strings(item.get('title'))), 300)
         pages = europeana_strings(item.get('guid'))
         if not pages: raise FilteredResult()
-        page = safe_url(pages[0], self.name, page=True)
+        # The item page as Europeana gives it, without its query part (utm_* tracking, which can
+        # contain the caller's API key): the page itself is the same.
+        page = urlsplit(pages[0])._replace(query='').geturl()
+        page = safe_url(page, self.name, page=True)
+        SecretGuard((self._key.get_secret_value(),)).validate(page)
         urls = europeana_strings(item.get('edmIsShownBy'))
         if not urls: raise FilteredResult()
-        download = safe_url(urls[0], self.name)
+        download = urls[0]
         SecretGuard((self._key.get_secret_value(),)).validate(download)
-        try:
-            width, height = self.image_dimensions(download)
-        except (httpx.HTTPError, OSError, ValueError, Image.DecompressionBombError):
-            raise FilteredResult() from None
+        dimensions = item.get('_dimensions')
+        if dimensions is None and '_dimensions' not in item:  # not prefetched (direct call)
+            try:
+                dimensions = self.image_dimensions(safe_url(download, self.name))
+            except (httpx.HTTPError, OSError, ValueError, Image.DecompressionBombError):
+                dimensions = None
+        if not dimensions: raise FilteredResult()
+        width, height = dimensions
+        download = safe_url(download, self.name)
         preview = ''
         for url in europeana_strings(item.get('edmPreview')):
             try: preview = safe_url(url, self.name, preview=True)

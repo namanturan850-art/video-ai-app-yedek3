@@ -98,7 +98,7 @@ ES.update({
     'agricultor': 'farmer', 'granja': 'farm', 'pueblo': 'village', 'aldea': 'village', 'calle': 'street', 'plaza': 'town square', 'mercado': 'market',
     'puerto': 'harbor', 'muelle': 'pier', 'faro': 'lighthouse', 'carretera': 'highway', 'camino': 'dirt road', 'tren': 'train', 'avión': 'airplane',
     'helicóptero': 'helicopter', 'satélite': 'satellite', 'planeta': 'planet', 'espacio': 'outer space', 'galaxia': 'galaxy', 'cohete': 'rocket launch',
-    'petróleo': 'oil', 'pozo': 'oil well', 'refinería': 'oil refinery', 'torre': 'tower', 'fábrica': 'factory', 'chimenea': 'smokestack', 'mina': 'mine',
+    'petróleo': 'oil', 'pozo': 'well', 'refinería': 'oil refinery', 'torre': 'tower', 'fábrica': 'factory', 'chimenea': 'smokestack', 'mina': 'mine',
     'minería': 'mining', 'oro': 'gold', 'electricidad': 'power lines', 'bandera': 'flag waving', 'pirata': 'pirate ship', 'tesoro': 'treasure chest',
     'brújula': 'compass', 'velero': 'sailboat', 'submarino': 'submarine', 'fortaleza': 'fortress', 'templo': 'temple',
     'catedral': 'cathedral', 'palacio': 'palace', 'pirámide': 'pyramid', 'estatua': 'statue', 'museo': 'museum', 'monumento': 'monument',

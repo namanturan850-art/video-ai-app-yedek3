@@ -57,6 +57,15 @@ def test_new_spanish_words_and_their_plurals_are_understood():
     assert english_words('El lago y la tormenta sobre las montañas', 'es', 3) == ['lake', 'storm clouds', 'mountains']
 
 
+def test_spanish_water_wells_do_not_invent_oil_and_oil_context_is_preserved():
+    assert english('pozo', 'es') == 'well'
+    assert english('pozos', 'es') == 'well'
+    text = 'Cenotes, esos pozos de agua cristalina donde la gente nada.'
+    assert english_words(text, 'es', 6) == ['well', 'water']
+    assert all('oil' not in q.split() for q in queries(scene(text, topic='Yucatán')))
+    assert english_words('pozo de petróleo', 'es', 3) == ['well', 'oil']
+
+
 def test_ambiguous_or_figurative_words_are_not_translated():
     for word in ('cabo', 'pico', 'carta', 'gente', 'muralla'):
         assert english(word, 'es') == '', word

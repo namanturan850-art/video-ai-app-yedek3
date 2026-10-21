@@ -1,3 +1,10 @@
+## 2026-10-22 — Eksikleri Tamamla: İspanyolca kuyu araması
+
+- `pozo`/`pozos` artık `well` olarak çevrilir; su kuyusu/cenote cümlelerine
+  yanlışlıkla petrol eklenmez. `petróleo` sözcüğünün `oil` karşılığı korunur.
+- Tekil/çoğul kuyu, gerçek cenote cümlesinin yerel plan sorguları ve petrol
+  bağlamı için regresyon testi eklendi.
+
 ## 2026-10-21 — NAMAN içinde Mapbox stil seçimi
 
 - Ayarlar ve Render’da hazır harita kartları, sunucu üzerinden önizleme,

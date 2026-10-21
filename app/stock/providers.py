@@ -548,19 +548,32 @@ class EuropeanaStockProvider(APIStockProvider):
             raise ValueError('result_list_shape')
         # The real size comes from each museum's own file: read those headers side by side,
         # not one after another (24 slow museum servers in a row made one search take minutes).
+        # Only for a hit that could ever be offered (open, unambiguous licence; an author when the
+        # licence needs one) — the museum is never contacted for one we would reject anyway.
         from concurrent.futures import ThreadPoolExecutor
         def size(item):
             try:
+                self._licence_and_author(item)
                 url = europeana_strings(item.get('edmIsShownBy'))[0]
                 SecretGuard((self._key.get_secret_value(),)).validate(url)
                 return self.image_dimensions(safe_url(url, self.name))
-            except Exception:  # unreadable, unsafe, too big, not an image: this hit is simply not offered
+            except Exception:  # not offerable, unreadable, unsafe, too big, not an image
                 return None
         usable = [item for item in items if isinstance(item, dict) and europeana_strings(item.get('edmIsShownBy'))]
         with ThreadPoolExecutor(max_workers=6) as pool:
             for item, dimensions in zip(usable, pool.map(size, usable)):
                 item['_dimensions'] = dimensions
         return items
+
+    def _licence_and_author(self, item):
+        """(licence, author) for a hit we would ever offer, else raises FilteredResult. No network."""
+        rights = europeana_strings(item.get('rights'))
+        licences = [archive_licence(right) for right in rights]
+        if not licences or not all(licences) or len(set(licences)) != 1: raise FilteredResult()
+        licence = licences[0]
+        author = text_of('; '.join(europeana_strings(item.get('dcCreator'))), 300)
+        if licence[0].startswith('CC BY') and not author: raise FilteredResult()
+        return licence, author
 
     def image_dimensions(self, url):
         from PIL import ImageFile
@@ -602,14 +615,7 @@ class EuropeanaStockProvider(APIStockProvider):
         # Not the whole item: Europeana itself writes the caller's key into some of its own links
         # (the item page's tracking parameters, the record link). Those are never used; every field
         # that is used is checked below, and the final record is checked again by the shared search code.
-        rights = europeana_strings(item.get('rights'))
-        licences = [archive_licence(right) for right in rights]
-        if not licences or not all(licences): raise FilteredResult()
-        # Conflicting/multiple licences are ambiguous; do not choose a convenient one.
-        if len(set(licences)) != 1: raise FilteredResult()
-        licence = licences[0]
-        author = text_of('; '.join(europeana_strings(item.get('dcCreator'))), 300)
-        if licence[0].startswith('CC BY') and not author: raise FilteredResult()
+        licence, author = self._licence_and_author(item)
         title = text_of('; '.join(europeana_strings(item.get('title'))), 300)
         pages = europeana_strings(item.get('guid'))
         if not pages: raise FilteredResult()

@@ -289,11 +289,13 @@ def test_museum_sizes_are_read_side_by_side(monkeypatch):
 
 
 def test_key_never_leaks_via_museum_url(monkeypatch):
+    # A hit carrying the caller's own key in its (unexpected) museum URL is never offered: the
+    # per-item safety check rejects just that one hit, so the search itself does not raise —
+    # it returns the other, clean results (none here) rather than failing the whole search.
     provider, seen = search_provider(monkeypatch, [search_item(
         edmIsShownBy='https://museum.example/painting?key=private-europeana-key')])
-    with pytest.raises(StockError):
-        provider.search_images('painting')
-    assert len(seen) == 1
+    assert provider.search_images('painting') == []
+    assert len(seen) == 1  # the search call only: the tainted museum URL is never requested
 
 
 def test_settings_factory_and_connection_test(tmp_path, monkeypatch):

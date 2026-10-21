@@ -63,8 +63,12 @@ def plan_scenes(units, topic='', language='de'):
         places = [p for p in (english_query(w, language, strict=True, limit=2) for w in found if w[:1].isupper()) if p][:2]
         # Stock sites are tagged in English: queries are ONLY English words (translations,
         # English place names, the topic's English fallback) — never the narration's own words.
+        # One filmable word alone is "too vague" (a query needs 2 words) and used to be thrown away, so the scene fell
+        # back to the same generic searches as every other scene (“documentary landscape”). Pair it with a neutral
+        # second word instead; the scene keeps its own subject.
+        singles = [f'{w} {tail}' for w in english[:2] for tail in ('documentary', 'aerial view')]
         candidates = [' '.join(english[:2]), ' '.join(english[1:3]), ' '.join((places[:1] + english[:1])),
-                      ' '.join(english[:1] + topic_english[:1]), *fallback[:2], ' '.join(english[:1] + english[2:3]), *fallback[2:]]
+                      ' '.join(english[:1] + topic_english[:1]), *singles[:2], *fallback[:2], *singles[2:], ' '.join(english[:1] + english[2:3]), *fallback[2:]]
         queries = []
         for candidate in candidates:
             candidate = ' '.join(candidate.split())

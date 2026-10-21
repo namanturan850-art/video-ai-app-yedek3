@@ -834,6 +834,7 @@ class MediaDirector:
         global_requests = getattr(self, 'global_request_keys', set())
         self.global_request_keys = global_requests
         allowed = set()
+        budget_skipped, budget_example = 0, None
         for kind in kinds:
             for name in names:
                 if name == 'openmontage' and kind != 'video':continue
@@ -841,7 +842,8 @@ class MediaDirector:
                 if failed_recently(slot, entry, fingerprint):
                     log['searches'].append({**entry, 'skipped': 'previous_failure'})
                 elif (slot_id, identity(entry)) not in requested and (attempts.get(slot_id, 0) >= SLOT_REQUESTS or (identity(entry) not in global_requests and len(global_requests) >= JOB_REQUESTS)):
-                    log['searches'].append({**entry, 'skipped': 'budget'})
+                    budget_skipped += 1
+                    if budget_example is None: budget_example = entry
                 else:
                     allowed.add((kind, name))
                     request_key = (slot_id, identity(entry))
@@ -849,6 +851,18 @@ class MediaDirector:
                         requested.add(request_key)
                         global_requests.add(identity(entry))
                         attempts[slot_id] = attempts.get(slot_id, 0) + 1
+        if budget_skipped:
+            # One per-slot summary, including skips from later fallback queries.
+            # Keep the existing category for missing reasons; remember() must
+            # never treat an unexecuted search as a failed provider result.
+            summary = next((s for s in log['searches'] if s.get('skipped') == 'budget' and s.get('summary')), None)
+            if summary is None:
+                summary = {**budget_example, 'skipped': 'budget', 'summary': True, 'count': 0}
+                log['searches'].append(summary)
+            summary['count'] += budget_skipped
+        if not allowed:
+            self.progress['search_metrics'] = {'unique_queries': len(self.unique_queries), 'unique_requests': self.search_session.misses, 'cache_hits': self.search_session.hits, 'shared_requests': self.search_session.shared}
+            return []  # no provider dispatch/checkpoints after the budget is exhausted
         def read(name, kind):
             config = self.service.settings.stock_config(name) if hasattr(self.service, 'settings') else {}
             signature = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()

@@ -1,3 +1,10 @@
+## 2026-10-22 — Eksikleri Tamamla: bütçe sonrası kısa dönüş
+
+- Aynı yuvada bütçe nedeniyle atlanan alternatifler artık tek sayaçlı özette
+  tutulur. İzinli kombinasyon kalmadığında sağlayıcı çalıştırma aşaması atlanır;
+  önceden izinli/ortak sorguların önbellekten kullanımı korunur. Atlanan
+  sorgular başarısız gerçek deneme olarak kaydedilmez.
+
 ## 2026-10-22 — Eksikleri Tamamla: boş yuvalara bütçe önceliği
 
 - Motion-owner/planned önceliği korunarak `missing` ve `retry_card` hedefleri

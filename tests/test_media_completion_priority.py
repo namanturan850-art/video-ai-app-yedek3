@@ -42,3 +42,59 @@ def test_late_missing_slot_gets_last_budget_request_before_early_filled_slots(mo
     assert logs['missing']['searches'][0].get('skipped') is None
     assert 'missing' in calls[0][2]
     assert all(logs[reason]['searches'][0]['skipped'] == 'budget' for reason in ('unreviewed', 'reselect'))
+
+
+def test_exhausted_budget_has_one_summary_and_never_records_false_failure(monkeypatch):
+    from app.stock import search_evidence
+    monkeypatch.setattr(search_evidence, 'JOB_REQUESTS', 0)
+    director, calls = make_director()
+    slot, _ = target(249, 'missing')
+    log = {'searches': []}
+    for query in ('ocean waves', 'forest trees', 'river water'):
+        assert director.search(slot, ['image', 'video'], query, log, provider_names=['pixabay', 'wikimedia']) == []
+    assert not calls
+    assert len(log['searches']) == 1
+    assert log['searches'][0]['skipped'] == 'budget' and log['searches'][0]['count'] == 12
+    assert 'search_budget_reached' in search_evidence.reasons(log)
+    search_evidence.remember(slot, log, 'context', '2026-10-22T00:00:00+00:00')
+    assert slot['search_attempts'] == []
+    assert director.progress['search_metrics']['unique_requests'] == 0
+
+
+def test_existing_query_can_be_shared_with_missing_slot_after_global_budget_fills(monkeypatch):
+    from app.stock import search_evidence
+    monkeypatch.setattr(search_evidence, 'JOB_REQUESTS', 1)
+    director, calls = make_director()
+    for order in (1, 249):
+        slot, _ = target(order, 'missing')
+        log = {'searches': []}
+        director.search(slot, ['image'], 'ocean waves', log, provider_names=['pixabay'])
+        assert all(not s.get('skipped') for s in log['searches'])
+    assert len(calls) == 1  # second slot still receives the shared cached answer
+    assert director.progress['search_metrics']['cache_hits'] == 1
+
+
+def test_slot_limit_keeps_previously_authorized_queries_and_summarizes_new_ones(monkeypatch):
+    from app.stock import search_evidence
+    monkeypatch.setattr(search_evidence, 'SLOT_REQUESTS', 1)
+    director, calls = make_director()
+    slot, _ = target(249, 'missing')
+    log = {'searches': []}
+    for query in ('ocean waves', 'river water', 'forest trees', 'ocean waves'):
+        director.search(slot, ['image'], query, log, provider_names=['pixabay'])
+    assert len(calls) == 1
+    summaries = [s for s in log['searches'] if s.get('skipped') == 'budget']
+    assert len(summaries) == 1 and summaries[0]['count'] == 2
+    assert director.progress['search_metrics']['cache_hits'] == 1
+
+
+def test_budget_summary_does_not_hide_remaining_allowed_combinations(monkeypatch):
+    from app.stock import search_evidence
+    monkeypatch.setattr(search_evidence, 'JOB_REQUESTS', 1)
+    director, calls = make_director()
+    slot, _ = target(249, 'missing')
+    log = {'searches': []}
+    director.search(slot, ['image'], 'ocean waves', log, provider_names=['pixabay', 'wikimedia'])
+    assert [call[0] for call in calls] == ['pixabay']
+    assert sum(s.get('skipped') == 'budget' for s in log['searches']) == 1
+    assert any(s.get('provider') == 'pixabay' and s.get('results') == 0 for s in log['searches'])

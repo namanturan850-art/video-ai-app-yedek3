@@ -165,3 +165,27 @@ def test_history_scenes_ask_commons_first_and_settings_show_sources(tmp_path):
         view = client.get('/api/settings', headers=SETTINGS).json()
         assert view['wikimedia']['status'] == 'Hazır' and 'Anahtar gerekmez' in view['wikimedia']['message']
         assert view['pexels']['status'] == 'Kullanılmıyor' and 'API anahtarı' not in view['pexels']['message']  # empty key: no warning
+
+
+def test_commons_preview_pictures_on_thumb_host_are_accepted():
+    """Diagnostics 2026-10-21: almost every Commons result was rejected as “unsafe_url:preview_url@thumb.wikimedia.org”
+    because only upload.wikimedia.org was allowed. thumb.wikimedia.org is Wikimedia's own thumbnail host."""
+    from app.stock.download import safe_url
+    from app.stock.models import StockError
+    ok = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/11.jpg/1920px-11.jpg'
+    assert safe_url(ok, 'wikimedia') == ok
+    for bad in ('http://thumb.wikimedia.org/a.jpg', 'https://thumb.wikimedia.org.evil.example/a.jpg',
+                'https://evil.example/thumb.wikimedia.org/a.jpg', 'https://thumb.wikimedia.org:8443/a.jpg', 'https://user@thumb.wikimedia.org/a.jpg'):
+        with pytest.raises(StockError):
+            safe_url(bad, 'wikimedia')
+    with pytest.raises(StockError):
+        safe_url(ok, 'pixabay')  # the host is allowed for Wikimedia results only
+
+    def handler(request):
+        item = page(21, 'Lake Maracaibo.jpg', 'CC BY-SA 4.0')
+        info = item['imageinfo'][0]
+        info['thumburl'] = 'https://thumb.wikimedia.org/wikipedia/commons/thumb/a/ab/21.jpg/1920px-21.jpg'
+        return httpx.Response(200, json={'batchcomplete': True, 'query': {'pages': [item]}})
+    found = WikimediaStockProvider('', transport=httpx.MockTransport(handler)).search('lake', 'image')
+    assert [m['media_id'] for m in found] == ['21']
+    assert found[0]['download_url'].startswith('https://thumb.wikimedia.org/') and found[0]['preview_url'].startswith('https://thumb.wikimedia.org/')

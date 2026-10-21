@@ -14,8 +14,9 @@ from app.projects import linked, now
 from app.stock.models import StockError
 
 # Hosts in official examples. Unrecognized redirect hosts are refused, not guessed.
+# thumb.wikimedia.org: the Commons API answers with preview pictures there (seen in the 2026-10-21 diagnostics).
 HOSTS = {'pexels': {'images.pexels.com','videos.pexels.com','static-videos.pexels.com','player.vimeo.com'},
-         'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'wikimedia': {'upload.wikimedia.org'},
+         'pixabay': {'pixabay.com','cdn.pixabay.com'}, 'wikimedia': {'upload.wikimedia.org','thumb.wikimedia.org'},
          'nasa': {'images-assets.nasa.gov'}, 'archive': set()}
 PAGES = {'pexels': {'www.pexels.com','pexels.com'}, 'pixabay': {'pixabay.com','www.pixabay.com'},
          'wikimedia': {'commons.wikimedia.org'}, 'nasa': {'images.nasa.gov'}, 'archive': {'archive.org'}}
